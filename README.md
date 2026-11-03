@@ -8,16 +8,6 @@ Carbon is based on [Dray](https://github.com/monorepo-labs/dray) by yogesharc,
 used under the Apache License 2.0 (see [LICENSE](LICENSE)). This copy renames
 the project to Carbon and replaces its branding.
 
-## Sponsors
-
-- [Guillermo Rauch](https://x.com/rauchg), Vercel CEO, through his
-  [OSS Grants](https://rauchg-oss-grants.vercel.app/) programme.
-- [Greptile](https://www.greptile.com/), AI code reviews, free for open source.
-
-[![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
-
-Want to sponsor Carbon? [carbonhq.com/support](https://www.carbonhq.com/support)
-
 ## Layout
 
 | Path                | What                                                   |
