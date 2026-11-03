@@ -1,20 +1,20 @@
-export const REPO = "https://github.com/monorepo-labs/dray";
+export const REPO = "https://github.com/matthieu-pm/carbonhq";
 
 /// The newest stable dmg, off the R2 mirror rather than GitHub, whose release
 /// CDN has had 42MB take 45 minutes. release.yml overwrites this one key on
 /// every stable release, so the button needs no build-time lookup; betas leave
 /// it alone, the beta channel being the updater's and not this page's.
-export const DOWNLOAD = "https://downloads.drayhq.com/Dray_universal.dmg";
+export const DOWNLOAD = "https://downloads.carbonhq.com/Carbon_universal.dmg";
 
 /// The server install. `public/install.sh` resolves the newest `cli-v*` tag
 /// itself, so this line never needs a version in it.
-export const INSTALL_LINE = "curl -fsSL https://www.drayhq.com/install.sh | sh";
+export const INSTALL_LINE = "curl -fsSL https://www.carbonhq.com/install.sh | sh";
 
 /// The person who builds it, on X — the nav's "Feedback" link and the
 /// footer's mark both. Most visitors arrive from a tweet, so this is the
 /// channel they are already on.
 ///
-/// The product's own account (`x.com/dray_hq`) was here too and the footer
+/// The product's own account (`x.com/carbon_hq`) was here too and the footer
 /// pointed at it. It posts releases; somebody who reaches the bottom of this
 /// page is looking for a person, so both now go to the same place and there
 /// is no second constant to keep.

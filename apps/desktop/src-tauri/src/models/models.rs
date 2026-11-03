@@ -44,7 +44,7 @@ impl Effort {
         }
     }
 
-    /// The inverse, for a value arriving from outside the app — the `dray`
+    /// The inverse, for a value arriving from outside the app — the `carbon`
     /// CLI's `--effort`. Strict for [`id_for_arg`]'s reason: a typo is worth
     /// reporting, where silently running a different effort is not.
     pub fn from_arg(alias: &str) -> Option<Self> {
@@ -153,7 +153,7 @@ pub fn default_model_for(harness: Harness) -> Option<ModelId> {
         Harness::Pi | Harness::Fx => None,
         // Single-vendor, unlike the two above, so a constant here names a model
         // every signed-in reader has. The list is still a probe — xAI ships
-        // models faster than Dray does — and `grok::models::default_model`
+        // models faster than Carbon does — and `grok::models::default_model`
         // checks this against what the installed CLI reports, the same guard
         // Codex's default takes.
         Harness::Grok => Some(ModelId::new("grok-4.7")),
@@ -500,7 +500,7 @@ pub fn find_model(id: &ModelId) -> Option<Model> {
     claude_code_models::find(id).or_else(|| every_codex_model().into_iter().find(|m| &m.id == id))
 }
 
-/// The id for a `--model` alias arriving from outside the app — the `dray`
+/// The id for a `--model` alias arriving from outside the app — the `carbon`
 /// CLI's own flag — or `None` where this harness cannot run it.
 ///
 /// Deliberately strict for the two harnesses with a table: an unrecognized
@@ -890,7 +890,7 @@ mod wire_tests {
     /// fast mode to anything whose resolved model does not name `opus-5`, and
     /// Opus 4.8's is retired. Pinned because `send_msg` clamps the pick against this: a row
     /// wrongly marked here would persist `fast: true` on a session running at
-    /// ordinary speed, and `dray new` hands that down to every child.
+    /// ordinary speed, and `carbon new` hands that down to every child.
     #[test]
     fn claude_offers_fast_mode_on_opus_alone() {
         let offered: Vec<(String, bool)> = claude_models()

@@ -19,7 +19,7 @@ import type { ApprovalPolicy, Harness } from "@/types/events";
 /// `plan` was offered and withdrawn. It was the one stance pi could enforce —
 /// `--tools read,grep,find,ls` at spawn, fixed for the process and covering
 /// extension tools too — but a lone read-only switch is not a permission mode,
-/// and beside it `bypassPermissions` named a bypass Dray does not perform. The
+/// and beside it `bypassPermissions` named a bypass Carbon does not perform. The
 /// enforcement stays in `pi.rs`, so a session already recorded `plan` still
 /// runs read-only rather than quietly running ungated.
 ///

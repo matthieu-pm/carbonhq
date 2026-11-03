@@ -4,7 +4,7 @@ const invoke = vi.fn();
 vi.mock("@/lib/transport", () => ({
   LOCAL: "local",
   splitPath: (path: string) => {
-    const m = /^dray:\/\/([^/]+)(\/.*)$/.exec(path);
+    const m = /^carbon:\/\/([^/]+)(\/.*)$/.exec(path);
     return m ? { server: m[1], path: m[2] } : { server: "local", path };
   },
   invoke: (...args: unknown[]) => invoke(...args),
@@ -29,8 +29,8 @@ describe("upload", () => {
     invoke.mockReset();
     invoke.mockResolvedValueOnce("/srv/ctx.txt");
 
-    await expect(upload("vps", "dray://vps/tmp/ctx.txt", 10)).resolves.toBe("/tmp/ctx.txt");
-    await expect(upload("box", "dray://vps/tmp/ctx.txt", 10)).rejects.toThrow();
+    await expect(upload("vps", "carbon://vps/tmp/ctx.txt", 10)).resolves.toBe("/tmp/ctx.txt");
+    await expect(upload("box", "carbon://vps/tmp/ctx.txt", 10)).rejects.toThrow();
     // The same path on this Mac is still read and sent.
     await expect(upload("vps", "/tmp/ctx.txt", 10)).resolves.toBe("/srv/ctx.txt");
     expect(invoke).toHaveBeenCalledTimes(1);

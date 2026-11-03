@@ -497,7 +497,7 @@ export default function ModelSelector({
                   held back a step rather than reading as one long label. */}
               {/* The unset sentinel is not a name and there is no name to
                   draw, so the placeholder stands in. pi is the one harness
-                  that reaches this: Dray names no default for it, and the
+                  that reaches this: Carbon names no default for it, and the
                   spawn omits the flag so pi's own settings decide. */}
               <span>{selected?.label ?? (isUnsetModel(modelId) ? "Select Model" : modelId)}</span>
               {effort && (

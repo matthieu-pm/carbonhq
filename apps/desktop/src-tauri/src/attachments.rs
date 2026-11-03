@@ -257,7 +257,7 @@ const PASTE_RETAIN: std::time::Duration = std::time::Duration::from_secs(7 * 24 
 /// Older pastes are swept here, on write, like the dictation recordings: a
 /// send, a removed tile and a deleted session all leave the source behind.
 async fn write_pasted_image(png: &[u8]) -> Result<String> {
-    let root = std::env::temp_dir().join("dray-paste");
+    let root = std::env::temp_dir().join("carbon-paste");
     sweep_stale(&root).await;
 
     let dir = root.join(Uuid::new_v4().to_string());
@@ -271,7 +271,7 @@ async fn write_pasted_image(png: &[u8]) -> Result<String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
-/// `~/.dray/attachments/<session-id>`.
+/// `~/.carbon/attachments/<session-id>`.
 async fn attachments_path(session_id: &str) -> Result<PathBuf> {
     Ok(get_home_app_dir()
         .await?
@@ -361,7 +361,7 @@ pub async fn archive_result_images(session_id: &str, images: &mut [ImageRef]) {
         // A picture named by path rather than carried as bytes — Codex's
         // `imageView` hands over the file it looked at. Copied for the same
         // reason the decoded ones are, plus one this side cannot ignore: the
-        // asset protocol is scoped to `~/.dray/attachments`, so a row pointing
+        // asset protocol is scoped to `~/.carbon/attachments`, so a row pointing
         // anywhere else does not merely go stale, it refuses to load at all.
         if image.url.is_none() {
             if let Some(src) = image.path.clone() {
@@ -410,7 +410,7 @@ pub async fn archive_result_images(session_id: &str, images: &mut [ImageRef]) {
 ///
 /// Two things make this necessary rather than tidy. The file is the agent's to
 /// delete — an `imageView` of a screenshot under `/tmp` outlives nothing — and
-/// the asset protocol is scoped to `~/.dray/attachments`, so the transcript
+/// the asset protocol is scoped to `~/.carbon/attachments`, so the transcript
 /// cannot load a row pointing anywhere else even while the file is still there.
 ///
 /// A path already inside that directory is left alone: replay runs this again
@@ -587,7 +587,7 @@ mod tests {
     /// *text*, and a path that does not exist is skipped before it reaches it.
     #[tokio::test]
     async fn a_file_is_named_the_way_its_harness_can_read_it() {
-        let dir = std::env::temp_dir().join(format!("dray-att-{}", Uuid::now_v7()));
+        let dir = std::env::temp_dir().join(format!("carbon-att-{}", Uuid::now_v7()));
         fs::create_dir_all(&dir).await.expect("temp dir");
         let file = dir.join("rows.csv");
         fs::write(&file, b"a,b\n1,2\n").await.expect("temp file");
@@ -628,7 +628,7 @@ mod tests {
     }
 }
 
-/// Writes into the real `~/.dray/attachments`, so it's `#[ignore]`d:
+/// Writes into the real `~/.carbon/attachments`, so it's `#[ignore]`d:
 /// `cargo test -- --ignored archives_an_image_result` when changing the archive
 /// path or the `data:` URL the mapper mints.
 #[cfg(test)]
@@ -662,7 +662,7 @@ mod archive_tests {
     }
 
     /// Codex names a picture by path instead of carrying its bytes, and the
-    /// asset protocol is scoped to `~/.dray/attachments` — so a row left
+    /// asset protocol is scoped to `~/.carbon/attachments` — so a row left
     /// pointing at the original does not go stale later, it fails to load now.
     #[tokio::test]
     #[ignore]

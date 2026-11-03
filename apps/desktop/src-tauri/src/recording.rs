@@ -8,7 +8,7 @@
 //! and how long it shows, so recording costs a file append per frame and no
 //! encoder. `avconvert` is AVFoundation behind a command line and ships with
 //! every Mac, which is what keeps the app free of ffmpeg and of new crates; a
-//! server asks for ffmpeg in `dray setup` instead.
+//! server asks for ffmpeg in `carbon setup` instead.
 
 use base64::Engine;
 use std::fs::File;
@@ -64,7 +64,7 @@ impl Recorder {
         // Refused before anything is filmed: a recording that cannot be
         // converted is one the agent would only find out about at the end.
         if !cfg!(target_os = "macos") && ffmpeg().is_none() {
-            return Err("recording needs ffmpeg on this server; run `dray setup` and pick it".into());
+            return Err("recording needs ffmpeg on this server; run `carbon setup` and pick it".into());
         }
         std::fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
         let mov = dir.join(format!("{stem}.mov"));
@@ -164,7 +164,7 @@ fn convert(mov: &Path, mp4: &Path) -> Result<(), String> {
 /// one some players refuse and the webview cannot start until it is whole.
 #[cfg(not(target_os = "macos"))]
 fn convert(mov: &Path, mp4: &Path) -> Result<(), String> {
-    let ffmpeg = ffmpeg().ok_or("ffmpeg is gone; run `dray setup` and pick it")?;
+    let ffmpeg = ffmpeg().ok_or("ffmpeg is gone; run `carbon setup` and pick it")?;
     let mut command = std::process::Command::new(ffmpeg);
     command
         .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
@@ -382,7 +382,7 @@ mod tests {
         match Recorder::start(dir, stem) {
             Ok(recorder) => Some(recorder),
             Err(e) if !cfg!(target_os = "macos") && ffmpeg().is_none() => {
-                assert!(e.contains("dray setup"), "{e}");
+                assert!(e.contains("carbon setup"), "{e}");
                 None
             }
             Err(e) => panic!("{e}"),
@@ -393,7 +393,7 @@ mod tests {
     /// AVFoundation cannot read fails here rather than on the reader's screen.
     #[test]
     fn records_frames_into_a_playable_mp4() {
-        let dir = std::env::temp_dir().join(format!("dray-recording-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("carbon-recording-{}", std::process::id()));
         let Some(recorder) = started(&dir, "test") else { return };
         let t = Instant::now();
         let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn a_discarded_recording_leaves_no_file() {
-        let dir = std::env::temp_dir().join(format!("dray-recording-discard-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("carbon-recording-discard-{}", std::process::id()));
         let Some(recorder) = started(&dir, "gone") else { return };
         recorder.frame(base64::engine::general_purpose::STANDARD.encode(FRAME1), Instant::now());
         recorder.discard();
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn a_recording_with_no_frames_says_so() {
-        let dir = std::env::temp_dir().join(format!("dray-recording-empty-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("carbon-recording-empty-{}", std::process::id()));
         let Some(recorder) = started(&dir, "empty") else { return };
         let err = recorder.finish(None).unwrap_err();
         assert!(err.contains("no frames"), "{err}");

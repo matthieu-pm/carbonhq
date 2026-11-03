@@ -1,11 +1,11 @@
-//! Extension dialogs, turned into the question Dray already draws.
+//! Extension dialogs, turned into the question Carbon already draws.
 //!
 //! pi is extensible, and an extension is where its permission gates, its
 //! approval classifiers and its path guards actually live — there is no gate in
 //! pi itself. Every one of those packages asks the reader the same way, over
 //! `extension_ui_request`, because [`createExtensionUIContext`] is the single
 //! bridge each of them is handed. So supporting *the channel* supports every
-//! package anyone installs, including ones nobody has written yet, and Dray
+//! package anyone installs, including ones nobody has written yet, and Carbon
 //! ships no gate of its own to compete with them.
 //!
 //! Nine methods reach the wire. Four block until they are answered and are
@@ -61,7 +61,7 @@ pub const ANNOUNCEMENTS: [&str; 5] = [
 ];
 
 /// pi's own wording for a yes/no. `confirm` carries no labels on the wire — it
-/// resolves to a boolean — so these are Dray's, and they are what maps back.
+/// resolves to a boolean — so these are Carbon's, and they are what maps back.
 const YES: &str = "Yes";
 const NO: &str = "No";
 
@@ -370,8 +370,8 @@ mod tests {
         assert!(questions[0].free_text);
 
         assert_eq!(
-            response("input", "d-1", &answers("typed by dray", "Name it")),
-            json!({"type": "extension_ui_response", "id": "d-1", "value": "typed by dray"})
+            response("input", "d-1", &answers("typed by carbon", "Name it")),
+            json!({"type": "extension_ui_response", "id": "d-1", "value": "typed by carbon"})
         );
     }
 

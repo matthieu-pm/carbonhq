@@ -53,7 +53,7 @@ export default function QuitDialog() {
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>Quit Dray?</AlertDialogTitle>
+          <AlertDialogTitle>Quit Carbon?</AlertDialogTitle>
           <AlertDialogDescription>
             Sessions keep running in the background. Quit completely stops them too.
           </AlertDialogDescription>

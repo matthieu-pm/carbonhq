@@ -70,7 +70,7 @@ const MAX_PROMPT_CHARS: usize = 500;
 /// here to tell a title from prose, not to enforce the prompt.
 const MAX_WORDS: usize = 8;
 
-/// The empty directory a Codex title child runs in, under `~/.dray`.
+/// The empty directory a Codex title child runs in, under `~/.carbon`.
 ///
 /// **Codex has no `--disallowed-tools`, and `-s read-only` does not stand in
 /// for one** — it bounds what a call may do, and reading is a thing it may do.
@@ -85,7 +85,7 @@ const MAX_WORDS: usize = 8;
 /// but nothing in the child's context names a path to reach for, and the fence
 /// in [`build_prompt`] is what keeps the user's own text from supplying one.
 ///
-/// Under `~/.dray` rather than `/tmp` because that directory is already `0700`,
+/// Under `~/.carbon` rather than `/tmp` because that directory is already `0700`,
 /// so nothing another local account plants can appear in the child's cwd.
 ///
 /// Claude needs none of this: its tool list is empty, so its cwd is inert and
@@ -270,7 +270,7 @@ async fn title_command(harness: Harness, prompt: &str, cwd: &str) -> Result<Comm
             // finishing — measured by polling `ps`, twelve sightings against
             // none with this set — and since the child is started at session
             // creation and takes a few seconds, the sound lands about where the
-            // first turn ends. So Dray appeared to have grown a chime on every
+            // first turn ends. So Carbon appeared to have grown a chime on every
             // fx turn. `off` is fx's own spelling, beside `on` and `max`.
             cmd.env("FX_SOUND", "off");
             cmd.args([
@@ -771,9 +771,9 @@ mod command_tests {
             .collect()
     }
 
-    /// fx's chime belongs to the reader's own `fx`, never to a child Dray
+    /// fx's chime belongs to the reader's own `fx`, never to a child Carbon
     /// started behind them — and this child finishes about where the first turn
-    /// does, so the sound read as Dray's.
+    /// does, so the sound read as Carbon's.
     #[tokio::test]
     async fn the_fx_title_child_is_silent() {
         let cmd = title_command(Harness::Fx, "add a dark mode toggle", ".")

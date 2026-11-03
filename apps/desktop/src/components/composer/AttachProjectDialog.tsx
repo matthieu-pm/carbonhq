@@ -39,7 +39,7 @@ const lastRead = {
 };
 
 /// Attaching a project on any server: a GitHub repo the reader can reach,
-/// cloned into `~/dray` on that machine, or a folder already there. On a remote
+/// cloned into `~/carbon` on that machine, or a folder already there. On a remote
 /// server this is the only way in, since the Mac's folder dialog cannot see it.
 /// See ATTACH-PLAN.md.
 export default function AttachProjectDialog({
@@ -220,7 +220,7 @@ export default function AttachProjectDialog({
             )}
           </div>
           <DialogDescription>
-            Pick a GitHub repository to clone into <code>~/dray</code>, or a folder already on {where}.
+            Pick a GitHub repository to clone into <code>~/carbon</code>, or a folder already on {where}.
           </DialogDescription>
         </DialogHeader>
 
@@ -233,7 +233,7 @@ export default function AttachProjectDialog({
               refresh={read}
               lead={
                 unavailable.kind === "no_cli"
-                  ? `Dray lists your repositories through GitHub's CLI, which is not on ${where}.${server === LOCAL ? "" : " Run this there:"}`
+                  ? `Carbon lists your repositories through GitHub's CLI, which is not on ${where}.${server === LOCAL ? "" : " Run this there:"}`
                   : `GitHub's CLI on ${where} is not logged in.${server === LOCAL ? "" : " Run this there:"}`
               }
             />

@@ -73,7 +73,7 @@ function codePlugin(pair: CodeThemePair, streaming: boolean) {
 // tabbed to either.
 const CONTROLS = { table: false, code: { copy: true, download: false } };
 
-// A link opens in Dray's browser; ⌘-click leaves for the system one.
+// A link opens in Carbon's browser; ⌘-click leaves for the system one.
 // Passing `a` replaces Streamdown's renderer and its classes with it, so the
 // look is restated here — the same classes `FileLink` copies for a file link.
 function Anchor({ href, children, className, ...rest }: React.ComponentProps<"a">) {
@@ -198,7 +198,7 @@ function MarkdownImpl({
         // styling reads in one place. Break-word rather than anywhere: only a
         // word wider than the whole cap breaks — a file path in a cell — so a
         // column can never collapse below its longest ordinary word.
-        "[&_.dray-table-cell]:max-w-md [&_.dray-table-cell]:wrap-break-word",
+        "[&_.carbon-table-cell]:max-w-md [&_.carbon-table-cell]:wrap-break-word",
         // The header cell's `whitespace-nowrap` has to lift, or a capped
         // header column overflows instead of wrapping.
         "[&_th]:whitespace-normal",
@@ -229,9 +229,9 @@ function MarkdownImpl({
   );
 }
 
-/// Where `dray browser record` writes, the one place the asset protocol lets
+/// Where `carbon browser record` writes, the one place the asset protocol lets
 /// a video be read from.
-const RECORDING = /\/\.dray(?:-dev|-worktrees\/[^/]+)?\/browser(-dev)?\/recordings\/[^/]+\/[^/]+\.mp4$/;
+const RECORDING = /\/\.carbon(?:-dev|-worktrees\/[^/]+)?\/browser(-dev)?\/recordings\/[^/]+\/[^/]+\.mp4$/;
 
 /// Every `span` in the rendered markdown, passed through untouched unless
 /// `rehypeFilePaths` marked it.
@@ -285,7 +285,7 @@ function FilePathSpan({
       </FileLink>
     );
     if (!RECORDING.test(path)) return link;
-    // A `dray browser record` video plays where the agent names it, so
+    // A `carbon browser record` video plays where the agent names it, so
     // checking its work is watching, not finding a file.
     return (
       <>

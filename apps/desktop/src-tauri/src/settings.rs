@@ -29,8 +29,8 @@ static SETTINGS_LOCK: Mutex<()> = Mutex::const_new(());
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     /// The old in-app analytics switch, **read by nothing**: Settings offers no
-    /// opt-out any more, so a stored `false` is ignored and `DRAY_NO_ANALYTICS`
-    /// is the only way off. Kept so an older build sharing `~/.dray` still finds
+    /// opt-out any more, so a stored `false` is ignored and `CARBON_NO_ANALYTICS`
+    /// is the only way off. Kept so an older build sharing `~/.carbon` still finds
     /// the field it reads, and so a rewrite here carries its value through.
     #[serde(default = "enabled_by_default")]
     pub analytics_enabled: bool,
@@ -128,7 +128,7 @@ pub async fn read() -> AppSettings {
 }
 
 /// Takes the directory so a test can round-trip against a tempdir rather than
-/// the real `~/.dray`.
+/// the real `~/.carbon`.
 async fn read_from(dir: &Path) -> Result<AppSettings> {
     read_json(&path_in(dir)).await
 }
@@ -175,7 +175,7 @@ pub async fn update(edit: impl FnOnce(&mut AppSettings)) -> Result<AppSettings> 
 /// This install's id, minted and persisted on first use.
 ///
 /// Every install gets one, a stored `analytics_enabled: false` included: the
-/// only opt-out is `DRAY_NO_ANALYTICS`, which [`crate::analytics`] checks before
+/// only opt-out is `CARBON_NO_ANALYTICS`, which [`crate::analytics`] checks before
 /// asking. Minting goes through [`update`], so a malformed file is recovered
 /// rather than silencing analytics for good, and an unreadable one is left
 /// untouched.
@@ -233,7 +233,7 @@ mod tests {
 
     fn tempdir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "dray-settings-{}-{}",
+            "carbon-settings-{}-{}",
             std::process::id(),
             uuid::Uuid::now_v7()
         ));

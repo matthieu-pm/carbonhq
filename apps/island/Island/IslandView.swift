@@ -4,13 +4,13 @@ enum Field { case input, search }
 
 /// Two cards: the composer, hanging from the notch or sitting above the Dock,
 /// and the session list on its far side. The composer can carry the newest
-/// turn; the whole transcript is Dray's.
+/// turn; the whole transcript is Carbon's.
 struct IslandView: View {
     @Bindable var composer: Composer
     @Environment(Store.self) private var store
     @FocusState private var focus: Field?
     /// From the press, not from the microphone opening: the start is a round
-    /// trip through Dray, and waiting on it read as the panel hesitating.
+    /// trip through Carbon, and waiting on it read as the panel hesitating.
     private var recording: Bool { composer.listening }
     /// The card shrinks to what it holds: compact's orb and clock, or the word Sent.
     private var fits: Bool { (recording && composer.mode == .compact) || composer.sent }
@@ -196,7 +196,7 @@ struct IslandView: View {
             Divider()
             Toggle("Show Messages", isOn: $composer.transcript)
             Divider()
-            Button("Quit Dray Island") { NSApp.terminate(nil) }
+            Button("Quit Carbon Island") { NSApp.terminate(nil) }
         }
         // A panel opened before the socket was up read nothing; read again once it is.
         .task(id: store.serverState[composer.server] == .connected) {
@@ -229,8 +229,8 @@ struct IslandView: View {
 
     @ViewBuilder private var draft: some View {
         if !composer.listShown, let key = composer.key {
-            // The list, not Dray: a title clicked without thinking must not switch apps,
-            // and the arrows can't open the list over text. ⌘-click is the deliberate way to Dray.
+            // The list, not Carbon: a title clicked without thinking must not switch apps,
+            // and the arrows can't open the list over text. ⌘-click is the deliberate way to Carbon.
             TitleRow(title: title, marks: store.marks(key), close: composer.closeHint,
                      list: { composer.searches += 1 },
                      openInApp: { Task { await composer.showInApp(key) } },

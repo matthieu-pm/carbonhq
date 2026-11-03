@@ -198,7 +198,7 @@ baseline: string | null,
  */
 queued: boolean, 
 /**
- * The Dray session that relayed this prompt, when one did.
+ * The Carbon session that relayed this prompt, when one did.
  *
  * `None` — the ordinary case — means the user typed it. Carried as a
  * field rather than named in `text` because the transcript draws the
@@ -373,8 +373,8 @@ export type AgentUpdate = { harness: Harness, label: string, current: string, la
 export type AppSettings = { 
 /**
  * The old in-app analytics switch, **read by nothing**: Settings offers no
- * opt-out any more, so a stored `false` is ignored and `DRAY_NO_ANALYTICS`
- * is the only way off. Kept so an older build sharing `~/.dray` still finds
+ * opt-out any more, so a stored `false` is ignored and `CARBON_NO_ANALYTICS`
+ * is the only way off. Kept so an older build sharing `~/.carbon` still finds
  * the field it reads, and so a rewrite here carries its value through.
  */
 analyticsEnabled: boolean, 
@@ -465,7 +465,7 @@ id: string, label: string,
 needsKey: boolean, 
 /**
  * The command to run, spelled the way the reader would type it, for every
- * option Dray cannot carry out.
+ * option Carbon cannot carry out.
  *
  * **Shown, copyable, and run by [`run_agent_login`] on the reader's say
  * so.** Every one of these is a literal in [`auth_options`], which is what
@@ -758,7 +758,7 @@ export type GithubRepo = {
 slug: string, description: string | null, 
 /**
  * Where it already lives on this machine: an attached project, or a
- * directory in `~/dray` whose GitHub remote names it. Picking one of these
+ * directory in `~/carbon` whose GitHub remote names it. Picking one of these
  * attaches it rather than cloning again.
  */
 path: string | null, };
@@ -873,7 +873,7 @@ issueType: IssueLabel | null, };
  *
  * **The whole reason this command exists.** Linear's uploads live behind the
  * same auth the API does, so the `<img src>` in a description resolves to a
- * 401 and the webview draws its broken-image box — which reads as "Dray cannot
+ * 401 and the webview draws its broken-image box — which reads as "Carbon cannot
  * show this" rather than "this needs a key". Fetching here and handing back a
  * `data:` URL is what makes an image in an issue an image on screen.
  *
@@ -1437,7 +1437,7 @@ headRefExists: boolean,
 /**
  * Whether the head branch lives in a fork rather than in this repo.
  *
- * `head_ref_name` is bare either way — a PR from `alice/dray:feature`
+ * `head_ref_name` is bare either way — a PR from `alice/carbon:feature`
  * reports `feature` — so the name cannot be told apart from a branch of
  * our own, and joining it to this repo's slug addresses a *different*
  * branch that merely shares its name. Unknown reads as `true`, because
@@ -1711,7 +1711,7 @@ permissionMode: ApprovalPolicy,
  * has exactly one of them — Claude Code's `fastMode` flag setting, Codex's
  * `priority` service tier, fx's `fast_mode` — and a two-valued switch is
  * the honest shape for all three. A variant is also what an older build
- * sharing `~/.dray` cannot spell, which fails the line and reads the whole
+ * sharing `~/.carbon` cannot spell, which fails the line and reads the whole
  * index as no sessions at all; `false` is what a bool degrades to there,
  * which is a session running at ordinary speed and nothing worse.
  *
@@ -1743,7 +1743,7 @@ forkFrom: string | null,
  * two ids and this is the mapping between them.
  *
  * Ours stays primary — it keys the index, the log filename, the
- * attachments directory and every `dray` address, and all of those are
+ * attachments directory and every `carbon` address, and all of those are
  * written *before* the child answers. This is read by resume alone.
  */
 threadId: string | null, 
@@ -1766,7 +1766,7 @@ issues: Array<IssueRef>,
 parentSessionId: string | null, created: string, modified: string, archived: boolean, pinned: boolean, 
 /**
  * Left out of the sidebar and drawn only in its parent's crew — a review
- * session nobody means to read on its own. `dray new --hidden` sets it,
+ * session nobody means to read on its own. `carbon new --hidden` sets it,
  * the crew row's menu clears it, and detaching clears it too, since a
  * session with no parent has no crew to be drawn in.
  *
@@ -1868,7 +1868,7 @@ permissionMode: ApprovalPolicy,
  * has exactly one of them — Claude Code's `fastMode` flag setting, Codex's
  * `priority` service tier, fx's `fast_mode` — and a two-valued switch is
  * the honest shape for all three. A variant is also what an older build
- * sharing `~/.dray` cannot spell, which fails the line and reads the whole
+ * sharing `~/.carbon` cannot spell, which fails the line and reads the whole
  * index as no sessions at all; `false` is what a bool degrades to there,
  * which is a session running at ordinary speed and nothing worse.
  *
@@ -1900,7 +1900,7 @@ forkFrom: string | null,
  * two ids and this is the mapping between them.
  *
  * Ours stays primary — it keys the index, the log filename, the
- * attachments directory and every `dray` address, and all of those are
+ * attachments directory and every `carbon` address, and all of those are
  * written *before* the child answers. This is read by resume alone.
  */
 threadId: string | null, 
@@ -1923,7 +1923,7 @@ issues: Array<IssueRef>,
 parentSessionId: string | null, created: string, modified: string, archived: boolean, pinned: boolean, 
 /**
  * Left out of the sidebar and drawn only in its parent's crew — a review
- * session nobody means to read on its own. `dray new --hidden` sets it,
+ * session nobody means to read on its own. `carbon new --hidden` sets it,
  * the crew row's menu clears it, and detaching clears it too, since a
  * session with no parent has no crew to be drawn in.
  *
@@ -2030,7 +2030,7 @@ export type Subagent = { id: string,
 label: string | null, };
 
 /**
- * What a server has before Dray is installed on it.
+ * What a server has before Carbon is installed on it.
  */
 export type Survey = { 
 /**
@@ -2039,7 +2039,7 @@ export type Survey = {
 os: string, tools: Array<Tool>, 
 /**
  * Where git is missing and this login has no admin rights to install it:
- * the line to run as root, the one `dray setup` would print.
+ * the line to run as root, the one `carbon setup` would print.
  */
 gitCommand: string | null, };
 
@@ -2067,7 +2067,7 @@ distinctId: string,
 personProperties: Record<string, string | number | boolean>, };
 
 /**
- * A tool `dray setup --install` takes, as a server has it.
+ * A tool `carbon setup --install` takes, as a server has it.
  */
 export type Tool = { id: string, name: string, found: boolean, };
 
@@ -2088,7 +2088,7 @@ isError: boolean,
 structured: JsonValue | null, exitCode: number | null, durationMs: number | null, 
 /**
  * Pictures the tool handed back — a `Read` of a screenshot, an MCP tool
- * that answers in images. Archived under `~/.dray/attachments` before the
+ * that answers in images. Archived under `~/.carbon/attachments` before the
  * event is written, so this carries a path and never the bytes: the CLI
  * sends the same image twice on one line and a session of screenshots was
  * 12MB of base64 in a 14MB log.

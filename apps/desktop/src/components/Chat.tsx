@@ -34,7 +34,7 @@ type ChatProps = {
   session: SessionSnapshot | null;
   onOpenSubagent: (id: string) => void;
   /// Opens the session that relayed a prompt into this one, for the avatar a
-  /// `dray send` message draws. Selecting the session is all it does — the same
+  /// `carbon send` message draws. Selecting the session is all it does — the same
   /// thing clicking its sidebar row does.
   onOpenSession: (sessionId: string) => void;
   /// Opens the subagent panel on no particular run — what the background-task

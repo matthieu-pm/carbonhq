@@ -9,9 +9,9 @@ use anyhow::{bail, Context, Result};
 use tokio::process::Command;
 
 /// A dev build gets its own agent, running the binary cargo just built on
-/// `~/.dray-dev`, so it never replaces the release app's server.
+/// `~/.carbon-dev`, so it never replaces the release app's server.
 fn label() -> &'static str {
-    if crate::is_dev() { "com.yogesh.dray.server.dev" } else { "com.yogesh.dray.server" }
+    if crate::is_dev() { "com.yogesh.carbon.server.dev" } else { "com.yogesh.carbon.server" }
 }
 
 fn target() -> String {
@@ -32,8 +32,8 @@ fn escape(text: &str) -> String {
 /// gives background jobs.
 ///
 /// `env` is what the app was started with that the server must share:
-/// launchd starts it with its own environment, so `DRAY_HOME` would put it
-/// under another home and `DRAY_NO_ANALYTICS` would be lost.
+/// launchd starts it with its own environment, so `CARBON_HOME` would put it
+/// under another home and `CARBON_NO_ANALYTICS` would be lost.
 fn plist(exe: &str, log: &str, env: &[(&str, String)]) -> String {
     let (label, exe, log) = (label(), escape(exe), escape(log));
     let pairs: String = env.iter().map(|(k, v)| format!("<key>{k}</key><string>{}</string>", escape(v))).collect();
@@ -71,10 +71,10 @@ async fn launchctl(args: &[&str]) -> Result<std::process::Output> {
 static PENDING: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 /// Installs the agent, or points it at this binary and environment where it
-/// names others — Dray.app moved, a second copy opened, `DRAY_NO_ANALYTICS`
+/// names others — Carbon.app moved, a second copy opened, `CARBON_NO_ANALYTICS`
 /// changed. Unloading a job stops every turn under it, so a running server
 /// keeps its job until the app's `restart_when_idle` lets it go, and
-/// [`reload_if_pending`] loads the new one then. A changed `DRAY_HOME` is the
+/// [`reload_if_pending`] loads the new one then. A changed `CARBON_HOME` is the
 /// exception and moves at once: that server keeps its port in the other home,
 /// so the app could never reach it to ask.
 pub async fn ensure() -> Result<()> {
@@ -83,7 +83,7 @@ pub async fn ensure() -> Result<()> {
     if crate::is_dev() {
         return spawn_dev(&exe, &log);
     }
-    let env: Vec<(&str, String)> = ["DRAY_HOME", "DRAY_NO_ANALYTICS"]
+    let env: Vec<(&str, String)> = ["CARBON_HOME", "CARBON_NO_ANALYTICS"]
         .into_iter()
         .filter_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()).map(|v| (k, v)))
         .collect();
@@ -101,18 +101,18 @@ pub async fn ensure() -> Result<()> {
     install(&path, &wanted, loaded).await
 }
 
-/// The `DRAY_HOME` a plist [`plist`] wrote names, if any.
+/// The `CARBON_HOME` a plist [`plist`] wrote names, if any.
 fn home_of(plist: &str) -> Option<&str> {
-    let (_, rest) = plist.split_once("<key>DRAY_HOME</key><string>")?;
+    let (_, rest) = plist.split_once("<key>CARBON_HOME</key><string>")?;
     rest.split_once("</string>").map(|(home, _)| home)
 }
 
-/// The directory a plist's server uses, resolved: no `DRAY_HOME` and one
-/// naming `~/.dray` are one home, and moving between them must not restart.
+/// The directory a plist's server uses, resolved: no `CARBON_HOME` and one
+/// naming `~/.carbon` are one home, and moving between them must not restart.
 fn home_dir(plist: &str) -> Option<PathBuf> {
     let home = match home_of(plist) {
         Some(home) => PathBuf::from(home),
-        None => std::env::home_dir()?.join(".dray"),
+        None => std::env::home_dir()?.join(".carbon"),
     };
     Some(std::fs::canonicalize(&home).unwrap_or(home))
 }
@@ -209,13 +209,13 @@ mod tests {
 
     #[test]
     fn the_plist_runs_this_binary_as_the_server() {
-        let text = plist("/Applications/A & B.app/Contents/MacOS/dray", "/Users/me/.dray/server.log", &[]);
-        assert!(text.contains("<string>/Applications/A &amp; B.app/Contents/MacOS/dray</string><string>--serve</string>"));
+        let text = plist("/Applications/A & B.app/Contents/MacOS/carbon", "/Users/me/.carbon/server.log", &[]);
+        assert!(text.contains("<string>/Applications/A &amp; B.app/Contents/MacOS/carbon</string><string>--serve</string>"));
         assert!(text.contains("<key>KeepAlive</key><true/>"));
         assert!(text.contains(label()));
-        assert!(!text.contains("DRAY_HOME"));
-        let homed = plist("/x/dray", "/h/server.log", &[("DRAY_HOME", "/h".into()), ("DRAY_NO_ANALYTICS", "1".into())]);
-        assert!(homed.contains("<dict><key>DRAY_HOME</key><string>/h</string><key>DRAY_NO_ANALYTICS</key><string>1</string></dict>"));
+        assert!(!text.contains("CARBON_HOME"));
+        let homed = plist("/x/carbon", "/h/server.log", &[("CARBON_HOME", "/h".into()), ("CARBON_NO_ANALYTICS", "1".into())]);
+        assert!(homed.contains("<dict><key>CARBON_HOME</key><string>/h</string><key>CARBON_NO_ANALYTICS</key><string>1</string></dict>"));
         assert_eq!(home_of(&homed), Some("/h"));
         assert_eq!(home_of(&text), None);
     }

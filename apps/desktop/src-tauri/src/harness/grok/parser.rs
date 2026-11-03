@@ -56,7 +56,7 @@ pub struct UpdateNotification {
 /// One streamed update, tagged on `sessionUpdate`.
 ///
 /// The unit variants are kinds seen and deliberately drawn as nothing:
-/// `user_message_chunk` is `session/load`'s replay of a prompt Dray already
+/// `user_message_chunk` is `session/load`'s replay of a prompt Carbon already
 /// logged, the hook and delta-chunk kinds say nothing a row could show. Naming
 /// them keeps [`Self::Unknown`] — and so the failure log — a signal.
 #[derive(Debug, Deserialize)]
@@ -80,7 +80,7 @@ pub enum GrokUpdate {
         title: Option<String>,
         #[serde(default)]
         kind: ToolKind,
-        /// Present only on the `session/load` replay, which Dray never calls —
+        /// Present only on the `session/load` replay, which Carbon never calls —
         /// live, a `tool_call` carries no status at all.
         #[serde(default)]
         status: Option<ToolStatus>,
@@ -394,7 +394,7 @@ pub fn parse_notification(method: &str, params: Value) -> Result<UpdateNotificat
         // named rather than left to fill the failure log: session setup phases,
         // the sidebar-ish session list, MCP progress, the settings and model
         // caches, the prompt's own completion notice (the JSON-RPC reply is
-        // what Dray settles a turn on), and the `session/load` replay channel.
+        // what Carbon settles a turn on), and the `session/load` replay channel.
         _ if is_quiet(method) => Err(ParseOutcome::Ignored),
         _ => Err(ParseOutcome::Unknown),
     }
@@ -416,7 +416,7 @@ pub enum ParseOutcome {
 /// `_x.ai/mcp/*` is six methods on a machine with servers configured, and
 /// `_x.ai/session/*` is three. Written to under-match — a method missed is one
 /// line in the failure log, where a prefix too wide silently swallows the next
-/// thing grok adds that Dray ought to draw.
+/// thing grok adds that Carbon ought to draw.
 fn is_quiet(method: &str) -> bool {
     const QUIET: &[&str] = &[
         "_x.ai/session/setup",
@@ -431,7 +431,7 @@ fn is_quiet(method: &str) -> bool {
         // A task's end, which the `background_tasks` republish beside it
         // already says with a status.
         "_x.ai/task_completed",
-        // The echo of an `_x.ai/interject` Dray sent; the bubble is already
+        // The echo of an `_x.ai/interject` Carbon sent; the bubble is already
         // drawn from the reader's own send.
         "_x.ai/session/interjection",
         // Both spellings: grok punctuates its MCP methods two ways, and
@@ -543,7 +543,7 @@ mod tests {
         // the update behind it.
         assert_eq!(title.as_deref(), Some("write"));
         // Live, a `tool_call` carries no status; only `session/load`'s replay
-        // does, and Dray never calls it.
+        // does, and Carbon never calls it.
         assert!(status.is_none());
     }
 

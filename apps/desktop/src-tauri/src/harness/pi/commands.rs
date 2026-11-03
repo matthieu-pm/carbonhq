@@ -23,7 +23,7 @@ use crate::harness::{claude_code::commands::SlashCommand, ProbeCache};
 ///
 /// Expiring, like the model list beside it and unlike Claude Code's — pi
 /// discovers commands from extensions and skills the reader can install while
-/// Dray is open, and "restart the app" is a poor answer to a picker that is
+/// Carbon is open, and "restart the app" is a poor answer to a picker that is
 /// meant to follow what they have set up.
 const FRESH_FOR: Duration = Duration::from_secs(120);
 

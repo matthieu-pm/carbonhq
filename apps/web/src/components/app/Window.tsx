@@ -121,7 +121,7 @@ export function PanelLeftIcon({
   /// The right panel's toggle is the same glyph flipped.
   mirrored?: boolean;
 }) {
-  const id = mirrored ? "dray-panel-right" : "dray-panel-left";
+  const id = mirrored ? "carbon-panel-right" : "carbon-panel-left";
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

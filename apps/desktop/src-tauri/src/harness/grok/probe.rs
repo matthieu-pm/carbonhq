@@ -34,7 +34,7 @@ pub fn handshake_params() -> Value {
     json!({
         "protocolVersion": PROTOCOL_VERSION,
         "clientCapabilities": {},
-        "clientInfo": {"name": "dray", "title": "Dray", "version": env!("CARGO_PKG_VERSION")},
+        "clientInfo": {"name": "carbon", "title": "Carbon", "version": env!("CARGO_PKG_VERSION")},
     })
 }
 

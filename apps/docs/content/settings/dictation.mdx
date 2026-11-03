@@ -5,17 +5,17 @@ sidebar:
   order: 3
 ---
 
-You can speak a prompt instead of typing it. Dray turns your voice into text on your own Mac, with a model you download once, and adds the words to the composer. Nothing is sent anywhere.
+You can speak a prompt instead of typing it. Carbon turns your voice into text on your own Mac, with a model you download once, and adds the words to the composer. Nothing is sent anywhere.
 
 ## Set it up
 
-Settings → Transcription. Open Settings with the gear in the sidebar or `⌘,`. If you press the mic before any model is downloaded, Dray opens this tab for you.
+Settings → Transcription. Open Settings with the gear in the sidebar or `⌘,`. If you press the mic before any model is downloaded, Carbon opens this tab for you.
 
 {/* screenshot: the Transcription tab with Parakeet downloaded and selected, Canary downloading */}
 
 ### Pick and download a model
 
-No model ships with Dray. Each row shows the model's languages, its size, and two bars, **Speed** and **Accuracy**, comparing it with the others. One is marked **Recommended** for your Mac.
+No model ships with Carbon. Each row shows the model's languages, its size, and two bars, **Speed** and **Accuracy**, comparing it with the others. One is marked **Recommended** for your Mac.
 
 | Model | Languages | Size |
 |---|---|---|
@@ -35,7 +35,7 @@ Click a "28 languages" style count to see the full list on the model's Hugging F
 
 ### Microphone
 
-Under **Input**, **Microphone** picks the device. **System default** follows whatever macOS uses. If the device you picked is unplugged, Dray records from the system default instead.
+Under **Input**, **Microphone** picks the device. **System default** follows whatever macOS uses. If the device you picked is unplugged, Carbon records from the system default instead.
 
 ### Mute while recording
 
@@ -45,7 +45,7 @@ On by default. It mutes your Mac's sound output while you talk, so music or a vi
 
 <Steps>
   <Step title="Start">
-    Press `⌘D`, or click the mic in the composer. The first time, macOS asks for microphone access; allow it. A short tone plays and a level meter shows Dray hears you.
+    Press `⌘D`, or click the mic in the composer. The first time, macOS asks for microphone access; allow it. A short tone plays and a level meter shows Carbon hears you.
   </Step>
   <Step title="Stop">
     Press `⌘D` again, or the tick (**Stop and transcribe**). A spinner shows while the model works, then the words are added to the end of your draft and a second tone plays.
@@ -62,7 +62,7 @@ If **Mute while recording** is on, the start tone is muted too.
 
 | Message | What to do |
 |---|---|
-| Dray needs microphone access. | Turn it on in System Settings › Privacy & Security › Microphone. |
+| Carbon needs microphone access. | Turn it on in System Settings › Privacy & Security › Microphone. |
 | No sound was recorded. | The microphone gave only silence. This is what denied microphone access looks like; check the same setting. |
 | Nothing was said. | The model heard no words. Try again. |
 | Transcription failed: … | The model could not run. Your audio was kept, see below. |
@@ -72,11 +72,11 @@ When a run fails, or you dictated before downloading a model, the audio is kept.
 - **Transcribe again** (circular arrow) runs the saved recording through the model again, for example after you download one.
 - **Show the recording** (folder) reveals the audio file in Finder.
 
-Kept recordings live in `~/.dray/recordings/`. A recording is deleted as soon as a model has answered for it. Ones nobody comes back for are removed after 7 days.
+Kept recordings live in `~/.carbon/recordings/`. A recording is deleted as soon as a model has answered for it. Ones nobody comes back for are removed after 7 days.
 
 ## Limits
 
 - The model loads when you start dictating and unloads after ten minutes unused, so the first dictation after a break can take a few seconds longer.
 - One recording at a time, across all sessions.
-- If Dray quits unexpectedly mid-recording, your Mac's sound can stay muted. Unmute it by hand.
+- If Carbon quits unexpectedly mid-recording, your Mac's sound can stay muted. Unmute it by hand.
 - `⌘D` can be changed in Settings → Shortcuts.

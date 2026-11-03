@@ -89,7 +89,7 @@ function StateDot({ state }: { state: AccountState }) {
 /// The command an interactive sign-in takes: a button that runs it, and a copy
 /// for the reader who would rather take it somewhere else.
 ///
-/// **Dray opens the terminal and runs it**, which reverses this tab's first
+/// **Carbon opens the terminal and runs it**, which reverses this tab's first
 /// shape. Showing the string beside a terminal opened at the working directory
 /// was the careful reading — macOS lets no app type into another's prompt — but
 /// what it asked of somebody who had just pressed Sign in was to copy a
@@ -486,7 +486,7 @@ function SignInForm({
             type="password"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder={`Stored by ${agent.label}, not by Dray`}
+            placeholder={`Stored by ${agent.label}, not by Carbon`}
             aria-label="API key"
             className={cn(inputClassName, "min-w-0 flex-1")}
             // A credential field, and a password manager filling or keeping it
@@ -579,15 +579,15 @@ function MissingAgent({ agent, server }: { agent: AgentAccounts; server: ServerI
 /// "which account is this running as" had nowhere to be asked.
 ///
 /// **Rows read; one form writes.** The four CLIs differ in what they can do
-/// without a terminal — Codex takes a key on stdin, pi's store is a file Dray
+/// without a terminal — Codex takes a key on stdin, pi's store is a file Carbon
 /// writes, everything else is a command — and letting each row wear its own
 /// capability made four differently-shaped blocks out of one list. So every row
 /// is status plus a ⋯ menu, and every way *in* is the one form.
 ///
-/// **Dray runs no sign-in command and stores no credential.** A pasted key goes
+/// **Carbon runs no sign-in command and stores no credential.** A pasted key goes
 /// to the CLI's own store; everything else is a command shown with a copy on it
 /// beside the reader's own terminal. macOS lets no app type into another's
-/// prompt, so anything else would be Dray deciding what to execute in their
+/// prompt, so anything else would be Carbon deciding what to execute in their
 /// shell.
 export default function AccountsSettings({
   cwd,
@@ -600,7 +600,7 @@ export default function AccountsSettings({
   /// a sign-in everywhere.
   cwd: string;
   /// One server's installed agents and nothing else: the sign-in step of
-  /// installing Dray there, drawn inside a dialog rather than on the page.
+  /// installing Carbon there, drawn inside a dialog rather than on the page.
   only?: ServerId;
   /// Told when a sign-in form opens and closes, so the install dialog can
   /// withhold Done while one agent's form is up.
@@ -653,7 +653,7 @@ export default function AccountsSettings({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* No preamble about the logins. A paragraph here explained *Dray's*
+      {/* No preamble about the logins. A paragraph here explained *Carbon's*
           constraints — which CLI can be driven headlessly and which cannot — to
           a reader who came to see which account they are on. Both facts are
           already said where they are true: the command row shows what to run,
@@ -728,7 +728,7 @@ export default function AccountsSettings({
         // it. A spinner rather than empty rows: an empty list here would read
         // as "no agent is signed in", which is a claim rather than a delay.
         // It says what is being waited for, not how — "Asking each agent" was
-        // Dray describing its own four children to somebody who came to read
+        // Carbon describing its own four children to somebody who came to read
         // one list.
         <div className="flex items-center gap-2 py-4 text-ui text-muted-foreground">
           <Spinner className="size-3.5" />

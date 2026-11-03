@@ -9,8 +9,8 @@ import { DOWNLOAD } from "@/lib/links";
 import { StartDownload, SupportLink } from "./client";
 
 export const metadata: Metadata = {
-  title: "Download - Dray",
-  description: "Download Dray for macOS.",
+  title: "Download - Carbon",
+  description: "Download Carbon for macOS.",
 };
 
 /// Where every Download button lands: the dmg starts on its own, and the wait
@@ -29,7 +29,7 @@ export default async function Download() {
           <SiteNav bare />
           <div className="lg:ml-[102px] lg:max-w-[756px]">
             <h1 className="pt-16 font-inter text-[28px] leading-[32px] font-normal tracking-[-0.03em] text-balance text-white sm:pt-[101px] sm:text-[36px] sm:leading-[40px] light:text-[#0A0A0A]">
-              Thanks for downloading Dray.
+              Thanks for downloading Carbon.
             </h1>
             <p className="mt-4 text-[16px] text-[#7C7C7C] light:text-[#8A8A8A]">
               The download starts on its own. If it didn't,{" "}

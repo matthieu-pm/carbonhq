@@ -1,4 +1,4 @@
-//! `dray-serve`: the core over one WebSocket, with no Tauri in the process.
+//! `carbon-serve`: the core over one WebSocket, with no Tauri in the process.
 //! The wire mirrors Tauri's own `invoke` and `listen`, so the frontend reaches
 //! either through one wrapper. See SERVE-PLAN.md.
 //!
@@ -55,7 +55,7 @@ use tokio_tungstenite::tungstenite::{
 
 /// The serve wire's version, checked in the first frame before anything else
 /// is read. Bump it when a change would leave the other side doing the wrong
-/// thing without saying so — the rule `dray_proto::PROTOCOL_VERSION` follows.
+/// thing without saying so — the rule `carbon_proto::PROTOCOL_VERSION` follows.
 /// The frontend states it again in `transport.ts`.
 pub const PROTOCOL: u32 = 1;
 
@@ -120,7 +120,7 @@ const FILE_HEAD_LIMIT: u64 = 16 * 1024;
 
 /// Where a server writes the port it listens on for the app, then its
 /// [`exe_stamp`], then its pid. The Mac's background server lets the OS pick
-/// its port each start, so it never collides with a `dray-serve` on 7317.
+/// its port each start, so it never collides with a `carbon-serve` on 7317.
 pub const PORT_FILE: &str = "serve-port";
 
 /// Where launchd writes the Mac server's stdout and stderr.
@@ -146,12 +146,12 @@ pub async fn run(port: u16) -> Result<()> {
     tokio::spawn(crate::tunnel::warm(crate::tunnel::SHARE));
 
     eprintln!(
-        "dray-serve listening on ws://{}, token in {}",
+        "carbon-serve listening on ws://{}, token in {}",
         listener.local_addr()?,
         token_path.display()
     );
 
-    listen(listener, HUB.clone(), sink, token.into(), home.join(dray_proto::TUNNEL_URL_FILE).into(), false).await
+    listen(listener, HUB.clone(), sink, token.into(), home.join(carbon_proto::TUNNEL_URL_FILE).into(), false).await
 }
 
 /// The Mac's background server: the app's own binary, run by launchd with
@@ -189,11 +189,11 @@ pub async fn run_mac() -> Result<()> {
         shut_down(0).await;
     });
 
-    eprintln!("dray --serve listening on 127.0.0.1:{port}, home {}", home.display());
-    listen(listener, HUB.clone(), sink, token.into(), home.join(dray_proto::TUNNEL_URL_FILE).into(), true).await
+    eprintln!("carbon --serve listening on 127.0.0.1:{port}, home {}", home.display());
+    listen(listener, HUB.clone(), sink, token.into(), home.join(carbon_proto::TUNNEL_URL_FILE).into(), true).await
 }
 
-/// Written by `dray-serve` too, so a Dray app installed later on a Mac
+/// Written by `carbon-serve` too, so a Carbon app installed later on a Mac
 /// already serving finds this server rather than starting one of its own.
 async fn write_port_file(home: &Path, port: u16) -> Result<()> {
     let stamp = exe_stamp().unwrap_or_default();
@@ -213,12 +213,12 @@ fn stamp_of(path: &Path) -> Option<String> {
     Some(format!("{}.{:09}", since.as_secs(), since.subsec_nanos()))
 }
 
-/// `dray-serve`'s binary and its stamp when it started. Taken at start, since
+/// `carbon-serve`'s binary and its stamp when it started. Taken at start, since
 /// once an update renames over the file Linux's `current_exe` names the
 /// deleted inode rather than the path.
 static STARTED_FROM: std::sync::OnceLock<(PathBuf, Option<String>)> = std::sync::OnceLock::new();
 
-/// Whether the binary on disk has moved since `dray-serve` started: an update
+/// Whether the binary on disk has moved since `carbon-serve` started: an update
 /// landed and this process still runs the old code. False on the Mac's
 /// server, which the app judges by the port file instead.
 fn stale() -> bool {
@@ -227,7 +227,7 @@ fn stale() -> bool {
 
 /// How a restart exits. launchd's `KeepAlive` on a failed exit and systemd's
 /// `Restart=on-failure` both bring back a non-zero exit alone, which is also
-/// what keeps a stopped `dray-serve` stopped. The Mac app's agent restarts on
+/// what keeps a stopped `carbon-serve` stopped. The Mac app's agent restarts on
 /// any exit.
 const RESTART_CODE: i32 = if cfg!(feature = "desktop") { 0 } else { 75 };
 
@@ -248,28 +248,28 @@ async fn restart_when_idle() {
     });
 }
 
-/// Runs `dray update` from beside this binary, then restarts once idle where
+/// Runs `carbon update` from beside this binary, then restarts once idle where
 /// it brought a new one. Answers `"restarting"`, or `"current"` where the
-/// channel had nothing newer. The `dray` there shipped in the same archive, so
+/// channel had nothing newer. The `carbon` there shipped in the same archive, so
 /// it always knows `--channel`.
 #[cfg(not(feature = "desktop"))]
 async fn update_server(channel: String) -> Result<&'static str, String> {
     // One at a time: two apps on different channels would otherwise run two
     // installers over one binary, and the slower could land the older one.
-    // Queued, the second runs the `dray` the first installed, which reports
+    // Queued, the second runs the `carbon` the first installed, which reports
     // the newer version, and the installer keeps a newer install.
     static ONE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _one = ONE.lock().await;
-    let dray =STARTED_FROM.get().map(|(exe, _)| exe.with_file_name("dray")).ok_or("could not find this server's binary")?;
+    let carbon =STARTED_FROM.get().map(|(exe, _)| exe.with_file_name("carbon")).ok_or("could not find this server's binary")?;
     use tokio::io::AsyncReadExt;
-    let mut child = tokio::process::Command::new(&dray)
+    let mut child = tokio::process::Command::new(&carbon)
         .args(["update", "--channel", &channel])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| format!("could not run {}: {e}", dray.display()))?;
+        .map_err(|e| format!("could not run {}: {e}", carbon.display()))?;
     let mut stderr = child.stderr.take();
     let said = tokio::spawn(async move {
         let mut text = String::new();
@@ -279,22 +279,22 @@ async fn update_server(channel: String) -> Result<&'static str, String> {
         text
     });
     let status = match tokio::time::timeout(std::time::Duration::from_secs(300), child.wait()).await {
-        Ok(status) => status.map_err(|e| format!("dray update did not finish: {e}"))?,
-        // The installer is `sh` running curl under `dray`, so killing `dray`
+        Ok(status) => status.map_err(|e| format!("carbon update did not finish: {e}"))?,
+        // The installer is `sh` running curl under `carbon`, so killing `carbon`
         // alone leaves a download that could still land a binary after this
-        // answered — and nothing would restart onto it. Walked while `dray`
+        // answered — and nothing would restart onto it. Walked while `carbon`
         // is alive, or its children are reparented out of reach.
         Err(_) => {
             if let Some(root) = child.id() {
                 crate::local_servers::kill_descendants(root).await;
             }
             let _ = child.kill().await;
-            return Err("dray update did not finish in 5 minutes".into());
+            return Err("carbon update did not finish in 5 minutes".into());
         }
     };
     if !status.success() {
         let said = said.await.unwrap_or_default();
-        return Err(said.lines().rfind(|l| !l.trim().is_empty()).unwrap_or("dray update failed").trim().to_string());
+        return Err(said.lines().rfind(|l| !l.trim().is_empty()).unwrap_or("carbon update failed").trim().to_string());
     }
     if !stale() {
         return Ok("current");
@@ -349,7 +349,7 @@ async fn shut_down(code: i32) -> ! {
 /// that settle without cleaning up are gone (#482).
 ///
 /// An empty index sweeps nothing, since a missing file reads as no sessions
-/// and would take every profile. The CEF root ignores `DRAY_HOME`, so a
+/// and would take every profile. The CEF root ignores `CARBON_HOME`, so a
 /// server on a home of its own leaves it alone: that index is not the one
 /// those profiles belong to.
 async fn sweep_browser_profiles() {
@@ -364,7 +364,7 @@ async fn sweep_browser_profiles() {
     // Only the renames are waited on; the removals run on.
     let _ = tokio::task::spawn_blocking(move || {
         #[cfg(all(feature = "cef", target_os = "macos"))]
-        if std::env::var_os("DRAY_HOME").is_none() {
+        if std::env::var_os("CARBON_HOME").is_none() {
             crate::cef::automation::sweep_profiles(&live);
         }
         crate::headless::automation::sweep_profiles(&live);
@@ -372,13 +372,13 @@ async fn sweep_browser_profiles() {
     .await;
 }
 
-/// What every server does before it listens: refuse a home another Dray
+/// What every server does before it listens: refuse a home another Carbon
 /// holds, reset what no child survived, and serve the orchestration socket.
 async fn start_core(sink: Sink) -> Result<PathBuf> {
     crate::SERVER.store(true, std::sync::atomic::Ordering::Relaxed);
     // Two processes on one home reset each other's sessions at start, take
     // each other's socket and rewrite one index whole, each over the other.
-    // A socket that answers is a Dray already living here.
+    // A socket that answers is a Carbon already living here.
     let home = store::get_home_app_dir().await?;
     // Held for the life of the process. The socket check below alone lets
     // two servers starting at once both pass it, since neither has bound yet.
@@ -389,15 +389,15 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
         .open(home.join("serve.lock"))
         .context("could not open serve.lock")?;
     if unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&held), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        anyhow::bail!("a Dray server is already running on {}", home.display());
+        anyhow::bail!("a Carbon server is already running on {}", home.display());
     }
     std::mem::forget(held);
-    for name in [dray_proto::SOCKET_NAME, dray_proto::SOCKET_NAME_DEV] {
+    for name in [carbon_proto::SOCKET_NAME, carbon_proto::SOCKET_NAME_DEV] {
         let socket = home.join(name);
         if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
             anyhow::bail!(
-                "a Dray is already running on {} ({} answers). Quit it, or start \
-                 dray-serve with DRAY_HOME set to a directory of its own.",
+                "a Carbon is already running on {} ({} answers). Quit it, or start \
+                 carbon-serve with CARBON_HOME set to a directory of its own.",
                 home.display(),
                 socket.display()
             );
@@ -413,8 +413,8 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
     sweep_browser_profiles().await;
     crate::auto_continue::rearm(&sink).await;
 
-    // Agents this server spawns reach it through `dray`, so it serves the
-    // socket the desktop app does — under `DRAY_HOME` where that is set.
+    // Agents this server spawns reach it through `carbon`, so it serves the
+    // socket the desktop app does — under `CARBON_HOME` where that is set.
     tokio::spawn(async move {
         if let Err(e) = crate::orchestration::serve(sink).await {
             eprintln!("[orchestration err] {e:#}");
@@ -424,7 +424,7 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
 }
 
 /// What every client of this process hears: each event the core emits, and
-/// [`Live`] beside it for a client that connects later. `dray-serve` builds
+/// [`Live`] beside it for a client that connects later. `carbon-serve` builds
 /// its `Sink` on one; the desktop app's `Sink` publishes into [`HUB`] as well
 /// as its webview, so the app can serve the same stream.
 #[derive(Clone)]
@@ -503,7 +503,7 @@ pub async fn listen(
 
 /// The server's token, written where only this account can read it.
 ///
-/// Localhost is not a boundary the way `dray.sock` is: the socket sits in a
+/// Localhost is not a boundary the way `carbon.sock` is: the socket sits in a
 /// `0700` directory, but a TCP port on `127.0.0.1` is open to every account on
 /// the machine, and a VPS is often shared. The file is `0600` from its create.
 pub async fn mint_token() -> Result<(String, PathBuf)> {
@@ -578,7 +578,7 @@ struct Hello {
     token: String,
     #[serde(default)]
     host: Option<HostOffer>,
-    /// `"island"` from Dray Island, which [`island_used`] counts by.
+    /// `"island"` from Carbon Island, which [`island_used`] counts by.
     #[serde(default)]
     client: Option<String>,
     /// The client reports the sessions it starts here itself — the reader's
@@ -630,7 +630,7 @@ pub async fn host_call(cmd: &str, args: Value) -> Option<Result<Value, Value>> {
         host.frames.send(json!({ "call": call, "cmd": cmd, "args": args }).to_string()).ok()?;
         rx
     };
-    Some(answer.await.unwrap_or_else(|_| Err(json!("The Dray app closed before it answered."))))
+    Some(answer.await.unwrap_or_else(|_| Err(json!("The Carbon app closed before it answered."))))
 }
 
 /// The first frame's verdict: `None` admits the client. A version mismatch
@@ -643,9 +643,9 @@ fn judge_hello(raw: &str, token: &str) -> Option<String> {
     };
     if hello.v != PROTOCOL {
         let cure = if hello.v < PROTOCOL {
-            "update the Dray app"
+            "update the Carbon app"
         } else {
-            "update dray-serve"
+            "update carbon-serve"
         };
         return Some(format!(
             "this client speaks serve protocol v{}, the server speaks v{PROTOCOL} — {cure}",
@@ -1028,7 +1028,7 @@ async fn connection(
     let welcome = json!({
         "v": PROTOCOL,
         "version": env!("CARGO_PKG_VERSION"),
-        "release": option_env!("DRAY_CLI_VERSION"),
+        "release": option_env!("CARBON_CLI_VERSION"),
         "stale": stale(),
         "dictation": cfg!(feature = "desktop"),
         // Read by the app to tag a session it starts here, as a closed value.
@@ -1068,7 +1068,7 @@ async fn connection(
 
     let connection = NEXT_CALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Read before the filter: a remote reader's app reaches this server
-    // through the tunnel or a `dray-serve` listener too, neither of them hosts.
+    // through the tunnel or a `carbon-serve` listener too, neither of them hosts.
     let counts = hello.as_ref().is_some_and(|h| h.counts);
     let hello = hello.filter(|_| hosts);
     // The local listener alone, like the host offer: the island runs on this Mac.
@@ -1161,7 +1161,7 @@ fn tag_dictation(_: &str, args: Value, _: bool) -> Value {
 
 /// What the island did, counted off its connection rather than a per-call
 /// argument, and on the call succeeding. Each is also activity: somebody
-/// working through the island all day with Dray's window hidden is using Dray.
+/// working through the island all day with Carbon's window hidden is using Carbon.
 fn island_used(cmd: &str) {
     let feature = match cmd {
         "island_opened" => "island_open",
@@ -1264,15 +1264,15 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
     // of its own — the Island — dictates through the app's.
     #[cfg(feature = "desktop")]
     if crate::transcription::HOSTED.contains(&cmd) {
-        return host_call(cmd, args).await.unwrap_or_else(|| Err(json!("Open Dray to dictate.")));
+        return host_call(cmd, args).await.unwrap_or_else(|| Err(json!("Open Carbon to dictate.")));
     }
     // The Island's title opens its session in the app's window, which only the
     // app can raise, and the island opens on the session that window shows.
     #[cfg(feature = "desktop")]
     if matches!(cmd, "show_session" | "selected_session") {
-        return host_call(cmd, args).await.unwrap_or_else(|| Err(json!("Dray's window is closed.")));
+        return host_call(cmd, args).await.unwrap_or_else(|| Err(json!("Carbon's window is closed.")));
     }
-    // A `dray-serve` updates itself; the Mac's server follows the app instead.
+    // A `carbon-serve` updates itself; the Mac's server follows the app instead.
     #[cfg(not(feature = "desktop"))]
     if matches!(cmd, "update_server" | "restart_now" | "restart_when_idle") {
         return table! { cmd, args;
@@ -1283,7 +1283,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
     }
     table! { cmd, args;
         // What a connect opens with, asked again by an app whose webview was
-        // not yet listening when it connected — `dray-serve` included, which
+        // not yet listening when it connected — `carbon-serve` included, which
         // an app installed after it meets as This Mac.
         live_state() => ok(HUB.live.lock().unwrap_or_else(|e| e.into_inner()).payload());
         // Sessions.
@@ -1313,7 +1313,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         fork_session(session_id: String, fork_id: String, worktree: bool) =>
             crate::fork_session(&session_id, &fork_id, worktree).await;
         session_index_item(session_id: String) => crate::session_index_item(&session_id).await;
-        // `dray --machine` from an agent on the Mac that added this machine.
+        // `carbon --machine` from an agent on the Mac that added this machine.
         orchestrate(
             line: String, origin: Option<String>, caller: Option<crate::orchestration::Caller>,
             sender: Option<crate::events::MessageSender>,
@@ -1436,7 +1436,7 @@ mod tests {
 
     #[test]
     fn a_second_start_keeps_the_token() {
-        let dir = std::env::temp_dir().join(format!("dray-serve-token-{}", uuid::Uuid::new_v4().simple()));
+        let dir = std::env::temp_dir().join(format!("carbon-serve-token-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("serve-token");
 
@@ -1480,7 +1480,7 @@ mod tests {
 
     #[test]
     fn the_tunnels_own_origin_and_no_other() {
-        let file = std::env::temp_dir().join(format!("dray-tunnel-url-{}", uuid::Uuid::new_v4().simple()));
+        let file = std::env::temp_dir().join(format!("carbon-tunnel-url-{}", uuid::Uuid::new_v4().simple()));
         assert!(!tunnel_origin("https://a-b-c.trycloudflare.com", &file), "no tunnel, no origin");
         std::fs::write(&file, "https://a-b-c.trycloudflare.com\n").unwrap();
         assert!(tunnel_origin("https://a-b-c.trycloudflare.com", &file));
@@ -1507,15 +1507,15 @@ mod tests {
         assert_eq!(judge_hello(r#"{"v":1,"token":"abc"}"#, token), None);
         assert!(judge_hello(r#"{"v":0,"token":"abc"}"#, token)
             .unwrap()
-            .contains("update the Dray app"));
+            .contains("update the Carbon app"));
         assert!(judge_hello(r#"{"v":2,"token":"abc"}"#, token)
             .unwrap()
-            .contains("update dray-serve"));
+            .contains("update carbon-serve"));
         // Version is judged before the token, so an old client is told to
         // update rather than that its token is wrong.
         assert!(judge_hello(r#"{"v":0,"token":"nope"}"#, token)
             .unwrap()
-            .contains("update the Dray app"));
+            .contains("update the Carbon app"));
         assert_eq!(judge_hello(r#"{"v":1,"token":"abd"}"#, token).as_deref(), Some("wrong token"));
         assert_eq!(judge_hello(r#"{"v":1}"#, token).as_deref(), Some("wrong token"));
         assert!(judge_hello("not json", token).is_some());
@@ -1571,7 +1571,7 @@ mod tests {
 
     #[tokio::test]
     async fn files_are_served_from_the_two_directories_alone() {
-        let home = std::env::temp_dir().join(format!("dray-serve-test-{}", uuid::Uuid::new_v4()));
+        let home = std::env::temp_dir().join(format!("carbon-serve-test-{}", uuid::Uuid::new_v4()));
         let attachments = home.join("attachments/s");
         std::fs::create_dir_all(&attachments).unwrap();
         std::fs::write(attachments.join("a.png"), b"png").unwrap();

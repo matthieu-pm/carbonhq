@@ -57,7 +57,7 @@ export const THEMES: Theme[] = [
   // falls back to, what the pre-paint script in index.html stamps, and what every
   // retired name (`neutral`, `shadcn`) lands on — renaming it would strand every
   // stored pick on a palette that no longer answers to what is written down.
-  { id: "default", label: "Dray", flatInFullscreen: true },
+  { id: "default", label: "Carbon", flatInFullscreen: true },
   {
     id: "catppuccin",
     label: "Catppuccin",
@@ -116,7 +116,7 @@ export function keepsGlassInFullscreen(name: ThemeName, mode: ResolvedMode): boo
   return !theme(name)?.flatInFullscreen;
 }
 
-/// Whether a windowed app drops its glass too. Dray dark alone, on trial: its
+/// Whether a windowed app drops its glass too. Carbon dark alone, on trial: its
 /// page is near black, and the desktop through it read as a grey wash.
 export function flatWhenWindowed(name: ThemeName, mode: ResolvedMode): boolean {
   return name === "default" && mode === "dark";

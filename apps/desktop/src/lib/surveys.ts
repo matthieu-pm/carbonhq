@@ -14,7 +14,7 @@
 //
 // **Whether to start is Rust's answer.** `analytics_identity` answers with a
 // key, a host, an id and the properties together, or with nothing — no key
-// compiled in, or `DRAY_NO_ANALYTICS` — and nothing is the refusal.
+// compiled in, or `CARBON_NO_ANALYTICS` — and nothing is the refusal.
 import { invoke } from "@/lib/transport";
 
 import type { SurveyIdentity } from "@/types/events";

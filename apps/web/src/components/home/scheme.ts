@@ -1,6 +1,6 @@
 // Not in SchemeToggle's module: anything a server component imports from a
 // "use client" file arrives as a client reference, not the string.
-export const SCHEME_KEY = "dray-scheme";
+export const SCHEME_KEY = "carbon-scheme";
 
 /// Runs in the head before the body is parsed, so the page paints in the
 /// right scheme: the reader's saved pick, else the system's, which it keeps

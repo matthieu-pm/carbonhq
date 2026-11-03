@@ -1,7 +1,7 @@
-# Builds and publishes the `dray` CLI.
+# Builds and publishes the `carbon` CLI.
 #
 # Separate from the app's release for a reason, not just tidiness: the two ship
-# on their own schedules and the CLI has to run on linux, where there is no Dray
+# on their own schedules and the CLI has to run on linux, where there is no Carbon
 # app at all. `cli-v*` tags keep them from colliding — the app's pipeline reads
 # `v*` and writes the updater manifests on the `updates` branch, none of which
 # this touches.
@@ -50,14 +50,14 @@ jobs:
       # The shared crate too — it is a separate cargo project, so the CLI's own
       # test run does not cover it.
       - name: Test the protocol crate
-        working-directory: crates/dray-proto
+        working-directory: crates/carbon-proto
         run: cargo test
 
       - name: Test the CLI
         working-directory: apps/cli
         run: cargo test
 
-      # `dray update` stops early when the resolved tag equals `cli-v` plus its
+      # `carbon update` stops early when the resolved tag equals `cli-v` plus its
       # own `CARGO_PKG_VERSION`, so the two being equal is a contract now rather
       # than a convention. A tag pushed ahead of the crate version would ship a
       # binary that reads as out of date forever and reinstalls on every run.
@@ -76,8 +76,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every target ships `dray-serve`, the server `dray setup` installs: a
-        # Mac with no Dray app can be a server too.
+        # Every target ships `carbon-serve`, the server `carbon setup` installs: a
+        # Mac with no Carbon app can be a server too.
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
@@ -120,19 +120,19 @@ jobs:
       # From the same commit as the CLI, so one tag is one version of both.
       # macOS's `strip` keeps the linker's ad-hoc signature, which arm64 needs
       # to run the binary at all.
-      # ponytail: ad-hoc signed, so every `dray update` is a new TCC identity;
+      # ponytail: ad-hoc signed, so every `carbon update` is a new TCC identity;
       # sign with the Developer ID once headless Macs are a real target.
-      - name: Build dray-serve
+      - name: Build carbon-serve
         if: matrix.serve
         working-directory: apps/desktop/src-tauri
         # The CLI's version rides into the server, which reports it to the app
         # so the app can tell whether a newer release is out on its channel.
         run: |
-          export DRAY_CLI_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' "$GITHUB_WORKSPACE/apps/cli/Cargo.toml" | head -n 1)
+          export CARBON_CLI_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' "$GITHUB_WORKSPACE/apps/cli/Cargo.toml" | head -n 1)
           cargo build --release --no-default-features --features serve \
-            --bin dray-serve --target ${{ matrix.target }}
-          cp "target/${{ matrix.target }}/release/dray-serve" "$GITHUB_WORKSPACE/apps/cli/target/${{ matrix.target }}/release/"
-          strip "$GITHUB_WORKSPACE/apps/cli/target/${{ matrix.target }}/release/dray-serve"
+            --bin carbon-serve --target ${{ matrix.target }}
+          cp "target/${{ matrix.target }}/release/carbon-serve" "$GITHUB_WORKSPACE/apps/cli/target/${{ matrix.target }}/release/"
+          strip "$GITHUB_WORKSPACE/apps/cli/target/${{ matrix.target }}/release/carbon-serve"
 
       # Named after the target triple because that is what install.sh derives
       # from `uname`. Rename either and the installer 404s.
@@ -144,9 +144,9 @@ jobs:
         working-directory: apps/cli
         run: |
           set -euo pipefail
-          archive="dray-${{ matrix.target }}.tar.gz"
-          bins=dray
-          [ "${{ matrix.serve }}" = true ] && bins="dray dray-serve"
+          archive="carbon-${{ matrix.target }}.tar.gz"
+          bins=carbon
+          [ "${{ matrix.serve }}" = true ] && bins="carbon carbon-serve"
           tar -czf "$archive" -C "target/${{ matrix.target }}/release" $bins
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$archive" > "$archive.sha256"
@@ -157,10 +157,10 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: dray-${{ matrix.target }}
+          name: carbon-${{ matrix.target }}
           path: |
-            apps/cli/dray-${{ matrix.target }}.tar.gz
-            apps/cli/dray-${{ matrix.target }}.tar.gz.sha256
+            apps/cli/carbon-${{ matrix.target }}.tar.gz
+            apps/cli/carbon-${{ matrix.target }}.tar.gz.sha256
           if-no-files-found: error
 
   publish:

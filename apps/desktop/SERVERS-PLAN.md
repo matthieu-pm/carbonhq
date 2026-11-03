@@ -1,9 +1,9 @@
 # Several servers at once
 
-monorepo-labs/dray#414, stage 3 of "Dray anywhere". Stage 1 (#413,
-[SERVE-PLAN.md](SERVE-PLAN.md)) made the core a `dray-serve` and put one
+monorepo-labs/dray#414, stage 3 of "Carbon anywhere". Stage 1 (#413,
+[SERVE-PLAN.md](SERVE-PLAN.md)) made the core a `carbon-serve` and put one
 transport in front of it. This makes the desktop app hold the in-process core
-**and** any number of remote `dray-serve`s, with one merged sidebar.
+**and** any number of remote `carbon-serve`s, with one merged sidebar.
 
 ## Identity
 
@@ -11,7 +11,7 @@ transport in front of it. This makes the desktop app hold the in-process core
 8-hex id for a remote one.** The id is minted when the server is added and
 never changes, so a rename or a new address keeps every key built on it.
 
-**A remote path, in the frontend, is a URL: `dray://<id>/root/app`.** That is
+**A remote path, in the frontend, is a URL: `carbon://<id>/root/app`.** That is
 the whole of how a project, a session and every path-keyed cache learn their
 server. The rejected alternative was a `server` field beside every path: about
 a hundred sites key on `projectPath` or `cwd` (sidebar grouping, the composer's
@@ -43,7 +43,7 @@ written. A call carrying `sessionId` routes by it unless told otherwise.
 ```text
 invoke(cmd, args, server?)
   server given        → that server
-  else a dray:// arg  → its server, prefix stripped
+  else a carbon:// arg  → its server, prefix stripped
   else args.sessionId → the session's server
   else                → local
 local  → Tauri's invoke
@@ -58,7 +58,7 @@ and the webview only ever names a server id. Events arrive as one Tauri event,
 handlers local events reach, with `server` on the event. Status rides
 `servers_changed`, the whole list every time.
 
-**Files.** A remote attachment loads through `drayserver://localhost/?server=…&path=…`,
+**Files.** A remote attachment loads through `carbonserver://localhost/?server=…&path=…`,
 a Tauri URI scheme that fetches the server's `/file` route with the token in an
 `Authorization` header. So no token sits in a URL the page holds. `/file`
 still takes `?token=` for a plain browser's `<img>`, which cannot set a header.
@@ -73,11 +73,11 @@ SSH tunnel or Tailscale.
 
 ## Storage
 
-- `~/.dray/servers.json` — `[{id, name, url}]`, device-local.
-- `~/.dray/credentials.json` — each token under `server:<id>`, `0600`, beside
+- `~/.carbon/servers.json` — `[{id, name, url}]`, device-local.
+- `~/.carbon/credentials.json` — each token under `server:<id>`, `0600`, beside
   Linear's key. `add_server` admits the token before saving it.
 - Re-adding an address already listed updates its token, which is how a
-  reader reconnects after rotating one. `dray-serve` keeps its token across
+  reader reconnects after rotating one. `carbon-serve` keeps its token across
   restarts, so an ordinary restart needs nothing.
 
 ## What gains the server in its key
@@ -108,7 +108,7 @@ on this Mac:
   entry; a `#` tag typed into a remote session resolves on the remote and,
   with no key there, stays text — best effort, as every tag already is.
 - **Drafts.** A draft is set aside on this device; its project is qualified,
-  so starting one sends to the right server. `dray draft` run by a remote
+  so starting one sends to the right server. `carbon draft` run by a remote
   agent writes that server's drafts file, which this app does not read.
 - **Settings, analytics, the updater, transcription, the browser.**
 
@@ -124,7 +124,7 @@ Each leaves the single-server app exactly as before: with only Local Server,
 no path is qualified and every call routes local.
 
 1. **Connections** — `servers.rs`: list, add, remove, `server_invoke`,
-   `server_event`, `servers_changed`, `drayserver://`. `/file` takes a bearer
+   `server_event`, `servers_changed`, `carbonserver://`. `/file` takes a bearer
    header.
 2. **Transport** — routing, the session map, qualification, `listen` across
    servers.
@@ -139,7 +139,7 @@ All six are built.
 
 ## Verified, and not
 
-Tested against two real `dray-serve`s through
+Tested against two real `carbon-serve`s through
 [demo/servers.html](demo/servers.html), which mocks Tauri's IPC and does in
 the page what `servers.rs` does in Rust, so everything above the transport is
 the shipping code. Checked there: the merged sidebar and its `-vps` suffix,
@@ -148,16 +148,16 @@ header reading `vps / ade / …`, no Browser tab or mic on a remote session, the
 remote proxy killed mid-turn (headings dim and say disconnected, the turn that
 finished meanwhile is caught up on reconnect, a local card survives it), and a
 remote permission card answered across a cut. `servers.rs` has an ignored live
-test against a running `dray-serve` (add, refused token, `live_state`,
+test against a running `carbon-serve` (add, refused token, `live_state`,
 `server_invoke`, token kept out of `servers.json`, reconnect, remove), which
 passes.
 
-In the real app, Yogesh added a scratch `dray-serve` through Settings and saw
+In the real app, Yogesh added a scratch `carbon-serve` through Settings and saw
 a remote session stream and a remote image load, which covers the native glue
-the page mocks: `server_event` reaching `listen`, and `drayserver://` in
+the page mocks: `server_event` reaching `listen`, and `carbonserver://` in
 WKWebView. Notifications and the badge were checked only through the logic
 they share with the sidebar.
 
 **Known gaps.** Attachments to a remote session are refused with a sentence:
-the file is on this Mac. `dray-serve` binds `127.0.0.1`, so a
+the file is on this Mac. `carbon-serve` binds `127.0.0.1`, so a
 container or VPS is reached through a tunnel until stage 4.

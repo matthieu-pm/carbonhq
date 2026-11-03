@@ -98,7 +98,7 @@ const GITHUB_ROWS: Issue[] = [
 ];
 
 const FILTERS: IssueFilters = {
-  teams: [{ id: "team-1", name: "Dray" }],
+  teams: [{ id: "team-1", name: "Carbon" }],
   projects: [{ id: "proj-1", name: "Integrations" }],
   labels: [
     { name: "bug", color: "#d73a4a" },

@@ -1,4 +1,4 @@
-//! fx's ACP vocabulary onto Dray's.
+//! fx's ACP vocabulary onto Carbon's.
 //!
 //! Three things are synthesized rather than read, and each is noted where it
 //! is minted. fx sends no turn-started line — the turn opens when the prompt
@@ -42,12 +42,12 @@ fn is_fx_diagnostic(text: &str) -> bool {
 
 /// Per-session state the mapping needs across lines.
 pub struct Mapper {
-    /// Dray's own id, never fx's. Every event the frontend routes is keyed on
+    /// Carbon's own id, never fx's. Every event the frontend routes is keyed on
     /// this, and the two are only joined on the index entry.
     session_id: String,
     seq: Arc<AtomicU64>,
     /// Whether a prompt is running. Read by the read loop too: a title landing
-    /// outside a turn is `session/resume` restating one Dray already holds.
+    /// outside a turn is `session/resume` restating one Carbon already holds.
     turn_open: bool,
     /// The one block streaming right now. fx interleaves thought and text
     /// chunks with no ids on the thoughts, so at most one block is open and a
@@ -72,7 +72,7 @@ pub struct Mapper {
     /// Calls that opened a subagent run, so the closing update can close it —
     /// a `tool_call_update` names an id and nothing else.
     ///
-    /// The run is Dray's, not fx's: nothing about a child streams over ACP, so
+    /// The run is Carbon's, not fx's: nothing about a child streams over ACP, so
     /// the spawning call *is* the whole account and the panel row holds only
     /// what that call already said. Filed anyway, since a session that
     /// delegated six times otherwise reports none of them; the chat draws the
@@ -284,7 +284,7 @@ impl Mapper {
                 }))]
             }
 
-            // fx's own title, dropped: Dray titles fx sessions itself.
+            // fx's own title, dropped: Carbon titles fx sessions itself.
             SessionUpdate::SessionInfoUpdate
             | SessionUpdate::AvailableCommandsUpdate
             | SessionUpdate::UserMessageChunk
@@ -467,7 +467,7 @@ impl Mapper {
     }
 }
 
-/// ACP's kind onto Dray's, which is what lets a tool fx renames tomorrow still
+/// ACP's kind onto Carbon's, which is what lets a tool fx renames tomorrow still
 /// draw as what it is.
 ///
 /// The name is consulted for the two calls ACP's kinds get wrong, and each is
@@ -562,7 +562,7 @@ fn result_text(shell: bool, streamed: String, closing: String) -> String {
 /// fx wraps a subagent's report in `{"ok":true,"result":"…","error_code":null}`,
 /// and its report is the only account of the run there is: nothing about the
 /// child streams over ACP, and the whole transcript fx keeps for it lives in
-/// its own session store, which Dray does not read.
+/// its own session store, which Carbon does not read.
 ///
 /// Unwrapped by **shape rather than by parsing**, because fx caps tool content
 /// at 200 characters and that cut usually lands mid-string — so the envelope is
@@ -584,7 +584,7 @@ fn unwrap_report(text: &str) -> Option<String> {
 }
 
 // ponytail: prefix sniff on fx ≤0.0.14's private blob shape, still reached by
-// a shell that printed nothing there; drop it once Dray requires fx 0.0.15.
+// a shell that printed nothing there; drop it once Carbon requires fx 0.0.15.
 fn is_replay_blob(text: &str) -> bool {
     text.starts_with("{\"session_id\":") && text.contains("\"backend\":")
 }
@@ -1018,7 +1018,7 @@ mod tests {
     }
 
     /// A subagent's report, which is all fx says about the run. Both strings are
-    /// real, out of `~/.dray/sessions`: the second is what fx's 200-character
+    /// real, out of `~/.carbon/sessions`: the second is what fx's 200-character
     /// cap does to the first kind, and it is the one that has to work — an
     /// envelope short enough to parse is an envelope with nothing much in it.
     #[test]

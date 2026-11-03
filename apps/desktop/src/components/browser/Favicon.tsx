@@ -15,12 +15,12 @@ const MARK = {
   WebkitMaskRepeat: "no-repeat",
 } as const;
 
-/// Dray's mark, for a page with no icon of its own.
+/// Carbon's mark, for a page with no icon of its own.
 function FallbackIcon() {
   return <span aria-hidden className="size-3.5 shrink-0 bg-current opacity-60" style={MARK} />;
 }
 
-/// The page's icon, or Dray's mark until one arrives or where the site has
+/// The page's icon, or Carbon's mark until one arrives or where the site has
 /// none. A tab or a history entry, which carries no error and no id. A tab the
 /// agent is driving draws the orb instead, so the reader knows their clicks
 /// would land in the middle of its work.

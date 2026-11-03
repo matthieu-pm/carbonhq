@@ -1,7 +1,7 @@
 # fx as a fourth harness, over `fx acp`
 
 Architecture plan. Written against `fx.sh/docs/using-fx/{cli,acp,fx-ask,sessions}`
-and `configure-fx/{permissions,configuration}`, and against Dray as of `main`
+and `configure-fx/{permissions,configuration}`, and against Carbon as of `main`
 at `3f6b67d2`.
 
 **Captured live against `fx 0.0.9`** (`/Users/yogesh/.local/bin/fx`, Codex
@@ -16,7 +16,7 @@ channel (non-interactive mode auto-reviews), no cancel. A transcript drawn from
 it is a spinner and then a wall of text. `fx acp` is the editor interface, the
 one Zed and JetBrains drive fx through, on the same binary. It is ACP v1:
 newline JSON-RPC 2.0 over stdio, a peer that sends requests of its own — the
-exact shape `codex app-server` already is. Nothing in Dray speaks ACP today;
+exact shape `codex app-server` already is. Nothing in Carbon speaks ACP today;
 nothing about it is new either, the framing is Codex's `rpc.rs` verbatim and
 only the method vocabulary differs.
 
@@ -31,7 +31,7 @@ only the method vocabulary differs.
 | settings | `--model` at spawn | **True**, and everything is also settable in place: `session/set_config_option {sessionId, configId: model\|effort\|provider, value}` answers the whole `configOptions` list back; `session/set_mode {sessionId, modeId}` answers `null`. Neither needs a respawn |
 | model list | `fx models` | **Per active provider, discovered.** `session/new`'s `configOptions` carry the list *and the effort ladder for that provider*: codex = 5 models, `auto low medium high xhigh max ultra`; gateway = 247 models, ladder stops at `xhigh`; grok = refused with `fx needs a Grok subscription login for this model. Run fx login grok.` |
 | model validation | — | **Membership is checked, shape is not.** `set_config_option model nope/nothing` is accepted and echoed back as `currentValue`, and the failure lands on the first prompt — but a *real* model belonging to another provider is refused outright: `-32602 "Model is not available for the active provider"` (0.0.10, 2026-09-15, DRA-223). So `session.rs`'s in-place model switch fails for a cross-provider pick rather than moving anything |
-| cross-provider model | — | **Starts clean and then refuses every turn.** `fx acp --model <another provider's model>` gives `initialize` ok and `session/new` ok, and the prompt answers `stopReason: "refused"`. The tell is in `configOptions`: a same-provider session answers `{provider, model, mode, effort}` and a cross-provider one answers `{provider, model, mode}` with **`effort` absent**. Same shape on `session/resume` — which is how an ordinary Dray session breaks after the global provider moves (0.0.10, 2026-09-15, DRA-223) |
+| cross-provider model | — | **Starts clean and then refuses every turn.** `fx acp --model <another provider's model>` gives `initialize` ok and `session/new` ok, and the prompt answers `stopReason: "refused"`. The tell is in `configOptions`: a same-provider session answers `{provider, model, mode, effort}` and a cross-provider one answers `{provider, model, mode}` with **`effort` absent**. Same shape on `session/resume` — which is how an ordinary Carbon session breaks after the global provider moves (0.0.10, 2026-09-15, DRA-223) |
 | provider switch | — | Works in place, and **the session keeps it**. `set_config_option provider` answers ok, leaves `~/.fx/settings.json` byte-identical, moves the session onto that provider's own remembered model, and **persists onto fx's session record** — a `session/resume` in a fresh process comes back on it, not on what the file names (0.0.10, 2026-09-16, DRA-241, `provider_switch.jsonl`). Two earlier notes here were wrong in opposite directions: one had it writing the file, the next had it dying with the process. **The only thing that writes `provider` is `fx provider <name>`**, which also drops a pre-write snapshot into `~/.fx/backups` and rewrites the mode to `0600`. A live `fx acp` reads the file once and never re-reads it: settings edited underneath one are neither noticed nor reconciled |
 | stream | — | `session/update` notifications keyed on `update.sessionUpdate`: `agent_message_chunk {messageId, content{type:text,text}}`, `agent_thought_chunk {content}` (no messageId), `tool_call {toolCallId,name,title,kind,status:pending,rawInput}`, `tool_call_update {toolCallId,status,content?[{type:content,content{type:text,text}}],command_result?}`, `session_info_update {title,updatedAt}`, `usage_update {used,size,cost}`, `available_commands_update {availableCommands:[]}` |
 | tool kinds | ACP: read, edit, delete, move, search, execute, think, fetch, switch_mode, other | Seen: `read_file`/`glob_files` → `read`, `write_file`/`edit_file` → `edit`, `shell` → `execute` |
@@ -41,7 +41,7 @@ only the method vocabulary differs.
 | title | — | `session_info_update.title` after the first turn, model-written (`Create hello.txt and report its size`). Read as free, and it is not — see the note below |
 | context ring | — | `usage_update.used` / `.size` (7567 / 272000). An occupancy, not a cumulative — the trap Codex's `total` and Claude's `result.usage` both set is absent |
 | stop | `session/cancel` | A **notification**, not a request. The running shell died on signal 15, its `tool_call_update` came back `failed`, the prompt answered `stopReason: cancelled` |
-| resume | `session/resume`, `session/load` | Both work. `resume` replays nothing and the next prompt remembers the first; `load` replays history as `user_message_chunk`/`tool_call`/… updates (unneeded — Dray's own log is the replay). One process can hold several sessions; `session/close` works |
+| resume | `session/resume`, `session/load` | Both work. `resume` replays nothing and the next prompt remembers the first; `load` replays history as `user_message_chunk`/`tool_call`/… updates (unneeded — Carbon's own log is the replay). One process can hold several sessions; `session/close` works |
 | images | `promptCapabilities.image: true` | A `{type:image, data, mimeType}` block on the Codex provider answered `stopReason: "refused"`, usage `{}`. Not wired in v1 |
 | slash commands | — | `available_commands_update` is empty, at `session/new`, after a turn, and with a skill present (re-checked on 0.0.10). But **fx expands a leading `/name` itself**: `/hello then also print DONE-8899` as plain prompt text ran the workspace's `hello` skill and honoured the words after it. So the picker walks fx's own skill roots off disk and the send path is unchanged |
 | bad cwd | — | `session/new` with `/nonexistent/dir` succeeds silently |
@@ -60,7 +60,7 @@ only the method vocabulary differs.
 - **Stances: `manual` → `ask`, `auto` → `auto`, `bypassPermissions` → `full-access`** (0.0.14, #672; before it `auto` was spelled `code` and bypass was unreachable). `HONOURED.fx = ["manual", "auto", "bypassPermissions"]`; the per-harness fallback sends `dontAsk` to `auto` and `plan` to `manual`.
 - **Diffs off `rawInput`.** `edit_file` maps to `ToolType::FileEdit` with input `{file_path, old_string, new_string}` (`path` renamed so `toolSummary` and `diff.ts` read it unchanged). `write_file` maps to `{file_path, content}`. No `FileEdits` event — nothing on the wire carries a unified diff, and the existing row already draws the pair.
 - **Forkable, by `fx session recover` at the press** (#764). 0.0.15's `/fork` is a TUI picker with no ACP method behind it. Recover copies the conversation to a new id with no child needed, and `session/resume` takes the fork's `cwd`. See [forking.md](docs/forking.md).
-- **Worktrees are Dray's** (`creates_own_worktree: false`), the Codex/pi route.
+- **Worktrees are Carbon's** (`creates_own_worktree: false`), the Codex/pi route.
 - ~~**Title from the wire.**~~ **Retired in DRA-250 — the wire's title is not free.** fx writes it with a second model call and holds the `session/prompt` reply until that lands, which is seconds of working orb over a finished answer on every first turn. `session_titles: false` now goes into `~/.fx/settings.json` at creation, `session_info_update` is dropped, and `title.rs` has a real fx arm. CLAUDE.md carries the measurement.
 - **Stop = `session/cancel`**, a notification, and the reader reports the end through the prompt's own response.
 
@@ -106,19 +106,19 @@ Frontend: `Harness` union (generated), `AGENT_LABELS`, `AgentIcon`,
 ## Known costs, stated
 
 - A permission card appears only where fx thinks it should; `manual` is not "every write asks".
-- Provider switch writes fx's own settings file — the `provider` field, and nothing else. Since DRA-223 it hands the file back at the mode it found it at, rather than at Dray's umask.
+- Provider switch writes fx's own settings file — the `provider` field, and nothing else. Since DRA-223 it hands the file back at the mode it found it at, rather than at Carbon's umask.
 - Model ids are not validated by fx; a bad one fails on the first prompt with fx's sentence.
 - One active prompt per connection, and no injection point inside a turn — a prompt typed mid-turn always queues to the turn's end and the queue drains one message per turn, where Codex and Claude take several at a tool boundary.
 - `binpath` caches `fx`'s path for the process, like every other CLI.
 - ~~The effort ladder is per provider, not per model.~~ **Wrong, and it was DRA-221.** It is per *model*: `effort` is absent from the `configOptions` of a model that does no reasoning, and `set_config_option effort` there answers `-32602`. Which models those are does not follow the vendor — on the gateway `anthropic/claude-opus-5` takes one and `anthropic/claude-sonnet-4` does not — so only a session can say. Two things the capture settled beyond that: the option list is the model's ladder **unioned with the session's current level**, which a model switch does not clamp, so a switched-to model's list can name a rung it refuses and `session/resume` restates it — which makes `options` minus the current level the only sound reading; and fx has two refusal sentences one word apart for "no effort at all" and "not that rung", so neither the code nor the text tells them apart. `effort_carryover.jsonl` and `effort_ladder.jsonl` pin both.
 - **Neither `fx acp` nor `fx models --json` writes `~/.fx/settings.json`.** Measured against 0.0.10: byte-identical and mtime-identical across spawn, `initialize`, `session/new`, `set_config_option effort`, `set_config_option model`, `set_mode` and exit. `set_config_option provider` is now measured too (DRA-241) and writes nothing either — it moves the *session*, not the file.
 
-  That is evidence about **who the writer is**, and it is worth writing down because the `provider` field moved twice unasked during one afternoon of work — `gateway` → `codex`, then `codex` → `grok`, the second with no dev build of Dray running and nothing here touching the file but reads. fx is ruled out by the measurement above, which leaves Dray's own `set_provider` ([models.rs](src-tauri/src/harness/fx/models.rs)), the one place that writes that field deliberately. **Not** the fast-mode write: that one names `fast_mode` and nothing else, and a read-modify-write on one key cannot turn a provider into `grok` — every value seen is a real provider somebody or something picked, so something is *calling* `set_provider`, and a composer control firing on mount or writing back stale state is the shape to suspect. The fast-mode write can at most make it **flap**, by carrying a stale read back over a fresh provider write. Its own issue; nothing here chases it.
-- Every `fx acp` session Dray opens is persisted by fx, prompted or not; a session that failed before its first prompt still leaves a row in `fx sessions`.
+  That is evidence about **who the writer is**, and it is worth writing down because the `provider` field moved twice unasked during one afternoon of work — `gateway` → `codex`, then `codex` → `grok`, the second with no dev build of Carbon running and nothing here touching the file but reads. fx is ruled out by the measurement above, which leaves Carbon's own `set_provider` ([models.rs](src-tauri/src/harness/fx/models.rs)), the one place that writes that field deliberately. **Not** the fast-mode write: that one names `fast_mode` and nothing else, and a read-modify-write on one key cannot turn a provider into `grok` — every value seen is a real provider somebody or something picked, so something is *calling* `set_provider`, and a composer control firing on mount or writing back stale state is the shape to suspect. The fast-mode write can at most make it **flap**, by carrying a stale read back over a fresh provider write. Its own issue; nothing here chases it.
+- Every `fx acp` session Carbon opens is persisted by fx, prompted or not; a session that failed before its first prompt still leaves a row in `fx sessions`.
 
-## The file has a writer Dray cannot see
+## The file has a writer Carbon cannot see
 
-**fx's TUI writes `~/.fx/settings.json` while Dray is running, and it writes fields Dray writes too.** Caught on the reader's own file by a 1s watcher, two writes four seconds apart (2026-09-15, 0.0.10):
+**fx's TUI writes `~/.fx/settings.json` while Carbon is running, and it writes fields Carbon writes too.** Caught on the reader's own file by a 1s watcher, two writes four seconds apart (2026-09-15, 0.0.10):
 
 ```
 13:01:37  fast_mode=true   models.gateway="anthropic/claude-opus-5"     mode 0600, backup 0x43
@@ -127,9 +127,9 @@ Frontend: `Harness` union (generated), `AGENT_LABELS`, `AgentIcon`,
 
 That is one model switch in the TUI, and it moved **two** fields in one write: the per-provider model pick, and `fast_mode` — turned off because the model it moved to has no fast tier.
 
-- **`models.<provider>` is the TUI's record of the model picked under that provider.** It had been seen holding `"gateway":"spacexai/grok-4.6"`, a grok model under the gateway key, which read as corruption and is not: it is a pick. **No Dray path writes that map at all** — Dray writes `provider` and `fast_mode` and nothing else.
-- **`fast_mode` had two writers**, fx's TUI and Dray's own per-creation write, until fx 0.0.14 made fast mode a session config option (`set_config_option fast`) and Dray stopped writing the key (#676).
-- **Every fx write leaves a backup and lands at `0600`**, including this one — which is what makes those two things a usable signature for telling an fx write from a Dray one.
+- **`models.<provider>` is the TUI's record of the model picked under that provider.** It had been seen holding `"gateway":"spacexai/grok-4.6"`, a grok model under the gateway key, which read as corruption and is not: it is a pick. **No Carbon path writes that map at all** — Carbon writes `provider` and `fast_mode` and nothing else.
+- **`fast_mode` had two writers**, fx's TUI and Carbon's own per-creation write, until fx 0.0.14 made fast mode a session config option (`set_config_option fast`) and Carbon stopped writing the key (#676).
+- **Every fx write leaves a backup and lands at `0600`**, including this one — which is what makes those two things a usable signature for telling an fx write from a Carbon one.
 
 Nothing over ACP does any of this: probed byte- and mtime-identical across `fx acp` spawn, `initialize`, `session/new`, `set_config_option` for model *and* provider, `set_mode`, `session/prompt`, exit, `fx models --json`, `fx status`, `fx doctor`, and a cross-provider `fx acp --model <id>` in all three directions. It is the TUI alone.
 
@@ -151,7 +151,7 @@ So on gateway, `supports_fast(id)` is "`id` does not end in `-fast` **and** `<id
 - **The same model answers differently by route.** Sol on the codex subscription takes a toggle; Sol through gateway is reached by picking `openai/gpt-5.6-sol-fast`. Anything written here has to be per provider and say so, or the next reader generalises one route onto the other.
 - **grok keeps `true`, and the word for that is untested.** Not measured, not inferred from codex — the two are different subscriptions and codex's answer says nothing about grok's.
 
-**The decision (DRA-224): hide every `-fast` id from the picker on gateway, never send one, and draw the toggle on a model whose twin exists.** What fx does behind that to make a base model fast is fx's own, and Dray deliberately does not model it — since no `-fast` id is ever picked, how fx routes cannot change what Dray sends. That is why the routing question in DRA-224 is closed rather than answered.
+**The decision (DRA-224): hide every `-fast` id from the picker on gateway, never send one, and draw the toggle on a model whose twin exists.** What fx does behind that to make a base model fast is fx's own, and Carbon deliberately does not model it — since no `-fast` id is ever picked, how fx routes cannot change what Carbon sends. That is why the routing question in DRA-224 is closed rather than answered.
 
 **Hiding a row is not making it unrunnable, and the difference is load-bearing.** A session already created on a `-fast` id must keep naming its own model — in the composer, in the index and on the wire. The picker decides what can be *started*, never what a live session *is*, the same split `secondary` already makes for Claude Code's pinned ids.
 

@@ -76,7 +76,7 @@ export function AddTab() {
   );
 }
 
-/// The session's branch at the strip's far end. A Dray worktree's branch is
+/// The session's branch at the strip's far end. A Carbon worktree's branch is
 /// `worktree-<name>`; the mark already says worktree, so the name is drawn bare.
 export function BranchButton({ name }: { name: string }) {
   return (

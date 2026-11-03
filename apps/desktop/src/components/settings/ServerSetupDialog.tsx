@@ -39,7 +39,7 @@ const listed = (names: string[]) =>
 const message = (err: unknown) =>
   err && typeof err === "object" && "message" in err ? String(err.message) : String(err);
 
-/// Puts Dray on a server that has none, over the login it was added with:
+/// Puts Carbon on a server that has none, over the login it was added with:
 /// asks what is there, offers what is missing, installs it, connects, then
 /// lists the logins. One dialog for the whole first meeting, since every step
 /// after the first needs the answer of the one before.
@@ -51,7 +51,7 @@ export default function ServerSetupDialog({
 }: {
   line: string;
   name: string;
-  /// Connects once Dray is on the server, answering its id.
+  /// Connects once Carbon is on the server, answering its id.
   connect: () => Promise<string>;
   onClose: () => void;
 }) {
@@ -59,7 +59,7 @@ export default function ServerSetupDialog({
   const [error, setError] = useState<string | null>(null);
   const [picks, setPicks] = useState<string[]>([]);
   const [log, setLog] = useState<string[]>([]);
-  // Picks still missing after an install that otherwise worked: `dray setup`
+  // Picks still missing after an install that otherwise worked: `carbon setup`
   // warns and carries on, so its exit code alone would lose them.
   const [unfinished, setUnfinished] = useState<string[]>([]);
   // State, not a ref: the portal into it needs the node during render.
@@ -73,7 +73,7 @@ export default function ServerSetupDialog({
     setError(null);
     try {
       const survey = await invoke<Survey>("survey_server", { line }, LOCAL);
-      // git is on by default, since Dray needs it, unless this login cannot install it.
+      // git is on by default, since Carbon needs it, unless this login cannot install it.
       const git = survey.tools.find((t) => t.id === "git");
       setPicks(git && !git.found && !survey.gitCommand ? ["git"] : []);
       setStep({ kind: "picking", survey });
@@ -169,15 +169,15 @@ export default function ServerSetupDialog({
             {step.kind === "signing_in"
               ? `Sign in on ${name}`
               : linux
-                ? `Install Dray on ${name}`
-                : `${name} can't run Dray`}
+                ? `Install Carbon on ${name}`
+                : `${name} can't run Carbon`}
           </DialogTitle>
           <DialogDescription>
             {step.kind === "signing_in"
-              ? "Dray is running there. Each agent needs its own login on that machine."
+              ? "Carbon is running there. Each agent needs its own login on that machine."
               : step.kind === "picking" && !linux
-                ? `Dray's server needs Linux, and ${name} runs ${osName(step.survey.os)}.`
-                : `Dray isn't on ${name} yet. It has to be installed there${extras ? `, along with ${extras}` : ""}.`}
+                ? `Carbon's server needs Linux, and ${name} runs ${osName(step.survey.os)}.`
+                : `Carbon isn't on ${name} yet. It has to be installed there${extras ? `, along with ${extras}` : ""}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -204,7 +204,7 @@ export default function ServerSetupDialog({
                 {!tool.found && tool.id === "git" && step.survey.gitCommand && (
                   <>
                     <span className="text-ui text-muted-foreground">
-                      Dray needs git, and installing it there takes admin rights. Run this on the server, then look again:
+                      Carbon needs git, and installing it there takes admin rights. Run this on the server, then look again:
                     </span>
                     <div className="flex items-center gap-2">
                       <CommandChip command={step.survey.gitCommand} className="flex-1" />

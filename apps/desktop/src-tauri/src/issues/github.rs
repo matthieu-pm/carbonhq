@@ -60,7 +60,7 @@ pub fn forget_account() {
 ///
 /// `gh api user` does not read the working directory, but [`github::gh`]
 /// refuses to spawn into one that is gone — the trap a removed worktree leaves
-/// — so this needs a directory that always exists. `~/.dray` is made at launch.
+/// — so this needs a directory that always exists. `~/.carbon` is made at launch.
 async fn neutral_dir() -> Result<String, IssueUnavailable> {
     get_home_app_dir()
         .await
@@ -171,7 +171,7 @@ async fn read_account() -> Result<TrackerAccount, IssueUnavailable> {
 /// The issues page reads one repository at a time and this is the list it
 /// offers. Deliberately **not** `gh repo list`: that answers what the account
 /// can see, which for anybody in an organisation is hundreds of repositories
-/// they have never opened, where a project attached in Dray is one they are
+/// they have never opened, where a project attached in Carbon is one they are
 /// working in.
 pub async fn repos_of_projects() -> Vec<String> {
     let Ok(projects) = projects::list_projects().await else {
@@ -821,11 +821,11 @@ mod tests {
         // Case is kept: GitHub is case-insensitive on a slug, and uppercasing
         // one would make the tag in the prompt disagree with the repository.
         assert_eq!(
-            split_identifier("Monorepo-Labs/Dray#1"),
-            Some(("Monorepo-Labs/Dray".to_string(), 1))
+            split_identifier("Monorepo-Labs/Carbon#1"),
+            Some(("Monorepo-Labs/Carbon".to_string(), 1))
         );
 
-        for text in ["#121", "dray#121", "owner/repo", "owner/repo#", "/repo#1", "owner/#1"] {
+        for text in ["#121", "carbon#121", "owner/repo", "owner/repo#", "/repo#1", "owner/#1"] {
             assert_eq!(split_identifier(text), None, "{text}");
         }
     }

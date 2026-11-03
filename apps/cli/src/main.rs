@@ -1,11 +1,11 @@
-//! `dray` — run and manage Dray sessions from outside the app.
+//! `carbon` — run and manage Carbon sessions from outside the app.
 //!
 //! Deliberately standalone. It links neither the app nor tokio: one connect,
 //! one write, one read, exit. That keeps startup instant, which matters because
 //! the usual caller is an agent shelling out to it — and it is what lets this
-//! ship for linux, where there is no Dray app to be part of.
+//! ship for linux, where there is no Carbon app to be part of.
 //!
-//! Everything about *where* to connect lives in [`dray_proto::endpoint`], so
+//! Everything about *where* to connect lives in [`carbon_proto::endpoint`], so
 //! moving the app to a server changes one function and nothing here.
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
@@ -14,7 +14,7 @@ mod draft;
 mod machine;
 mod setup;
 use draft::DraftCommand;
-use dray_proto::{
+use carbon_proto::{
     encode_line, BrowserAction, BrowserRequest, CreateSession, Envelope, Get, Is, IssueInput,
     LinkIssues, ListSessions, Locator, OnMachine, RenameSession, Request, Response, SendMessage, SessionRef,
     SessionSummary, SetAside, SettleSession, ShareAction, ShareRequest,
@@ -29,23 +29,23 @@ use std::process::ExitCode;
 /// than no skill, and fetching it separately is exactly how that happens.
 const SKILL: &str = include_str!("../skill/SKILL.md");
 
-const INSTALLER_URL: &str = "https://www.drayhq.com/install.sh";
+const INSTALLER_URL: &str = "https://www.carbonhq.com/install.sh";
 
 #[derive(Parser)]
 #[command(
-    name = "dray",
+    name = "carbon",
     version,
-    about = "Run and manage Dray sessions.",
-    long_about = "Run and manage Dray sessions.\n\nDray runs coding agents in parallel, one \
+    about = "Run and manage Carbon sessions.",
+    long_about = "Run and manage Carbon sessions.\n\nCarbon runs coding agents in parallel, one \
                   session per piece of work. This creates those sessions from the command line, \
-                  so an agent in one session can fan work out into several.\n\nRequires the Dray \
+                  so an agent in one session can fan work out into several.\n\nRequires the Carbon \
                   app to be running."
 )]
 struct Cli {
     #[command(subcommand)]
     command: Command,
 
-    /// Run this on another machine, as `dray machine ls` names it. `session ls` also takes `all`. A session id finds its
+    /// Run this on another machine, as `carbon machine ls` names it. `session ls` also takes `all`. A session id finds its
     /// machine on its own.
     #[arg(long, global = true, value_name = "NAME")]
     machine: Option<String>,
@@ -74,7 +74,7 @@ enum Command {
     /// The machines this one reaches: add, list, rename, connect, remove.
     #[command(subcommand, arg_required_else_help = true)]
     Machine(machine::MachineCommand),
-    /// This machine's Dray server: install, start, stop, run in the foreground.
+    /// This machine's Carbon server: install, start, stop, run in the foreground.
     #[command(subcommand, arg_required_else_help = true)]
     Server(setup::ServerCommand),
     /// Upgrade this binary to the newest release.
@@ -88,8 +88,8 @@ enum Command {
 
     // The spellings before `session` and `server`, kept so what already calls
     // them still runs: agents holding an older skill, and remote servers —
-    // the app's SSH connect runs `dray service start` there, and a tunnel's
-    // systemd unit runs `dray tunnel`, against whichever CLI that box has.
+    // the app's SSH connect runs `carbon service start` there, and a tunnel's
+    // systemd unit runs `carbon tunnel`, against whichever CLI that box has.
     #[command(hide = true)]
     New(New),
     #[command(hide = true)]
@@ -130,20 +130,20 @@ enum SessionCommand {
 
 #[derive(Args)]
 struct SessionArg {
-    /// The session, as printed by `dray session ls`.
+    /// The session, as printed by `carbon session ls`.
     session_id: String,
 }
 
 #[derive(Args)]
 struct Rename {
-    /// The session, as printed by `dray session ls`.
+    /// The session, as printed by `carbon session ls`.
     session_id: String,
     title: String,
 }
 
 #[derive(Args)]
 struct Settle {
-    /// The session, as printed by `dray session ls`.
+    /// The session, as printed by `carbon session ls`.
     session_id: String,
     /// Delete its worktree and branch too, whatever they hold — uncommitted
     /// and unpushed work included. Without it the worktree stays.
@@ -205,7 +205,7 @@ struct New {
 #[derive(Args)]
 struct Update {
     /// Install the newest release even when it is the one already running.
-    /// Reinstalls a damaged binary; `DRAY_VERSION=<tag>` downgrades.
+    /// Reinstalls a damaged binary; `CARBON_VERSION=<tag>` downgrades.
     #[arg(long)]
     force: bool,
 
@@ -217,7 +217,7 @@ struct Update {
 
 #[derive(Args)]
 struct Send {
-    /// The session to send to, as printed by `dray session ls`.
+    /// The session to send to, as printed by `carbon session ls`.
     session_id: String,
 
     /// The message. Write it for someone who cannot see your conversation.
@@ -254,7 +254,7 @@ struct IssueLinkArgs {
     #[arg(required = true, value_name = "ISSUE")]
     session_and_issues: Vec<String>,
 
-    /// The session to tag, as printed by `dray session ls`. Defaults to the
+    /// The session to tag, as printed by `carbon session ls`. Defaults to the
     /// session running this command.
     #[arg(long)]
     session: Option<String>,
@@ -346,7 +346,7 @@ struct ShareArgs {
     #[command(subcommand)]
     command: Option<ShareCommand>,
 
-    /// `dray share <port>`, the spelling before `share start`.
+    /// `carbon share <port>`, the spelling before `share start`.
     #[arg(hide = true)]
     port: Option<u16>,
 
@@ -368,7 +368,7 @@ enum ShareCommand {
 
 #[derive(Subcommand)]
 enum SkillCommand {
-    /// Write the skill to ~/.claude/skills/dray/ and ~/.codex/skills/dray/,
+    /// Write the skill to ~/.claude/skills/carbon/ and ~/.codex/skills/carbon/,
     /// where Claude Code and Codex find it.
     Install,
 }
@@ -377,7 +377,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("dray: {message}");
+            eprintln!("carbon: {message}");
             ExitCode::FAILURE
         }
     }
@@ -414,7 +414,7 @@ fn run() -> Result<(), String> {
         Command::Update(args) => update(args),
         Command::Skill(SkillCommand::Install) => install_skill(),
         Command::Completion { shell } => {
-            clap_complete::generate(shell, &mut Cli::command(), "dray", &mut std::io::stdout());
+            clap_complete::generate(shell, &mut Cli::command(), "carbon", &mut std::io::stdout());
             Ok(())
         }
         Command::New(args) => new(args),
@@ -486,7 +486,7 @@ fn new(args: New) -> Result<(), String> {
 
     match send(request)? {
         Response::Created { session, base_ref } => {
-            // The id alone on stdout, so `$(dray session new …)` captures something
+            // The id alone on stdout, so `$(carbon session new …)` captures something
             // usable; everything a human wants goes to stderr beside it.
             println!("{}", session.session_id);
             eprintln!(
@@ -509,8 +509,8 @@ fn new(args: New) -> Result<(), String> {
             // the agent would otherwise tell the user it is hidden.
             if args.hidden && !session.hidden {
                 eprintln!(
-                    "This Dray app does not know --hidden, so the session shows in the sidebar. \
-                     Update the Dray app."
+                    "This Carbon app does not know --hidden, so the session shows in the sidebar. \
+                     Update the Carbon app."
                 );
             }
             Ok(())
@@ -605,7 +605,7 @@ fn send_message(args: Send) -> Result<(), String> {
 
 fn browser(args: BrowserCommand) -> Result<(), String> {
     let session_id = args.session.clone().or_else(parent_session_id).ok_or(
-        "which session's browser? Pass --session <id>, or run this from inside a Dray session.",
+        "which session's browser? Pass --session <id>, or run this from inside a Carbon session.",
     )?;
     let action = browser_action(&args).unwrap_or_else(|e| usage(&e));
     match send(Request::Browser(BrowserRequest { session_id, action }))? {
@@ -632,7 +632,7 @@ fn share(args: ShareArgs) -> Result<(), String> {
     let session_id = args
         .session
         .or_else(parent_session_id)
-        .ok_or("which session? Pass --session <id>, or run this from inside a Dray session.")?;
+        .ok_or("which session? Pass --session <id>, or run this from inside a Carbon session.")?;
     let started = match action {
         ShareAction::Start { port } => Some(port),
         _ => None,
@@ -650,7 +650,7 @@ fn share(args: ShareArgs) -> Result<(), String> {
     }
 }
 
-/// `dray share ls`: the project's live links, each with the session it
+/// `carbon share ls`: the project's live links, each with the session it
 /// belongs to, which is `--session`-free on purpose — a link is reached by
 /// project, the way `session ls` reaches sessions.
 fn list_shares(args: Ls) -> Result<(), String> {
@@ -890,7 +890,7 @@ fn act(
 }
 
 fn parse_id(s: &str) -> Result<i32, String> {
-    s.parse().map_err(|_| format!("{s} is not a tab id; `dray browser tab` lists them"))
+    s.parse().map_err(|_| format!("{s} is not a tab id; `carbon browser tab` lists them"))
 }
 
 /// The app answered something this command never asks for: the two sides
@@ -961,17 +961,17 @@ fn print_table(sessions: &[SessionSummary]) {
 fn update(args: Update) -> Result<(), String> {
     // The app writes the CLI it ships to ~/.local/bin on every launch, so an
     // update here would fight it: undone at the next launch, and until then
-    // a CLI the app was not released beside. A server on its own `DRAY_HOME`
-    // still updates its `dray-serve` here.
+    // a CLI the app was not released beside. A server on its own `CARBON_HOME`
+    // still updates its `carbon-serve` here.
     if setup::app_runs_this_home() {
-        eprintln!("The Dray app keeps this CLI up to date. Update the app to update it.");
+        eprintln!("The Carbon app keeps this CLI up to date. Update the app to update it.");
         return Ok(());
     }
     let exe = std::env::current_exe()
-        .map_err(|e| format!("could not find the running dray binary: {e}"))?;
+        .map_err(|e| format!("could not find the running carbon binary: {e}"))?;
     let dir = exe
         .parent()
-        .ok_or("the running dray binary sits in no directory")?;
+        .ok_or("the running carbon binary sits in no directory")?;
 
     let mut sh = std::process::Command::new("sh");
     sh.args([
@@ -983,20 +983,20 @@ fn update(args: Update) -> Result<(), String> {
     ])
     // Where this binary lives, not ~/.local/bin. Renaming over a running
     // unix binary is safe: the process keeps the inode it started from.
-    .env("DRAY_INSTALL_DIR", dir)
+    .env("CARBON_INSTALL_DIR", dir)
     // An update is not a first install: no setup questions.
-    .env("DRAY_UPDATING", "1")
-    .env("DRAY_CHANNEL", args.channel.as_deref().unwrap_or(own_channel()));
+    .env("CARBON_UPDATING", "1")
+    .env("CARBON_CHANNEL", args.channel.as_deref().unwrap_or(own_channel()));
 
     let current = if setup::app_on_this_mac() { serve_tag_beside(dir) } else { Some(current_tag()) };
     match current.filter(|_| !args.force) {
         Some(tag) => {
-            sh.env("DRAY_CURRENT_VERSION", tag);
+            sh.env("CARBON_CURRENT_VERSION", tag);
         }
         // Cleared rather than left alone, or a value the caller exported makes
         // the flag do nothing.
         None => {
-            sh.env_remove("DRAY_CURRENT_VERSION");
+            sh.env_remove("CARBON_CURRENT_VERSION");
         }
     }
 
@@ -1017,13 +1017,13 @@ fn update(args: Update) -> Result<(), String> {
     }
 }
 
-/// The release the `dray-serve` beside this binary was built as, for a Mac with
-/// the app: its launches rewrite `dray` and never `dray-serve`, so this binary's
+/// The release the `carbon-serve` beside this binary was built as, for a Mac with
+/// the app: its launches rewrite `carbon` and never `carbon-serve`, so this binary's
 /// version would stop the installer at "already current" with the server left
-/// behind. No `dray-serve` there is no pair to keep, so this binary's tag; one
+/// behind. No `carbon-serve` there is no pair to keep, so this binary's tag; one
 /// too old to say is reinstalled.
 fn serve_tag_beside(dir: &std::path::Path) -> Option<String> {
-    let serve = dir.join("dray-serve");
+    let serve = dir.join("carbon-serve");
     if !serve.exists() {
         return Some(current_tag());
     }
@@ -1034,12 +1034,12 @@ fn serve_tag_beside(dir: &std::path::Path) -> Option<String> {
         .output()
         .ok()?;
     let version = String::from_utf8_lossy(&out.stdout);
-    let version = version.trim().strip_prefix("dray-serve ")?;
+    let version = version.trim().strip_prefix("carbon-serve ")?;
     (out.status.success() && version != "dev").then(|| format!("cli-v{version}"))
 }
 
 /// The release tag this binary was built as — the one fact the installer cannot
-/// work out for itself, since it cannot tell which `dray` on disk ran it.
+/// work out for itself, since it cannot tell which `carbon` on disk ran it.
 fn current_tag() -> String {
     format!("cli-v{}", env!("CARGO_PKG_VERSION"))
 }
@@ -1065,7 +1065,7 @@ fn install_skill() -> Result<(), String> {
     let home = std::env::home_dir().ok_or("could not resolve your home directory")?;
 
     for agent_home in SKILL_HOMES {
-        let dir = home.join(agent_home).join("skills").join("dray");
+        let dir = home.join(agent_home).join("skills").join("carbon");
 
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
@@ -1074,7 +1074,7 @@ fn install_skill() -> Result<(), String> {
         std::fs::write(&path, SKILL)
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
 
-        eprintln!("Installed the dray skill to {}", path.display());
+        eprintln!("Installed the carbon skill to {}", path.display());
     }
 
     Ok(())
@@ -1106,15 +1106,15 @@ fn install_skill() -> Result<(), String> {
 fn connect_failure(error: &std::io::Error, endpoint: &str) -> String {
     match error.kind() {
         ErrorKind::PermissionDenied => format!(
-            "permission denied reaching Dray at {endpoint}. The app may well be \
+            "permission denied reaching Carbon at {endpoint}. The app may well be \
              running: a sandbox, or the filesystem permissions on that path, \
              blocked the connection. If this command is sandboxed, retry this one \
              command with escalated permissions."
         ),
         ErrorKind::NotFound | ErrorKind::ConnectionRefused => {
-            "Dray isn't running. Start the app and try again.".to_string()
+            "Carbon isn't running. Start the app and try again.".to_string()
         }
-        _ => format!("could not connect to Dray at {endpoint}: {error}"),
+        _ => format!("could not connect to Carbon at {endpoint}: {error}"),
     }
 }
 
@@ -1126,7 +1126,7 @@ fn on_machine(session: &SessionSummary) -> String {
 /// One request, one response, connection closed. With `--machine` the request
 /// rides inside `on_machine`, and this machine's server carries it there.
 fn send(request: Request) -> Result<Response, String> {
-    let endpoint = dray_proto::endpoint().ok_or("could not work out where Dray is listening")?;
+    let endpoint = carbon_proto::endpoint().ok_or("could not work out where Carbon is listening")?;
     let request = match MACHINE.get() {
         Some(machine) => Request::OnMachine(OnMachine { machine: machine.clone(), request: Box::new(request) }),
         None => request,
@@ -1155,7 +1155,7 @@ fn send_to(endpoint: &str, request: Request) -> Result<Response, String> {
         .map_err(|e| format!("could not read the response: {e}"))?;
 
     if response.trim().is_empty() {
-        return Err("Dray closed the connection without answering.".into());
+        return Err("Carbon closed the connection without answering.".into());
     }
 
     serde_json::from_str(&response).map_err(|e| format!("could not parse the response: {e}"))
@@ -1165,8 +1165,8 @@ fn send_to(endpoint: &str, request: Request) -> Result<Response, String> {
 ///
 /// The session is optional so that the documented invocation can name no
 /// environment variable at all. The Claude Code harness refuses any command that
-/// names one inside a worktree-isolated session — which is every session `dray
-/// new` makes — so the documented `dray issue link "$DRAY_SESSION_ID" DRA-53`
+/// names one inside a worktree-isolated session — which is every session `carbon
+/// new` makes — so the documented `carbon issue link "$CARBON_SESSION_ID" DRA-53`
 /// was refused before it spawned, and refused silently: the agent read the
 /// refusal, carried on, and the issue was never linked.
 ///
@@ -1182,8 +1182,8 @@ fn split_session_and_issues(
         given.remove(0)
     } else {
         from_environment.ok_or(
-            "no session named, and DRAY_SESSION_ID is not set: name the session, \
-             as printed by `dray session ls`",
+            "no session named, and CARBON_SESSION_ID is not set: name the session, \
+             as printed by `carbon session ls`",
         )?
     };
 
@@ -1205,11 +1205,11 @@ fn is_session_id(value: &str) -> bool {
         && value.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
-/// Which session is making this call, if one is. Injected into every agent Dray
+/// Which session is making this call, if one is. Injected into every agent Carbon
 /// spawns; absent when a person runs this in their own terminal, which is
 /// ordinary rather than an error.
 fn parent_session_id() -> Option<String> {
-    std::env::var("DRAY_SESSION_ID")
+    std::env::var("CARBON_SESSION_ID")
         .ok()
         .filter(|v| !v.is_empty())
 }
@@ -1230,7 +1230,7 @@ fn resolve_project(explicit: Option<PathBuf>) -> Option<String> {
 /// we happen to be standing in.
 ///
 /// `rev-parse --show-toplevel` answers the linked worktree, and that is what an
-/// agent running in a Dray worktree session was putting on the wire as the new
+/// agent running in a Carbon worktree session was putting on the wire as the new
 /// session's project. The app then computed a `cwd` of
 /// `<that worktree>/.claude/worktrees/<name>`, which `claude -w` never creates —
 /// it resolves the repo for itself — so Changes, commit and PR all read a
@@ -1282,18 +1282,18 @@ mod tests {
     #[test]
     fn hands_the_installer_the_servers_version() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("dray-serve-tag-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("carbon-serve-tag-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(serve_tag_beside(&dir), Some(current_tag()), "no server: no pair");
 
-        let serve = dir.join("dray-serve");
+        let serve = dir.join("carbon-serve");
         let answer = |script: &str| {
             std::fs::write(&serve, format!("#!/bin/sh\n{script}\n")).unwrap();
             std::fs::set_permissions(&serve, std::fs::Permissions::from_mode(0o755)).unwrap();
             serve_tag_beside(&dir)
         };
-        assert_eq!(answer("echo 'dray-serve 0.14.0-beta.1'").as_deref(), Some("cli-v0.14.0-beta.1"));
-        assert_eq!(answer("echo 'dray-serve dev'"), None, "a local build says nothing");
+        assert_eq!(answer("echo 'carbon-serve 0.14.0-beta.1'").as_deref(), Some("cli-v0.14.0-beta.1"));
+        assert_eq!(answer("echo 'carbon-serve dev'"), None, "a local build says nothing");
         assert_eq!(answer("echo usage >&2; exit 2"), None, "too old to answer");
 
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1308,12 +1308,12 @@ mod tests {
     fn failure(kind: ErrorKind) -> String {
         unwrapped(&connect_failure(
             &std::io::Error::from(kind),
-            "/Users/me/.dray/dray.sock",
+            "/Users/me/.carbon/carbon.sock",
         ))
     }
 
     const CURE: &str = "retry this one command with escalated permissions";
-    const CLOSED: &str = "Dray isn't running. Start the app and try again.";
+    const CLOSED: &str = "Carbon isn't running. Start the app and try again.";
 
     /// The bug this arm exists for: a sandbox refusing the connect used to
     /// report the user's app closed, which is a false fact about their machine
@@ -1327,7 +1327,7 @@ mod tests {
     fn permission_denied_hedges_the_cause_and_names_the_conditional_cure() {
         let message = failure(ErrorKind::PermissionDenied);
 
-        assert!(message.contains("/Users/me/.dray/dray.sock"));
+        assert!(message.contains("/Users/me/.carbon/carbon.sock"));
         assert!(message.contains("The app may well be running"));
         assert!(message.contains("a sandbox, or the filesystem permissions"));
         assert!(message.contains(CURE));
@@ -1359,8 +1359,8 @@ mod tests {
         ] {
             let message = failure(kind);
 
-            assert!(message.contains("could not connect to Dray at"));
-            assert!(message.contains("/Users/me/.dray/dray.sock"));
+            assert!(message.contains("could not connect to Carbon at"));
+            assert!(message.contains("/Users/me/.carbon/carbon.sock"));
             assert!(!message.contains("isn't running"));
             assert!(!message.contains(CURE));
         }
@@ -1373,7 +1373,7 @@ mod tests {
     #[test]
     fn a_verb_reads_the_same_bare_or_after_find() {
         let action = |line: &[&str]| {
-            let cli = Cli::parse_from([&["dray", "browser"][..], line].concat());
+            let cli = Cli::parse_from([&["carbon", "browser"][..], line].concat());
             let Command::Browser(args) = cli.command else { panic!("wrong subcommand") };
             browser_action(&args)
         };
@@ -1422,7 +1422,7 @@ mod tests {
     #[test]
     fn metadata_describes_one_issue() {
         let args = Cli::try_parse_from([
-            "dray", "issue", "link", SESSION, "DRA-53", "DRA-54", "--title", "One",
+            "carbon", "issue", "link", SESSION, "DRA-53", "DRA-54", "--title", "One",
         ])
         .unwrap();
 
@@ -1450,7 +1450,7 @@ mod tests {
 
     /// The whole point: the documented invocation names no environment variable,
     /// because the Claude Code harness refuses a command that does inside a
-    /// worktree — which is every session `dray new` makes.
+    /// worktree — which is every session `carbon new` makes.
     #[test]
     fn issues_alone_take_the_session_from_the_environment() {
         let split =
@@ -1498,10 +1498,10 @@ mod tests {
     /// `unlink` shares the arguments so it gains the short form too.
     #[test]
     fn both_forms_parse() {
-        assert!(Cli::try_parse_from(["dray", "issue", "link", "DRA-53"]).is_ok());
-        assert!(Cli::try_parse_from(["dray", "issue", "unlink", "DRA-53"]).is_ok());
-        assert!(Cli::try_parse_from(["dray", "issue", "link", SESSION, "DRA-53"]).is_ok());
-        assert!(Cli::try_parse_from(["dray", "issue", "link"]).is_err());
+        assert!(Cli::try_parse_from(["carbon", "issue", "link", "DRA-53"]).is_ok());
+        assert!(Cli::try_parse_from(["carbon", "issue", "unlink", "DRA-53"]).is_ok());
+        assert!(Cli::try_parse_from(["carbon", "issue", "link", SESSION, "DRA-53"]).is_ok());
+        assert!(Cli::try_parse_from(["carbon", "issue", "link"]).is_err());
     }
 
     #[test]
@@ -1509,51 +1509,51 @@ mod tests {
         // Sessions created here run at the same time by design, so sharing a
         // checkout is never the right answer — the flag is gone rather than
         // defaulted.
-        assert!(Cli::try_parse_from(["dray", "new", "x", "--no-worktree"]).is_err());
+        assert!(Cli::try_parse_from(["carbon", "new", "x", "--no-worktree"]).is_err());
     }
 
     /// The old spellings still parse — agents with an older skill, and remote
-    /// servers the app runs `dray service start` and `dray tunnel` on — and a
+    /// servers the app runs `carbon service start` and `carbon tunnel` on — and a
     /// bare group prints its help rather than acting.
     #[test]
     fn new_tree_and_old_spellings_parse() {
         let parses = |argv: &[&str]| Cli::try_parse_from(argv).map(|_| ()).map_err(|e| e.kind());
         for argv in [
-            &["dray", "session", "new", "x", "--base", "main", "--title", "T"][..],
-            &["dray", "session", "settle", SESSION, "--delete-worktree"],
-            &["dray", "session", "set-aside", SESSION],
-            &["dray", "session", "rename", SESSION, "New name"],
-            &["dray", "share", "start", "5173"],
-            &["dray", "share", "ls", "--all", "--json"],
-            &["dray", "server", "install", "--tools", "git,gh"],
-            &["dray", "server", "tunnel", "on"],
-            &["dray", "issue", "link", "DRA-53", "--session", SESSION],
-            &["dray", "completion", "zsh"],
-            &["dray", "new", "x", "--from", "main"],
-            &["dray", "ls"],
-            &["dray", "send", SESSION, "hi"],
-            &["dray", "share", "5173"],
-            &["dray", "setup", "--install", "git"],
-            &["dray", "serve", "--port", "7317"],
-            &["dray", "service", "start"],
-            &["dray", "tunnel"],
+            &["carbon", "session", "new", "x", "--base", "main", "--title", "T"][..],
+            &["carbon", "session", "settle", SESSION, "--delete-worktree"],
+            &["carbon", "session", "set-aside", SESSION],
+            &["carbon", "session", "rename", SESSION, "New name"],
+            &["carbon", "share", "start", "5173"],
+            &["carbon", "share", "ls", "--all", "--json"],
+            &["carbon", "server", "install", "--tools", "git,gh"],
+            &["carbon", "server", "tunnel", "on"],
+            &["carbon", "issue", "link", "DRA-53", "--session", SESSION],
+            &["carbon", "completion", "zsh"],
+            &["carbon", "new", "x", "--from", "main"],
+            &["carbon", "ls"],
+            &["carbon", "send", SESSION, "hi"],
+            &["carbon", "share", "5173"],
+            &["carbon", "setup", "--install", "git"],
+            &["carbon", "serve", "--port", "7317"],
+            &["carbon", "service", "start"],
+            &["carbon", "tunnel"],
         ] {
             assert_eq!(parses(argv), Ok(()), "{argv:?}");
         }
         let help = Err(clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand);
         for group in ["session", "server", "machine", "share", "draft"] {
-            assert_eq!(parses(&["dray", group]), help, "{group}");
+            assert_eq!(parses(&["carbon", group]), help, "{group}");
         }
         let Ok(Cli { command: Command::Session(SessionCommand::New(new)), .. }) =
-            Cli::try_parse_from(["dray", "session", "new", "x", "--from", "main"])
+            Cli::try_parse_from(["carbon", "session", "new", "x", "--from", "main"])
         else {
             panic!("not a create");
         };
         assert_eq!(new.base.as_deref(), Some("main"));
         // Global, so it reads after the verb as well as before it.
         for argv in [
-            &["dray", "--machine", "vps", "session", "ls"][..],
-            &["dray", "session", "send", "id", "hi", "--machine", "vps"],
+            &["carbon", "--machine", "vps", "session", "ls"][..],
+            &["carbon", "session", "send", "id", "hi", "--machine", "vps"],
         ] {
             let cli = Cli::try_parse_from(argv).unwrap();
             assert_eq!(cli.machine.as_deref(), Some("vps"), "{argv:?}");
@@ -1562,15 +1562,15 @@ mod tests {
 
     #[test]
     fn the_worktree_cannot_be_named_either() {
-        // An agent has no basis for picking a name, Dray generates a readable
+        // An agent has no basis for picking a name, Carbon generates a readable
         // one, and a caller-supplied name is one more thing that can collide.
-        assert!(Cli::try_parse_from(["dray", "new", "x", "--worktree-name", "n"]).is_err());
+        assert!(Cli::try_parse_from(["carbon", "new", "x", "--worktree-name", "n"]).is_err());
     }
 
     #[test]
     fn the_skill_carries_frontmatter_claude_code_can_read() {
         assert!(SKILL.starts_with("---\n"), "skill needs YAML frontmatter");
-        assert!(SKILL.contains("\nname: dray\n"));
+        assert!(SKILL.contains("\nname: carbon\n"));
         assert!(SKILL.contains("\ndescription: "));
     }
 
@@ -1615,7 +1615,7 @@ mod tests {
 
     #[test]
     fn a_plain_directory_is_no_project() {
-        let dir = std::env::temp_dir().join(format!("dray-clitest-plain-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("carbon-clitest-plain-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
         assert_eq!(repo_root(&dir), None);
@@ -1628,7 +1628,7 @@ mod tests {
     /// `None` when there is no usable git, which is not a failure worth failing
     /// the suite over.
     fn scratch_repo() -> Option<PathBuf> {
-        let dir = std::env::temp_dir().join(format!("dray-clitest-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("carbon-clitest-{}", std::process::id()));
         // A run that failed before its cleanup would otherwise leave a repo
         // here whose `child` worktree already exists.
         let _ = std::fs::remove_dir_all(&dir);

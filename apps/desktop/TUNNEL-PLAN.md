@@ -2,8 +2,8 @@
 
 monorepo-labs/dray#452. Until now a client reached a remote server over SSH
 alone ([SSH-PLAN.md](SSH-PLAN.md)), which needs a public IP and a key on the
-client. A phone cannot run `ssh` at all. This puts the quick tunnel `dray
-share` already runs for dev servers (#434) in front of `dray-serve` itself.
+client. A phone cannot run `ssh` at all. This puts the quick tunnel `carbon
+share` already runs for dev servers (#434) in front of `carbon-serve` itself.
 
 Two PRs: the Linux half, then the Mac half — the app serving, turned on from
 the This Mac row.
@@ -20,29 +20,29 @@ address. The client keeps the token and asks for the new address when the old
 one stops answering. Where the app also has an SSH login to that server it
 reads the address off the server and never asks.
 
-**`dray tunnel`** runs the tunnel in the foreground, in front of the port
-`dray-serve` uses (`dray_proto::SERVE_PORT`, `--port` to change it). It writes
-the address to `~/.dray/tunnel-url` once cloudflared says the tunnel is
+**`carbon tunnel`** runs the tunnel in the foreground, in front of the port
+`carbon-serve` uses (`carbon_proto::SERVE_PORT`, `--port` to change it). It writes
+the address to `~/.carbon/tunnel-url` once cloudflared says the tunnel is
 registered **and** the name resolves at 1.1.1.1, and removes the file when it
-exits. Registered alone was `dray share`'s rule and is not enough: see below. It
+exits. Registered alone was `carbon share`'s rule and is not enough: see below. It
 refuses to start where no server answers on the port, and where no
-`cloudflared` is found it names `dray setup --install cloudflared` and stops.
-It looks where `dray setup` installs it and where `dray share` downloads it.
+`cloudflared` is found it names `carbon setup --install cloudflared` and stops.
+It looks where `carbon setup` installs it and where `carbon share` downloads it.
 
 **The connect line is one line**, `wss://<host> <token>`, printed only when
 stdout is a terminal: under systemd stdout is the journal, and the token must
 not be logged. Pasted into Add server's Address field it fills the token too.
 
-**A public address is opt-in.** `dray service tunnel on` installs
-`dray-tunnel.service` beside `dray.service`: `PartOf` stops and restarts it
-with the server, `WantedBy=dray.service` starts it whenever the server starts,
+**A public address is opt-in.** `carbon service tunnel on` installs
+`carbon-tunnel.service` beside `carbon.service`: `PartOf` stops and restarts it
+with the server, `WantedBy=carbon.service` starts it whenever the server starts,
 boot included, and `Restart=on-failure` brings it back when Cloudflare drops
-it. Plain `dray service start` — which setup and every SSH connect run — never
-adds one and leaves one already there alone. `dray service tunnel off` takes it
-down; `dray service uninstall` takes both. `dray service status` prints the
+it. Plain `carbon service start` — which setup and every SSH connect run — never
+adds one and leaves one already there alone. `carbon service tunnel off` takes it
+down; `carbon service uninstall` takes both. `carbon service status` prints the
 current address and, on a terminal, the connect line.
 
-**Stopping removes the file.** `dray tunnel` passes SIGHUP, SIGINT and SIGTERM
+**Stopping removes the file.** `carbon tunnel` passes SIGHUP, SIGINT and SIGTERM
 on to cloudflared through a handler rather than ignoring them, since an
 ignored signal stays ignored across `exec`, and lives on to remove the address.
 It removes it only while it still holds its own address. A `kill -9` leaves it
@@ -61,7 +61,7 @@ on the system's roots, both already in the tree under `reqwest`, so no OpenSSL
 and no new crate. `https://` is read as `wss://`.
 
 **An SSH server records its tunnel address.** The connect script prints
-`DRAY-SSH tunnel <address>` where `tunnel-url` exists, and the app keeps it as
+`CARBON-SSH tunnel <address>` where `tunnel-url` exists, and the app keeps it as
 the server's `url` beside the SSH target, with the token in `credentials.json`
 (`0600`). When the login fails, the loop tries that address with that token
 before reporting the SSH failure. A login that finds no tunnel forgets both.
@@ -77,13 +77,13 @@ tunnel is down — keeps retrying as before.
 
 ## What was measured
 
-- A WebSocket through a quick tunnel to `dray-serve`: admitted in ~1.1s from
+- A WebSocket through a quick tunnel to `carbon-serve`: admitted in ~1.1s from
   the Mac, a call answered 85ms later. `/file` answered 404 outside its
   directories and 401 on a wrong token, through the tunnel.
 - Origin through the tunnel: the tunnel's own origin 101, `https://evil.test`
   403. Over HTTP/2 Cloudflare answers 502 to any upgrade, so a client must
   speak HTTP/1.1 for the handshake — every WebSocket client does.
-- SIGTERM to `dray tunnel`: cloudflared gone and `tunnel-url` removed within
+- SIGTERM to `carbon tunnel`: cloudflared gone and `tunnel-url` removed within
   0.5s.
 - A stopped tunnel's host: HTTP 530 while its DNS still resolves, NXDOMAIN
   later. An address that never existed: NXDOMAIN at once.
@@ -91,13 +91,13 @@ tunnel is down — keeps retrying as before.
   resolved at 1.1.1.1 1.6s and 2.6s later in two runs, and a resolver that
   asked in that gap cached the miss for the zone's 60s (the VPS's own resolver
   answered at 59.3s both times; this Mac's ISP resolver the same). The first
-  live test failed on exactly this. So `dray tunnel` polls 1.1.1.1's
+  live test failed on exactly this. So `carbon tunnel` polls 1.1.1.1's
   DNS-over-HTTPS through `curl` before handing the address out, up to 15s, and
-  `dray share` now does the same through `reqwest` — its links had the same
+  `carbon share` now does the same through `reqwest` — its links had the same
   gap.
 
 - **Live, against the test VPS** (`servers::tests::follows_the_tunnel`, run
-  with `DRAY_TEST_SSH`): added by address alone and admitted through the
+  with `CARBON_TEST_SSH`): added by address alone and admitted through the
   tunnel in ~1.7s; the tunnel restarted, the row asked for a new address,
   and the new one connected with the kept token. Added over SSH, the address
   was recorded with the token in `credentials.json`, never `servers.json`;
@@ -105,32 +105,32 @@ tunnel is down — keeps retrying as before.
   connected by tunnel in 11.1s, 10s of it `ssh`'s own timeout; with the login
   back, a tunnel restart was followed with no question. The stage 3 and 4
   live tests pass too, the stage 3 one entirely over `wss://`.
-- `dray service tunnel on` on the VPS: address in ~6s, no token in the
-  journal. `systemctl --user restart dray` took the tunnel with it; its first
+- `carbon service tunnel on` on the VPS: address in ~6s, no token in the
+  journal. `systemctl --user restart carbon` took the tunnel with it; its first
   start lost the race to the server binding and `Restart=` brought it back
   5s later.
 
 ## The Mac serving (PR 2)
 
 **Since #456 the Mac's background server does this, not the app.** The
-listener, the tunnel and the setting moved into `dray --serve` whole, so
-quitting Dray no longer stops them; a sleeping Mac still does, and Quit and
+listener, the tunnel and the setting moved into `carbon --serve` whole, so
+quitting Carbon no longer stops them; a sleeping Mac still does, and Quit and
 stop sessions. The row calls the server through `local` as any other screen
 does, and `serve::listen` is now the server's own second listener. What
 follows is the app-hosted version as it was built. See MAC-SERVER-PLAN.md.
 
 **A button on the This Mac row in Settings, Servers**, not a switch: a
 switch on that row reads as turning the Mac off. On, the app runs the
-listener `dray-serve` runs, in this process on `127.0.0.1`, with the same
+listener `carbon-serve` runs, in this process on `127.0.0.1`, with the same
 `serve-token`, and a quick tunnel in front of it. Another Mac connects to the
 very sessions on this screen: one process, one data dir, no second writer, and
-agents keep the Mac's own browser. Quitting Dray or a sleeping Mac stops it,
+agents keep the Mac's own browser. Quitting Carbon or a sleeping Mac stops it,
 and the row says so in one line. The choice is kept in `settings.json`
 (`remoteAccess`), since Rust starts serving at launch before any webview
 exists. Until the address is up, about 20s, the row says it is starting.
 
 **`serve.rs` is split in two: a `Hub` and `listen`.** The hub is the event
-broadcast plus `Live`, what a connecting client snapshots. `dray-serve` builds
+broadcast plus `Live`, what a connecting client snapshots. `carbon-serve` builds
 its `Sink` on one; the desktop's `Sink` publishes into `serve::HUB` as well as
 the webview, so no call site moved. The hub notes `Live` whether or not the
 app is serving, so a client connecting later still gets the open cards, and
@@ -154,10 +154,10 @@ it to the clipboard and keeps a marker, not the text. `get_settings` carries
 none of it.
 
 **A dev build serves beside the release app**: port 7318 and
-`tunnel-url-dev`, since the two share `~/.dray` and its token.
+`tunnel-url-dev`, since the two share `~/.carbon` and its token.
 
 Measured: the in-process server through a real tunnel, in a throwaway
-`DRAY_HOME` (`remote_access::tests::serves_through_a_tunnel`): an address in
+`CARBON_HOME` (`remote_access::tests::serves_through_a_tunnel`): an address in
 ~20s from this Mac, a client admitted, an event the core emitted reaching it,
 and off dropping it and removing the address file. Then the dev app itself,
 launched with the switch already on: it served at launch, and the stage 3 live
@@ -186,7 +186,7 @@ answered, the Mac-only `open_in_app` refused as unknown, reconnect.
 **The quick tunnel is gone; every public address is OpenTunnel's.** A blind
 TLS relay: the `opentunnel` crate runs in-process, holds the certificate's
 private key and ends TLS here, so the relay never sees plaintext. Its identity
-lives in `<DRAY_HOME>/opentunnel`, so an address outlives a restart, and each
+lives in `<CARBON_HOME>/opentunnel`, so an address outlives a restart, and each
 home — release, dev build, worktree — gets its own. Deleting that directory is
 the only way to new addresses. No account, no download, no child process.
 
@@ -202,15 +202,15 @@ the only way to new addresses. No account, no download, no child process.
   server. The relay forwards bytes untouched, and Vite refuses a Host it does
   not know; cloudflared's `--http-host-header` did this before. HTTP/1.1, with
   upgrades spliced through for HMR.
-- **`dray-serve` runs the tunnel itself.** `dray server tunnel on` sends
+- **`carbon-serve` runs the tunnel itself.** `carbon server tunnel on` sends
   `set_remote_access` (protocol v11) and waits for `tunnel-url`; the server
-  remembers it in `settings.json`, as the Mac's does. An old `dray-tunnel`
-  unit's `dray tunnel` now just asks the same, and `tunnel on|off` removes the
-  unit. On a Mac with the app, `dray server tunnel` is the This Mac button.
+  remembers it in `settings.json`, as the Mac's does. An old `carbon-tunnel`
+  unit's `carbon tunnel` now just asks the same, and `tunnel on|off` removes the
+  unit. On a Mac with the app, `carbon server tunnel` is the This Mac button.
 - **The Mac's Remote access listener takes any free port**, since nothing
   needs to know it but the route.
 
 Measured: Remote access through the relay, first start 25s (the certificate),
 a client admitted and an event delivered, off and on again the same address.
-`dray-serve` restarted came back on the same address in 1s. A share link
+`carbon-serve` restarted came back on the same address in 1s. A share link
 reached a Host-echoing server as `localhost:<port>` 0.5s after attach.

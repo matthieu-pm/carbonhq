@@ -166,11 +166,11 @@ static PI_PATH: OnceCell<PathBuf> = OnceCell::const_new();
 /// **There is no version floor here, and one is coming.** pi below 0.80.6 does
 /// not send `agent_settled`, which is the only line that closes a turn — so a
 /// turn opens and never ends, the session sits `in_progress` forever with the
-/// transcript complete on screen, and that reads as Dray being broken.
+/// transcript complete on screen, and that reads as Carbon being broken.
 ///
 /// It is deliberately not a version compare. A number is a proxy for the
 /// question actually worth asking, which is whether *this* pi answers the
-/// commands Dray drives it with — and the model probe already has to spawn
+/// commands Carbon drives it with — and the model probe already has to spawn
 /// `pi --mode rpc` and ask, so the real check costs nothing extra there and a
 /// constant here would be a second thing to keep true.
 pub async fn pi() -> PathBuf {
@@ -237,7 +237,7 @@ pub async fn agent_available(harness: Harness) -> bool {
 ///
 /// Split from [`agent_available`] because the two are different questions with
 /// different cures, and folding them cost the reader the useful half: a pi that
-/// is genuinely missing was reported as "Dray can't run pi yet", which names no
+/// is genuinely missing was reported as "Carbon can't run pi yet", which names no
 /// cure, while an installed one was never looked for at all.
 pub async fn agent_installed(harness: Harness) -> bool {
     agent_binary(harness).await.is_absolute()
@@ -292,10 +292,10 @@ async fn speaks_app_server(bin: &Path) -> bool {
     String::from_utf8_lossy(&output.stdout).contains("app-server")
 }
 
-/// The `dray` the reader's own shell runs, which a CLI installed with
-/// `DRAY_INSTALL_DIR` can put ahead of the app's copy in `~/.local/bin`.
-pub async fn shell_dray() -> Option<PathBuf> {
-    login_shell_which("dray").await
+/// The `carbon` the reader's own shell runs, which a CLI installed with
+/// `CARBON_INSTALL_DIR` can put ahead of the app's copy in `~/.local/bin`.
+pub async fn shell_carbon() -> Option<PathBuf> {
+    login_shell_which("carbon").await
 }
 
 /// Looks for `bin` on the inherited `PATH`, then in the usual install
@@ -535,7 +535,7 @@ async fn login_shell_path() -> Option<OsString> {
         // Behind a marker, since an rc file is free to print on its own.
         // `printenv` rather than `$PATH`, which fish expands as a list, and by
         // absolute path, since the `PATH` being read need not hold it.
-        .args(["-l", "-c", "echo __DRAY_PATH__; /usr/bin/printenv PATH"])
+        .args(["-l", "-c", "echo __CARBON_PATH__; /usr/bin/printenv PATH"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
@@ -547,7 +547,7 @@ async fn login_shell_path() -> Option<OsString> {
     }
 
     let out = String::from_utf8(output.stdout).ok()?;
-    let (_, path) = out.rsplit_once("__DRAY_PATH__\n")?;
+    let (_, path) = out.rsplit_once("__CARBON_PATH__\n")?;
     Some(path.trim_end().into())
 }
 
@@ -587,7 +587,7 @@ mod tests {
     /// path that fails only at spawn time.
     #[tokio::test]
     async fn a_missing_binary_resolves_to_none() {
-        assert!(resolve("dray-definitely-not-a-real-binary").await.is_none());
+        assert!(resolve("carbon-definitely-not-a-real-binary").await.is_none());
     }
 
     /// The marker is what separates the `PATH` from anything an rc file
@@ -601,7 +601,7 @@ mod tests {
     /// with the binary one level further in under the tool's own name.
     #[test]
     fn finds_a_binary_nested_under_a_version_dir() {
-        let root = std::env::temp_dir().join("dray-binpath-versioned-test");
+        let root = std::env::temp_dir().join("carbon-binpath-versioned-test");
         let _ = std::fs::remove_dir_all(&root);
         let place = |rel: &str| {
             let bin = root.join(rel);
@@ -657,7 +657,7 @@ mod tests {
     async fn the_app_server_probe_finds_the_interpreter_beside_the_candidate() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join("dray-binpath-probe-test");
+        let dir = std::env::temp_dir().join("carbon-binpath-probe-test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let script = |name: &str, body: &str| {
@@ -666,8 +666,8 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
             path
         };
-        script("dray-fake-node", "#!/bin/sh\necho 'codex app-server'\n");
-        let codex = script("codex", "#!/usr/bin/env dray-fake-node\n");
+        script("carbon-fake-node", "#!/bin/sh\necho 'codex app-server'\n");
+        let codex = script("codex", "#!/usr/bin/env carbon-fake-node\n");
 
         assert!(speaks_app_server(&codex).await);
 

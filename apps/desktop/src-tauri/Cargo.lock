@@ -615,6 +615,62 @@ dependencies = [
 ]
 
 [[package]]
+name = "carbon"
+version = "0.29.17"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "block2",
+ "carbon-proto",
+ "cef",
+ "chrono",
+ "cpal",
+ "earshot",
+ "fff-search",
+ "flate2",
+ "form_urlencoded",
+ "futures-util",
+ "hyper",
+ "hyper-util",
+ "libc",
+ "notify",
+ "notify-rust",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "opentunnel",
+ "qrcode",
+ "reqwest",
+ "rubato",
+ "rustls",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-macos-permissions",
+ "tauri-plugin-opener",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "tokio",
+ "tokio-tungstenite",
+ "transcribe-cpp",
+ "ts-rs",
+ "uuid",
+ "zip 9.0.5",
+]
+
+[[package]]
+name = "carbon-proto"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cargo-platform"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1400,62 +1456,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "dray"
-version = "0.29.17"
-dependencies = [
- "anyhow",
- "base64 0.23.1",
- "block2",
- "cef",
- "chrono",
- "cpal",
- "dray-proto",
- "earshot",
- "fff-search",
- "flate2",
- "form_urlencoded",
- "futures-util",
- "hyper",
- "hyper-util",
- "libc",
- "notify",
- "notify-rust",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "opentunnel",
- "qrcode",
- "reqwest",
- "rubato",
- "rustls",
- "semver",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-macos-permissions",
- "tauri-plugin-opener",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "tokio",
- "tokio-tungstenite",
- "transcribe-cpp",
- "ts-rs",
- "uuid",
- "zip 9.0.5",
-]
-
-[[package]]
-name = "dray-proto"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]

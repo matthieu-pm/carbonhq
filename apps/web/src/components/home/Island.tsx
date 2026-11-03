@@ -75,7 +75,7 @@ export function Island() {
                 </div>
               </div>
             </div>
-            {/* The done pill, in place of Dray's banner: one session names itself and offers Open in app. */}
+            {/* The done pill, in place of Carbon's banner: one session names itself and offers Open in app. */}
             <div className="absolute top-0 left-1/2 h-[70px] w-[320px] -translate-x-1/2">
               <div className={`absolute inset-0 ${s.donePill}`}>
                 <svg

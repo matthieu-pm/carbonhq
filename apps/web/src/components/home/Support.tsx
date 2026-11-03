@@ -195,7 +195,7 @@ export function Support({ from, stars = 0 }: { from: "download" | "support"; sta
         <section aria-label="Other ways to help" className="mt-4 text-[15px] leading-6 tracking-[-0.01em] text-[#A1A1A1] light:text-[#5C5C5C]">
           <div className={`border ${RULE}`}>
             <Way href={REPO} onClick={() => tell("github")} icon={<GitHubGlyph className="size-4" />} title="Star it on GitHub">
-              {formatStars(stars)} stars so far. Each one helps someone else find Dray.
+              {formatStars(stars)} stars so far. Each one helps someone else find Carbon.
             </Way>
           </div>
         </section>

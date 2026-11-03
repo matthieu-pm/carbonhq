@@ -1,9 +1,9 @@
-//! Codex's approval requests onto Dray's permission card.
+//! Codex's approval requests onto Carbon's permission card.
 //!
 //! The same bargain [`claude_code::permissions`](crate::harness::claude_code::permissions)
 //! makes, and for the same reason: **the options are the server's, not ours**.
 //! Codex names what it will accept in `availableDecisions`, and each button
-//! carries that value back untouched — so a decision Dray never has to compose
+//! carries that value back untouched — so a decision Carbon never has to compose
 //! is one it can never compose wrongly.
 //!
 //! What differs is the reply. Claude answers a `control_request` with a

@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
-use dray_proto::SharedPort;
+use carbon_proto::SharedPort;
 use hyper::body::Incoming;
 use hyper::header::{HeaderValue, HOST, ORIGIN, UPGRADE};
 use hyper::{Request, StatusCode};
@@ -267,7 +267,7 @@ mod tests {
         assert_ne!(t.stamp("s", 5173), before, "a settle stops every port");
     }
 
-    /// A link through the real relay, in a throwaway `DRAY_HOME`: a visitor's
+    /// A link through the real relay, in a throwaway `CARBON_HOME`: a visitor's
     /// request reaches the dev server as local traffic, and the link comes
     /// back the same after it was taken down.
     ///
@@ -277,9 +277,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn a_link_reaches_the_dev_server() {
-        let home = std::env::temp_dir().join(format!("dray-share-test-{}", uuid::Uuid::new_v4().simple()));
+        let home = std::env::temp_dir().join(format!("carbon-share-test-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&home).unwrap();
-        std::env::set_var("DRAY_HOME", &home);
+        std::env::set_var("CARBON_HOME", &home);
         // Answers with the Host it was sent, the way Vite judges one.
         let server = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = server.local_addr().unwrap().port();

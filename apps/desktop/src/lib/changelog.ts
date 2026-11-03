@@ -3,7 +3,7 @@ import { version as APP_VERSION } from "../../src-tauri/tauri.conf.json";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 import type { UpdateChannel } from "@/types/events";
 
-/// What drayhq.com/changelog.json answers, parsed from CHANGELOG.md by the
+/// What carbonhq.com/changelog.json answers, parsed from CHANGELOG.md by the
 /// site. Stated again here because the two apps share no code; the site's
 /// [changelog.ts](../../../web/src/lib/changelog.ts) is the one to change first.
 export type ChangelogMedia = { kind: "image" | "video"; url: string; alt: string };
@@ -19,12 +19,12 @@ export type Release = {
 
 /// `www`, not the apex: the apex answers with a redirect, and a redirect
 /// carries no CORS header for the webview to pass.
-const URL = "https://www.drayhq.com/changelog.json";
+const URL = "https://www.carbonhq.com/changelog.json";
 
 /// The newest release the reader has been told about, or skipped past.
 const SEEN_KEY = "ade.changelogSeen";
 
-/// A webview that never ran Dray holds no keys at all, which is the one reading
+/// A webview that never ran Carbon holds no keys at all, which is the one reading
 /// that tells a fresh install from an older one meeting this feature. So a fresh
 /// install records its own version as seen here, at module load, before
 /// anything else writes a key — not once the feed arrives, since a launch whose

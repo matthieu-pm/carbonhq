@@ -49,7 +49,7 @@ describe("chipLabel", () => {
 
   it("refuses a command, a url and plain prose", () => {
     expect(highlightSegments("/caveman").map(chipLabel)).toEqual([null]);
-    expect(highlightSegments("https://drayhq.com").map(chipLabel)).toEqual([null]);
+    expect(highlightSegments("https://carbonhq.com").map(chipLabel)).toEqual([null]);
     expect(highlightSegments("just words").map(chipLabel)).toEqual([null]);
   });
 });

@@ -60,7 +60,7 @@ fn discover(root: Option<u32>, tree: Option<&Path>) -> Vec<LocalServer> {
             .map(|(tree, cwd)| resolved(cwd).starts_with(tree))
             .unwrap_or(false)
     };
-    // Dray's own DevTools port lists otherwise: a dev build runs from the tree.
+    // Carbon's own DevTools port lists otherwise: a dev build runs from the tree.
     let me = std::process::id();
     let mut seen = HashSet::new();
     let mut out: Vec<LocalServer> = listeners

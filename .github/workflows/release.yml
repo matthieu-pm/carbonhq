@@ -72,7 +72,7 @@ jobs:
             found && /^## / { exit }
             found { print }
           ' apps/desktop/CHANGELOG.md)"
-          BODY="$(printf '%s\n' "$BODY" | sed 's#](changelog/#](https://www.drayhq.com/changelog/#g')"
+          BODY="$(printf '%s\n' "$BODY" | sed 's#](changelog/#](https://www.carbonhq.com/changelog/#g')"
 
           # A stable release with no section would publish notes saying nothing,
           # which is worth stopping for — same reason the version guard above
@@ -112,20 +112,20 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
-      # Dray Island, the Swift panel shipped inside the bundle. Built and signed
+      # Carbon Island, the Swift panel shipped inside the bundle. Built and signed
       # ahead of the bundler for the helpers' reason above.
-      - name: Build Dray Island
+      - name: Build Carbon Island
         env:
           SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           brew install xcodegen
           apps/island/build.sh apps/desktop/src-tauri/target/island
 
-      # The `dray` CLI, shipped inside the app so every Mac with Dray has one
+      # The `carbon` CLI, shipped inside the app so every Mac with Carbon has one
       # matching it (cli.rs copies it out on launch). Built here and not as
       # `beforeBundleCommand`: tauri-build copies the per-arch sidecar while
       # compiling the app, before that hook runs.
-      - name: Build the dray CLI
+      - name: Build the carbon CLI
         run: apps/desktop/scripts/cli-sidecar.sh apps/desktop/src-tauri/target/cli
 
       - uses: tauri-apps/tauri-action@v0
@@ -161,7 +161,7 @@ jobs:
           # entry into per-arch keys in `latest.json`, so a client asking for
           # `darwin-aarch64` finds it. `cef` turns the browser on, and the
           # overlay config puts the helper apps in Contents/Frameworks; the
-          # island one puts Dray Island in Contents/Helpers, the cli one the
+          # island one puts Carbon Island in Contents/Helpers, the cli one the
           # CLI in Contents/MacOS.
           args: --target universal-apple-darwin --features cef --config src-tauri/tauri.cef.conf.json --config src-tauri/tauri.island.conf.json --config src-tauri/tauri.cli.conf.json
 
@@ -185,19 +185,19 @@ jobs:
           APP="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/$(jq -r .productName apps/desktop/src-tauri/tauri.conf.json).app"
           test ! -e "$APP/Contents/Frameworks/Chromium Embedded Framework.framework"
           for h in "" " (GPU)" " (Renderer)" " (Plugin)" " (Alerts)"; do
-            HELPER="$APP/Contents/Frameworks/Dray Helper$h.app"
+            HELPER="$APP/Contents/Frameworks/Carbon Helper$h.app"
             codesign --verify --strict "$HELPER"
             codesign -d --entitlements - "$HELPER" 2>&1 | grep -q disable-library-validation
           done
           codesign -d --entitlements - "$APP" 2>&1 | grep -q disable-library-validation
-          codesign --verify --strict "$APP/Contents/Helpers/Dray Island.app"
+          codesign --verify --strict "$APP/Contents/Helpers/Carbon Island.app"
 
       # Copied out of the bundle to ~/.local/bin, where it runs on its own
       # signature. Both arches, or an Intel Mac gets a CLI it cannot run.
       - name: Verify the bundled CLI
         run: |
           APP="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/$(jq -r .productName apps/desktop/src-tauri/tauri.conf.json).app"
-          CLI="$APP/Contents/MacOS/dray-cli"
+          CLI="$APP/Contents/MacOS/carbon-cli"
           codesign --verify --strict "$CLI"
           codesign -d --verbose=2 "$CLI" 2>&1 | grep -q 'flags=.*runtime'
           lipo "$CLI" -verify_arch arm64 x86_64
@@ -231,9 +231,9 @@ jobs:
           }
           DMG="$(ls "$BUNDLE"/dmg/*.dmg)"
           put "$DMG" "${GITHUB_REF_NAME}/$(basename "$DMG")"
-          # The bundler writes `Dray.app.tar.gz`; tauri-action renames it on
+          # The bundler writes `Carbon.app.tar.gz`; tauri-action renames it on
           # upload, and the manifest names the renamed one.
-          put "$(ls "$BUNDLE"/macos/*.app.tar.gz)" "${GITHUB_REF_NAME}/Dray_universal.app.tar.gz"
+          put "$(ls "$BUNDLE"/macos/*.app.tar.gz)" "${GITHUB_REF_NAME}/Carbon_universal.app.tar.gz"
           echo "dmg=$(basename "$DMG")" >> "$GITHUB_OUTPUT"
 
   # The manifests live on a branch rather than in the release, because
@@ -332,7 +332,7 @@ jobs:
           # release means this one did not win. A server-side copy of the key
           # the build job uploaded; nothing is re-sent.
           if [ "$(jq -r '.version // empty' stable.json 2>/dev/null)" = "$NEW" ]; then
-            aws s3 cp "s3://${R2_BUCKET}/${GITHUB_REF_NAME}/${DMG}" "s3://${R2_BUCKET}/Dray_universal.dmg" \
+            aws s3 cp "s3://${R2_BUCKET}/${GITHUB_REF_NAME}/${DMG}" "s3://${R2_BUCKET}/Carbon_universal.dmg" \
               --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
               --metadata-directive REPLACE \
               --content-type application/x-apple-diskimage \

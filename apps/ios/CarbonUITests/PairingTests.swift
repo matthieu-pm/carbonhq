@@ -1,0 +1,44 @@
+import XCTest
+
+/// A `carbon://connect` link, the way the system Camera hands one over: it
+/// opens Add server filled in, and Add connects. Same scratch server as
+/// `SmokeTests`, through the same `TEST_RUNNER_CARBON_URL`/`_TOKEN`.
+final class PairingTests: XCTestCase {
+    func testPairLinkFillsAddServer() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["CARBON_URL"], let token = env["CARBON_TOKEN"] else {
+            throw XCTSkip("set TEST_RUNNER_CARBON_URL and TEST_RUNNER_CARBON_TOKEN")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-servers", ""]
+        app.launch()
+
+        let encoded = url.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        app.open(URL(string: "carbon://connect?url=\(encoded)&token=\(token)&name=Scratch%20Mac")!)
+
+        let address = app.textFields["Address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10), "Add server never opened")
+        XCTAssertEqual(address.value as? String, url)
+        XCTAssertEqual(app.textFields["Name"].value as? String, "Scratch Mac")
+        snap(app, "1-paired")
+
+        // The scanner itself needs a camera; the simulator has none, so this sees its fallback.
+        // The sheet's, not the empty list's under it.
+        app.buttons.matching(identifier: "Scan QR code").allElementsBoundByIndex.first { $0.isHittable }?.tap()
+        snap(app, "2-scanner")
+        app.buttons.matching(identifier: "Cancel").allElementsBoundByIndex.first { $0.isHittable }?.tap()
+
+        app.buttons["Add"].tap()
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.staticTexts["Scratch Mac"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 15), "never connected")
+        snap(app, "3-connected")
+    }
+
+    private func snap(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+}

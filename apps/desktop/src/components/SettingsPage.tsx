@@ -81,12 +81,12 @@ import type {
 /// the next person with the same bug can find; a direct message is beside it for
 /// what an issue is too heavy for.
 const CONTACT_URL = "https://x.com/yogesharc";
-const REPO_URL = "https://github.com/monorepo-labs/dray";
+const REPO_URL = "https://github.com/matthieu-pm/carbonhq";
 const ISSUES_URL = `${REPO_URL}/issues/new`;
 // The landing page's own link, so both ask through one door.
-const SPONSOR_URL = "https://www.drayhq.com/support";
+const SPONSOR_URL = "https://www.carbonhq.com/support";
 
-/// People who sponsor Dray, drawn in About — the landing page's "Supported by"
+/// People who sponsor Carbon, drawn in About — the landing page's "Supported by"
 /// list, kept in step by hand. Avatars are bundled rather than fetched, so the
 /// row is whole offline; without one it carries an initial.
 const SUPPORTERS: { name: string; note: string; url: string; avatar?: string }[] = [
@@ -380,7 +380,7 @@ function OpenFilesRow() {
   });
 
   /// Asks again, on mount and whenever the menu opens — an editor installed
-  /// while Dray was running is otherwise absent until a restart, and the menu
+  /// while Carbon was running is otherwise absent until a restart, and the menu
   /// opening is the one moment the list has to be current.
   const refresh = useCallback(() => {
     void load().then(setApps);
@@ -395,7 +395,7 @@ function OpenFilesRow() {
   const unavailable = !IS_MAC
     ? "Opening a file in another app is macOS-only for now."
     : apps !== null && editors.length === 0
-      ? "No editor Dray knows about is installed, so filenames open in Finder."
+      ? "No editor Carbon knows about is installed, so filenames open in Finder."
       : null;
 
   return (
@@ -809,7 +809,7 @@ function BrowserRow() {
         error ? (
           <span className="text-destructive">{error}</span>
         ) : confirming ? (
-          "Chromium will be downloaded again the next time Dray starts."
+          "Chromium will be downloaded again the next time Carbon starts."
         ) : (
           describeChromium(status)
         )
@@ -890,7 +890,7 @@ function IssueTrackerRow({
           label="Issue tracker"
           description={
             confirming
-              ? "Dray will forget the key. Sessions keep the issues they are tagged with."
+              ? "Carbon will forget the key. Sessions keep the issues they are tagged with."
               : // The mark rather than the word, since the word is already the row's
                 // subject — and it is what makes this row findable at a glance in a
                 // dialog of sentences.
@@ -959,7 +959,7 @@ function SupportBlock() {
   return (
     <div className="flex flex-col gap-2.5">
       <p className="text-ui text-muted-foreground">
-        Dray is free and open source. Sponsoring or starring the repo keeps it going.
+        Carbon is free and open source. Sponsoring or starring the repo keeps it going.
       </p>
       <div className="flex items-center gap-1.5">
         <Button variant="secondary" size="sm" onClick={() => void openUrl(SPONSOR_URL)}>
@@ -1008,7 +1008,7 @@ function SupportBlock() {
 /// Untitled it is still worth being: the tab panel spaces its groups apart at
 /// `gap-7` and this holds rows together at `gap-4`, which is the whole of how a
 /// heading ends up nearer what it names than what it follows.
-/// Dray Island's picks. The switch and the key are Dray's to keep, in local
+/// Carbon Island's picks. The switch and the key are Carbon's to keep, in local
 /// storage, and handed to the island at every launch; the rest are the island's
 /// own preferences, which its right-click menu writes too, so they are read
 /// back from it — on arrival and every few seconds while the window is in
@@ -1046,7 +1046,7 @@ function IslandSettings() {
   return (
     <>
       <Section>
-        <SettingRow id={onId} label="Dray Island" description="A composer that floats over every app, for prompts, dictation and answering cards.">
+        <SettingRow id={onId} label="Carbon Island" description="A composer that floats over every app, for prompts, dictation and answering cards.">
           <Switch
             id={onId}
             checked={on}
@@ -1058,7 +1058,7 @@ function IslandSettings() {
         </SettingRow>
       </Section>
       <Section>
-        <SettingRow id={keyId} label="Shortcut" description="Press and let go of this key on its own to open Dray Island. Do it again while it is open to dictate.">
+        <SettingRow id={keyId} label="Shortcut" description="Press and let go of this key on its own to open Carbon Island. Do it again while it is open to dictate.">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button id={keyId} type="button" size="sm" variant="ghost" className="justify-between">
@@ -1360,7 +1360,7 @@ const ALL_TABS = [
 
 export type SettingsTab = (typeof ALL_TABS)[number]["id"];
 
-/// Dray Island is a Mac app, so elsewhere its tab would be a page of controls for nothing.
+/// Carbon Island is a Mac app, so elsewhere its tab would be a page of controls for nothing.
 const SETTINGS_TABS = ALL_TABS.filter((t) => IS_MAC || t.id !== "island");
 
 /// A line under a tab's title saying what the tab is for. Accounts has one

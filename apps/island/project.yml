@@ -1,4 +1,4 @@
-name: DrayIsland
+name: CarbonIsland
 options:
   deploymentTarget:
     macOS: "15.0"
@@ -14,26 +14,26 @@ packages:
     url: https://github.com/yogesharc/thinking-orbs
     from: 0.1.2
 targets:
-  DrayIsland:
+  CarbonIsland:
     type: application
     platform: macOS
     dependencies:
       - package: ThinkingOrbs
     sources:
       - Island
-      # The iOS app's client of dray-serve, shared by path rather than by package.
-      - path: ../ios/Dray/Wire.swift
-      - path: ../ios/Dray/Connection.swift
-      - path: ../ios/Dray/Store.swift
-      - path: ../ios/Dray/Transcript.swift
-      - path: ../ios/Dray/Markdown.swift
-      - path: ../ios/Dray/Images.swift
-      - path: ../ios/Dray/Tools.swift
-      - path: ../ios/Dray/Picks.swift
-      - path: ../ios/Dray/Sidebar.swift
-      - path: ../ios/Dray/Pr.swift
-      - path: ../ios/Dray/PrGlyph.swift
-      - path: ../ios/Dray/Shimmer.swift
+      # The iOS app's client of carbon-serve, shared by path rather than by package.
+      - path: ../ios/Carbon/Wire.swift
+      - path: ../ios/Carbon/Connection.swift
+      - path: ../ios/Carbon/Store.swift
+      - path: ../ios/Carbon/Transcript.swift
+      - path: ../ios/Carbon/Markdown.swift
+      - path: ../ios/Carbon/Images.swift
+      - path: ../ios/Carbon/Tools.swift
+      - path: ../ios/Carbon/Picks.swift
+      - path: ../ios/Carbon/Sidebar.swift
+      - path: ../ios/Carbon/Pr.swift
+      - path: ../ios/Carbon/PrGlyph.swift
+      - path: ../ios/Carbon/Shimmer.swift
       - path: ../desktop/src/assets/dictate-start.wav
         buildPhase: resources
       - path: ../desktop/src/assets/dictate-stop.wav
@@ -42,13 +42,13 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_NAME: Dray Island
-        PRODUCT_BUNDLE_IDENTIFIER: com.yogesh.dray.island
+        PRODUCT_NAME: Carbon Island
+        PRODUCT_BUNDLE_IDENTIFIER: com.yogesh.carbon.island
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Dray Island
+        INFOPLIST_KEY_CFBundleDisplayName: Carbon Island
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
-        # A local WebSocket to This Mac's server, and nothing sandboxed can reach ~/.dray.
+        # A local WebSocket to This Mac's server, and nothing sandboxed can reach ~/.carbon.
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
   # The island itself, every state it can be in, on seeded sessions with no
@@ -61,22 +61,22 @@ targets:
     sources:
       - Demo
       - Island
-      - path: ../ios/Dray/Wire.swift
-      - path: ../ios/Dray/Connection.swift
-      - path: ../ios/Dray/Store.swift
-      - path: ../ios/Dray/Transcript.swift
-      - path: ../ios/Dray/Markdown.swift
-      - path: ../ios/Dray/Images.swift
-      - path: ../ios/Dray/Tools.swift
-      - path: ../ios/Dray/Picks.swift
-      - path: ../ios/Dray/Sidebar.swift
-      - path: ../ios/Dray/Pr.swift
-      - path: ../ios/Dray/PrGlyph.swift
-      - path: ../ios/Dray/Shimmer.swift
+      - path: ../ios/Carbon/Wire.swift
+      - path: ../ios/Carbon/Connection.swift
+      - path: ../ios/Carbon/Store.swift
+      - path: ../ios/Carbon/Transcript.swift
+      - path: ../ios/Carbon/Markdown.swift
+      - path: ../ios/Carbon/Images.swift
+      - path: ../ios/Carbon/Tools.swift
+      - path: ../ios/Carbon/Picks.swift
+      - path: ../ios/Carbon/Sidebar.swift
+      - path: ../ios/Carbon/Pr.swift
+      - path: ../ios/Carbon/PrGlyph.swift
+      - path: ../ios/Carbon/Shimmer.swift
     settings:
       base:
         PRODUCT_NAME: Island Status Demo
-        PRODUCT_BUNDLE_IDENTIFIER: com.yogesh.dray.island.statusdemo
+        PRODUCT_BUNDLE_IDENTIFIER: com.yogesh.carbon.island.statusdemo
         GENERATE_INFOPLIST_FILE: YES
         ENABLE_APP_SANDBOX: NO
         # Leaves out the island's own `@main`, and lets the demo seed a Store.
@@ -92,7 +92,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: OrbLab
-        PRODUCT_BUNDLE_IDENTIFIER: com.yogesh.dray.orblab
+        PRODUCT_BUNDLE_IDENTIFIER: com.yogesh.carbon.orblab
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Orb Lab
         INFOPLIST_KEY_NSMicrophoneUsageDescription: Orb Lab can drive the orbs from your microphone.

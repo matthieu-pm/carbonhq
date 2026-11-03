@@ -63,7 +63,7 @@ function detailOf(server: ServerInfo): string {
   return address;
 }
 
-/// Every Dray server this app shows, This Mac first. A remote one's
+/// Every Carbon server this app shows, This Mac first. A remote one's
 /// projects and sessions join the sidebar while it is connected and stay,
 /// dimmed, while it is not — its agents keep running there either way.
 export default function ServersSettings() {
@@ -86,7 +86,7 @@ export default function ServersSettings() {
   };
   // The host-key question for a saved row, whose loop parked on it.
   const [trusting, setTrusting] = useState<{ server: ServerInfo; fix: TrustHost } | null>(null);
-  // A server with no Dray on it, being set up: from its row, or from Add.
+  // A server with no Carbon on it, being set up: from its row, or from Add.
   const [installing, setInstalling] = useState<{
     line: string;
     name: string;
@@ -328,14 +328,14 @@ function ThisMacRow() {
   const detail = down ? (
     (server.error ?? "The server on this Mac is not running.")
   ) : !remote.on ? (
-    "Runs your sessions, with Dray open or closed"
+    "Runs your sessions, with Carbon open or closed"
   ) : starting ? (
     <span className="inline-flex items-center gap-1.5">
       <Spinner className="size-3" />
       Starting remote access. The first time takes about 30 seconds.
     </span>
   ) : (
-    (remote.error ?? "Other Macs can reach it while this Mac is awake, with Dray open or closed.")
+    (remote.error ?? "Other Macs can reach it while this Mac is awake, with Carbon open or closed.")
   );
 
   return (
@@ -430,7 +430,7 @@ function PairButton() {
           <DialogHeader>
             <DialogTitle>Pair a phone</DialogTitle>
             <DialogDescription>
-              Point the iPhone's Camera at this, or scan it from Dray's Add server. Anyone holding it can use this Mac.
+              Point the iPhone's Camera at this, or scan it from Carbon's Add server. Anyone holding it can use this Mac.
             </DialogDescription>
           </DialogHeader>
           {/* White under the code whatever the theme: a scanner reads dark on light. */}
@@ -587,7 +587,7 @@ function Row({
   );
 }
 
-/// `dray tunnel` prints the address and the token as one line, so a paste of
+/// `carbon tunnel` prints the address and the token as one line, so a paste of
 /// it fills both fields. Anything else is an address alone.
 function splitConnectLine(text: string): { url: string; token?: string } {
   const [url, token, ...rest] = text.trim().split(/\s+/);
@@ -650,7 +650,7 @@ function AddServerDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  /// Reached Dray's absence over a working login: set it up there.
+  /// Reached Carbon's absence over a working login: set it up there.
   onInstall: (line: string, name: string) => void;
 }) {
   const [viaSsh, setViaSsh] = useState(true);
@@ -731,8 +731,8 @@ function AddServerDialog({
           <DialogTitle>Add server</DialogTitle>
           <DialogDescription>
             {viaSsh
-              ? "Run sessions on a machine you can SSH into. Dray uses your existing key."
-              : "Connect by the address dray tunnel prints, or any running dray serve."}
+              ? "Run sessions on a machine you can SSH into. Carbon uses your existing key."
+              : "Connect by the address carbon tunnel prints, or any running carbon serve."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="flex flex-col gap-3">
@@ -751,7 +751,7 @@ function AddServerDialog({
             </Field>
           ) : (
             <>
-              <Field label="Address" hint="Paste dray tunnel's whole line and the token fills in too.">
+              <Field label="Address" hint="Paste carbon tunnel's whole line and the token fills in too.">
                 <Input
                   value={url}
                   onChange={(e) => {
@@ -767,7 +767,7 @@ function AddServerDialog({
                   autoCorrect="off"
                 />
               </Field>
-              <Field label="Token" hint="In serve-token, in the server's Dray directory.">
+              <Field label="Token" hint="In serve-token, in the server's Carbon directory.">
                 <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} required />
               </Field>
             </>

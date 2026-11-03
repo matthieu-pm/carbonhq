@@ -20,7 +20,7 @@ export const OPEN_DIR_KEY = "ade.openWith";
 /// their checkout in Ghostty would find that clicking a filename opened a
 /// terminal, which is no answer to "show me this file".
 ///
-/// Markdown never reaches this: it opens in the Docs panel, which is Dray's own
+/// Markdown never reaches this: it opens in the Docs panel, which is Carbon's own
 /// answer to "show me this file". See `openPath` in
 /// [useDocs](../hooks/useDocs.ts).
 export const OPEN_FILE_KEY = "ade.openFileWith";
@@ -138,7 +138,7 @@ export const DIR_OPENER: Opener = {
   open: (app, path) => invoke("open_in_app", { appPath: app.path, path }),
 };
 
-/// Which terminal the reader last had Dray open for them, by bundle path.
+/// Which terminal the reader last had Carbon open for them, by bundle path.
 ///
 /// Its own key rather than [OPEN_DIR_KEY]'s: that one holds editors and Finder
 /// too, so a reader who last opened their checkout in VS Code would find this
@@ -147,7 +147,7 @@ export const RUN_IN_KEY = "ade.runInTerminal";
 
 /// A terminal, opened at a directory — nothing is typed and nothing is run.
 ///
-/// The PR pane's, where the reader has a command to run and Dray has no
+/// The PR pane's, where the reader has a command to run and Carbon has no
 /// business running it: macOS lets no app put text on another's prompt without
 /// an Accessibility grant, and everything short of that either executes on
 /// their behalf or needs a permission whose denial is silent. So the command is

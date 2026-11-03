@@ -799,8 +799,8 @@ describe("segmentMedia", () => {
     } as AgentEventPayload);
   }
 
-  const video = "/Users/me/.dray/browser/recordings/s1/flow.mp4";
-  const stop = { command: 'dray browser record stop "flow"' };
+  const video = "/Users/me/.carbon/browser/recordings/s1/flow.mp4";
+  const stop = { command: 'carbon browser record stop "flow"' };
 
   /// A grouped run's results sit after the group in `work`, so the pictures of
   /// calls folded into one row must still be found.
@@ -840,12 +840,12 @@ describe("segmentMedia", () => {
   it("reads recordings out of record stop's output alone", () => {
     const fixture = `const video = "${video}"`;
     expect(paths([callStarted(1, "a", { file_path: "/x/transcript.test.ts" }), result(2, "a", fixture, 0)])).toEqual([]);
-    expect(paths([callStarted(1, "a", { command: "rg -n 'dray browser record stop' src" }), result(2, "a", fixture, 0)])).toEqual([]);
+    expect(paths([callStarted(1, "a", { command: "rg -n 'carbon browser record stop' src" }), result(2, "a", fixture, 0)])).toEqual([]);
   });
 
   /// Codex wraps every command in its shell's `-lc '…'`.
   it("takes record stop wherever a shell runs it", () => {
-    for (const command of [`/bin/zsh -lc 'dray browser record stop flow'`, "cd /x && dray browser record stop"]) {
+    for (const command of [`/bin/zsh -lc 'carbon browser record stop flow'`, "cd /x && carbon browser record stop"]) {
       expect(paths([callStarted(1, "a", { command }), result(2, "a", `saved ${video}`, 0)])).toEqual([video]);
     }
   });
@@ -869,8 +869,8 @@ describe("segmentMedia", () => {
 
   it("finds a recording under any dev home", () => {
     const paths = [
-      "/Users/me/.dray-dev/browser/recordings/s1/a.mp4",
-      "/Users/me/.dray-worktrees/opal-plum/browser/recordings/s1/b.mp4",
+      "/Users/me/.carbon-dev/browser/recordings/s1/a.mp4",
+      "/Users/me/.carbon-worktrees/opal-plum/browser/recordings/s1/b.mp4",
     ];
     const items = paths.flatMap((path, i) => [callStarted(2 * i, `c${i}`, stop), result(2 * i + 1, `c${i}`, `saved ${path}`, 0)]);
     const results = new Map(
@@ -894,7 +894,7 @@ describe("segmentMedia", () => {
       cwd: null,
     });
     const fromSubagent = { ...result(3, "c", "", 1), subagent: { toolUseId: "t" } } as unknown as AgentEvent;
-    const other = "/Users/me/.dray/browser/recordings/s1/other.mp4";
+    const other = "/Users/me/.carbon/browser/recordings/s1/other.mp4";
     const media = sessionMedia([
       attached,
       callStarted(1, "a", stop),

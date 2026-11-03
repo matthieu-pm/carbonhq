@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
-use dray_proto::{CreateDraft, DraftId, DraftSummary, ListSessions, Request, Response, StartDraft};
+use carbon_proto::{CreateDraft, DraftId, DraftSummary, ListSessions, Request, Response, StartDraft};
 
 use super::{on_machine, parent_session_id, resolve_project, send, unexpected};
 
@@ -58,7 +58,7 @@ pub struct DraftLs {
 
 #[derive(Args)]
 pub struct DraftRef {
-    /// The draft, as printed by `dray draft ls`.
+    /// The draft, as printed by `carbon draft ls`.
     id: String,
 }
 

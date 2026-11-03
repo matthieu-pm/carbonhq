@@ -6,11 +6,11 @@
   "bundle": {
     "macOS": {
       "files": {
-        "Frameworks/Dray Helper.app": "target/cef-helpers/Dray Helper.app",
-        "Frameworks/Dray Helper (GPU).app": "target/cef-helpers/Dray Helper (GPU).app",
-        "Frameworks/Dray Helper (Renderer).app": "target/cef-helpers/Dray Helper (Renderer).app",
-        "Frameworks/Dray Helper (Plugin).app": "target/cef-helpers/Dray Helper (Plugin).app",
-        "Frameworks/Dray Helper (Alerts).app": "target/cef-helpers/Dray Helper (Alerts).app"
+        "Frameworks/Carbon Helper.app": "target/cef-helpers/Carbon Helper.app",
+        "Frameworks/Carbon Helper (GPU).app": "target/cef-helpers/Carbon Helper (GPU).app",
+        "Frameworks/Carbon Helper (Renderer).app": "target/cef-helpers/Carbon Helper (Renderer).app",
+        "Frameworks/Carbon Helper (Plugin).app": "target/cef-helpers/Carbon Helper (Plugin).app",
+        "Frameworks/Carbon Helper (Alerts).app": "target/cef-helpers/Carbon Helper (Alerts).app"
       }
     }
   }

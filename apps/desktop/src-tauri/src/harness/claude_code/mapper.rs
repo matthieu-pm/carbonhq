@@ -2519,7 +2519,7 @@ mod tests {
         assert_eq!(turns, 2);
     }
 
-    /// Both lines are verbatim captures from `~/.dray/parse_failures.jsonl`,
+    /// Both lines are verbatim captures from `~/.carbon/parse_failures.jsonl`,
     /// where they were the second-largest group. Kept exact so the field names
     /// are pinned against the wire rather than against this test's idea of it.
     #[test]

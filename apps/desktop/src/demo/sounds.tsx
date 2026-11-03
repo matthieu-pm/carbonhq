@@ -9,7 +9,7 @@ import { playSwipeTick } from "@/lib/tick";
 import "../App.css";
 import sendUrl from "../../../island/Island/send.wav?url";
 
-/// Every sound Dray and Dray Island make, and where each one plays.
+/// Every sound Carbon and Carbon Island make, and where each one plays.
 ///
 /// Played through the app's own functions, so volume and clip are what the
 /// reader hears. The macOS sounds play from local copies in
@@ -78,8 +78,8 @@ const ISLAND: Sound[] = [
     file: "public/notification.wav, bundled",
     play: playNotification,
     where: [
-      "A permission or question card arrived while the panel is shut. Not while Dray is the app in front.",
-      "A session finished where Dray would have posted its banner: the done pill.",
+      "A permission or question card arrived while the panel is shut. Not while Carbon is the app in front.",
+      "A session finished where Carbon would have posted its banner: the done pill.",
       "News held while the reader was busy in the panel, once the pill can be seen.",
     ],
   },
@@ -89,7 +89,7 @@ const ISLAND: Sound[] = [
     play: () => playDictationSound("start"),
     where: [
       "The microphone opened, from the orb or a tap of the island's key. Full volume there.",
-      "Heard with Mute while recording on, as in Dray.",
+      "Heard with Mute while recording on, as in Carbon.",
     ],
   },
   {
@@ -166,10 +166,10 @@ function Demo() {
       <DemoThemeBar />
       <div>
         <h1 className="text-lg font-semibold">Sounds</h1>
-        <p className="text-muted-foreground">Every sound Dray and Dray Island make, and where each one plays.</p>
+        <p className="text-muted-foreground">Every sound Carbon and Carbon Island make, and where each one plays.</p>
       </div>
-      <Section title="Dray" note="Played in the window." sounds={APP} />
-      <Section title="Dray Island" note="Dray's files, bundled into the island, and one of macOS's own." sounds={ISLAND} />
+      <Section title="Carbon" note="Played in the window." sounds={APP} />
+      <Section title="Carbon Island" note="Carbon's files, bundled into the island, and one of macOS's own." sounds={ISLAND} />
       <Section
         title="Desktop banners"
         note="macOS plays these with the banner. The default is whatever alert sound the reader picked."

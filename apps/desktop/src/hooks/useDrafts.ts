@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApprovalPolicy, Effort, Harness, ModelId } from "@/types/events";
 
 /// A task written and saved but not started: the prompt plus the composer picks
-/// it will start with. Stored whole in `~/.dray/drafts.json`, which Rust keeps
+/// it will start with. Stored whole in `~/.carbon/drafts.json`, which Rust keeps
 /// untyped — this is the only statement of the shape.
 ///
 /// No branch: picking one checks it out, so restoring it would move the tree.
@@ -18,7 +18,7 @@ export type Draft = {
   permissionMode: ApprovalPolicy;
   fast: boolean;
   useWorktree: boolean;
-  /// Where the worktree starts, from `dray draft new --base`. The composer
+  /// Where the worktree starts, from `carbon draft new --base`. The composer
   /// never sets one, and carries it through to the send.
   base?: string | null;
   created: string;

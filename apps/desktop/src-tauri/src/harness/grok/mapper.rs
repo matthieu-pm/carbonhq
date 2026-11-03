@@ -1,4 +1,4 @@
-//! Grok Build's ACP vocabulary onto Dray's.
+//! Grok Build's ACP vocabulary onto Carbon's.
 //!
 //! Three things are synthesized rather than read, each for fx's reason one
 //! harness over. grok sends no turn-started line the client can act on — the
@@ -35,7 +35,7 @@ const SUBAGENT_LABEL: &str = "Subagent";
 
 /// Per-session state the mapping needs across lines.
 pub struct Mapper {
-    /// Dray's own id, which for grok is also grok's: `_meta.sessionId` on
+    /// Carbon's own id, which for grok is also grok's: `_meta.sessionId` on
     /// `session/new` is honoured, so the index id *is* the resume handle.
     session_id: String,
     seq: Arc<AtomicU64>,
@@ -133,7 +133,7 @@ impl Mapper {
                 ..
             } => {
                 // Only `session/load`'s replay puts a status on an opening line,
-                // and Dray never calls it — Dray's own log is the replay. One
+                // and Carbon never calls it — Carbon's own log is the replay. One
                 // arriving means a shape this build did not expect, and drawing
                 // a start for a call that is already over is worse than nothing.
                 if status.is_some_and(ToolStatus::is_final) {
@@ -633,7 +633,7 @@ impl Mapper {
     }
 }
 
-/// grok's own tool class onto Dray's, with ACP's as the fallback.
+/// grok's own tool class onto Carbon's, with ACP's as the fallback.
 ///
 /// grok's `_meta["x.ai/tool"].kind` is preferred because it is on the **opening**
 /// line where ACP's `kind` arrives on the update behind it, and because ACP's is

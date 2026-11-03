@@ -37,7 +37,7 @@ const SCENARIOS: { key: Scenario; label: string }[] = [
   { key: "short", label: "Short turn" },
 ];
 
-const ROOT = "/Users/me/dray/apps/desktop/src";
+const ROOT = "/Users/me/carbon/apps/desktop/src";
 
 const FINAL =
   "Appearance now has a **Light / Dark / System** control. System is the default and follows the OS; picking Light or Dark pins it.\n\n- `theme.ts` stores the pick and resolves System at render\n- the control sits under Theme in Appearance\n- 3 new tests cover the resolution order";

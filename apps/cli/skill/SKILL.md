@@ -1,11 +1,11 @@
 ---
-name: dray
-description: Create, list and message Dray sessions, and drive this session's browser, from the command line. Use when the user asks to work on several things at once — a batch of issues, tickets, or tasks — and each deserves its own agent, its own branch, and its own place in the sidebar; for checking on sessions you started and messaging between them; and whenever a page needs looking at or acting on — a dev server, a deployed site, docs — through `dray browser`, never a headless browser or a browser MCP.
+name: carbon
+description: Create, list and message Carbon sessions, and drive this session's browser, from the command line. Use when the user asks to work on several things at once — a batch of issues, tickets, or tasks — and each deserves its own agent, its own branch, and its own place in the sidebar; for checking on sessions you started and messaging between them; and whenever a page needs looking at or acting on — a dev server, a deployed site, docs — through `carbon browser`, never a headless browser or a browser MCP.
 ---
 
-# Dray sessions
+# Carbon sessions
 
-Dray runs coding agents in parallel, one chat per piece of work. The `dray` CLI
+Carbon runs coding agents in parallel, one chat per piece of work. The `carbon` CLI
 creates those sessions from outside the app, so an agent in one session can fan
 work out into several.
 
@@ -23,13 +23,13 @@ genuinely independent: separate branches, separate PRs. Steps of one job belong
 in one session, and subagents already handle parallelism inside a turn.
 
 The other reason is **a web page**: checking the dev server you just changed,
-reading a docs site, filling a form, taking a screenshot. `dray browser` is the
+reading a docs site, filling a form, taking a screenshot. `carbon browser` is the
 browser this session already has open in the app — see *Driving the browser*.
 
 ## Creating a session
 
 ```bash
-dray session new "Fix the login redirect loop described in ENG-412"
+carbon session new "Fix the login redirect loop described in ENG-412"
 ```
 
 Prints the new session's id. It returns immediately — the session starts working
@@ -106,21 +106,21 @@ which is the choice they already made. Pass one only when the user named it,
 and pass it whole — `xai/grok-4.6`, not `grok-4.6`, since two providers can
 serve the same model name.
 
-**pi runs without a permission gate.** It has no approval system, and Dray's
+**pi runs without a permission gate.** It has no approval system, and Carbon's
 own is not built for it yet, so a pi session does what the model asks. Say so
 when you start one for work that writes.
 
 ### Tagging a session with its issue
 
 ```bash
-dray session new --issue DRA-53 "Add the issue panel described in DRA-53"
-dray issue link DRA-53 --title "Add the issue panel" --url https://linear.app/acme/issue/DRA-53
-dray issue link DRA-53 DRA-54
-dray issue unlink DRA-54
+carbon session new --issue DRA-53 "Add the issue panel described in DRA-53"
+carbon issue link DRA-53 --title "Add the issue panel" --url https://linear.app/acme/issue/DRA-53
+carbon issue link DRA-53 DRA-54
+carbon issue unlink DRA-54
 
-dray issue link DRA-53 --session <session-id> --title "Add the issue panel"
+carbon issue link DRA-53 --session <session-id> --title "Add the issue panel"
 
-dray issue link owner/repo#12 --title "Paste images into the composer" --url https://github.com/owner/repo/issues/12
+carbon issue link owner/repo#12 --title "Paste images into the composer" --url https://github.com/owner/repo/issues/12
 ```
 
 A GitHub issue is named `owner/repo#12`, GitHub's own cross-repo spelling, and
@@ -129,15 +129,15 @@ it is refused rather than guessed at. That shape is also what tells the trackers
 apart, since nothing here asks one which issue this is.
 
 `link` and `unlink` tag **your own session** when you do not name one, so you
-never have to write `$DRAY_SESSION_ID` — and you must not, because Claude Code
+never have to write `$CARBON_SESSION_ID` — and you must not, because Claude Code
 refuses a command naming an environment variable inside a worktree, which is
-where every session `dray session new` creates runs. Pass `--session` to tag
+where every session `carbon session new` creates runs. Pass `--session` to tag
 one you spawned.
 
 A tagged session shows an **Issue** tab in the user's panel, and its prompt gains
 one line per issue: the identifier and the title, nothing else.
 
-`dray issue link` **writes down what you give it and asks the tracker nothing.**
+`carbon issue link` **writes down what you give it and asks the tracker nothing.**
 So pass `--title` and `--url` — you have just read the issue and they cost you
 nothing, where without them the tag is a bare `#DRA-53` that links nowhere. They
 describe one issue, so name one issue when you use them.
@@ -153,12 +153,12 @@ title and the identifier and nothing behind them. `claude mcp list` says which
 servers are reachable.
 
 `--issue`, and a `#DRA-53` written into a prompt, are the other half and they
-*do* need the user to have connected a tracker in Dray — that is where the title
+*do* need the user to have connected a tracker in Carbon — that is where the title
 is looked up. If they have not, the tag stays plain text, the session still runs,
 and nothing fails. Report it rather than working around it.
 
-You can also write `#DRA-53` straight into a prompt — `dray session new`, `dray session send`, or
-the user's own composer. Dray resolves the tag and links it exactly as `--issue`
+You can also write `#DRA-53` straight into a prompt — `carbon session new`, `carbon session send`, or
+the user's own composer. Carbon resolves the tag and links it exactly as `--issue`
 does.
 
 ### Each session gets its own worktree
@@ -174,13 +174,13 @@ another session's.
 ### Basing a session on existing work
 
 ```bash
-dray session new --base <session-id> "Review the work on this branch and report what you find"
-dray session new --base feature/login "Write tests for the login flow on this branch"
+carbon session new --base <session-id> "Review the work on this branch and report what you find"
+carbon session new --base feature/login "Write tests for the login flow on this branch"
 ```
 
-`--base` takes a **session id** — the same id `dray session ls` prints and
-`dray session send` takes — or a branch, tag or commit. Naming a session is the usual case: you have
-its id already, and you do not have to know how Dray names its branches.
+`--base` takes a **session id** — the same id `carbon session ls` prints and
+`carbon session send` takes — or a branch, tag or commit. Naming a session is the usual case: you have
+its id already, and you do not have to know how Carbon names its branches.
 
 This is what makes review possible. Spawn a session with a different model or a
 different harness, point it at yours with `--base`, and it gets its own checkout
@@ -204,14 +204,14 @@ Three things to know:
   directory, and `--base` is not it. Two agents writing to one checkout overwrite
   each other, and the changes panel cannot tell them apart.
 
-The line `dray session new` prints says what it resolved: `Started "…" in worktree
+The line `carbon session new` prints says what it resolved: `Started "…" in worktree
 calm-owl, based on worktree-brisk-jade`. Worth reading back when you passed a
 session id, since the branch that id resolved to is something only the app knew.
 
 ### Hidden sessions
 
 ```bash
-dray session new --hidden --base <session-id> "Review the work on this branch and send your findings back to <session-id>"
+carbon session new --hidden --base <session-id> "Review the work on this branch and send your findings back to <session-id>"
 ```
 
 `--hidden` keeps the session out of the sidebar; it shows only in the crew
@@ -229,21 +229,21 @@ unless the user asks.
 ## Listing sessions
 
 ```bash
-dray session ls              # this project, human-readable
-dray session ls --json       # machine-readable
-dray session ls --all        # every project
+carbon session ls              # this project, human-readable
+carbon session ls --json       # machine-readable
+carbon session ls --all        # every project
 ```
 
 Each row carries the session id, title, status (`idle`, `in_progress`,
 `completed`), and branch. A session created by another one also says which —
 `spawned by <id>` in the table, `parentSessionId` in the JSON. This is how you
 check on sessions you started — nothing reports back on its own, so poll
-`dray session ls` if you need to know when one finishes.
+`carbon session ls` if you need to know when one finishes.
 
 ## Messaging a session
 
 ```bash
-dray session send <session-id> "Code review is done. Two findings, both fixed."
+carbon session send <session-id> "Code review is done. Two findings, both fixed."
 ```
 
 Works in both directions and between any two sessions:
@@ -257,7 +257,7 @@ queued and picked up at the next boundary — that is reported, and is not a
 failure.
 
 The receiving agent is told which session the message came from, and is given its
-id — so it can answer with `dray session send <that-id>` without looking anything up.
+id — so it can answer with `carbon session send <that-id>` without looking anything up.
 Write it as a message to a colleague, not as a note to yourself.
 
 Send when there is something the other session genuinely needs. A message costs
@@ -270,13 +270,13 @@ looking the session up again.
 ## Managing a session
 
 ```bash
-dray session rename <id> "Add retry to the upload client"
-dray session stop <id>                      # stop the running turn, like its Stop button
-dray session settle <id>                    # it stops and leaves the active list; worktree kept
-dray session settle <id> --delete-worktree  # and the worktree and branch go too
-dray session unsettle <id>
-dray session set-aside <id>                 # sink it in the sidebar: started, not wanted now
-dray session unset-aside <id>
+carbon session rename <id> "Add retry to the upload client"
+carbon session stop <id>                      # stop the running turn, like its Stop button
+carbon session settle <id>                    # it stops and leaves the active list; worktree kept
+carbon session settle <id> --delete-worktree  # and the worktree and branch go too
+carbon session unsettle <id>
+carbon session set-aside <id>                 # sink it in the sidebar: started, not wanted now
+carbon session unset-aside <id>
 ```
 
 These are the user's sidebar buttons, so act on sessions the user named, or
@@ -291,10 +291,10 @@ against `origin/<default>` — and ask the user, naming what would be lost.
 ## Saving work for later
 
 ```bash
-dray draft new "Add retry to the upload client"   # prints the draft id
-dray draft ls                                     # this project; --all, --json
-dray draft rm <draft-id>
-dray draft start <draft-id>                       # prints the new session id
+carbon draft new "Add retry to the upload client"   # prints the draft id
+carbon draft ls                                     # this project; --all, --json
+carbon draft rm <draft-id>
+carbon draft start <draft-id>                       # prints the new session id
 ```
 
 A draft is a task the user starts when they choose. Nothing runs and no
@@ -303,11 +303,11 @@ can open it, edit it and send it themselves.
 
 Reach for it when the user asks you to note work down rather than begin it —
 "park this", "save that for later", "queue up a task". Write the prompt for
-someone who has not read your conversation, the same as for `dray session new`.
+someone who has not read your conversation, the same as for `carbon session new`.
 
 `draft new` takes `--project`, `--model`, `--effort`, `--harness`, `--fast` and
-`--base`, inheriting from your session exactly as `dray session new` does. `draft start` starts
-it as a session spawned by yours, so the depth limit and `dray session ls`'s
+`--base`, inheriting from your session exactly as `carbon session new` does. `draft start` starts
+it as a session spawned by yours, so the depth limit and `carbon session ls`'s
 `spawned by` apply as usual. A draft the user saved with the worktree off
 starts in the project checkout, and the line `start` prints says so.
 
@@ -315,34 +315,34 @@ Start or remove only drafts the user named. The list is theirs.
 
 ## Driving the browser
 
-Every session has its own browser, drawn in the app beside the chat. `dray
+Every session has its own browser, drawn in the app beside the chat. `carbon
 browser` drives it: the user watches the same tabs you act on, and no other
 session's pages are reachable from here. The verbs are agent-browser's.
 
 ```bash
-dray browser open http://localhost:3000       # a page, in the active tab
-dray browser snapshot -i                      # what is on it, with @refs
-dray browser click @e4                        # a @ref or a CSS selector
-dray browser fill @e2 "hello"                 # fill clears first; type appends
-dray browser press Enter
-dray browser find role button click --name "Sign in"
-dray browser find text "Forgot password" click
-dray browser find label "Email" fill "me@example.com"
-dray browser get text                         # the page's text; or html, value, attr, title, url, count, box
-dray browser is visible ".toast"
-dray browser wait ".results"                  # or 1500, or --url /done, --text "Saved", --load load
-dray browser screenshot --full                # prints the PNG's path; a path of your own must be inside the checkout
+carbon browser open http://localhost:3000       # a page, in the active tab
+carbon browser snapshot -i                      # what is on it, with @refs
+carbon browser click @e4                        # a @ref or a CSS selector
+carbon browser fill @e2 "hello"                 # fill clears first; type appends
+carbon browser press Enter
+carbon browser find role button click --name "Sign in"
+carbon browser find text "Forgot password" click
+carbon browser find label "Email" fill "me@example.com"
+carbon browser get text                         # the page's text; or html, value, attr, title, url, count, box
+carbon browser is visible ".toast"
+carbon browser wait ".results"                  # or 1500, or --url /done, --text "Saved", --load load
+carbon browser screenshot --full                # prints the PNG's path; a path of your own must be inside the checkout
                                               # laid out at 1440×900 whatever the pane's width, or the last set viewport/device
-dray browser eval "document.title"
-dray browser console                          # what the page logged since last asked; `errors` for errors alone
-dray browser set device "iPhone 15"           # or: set viewport 375 667 — what screenshots are
+carbon browser eval "document.title"
+carbon browser console                          # what the page logged since last asked; `errors` for errors alone
+carbon browser set device "iPhone 15"           # or: set viewport 375 667 — what screenshots are
                                               # laid out at; the pane on screen is left alone
-dray browser zoom 150                         # page zoom, 25–500; `zoom reset` for 100. The user sees it too,
+carbon browser zoom 150                         # page zoom, 25–500; `zoom reset` for 100. The user sees it too,
                                               # screenshots and recordings carry it, and it holds for that site
-dray browser record start                     # record the active tab, at the screenshot size
-dray browser record stop "checkout flow"      # prints the MP4's path: checkout-flow.mp4
-dray browser tab                              # list tabs; also: tab new [url], tab <id>, tab close [id]
-dray browser back                             # also: forward, reload, close
+carbon browser record start                     # record the active tab, at the screenshot size
+carbon browser record stop "checkout flow"      # prints the MP4's path: checkout-flow.mp4
+carbon browser tab                              # list tabs; also: tab new [url], tab <id>, tab close [id]
+carbon browser back                             # also: forward, reload, close
 ```
 
 `snapshot` is the way to see a page: one line per element with a `@e<n>` ref
@@ -368,15 +368,15 @@ first, then open it. `--json` on any verb answers as JSON for scripting.
 ## Sharing a dev server
 
 ```bash
-dray share start 5173    # prints a public https://….opentunnel.xyz link
-dray share ls            # this project's live links; --all, --json
-dray share stop 5173
+carbon share start 5173    # prints a public https://….opentunnel.xyz link
+carbon share ls            # this project's live links; --all, --json
+carbon share stop 5173
 ```
 
 A public link to one of this session's own dev servers — the ones
 the user's Browser tab lists for it, nothing else on the machine. **Anyone with
 the link can open it**, so share when the user asked for a link they can open
-elsewhere or send on, and not to check your own work: `dray browser` does that
+elsewhere or send on, and not to check your own work: `carbon browser` does that
 without publishing anything. The link shows on that server's row in the app,
 where the user can stop it, and it goes when the session is settled or deleted.
 Sharing the same port from the same session again gives the same link.
@@ -384,24 +384,24 @@ Sharing the same port from the same session again gives the same link.
 ## Other machines
 
 ```bash
-dray machine add vps root@203.0.113.7                   # or ssh -p 2222 …, or an ~/.ssh/config alias
-dray machine add --token-file t vps ws://127.0.0.1:7317  # a token from stdin works too
-dray machine add --token-file t mac wss://….opentunnel.xyz   # a Mac, by its Remote access address
-dray machine ls                                          # name, address, connected or not; --json
-dray machine rename vps box                              # '' puts back the host
-dray machine disconnect vps                              # stays listed; requests to it are refused
-dray machine connect vps                                 # tries now, says if it worked
-dray machine rm vps
+carbon machine add vps root@203.0.113.7                   # or ssh -p 2222 …, or an ~/.ssh/config alias
+carbon machine add --token-file t vps ws://127.0.0.1:7317  # a token from stdin works too
+carbon machine add --token-file t mac wss://….opentunnel.xyz   # a Mac, by its Remote access address
+carbon machine ls                                          # name, address, connected or not; --json
+carbon machine rename vps box                              # '' puts back the host
+carbon machine disconnect vps                              # stays listed; requests to it are refused
+carbon machine connect vps                                 # tries now, says if it worked
+carbon machine rm vps
 ```
 
-The machines this one can reach, on any Dray server — a Mac, a Linux box, a
+The machines this one can reach, on any Carbon server — a Mac, a Linux box, a
 headless Mac. On a Mac it is the same list as Settings → Servers. A name
 belongs to one machine: `add` and `rename` refuse one another machine already
 has. Reach for it after you have set a machine up and the user wants it
 reachable. A Mac is reached by its Remote access address and token (Settings →
 This Mac), never over SSH. `add` connects before it saves, so a refusal is the
 machine telling you what is wrong — an unknown host key, a password login, no
-Dray on the server — and its fix is the user's to make, never yours: do not
+Carbon on the server — and its fix is the user's to make, never yours: do not
 accept a host key on their behalf. An SSH add uses this machine's own `ssh`,
 so its key must already be authorized there. A token never goes on the command
 line. Remove only machines the user named.
@@ -409,14 +409,14 @@ line. Remove only machines the user named.
 ## Working on another machine
 
 ```bash
-dray --machine vps session new "Run the load test" --title "Load test"
-dray --machine vps session ls                # that machine's sessions
-dray session ls --machine all                # this one's and every connected machine's
-dray session send <session-id> "Use the staging DB"   # finds the machine on its own
+carbon --machine vps session new "Run the load test" --title "Load test"
+carbon --machine vps session ls                # that machine's sessions
+carbon session ls --machine all                # this one's and every connected machine's
+carbon session send <session-id> "Use the staging DB"   # finds the machine on its own
 ```
 
 `--machine <name>` runs a `session`, `draft`, `issue`, `browser` or `share`
-command on a machine from `dray machine ls`, through this machine's Dray
+command on a machine from `carbon machine ls`, through this machine's Carbon
 server — app open or not. A session id needs no `--machine`: one this machine
 has never heard of is looked for on every machine it reaches.
 
@@ -428,23 +428,23 @@ inherit from you as they do here.
 
 **Reach follows tokens.** You reach a machine this one added; it reaches you
 only if it added this one too. A session you start there can message you back
-with `dray session send <your-id>` where it can — otherwise check on it with
-`dray session ls --machine <name>`, and ask it to open a PR or push a branch
+with `carbon session send <your-id>` where it can — otherwise check on it with
+`carbon session ls --machine <name>`, and ask it to open a PR or push a branch
 when its result should come back.
 
 ## This machine's server
 
 ```bash
-dray server install      # install what is missing, then start the server; --tools git,gh,… to skip asking
-dray server start        # in the background, surviving reboot
-dray server run          # in this terminal instead
-dray server status       # running or not, and its tunnel address
-dray server tunnel on    # a public address in front of it, the same across restarts; off takes it down
-dray server pair         # a QR code the Dray iPhone app scans to add this server
-dray server stop         # stop it and remove it from the background
+carbon server install      # install what is missing, then start the server; --tools git,gh,… to skip asking
+carbon server start        # in the background, surviving reboot
+carbon server run          # in this terminal instead
+carbon server status       # running or not, and its tunnel address
+carbon server tunnel on    # a public address in front of it, the same across restarts; off takes it down
+carbon server pair         # a QR code the Carbon iPhone app scans to add this server
+carbon server stop         # stop it and remove it from the background
 ```
 
-What makes a machine with no Dray app — Linux, or a headless Mac — a Dray
+What makes a machine with no Carbon app — Linux, or a headless Mac — a Carbon
 server. On a Mac with the app, the app runs the server and these are refused,
 apart from `tunnel`, which is the Remote access button in Settings → Servers.
 
@@ -460,21 +460,21 @@ They can watch the sidebar.
 ## Staying current
 
 ```bash
-dray update
+carbon update
 ```
 
 Resolves the newest release and stops there when it is the one already running,
 so this is cheap to run and safe to run often. Otherwise it downloads the new
 binary over the current one — and rewrites this skill, which ships inside that
-binary. So whatever you are reading always describes the `dray` you actually
+binary. So whatever you are reading always describes the `carbon` you actually
 have.
 
-`dray update --force` installs the newest release even when it is the one you
+`carbon update --force` installs the newest release even when it is the one you
 have, which repairs a damaged binary. A beta build updates to betas and a stable
 one to stable releases; `--channel beta` or `--channel stable` switches.
 
-On a Mac with the Dray app, the app ships this CLI and puts it in
-`~/.local/bin` each launch, so `dray update` there says so and does nothing.
+On a Mac with the Carbon app, the app ships this CLI and puts it in
+`~/.local/bin` each launch, so `carbon update` there says so and does nothing.
 Updating the app is how the CLI moves.
 
 The app and this CLI ship separately, so they can drift. When they disagree about
@@ -483,10 +483,10 @@ one is new — rather than doing something you cannot see is wrong. You do not n
 to know which flags need which version: run the command, and if the two disagree
 you get a refusal naming the cure. There are only two:
 
-- *"this dray CLI speaks protocol vN, the app speaks vM — run `dray update`"* —
+- *"this carbon CLI speaks protocol vN, the app speaks vM — run `carbon update`"* —
   you are behind. Run it, then retry the command. This is the common case and
   you can fix it yourself, in one step, without asking anyone.
-- *"… — update the Dray app"* — the **app** is behind. You cannot fix this from
+- *"… — update the Carbon app"* — the **app** is behind. You cannot fix this from
   here. Say so to the user, name the command you were trying to run, and stop.
   Do not work around it.
 
@@ -495,17 +495,17 @@ nothing was sent, so retrying after the fix is safe.
 
 ## When a command cannot reach the app
 
-Every `dray` command reaches the app over a unix socket — `ls` as much as `new` —
+Every `carbon` command reaches the app over a unix socket — `ls` as much as `new` —
 so a failure to connect is one of three things, and the line tells you which.
 
-- **`permission denied reaching Dray at …`** — something blocked the connection,
+- **`permission denied reaching Carbon at …`** — something blocked the connection,
   usually a sandbox. If this command is sandboxed, retry this one command with
   escalated permissions; ask on that command alone, never for a sandbox-free
   shell. A retry refused the same way is the socket path's own permissions, which
   no escalation fixes — say so and name the path.
-- **`Dray isn't running. Start the app and try again.`** — the app is closed and
+- **`Carbon isn't running. Start the app and try again.`** — the app is closed and
   you cannot fix it from here. Only this sentence means that.
-- **`could not connect to Dray at …`** — the line names its own reason. Report it
+- **`could not connect to Carbon at …`** — the line names its own reason. Report it
   as written; it says nothing about whether the app is up.
 
 Nothing was created and nothing was sent in any of the three, so retrying after
@@ -513,12 +513,12 @@ the cure is safe.
 
 ## Limits
 
-- **`dray` does not write to the tracker.** Tagging records the link on the
+- **`carbon` does not write to the tracker.** Tagging records the link on the
   session and nothing else: no status change, no comment, no attachment. If the
   user wants the issue moved or commented on, do it through the tracker's own
   MCP server. (The app's own issue panel has status and priority menus, but they
   are the user's to click — nothing here reaches them.)
-- **The browser is the session's own.** `dray browser` reaches the tabs of the
+- **The browser is the session's own.** `carbon browser` reaches the tabs of the
   session running it and nothing else; downloads, file pickers and native
   dialogs are out of reach.
 - **No reading transcripts.** You can create, list and message. You cannot read
@@ -528,11 +528,11 @@ the cure is safe.
 - **Two levels deep.** A session you create may create sessions of its own; those
   may not. If you hit this, say so — the user can start the next batch from a
   top-level session.
-- **Dray must be running.** If it is not, `dray` says so in those words and
+- **Carbon must be running.** If it is not, `carbon` says so in those words and
   exits non-zero. Only that sentence means it — see above, and do not read any
   other connection failure as the app being down.
 - **Nothing updates itself.** A CLI too old for the app is refused with a line
-  saying so; `dray update` is how that gets fixed. If the refusal says the *app*
+  saying so; `carbon update` is how that gets fixed. If the refusal says the *app*
   is behind, tell the user — you cannot update it from here. Updating the app
   first is the smoother order for exactly that reason: it leaves the CLI behind,
   which is the half that can fix itself.

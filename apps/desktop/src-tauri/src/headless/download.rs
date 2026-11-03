@@ -2,7 +2,7 @@
 //! first time an agent asks for a browser. The Mac's `chromium.rs` reading
 //! without the app: zip to `.part`, size and sha256 checked, unpacked into a
 //! `.part` directory, renamed into place, older versions swept. Nothing
-//! reports progress but the sentence `dray browser` answers meanwhile.
+//! reports progress but the sentence `carbon browser` answers meanwhile.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -82,7 +82,7 @@ fn set(status: Status) {
     *STATUS.lock().unwrap() = status;
 }
 
-/// `<home>/chromium`, under `DRAY_HOME` where that is set.
+/// `<home>/chromium`, under `CARBON_HOME` where that is set.
 async fn dir() -> Result<PathBuf> {
     Ok(crate::store::get_home_app_dir().await?.join("chromium"))
 }
@@ -128,7 +128,7 @@ fn not_ready_reason() -> String {
 }
 
 /// Download with backoff. Each failure is reported as it happens; the next
-/// `dray browser` call wakes the wait rather than starting a second loop.
+/// `carbon browser` call wakes the wait rather than starting a second loop.
 async fn run(dir: PathBuf, zip: &'static Zip) {
     if RUNNING.swap(true, Ordering::SeqCst) {
         // `notify_one`: a permit is stored if the loop is between publishing
@@ -243,7 +243,7 @@ mod tests {
     #[ignore]
     async fn unpacks_the_real_archive() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("dray-headless-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("carbon-headless-{}", std::process::id()));
         let zip = zip().expect("a platform Chrome for Testing ships");
         download(&dir, zip).await.unwrap();
         let binary = binary_in(&dir.join(VERSION), zip);

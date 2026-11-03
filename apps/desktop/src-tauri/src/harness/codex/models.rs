@@ -1,7 +1,7 @@
 //! Which models Codex can run here, asked of Codex.
 //!
 //! `models::codex_models` named them by hand, which meant a model OpenAI shipped
-//! was unpickable until Dray shipped too — and the app-server has answered
+//! was unpickable until Carbon shipped too — and the app-server has answered
 //! `model/list` the whole time. So the table stops being the list and becomes
 //! the **fallback**: what the picker draws when the probe cannot run, which is
 //! every reader with no `codex` installed and every moment the CLI is mid-update
@@ -9,7 +9,7 @@
 //!
 //! Same shape as [`pi::models`](crate::harness::pi::models), one harness over.
 //! The difference is what failure answers: pi answers an empty list, since only
-//! pi knows pi's models, where Dray does know Codex's and a picker with no rows
+//! pi knows pi's models, where Carbon does know Codex's and a picker with no rows
 //! in it would be a worse answer than a slightly old one.
 
 use super::probe;
@@ -109,7 +109,7 @@ fn resolve(id: &ModelId, discovered: &[Model]) -> Option<Model> {
 /// and reading it survived only while the list arrived in the wire's order:
 /// [`fold`] now ranks the picker itself, so the same read moved the *creation*
 /// default onto whichever model this build would draw first, and onto any model
-/// it has never heard of. A `dray new` naming no model would have changed
+/// it has never heard of. A `carbon new` naming no model would have changed
 /// generation under the reader with nothing on screen saying so.
 ///
 /// The check is what the old reading was really buying, and it is kept: the
@@ -139,7 +139,7 @@ fn pick_default(models: &[Model]) -> ModelId {
 /// The id for a `--model` alias, from what Codex reported *or* the table.
 ///
 /// The table alone would refuse an alias for a model newer than this build —
-/// which is the one thing `dray new --model` most wants to name, since the
+/// which is the one thing `carbon new --model` most wants to name, since the
 /// picker is already offering it.
 pub async fn id_for_arg(alias: &str) -> Option<ModelId> {
     list()
@@ -223,7 +223,7 @@ struct Row {
     additional_speed_tiers: Vec<String>,
     /// Left untyped because only its *length* is read. Codex's own `id`, `name`
     /// and `description` are drawn nowhere — the switch says one thing and the
-    /// wording beside it is Dray's — and a shape typed for a field nobody reads
+    /// wording beside it is Carbon's — and a shape typed for a field nobody reads
     /// is one more way for a changed row to cost the whole picker.
     #[serde(default)]
     service_tiers: Vec<Value>,
@@ -266,7 +266,7 @@ fn read_page(answer: &Value) -> Option<ModelList> {
 /// ahead of `gpt-6-astra` — its own recommendation first, not its newest — so
 /// reading position as rank put last generation's flagship at the top of the
 /// picker and of ⇧⇥'s cycle. A model this build *names* therefore takes
-/// [`codex_models`]'s order, which is Dray's own answer to which it would put
+/// [`codex_models`]'s order, which is Carbon's own answer to which it would put
 /// first, and one it has never heard of **leads**: a model no table here holds
 /// is the new one, and having it top the picker the day it ships is what
 /// reading the list was for. Stable, so several unknowns keep the wire's
@@ -320,7 +320,7 @@ fn read_rows(answer: &Value) -> Vec<Model> {
 /// the wire says `gpt-5.6-sol`, and minting the wire spelling would leave every
 /// running Codex session naming a model the picker no longer lists — its row
 /// would read as unknown and the composer would move it to the default. So a
-/// row Dray already knows keeps the table's id and label, and only a model this
+/// row Carbon already knows keeps the table's id and label, and only a model this
 /// build has never heard of is minted from the wire.
 /// Tier is left to [`fold`], which is the only place that knows a row's final
 /// position — the wire's own is not it.
@@ -381,7 +381,7 @@ fn display_name(row: &Row) -> String {
     }
 }
 
-/// Dray's own ladder, out of the rungs this row reports. A level Dray cannot
+/// Carbon's own ladder, out of the rungs this row reports. A level Carbon cannot
 /// spell is dropped rather than guessed at — it could not be persisted anyway.
 fn ladder(row: &Row) -> Vec<Effort> {
     row.supported_reasoning_efforts
@@ -392,8 +392,8 @@ fn ladder(row: &Row) -> Vec<Effort> {
 
 /// Medium, and **deliberately not the row's own `defaultReasoningEffort`.**
 ///
-/// Which model a reader can run is Codex's answer; how hard Dray sets it
-/// working is Dray's, and the CLI's settings have no business arriving through
+/// Which model a reader can run is Codex's answer; how hard Carbon sets it
+/// working is Carbon's, and the CLI's settings have no business arriving through
 /// the back door of a list read for something else — Codex answers `low` on its
 /// top two models today, so taking it would have quietly moved everybody down a
 /// rung. The reader's own pick is what overrides this, and it persists, exactly
@@ -488,7 +488,7 @@ mod tests {
     /// `gpt-5.6-sol` here would leave every running Codex session naming a model
     /// the picker no longer lists.
     #[test]
-    fn a_model_dray_already_knows_keeps_its_persisted_id() {
+    fn a_model_carbon_already_knows_keeps_its_persisted_id() {
         let models = read_rows(&captured());
 
         let sol = models.iter().find(|m| m.arg == "gpt-5.6-sol").unwrap();
@@ -538,7 +538,7 @@ mod tests {
     /// is the new one and leads, and a generation the picker retired, which
     /// sinks.
     #[test]
-    fn the_order_is_drays_own_and_a_new_model_still_leads() {
+    fn the_order_is_carbons_own_and_a_new_model_still_leads() {
         let wire = json!({"data": [
             {"id": "gpt-5.6-sol"},
             {"id": "gpt-5.5"},
@@ -579,9 +579,9 @@ mod tests {
 
     /// Medium, whatever the CLI says its own default is — the capture has
     /// `low` on Astra and Sol. Which models exist is Codex's answer; how hard
-    /// Dray sets one working is Dray's, and the reader's own pick overrides it.
+    /// Carbon sets one working is Carbon's, and the reader's own pick overrides it.
     #[test]
-    fn the_default_effort_is_drays_own_and_not_the_clis() {
+    fn the_default_effort_is_carbons_own_and_not_the_clis() {
         let models = read_rows(&captured());
 
         assert!(models

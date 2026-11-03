@@ -21,7 +21,7 @@ const GREEN = "#3DDC97";
 /// The hero's blue, so the work in flight reads as the same page.
 const BLUE = "#8fb0ff";
 
-/// A crew can mix agents, which is half the point of running them in Dray.
+/// A crew can mix agents, which is half the point of running them in Carbon.
 /// The mark says which; the name would only say it twice.
 const TASKS = [
   { title: "Sign-in screen", Glyph: ClaudeGlyph, tree: "calm-owl" },

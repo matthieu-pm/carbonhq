@@ -26,28 +26,28 @@ export function Faq() {
 
 const FAQ: [string, string][] = [
   [
-    "What is Dray?",
-    "Dray is one Mac app for every coding agent. Run them on your Mac or on your other machines.",
+    "What is Carbon?",
+    "Carbon is one Mac app for every coding agent. Run them on your Mac or on your other machines.",
   ],
   [
-    "Is Dray free?",
-    "Yes. Dray is free and open source under Apache 2.0.",
+    "Is Carbon free?",
+    "Yes. Carbon is free and open source under Apache 2.0.",
   ],
   [
-    "Which agents does Dray support?",
-    "Dray supports Claude Code, Codex, pi, fx and Grok Build.",
+    "Which agents does Carbon support?",
+    "Carbon supports Claude Code, Codex, pi, fx and Grok Build.",
   ],
   [
-    "Is Dray safe to use with my Claude subscription?",
-    "Yes. Dray runs Anthropic's own Claude Code CLI so it works within their terms.",
+    "Is Carbon safe to use with my Claude subscription?",
+    "Yes. Carbon runs Anthropic's own Claude Code CLI so it works within their terms.",
   ],
   [
-    "Does Dray send my code off my machine?",
-    "No. Dray keeps your data on your machine. Your agents talk to their own providers, as usual.",
+    "Does Carbon send my code off my machine?",
+    "No. Carbon keeps your data on your machine. Your agents talk to their own providers, as usual.",
   ],
   [
-    "Does Dray run on Linux?",
-    "Yes, as a server. Your agents run on Linux, and you drive them from the Dray app on your Mac.",
+    "Does Carbon run on Linux?",
+    "Yes, as a server. Your agents run on Linux, and you drive them from the Carbon app on your Mac.",
   ],
 ];
 

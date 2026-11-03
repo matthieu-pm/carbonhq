@@ -36,7 +36,7 @@ type Variant = "sent" | "returned";
 /// second copy would drift on.
 ///
 /// An image resolves through its `path` — the copy the backend archived under
-/// `~/.dray/attachments`, so a screenshot taken in `/tmp` and swept away still
+/// `~/.carbon/attachments`, so a screenshot taken in `/tmp` and swept away still
 /// draws — and falls back to the `url` an unarchived one carries. One that
 /// resolves to neither is dropped here; a caller that can say something useful
 /// about a missing picture says it itself.

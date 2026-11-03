@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The pinned session's last three turns, over the input, and three more each
-/// time the reader scrolls to the top. The whole transcript stays Dray's.
+/// time the reader scrolls to the top. The whole transcript stays Carbon's.
 struct IslandTranscript: View {
     @Environment(Store.self) private var store
     let key: SessionKey
@@ -147,14 +147,14 @@ struct IslandTranscript: View {
         withTransaction(still) { count += Self.page }
     }
 
-    /// The last message, under a line that opens the whole turn in Dray.
+    /// The last message, under a line that opens the whole turn in Carbon.
     private func settled(_ turn: Turn) -> some View {
         let work = turn.work.filter { !$0.isPrompt }
         // An interrupted turn has no `finalText`, so its newest message ends it.
         let answer = turn.finalText ?? work.reversed().lazy.compactMap { if case .text(_, let t) = $0 { t } else { nil } }.first
         return VStack(alignment: .leading, spacing: 8) {
             if let p = turn.prompt { PromptBubble(text: p.text, images: p.images) }
-            // The work is Dray's to show: the line leads there and the island closes.
+            // The work is Carbon's to show: the line leads there and the island closes.
             if !work.isEmpty {
                 Button(action: openInApp) {
                     Text(summaryLabel(work)).monospacedDigit()
@@ -163,7 +163,7 @@ struct IslandTranscript: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Open in Dray")
+                .help("Open in Carbon")
             }
             // The fold hides the calls, not what they showed.
             let shown = foldedImages(work)

@@ -100,7 +100,7 @@ function formatDate(date: string): string {
   });
 }
 
-/// Every release, newest first, as drayhq.com/changelog draws it. The beta
+/// Every release, newest first, as carbonhq.com/changelog draws it. The beta
 /// channel sees betas too.
 export default function ChangelogSettings({ channel }: { channel: UpdateChannel }) {
   const [releases, setReleases] = useState<Release[] | null>(null);

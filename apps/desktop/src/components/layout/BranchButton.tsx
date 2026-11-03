@@ -15,7 +15,7 @@ export default function BranchButton({ branch, cwd: rawCwd }: { branch: string; 
   const cwd = displayPath(rawCwd);
   const copied = copiedPath === cwd;
   // Read off the directory rather than the branch name, which a reader can
-  // rename to anything; Dray's trees always live under this segment.
+  // rename to anything; Carbon's trees always live under this segment.
   const worktree = rawCwd.includes("/.claude/worktrees/");
   const Mark = worktree ? FolderGit2 : GitBranchIcon;
   return (
@@ -39,7 +39,7 @@ export default function BranchButton({ branch, cwd: rawCwd }: { branch: string; 
           ) : (
             <Mark className="size-3.5 shrink-0" />
           )}
-          {/* A Dray worktree's branch is `worktree-<name>`; the mark already
+          {/* A Carbon worktree's branch is `worktree-<name>`; the mark already
               says worktree and the name is the part worth the room. */}
           <span className="truncate">{branch.replace(/^worktree-/, "")}</span>
         </button>

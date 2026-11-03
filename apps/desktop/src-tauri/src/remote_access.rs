@@ -1,7 +1,7 @@
-//! Remote access: this machine as a Dray server, reached through an
+//! Remote access: this machine as a Carbon server, reached through an
 //! OpenTunnel address that stays the same across restarts ([`crate::tunnel`]).
 //! On a Mac the server runs a listener of its own for it, apart from the
-//! app's, so a remote Mac is never handed the host calls; `dray-serve` fronts
+//! app's, so a remote Mac is never handed the host calls; `carbon-serve` fronts
 //! the listener it already has ([`fronts`]). See TUNNEL-PLAN.md.
 
 use std::{future::Future, path::PathBuf, sync::LazyLock, sync::OnceLock, time::Duration};
@@ -34,7 +34,7 @@ fn state() -> std::sync::MutexGuard<'static, (RemoteAccess, Option<tokio::task::
 /// The route's label on the [`tunnel::REMOTE`] tunnel.
 const ROUTE: &str = "remote";
 
-/// The port `dray-serve` already listens on, which the tunnel fronts instead
+/// The port `carbon-serve` already listens on, which the tunnel fronts instead
 /// of a listener of its own.
 static FRONTED: OnceLock<u16> = OnceLock::new();
 
@@ -45,7 +45,7 @@ pub fn fronts(port: u16) {
 
 /// Where the address lives, for the Origin check and an SSH login to read.
 async fn tunnel_file() -> anyhow::Result<PathBuf> {
-    Ok(store::get_home_app_dir().await?.join(dray_proto::TUNNEL_URL_FILE))
+    Ok(store::get_home_app_dir().await?.join(carbon_proto::TUNNEL_URL_FILE))
 }
 
 /// Held across a whole change, the saved setting included. Two presses racing
@@ -102,14 +102,14 @@ pub async fn remote_access_token() -> Result<String, String> {
     Ok(token)
 }
 
-/// The phone's pairing QR, as SVG: [`dray_proto::pair_link`] for this
+/// The phone's pairing QR, as SVG: [`carbon_proto::pair_link`] for this
 /// address. It carries the token, so it is asked for when the reader opens it,
 /// the same as Copy.
 pub async fn remote_access_qr() -> Result<String, String> {
     let address = get_remote_access().address.ok_or("Remote access has no address yet")?;
     let token = remote_access_token().await?;
-    let name = tokio::task::spawn_blocking(dray_proto::machine_name).await.map_err(|e| e.to_string())?;
-    let code = qrcode::QrCode::new(dray_proto::pair_link(&address, &token, &name)).map_err(|e| e.to_string())?;
+    let name = tokio::task::spawn_blocking(carbon_proto::machine_name).await.map_err(|e| e.to_string())?;
+    let code = qrcode::QrCode::new(carbon_proto::pair_link(&address, &token, &name)).map_err(|e| e.to_string())?;
     Ok(code.render::<qrcode::render::svg::Color>().min_dimensions(176, 176).build())
 }
 
@@ -237,7 +237,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
 
     /// This process serving through a real tunnel, in a throwaway
-    /// `DRAY_HOME`: a client admitted at the address, an event the core emits
+    /// `CARBON_HOME`: a client admitted at the address, an event the core emits
     /// reaching it, off dropping it, and on again answering the same address.
     ///
     /// ```text
@@ -246,9 +246,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn serves_through_a_tunnel() {
-        let home = std::env::temp_dir().join(format!("dray-remote-test-{}", uuid::Uuid::new_v4().simple()));
+        let home = std::env::temp_dir().join(format!("carbon-remote-test-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&home).unwrap();
-        std::env::set_var("DRAY_HOME", &home);
+        std::env::set_var("CARBON_HOME", &home);
         let sink = Sink::new(|_, _| {});
         let wait_for_address = || async {
             let t0 = std::time::Instant::now();
@@ -267,7 +267,7 @@ mod tests {
         let address = wait_for_address().await;
         eprintln!("address {address} in {:?}", t0.elapsed());
         assert!(address.starts_with("wss://") && address.ends_with(".opentunnel.xyz"), "{address}");
-        let file = home.join(dray_proto::TUNNEL_URL_FILE);
+        let file = home.join(carbon_proto::TUNNEL_URL_FILE);
         assert_eq!(std::fs::read_to_string(&file).unwrap().trim(), address.replacen("wss://", "https://", 1));
         let token = remote_access_token().await.unwrap();
 

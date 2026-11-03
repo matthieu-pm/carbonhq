@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-Dray reads issues from Linear and GitHub. You browse them on the Issues page, tag them into a prompt with `#`, and see the ones a session is working on in its right panel. Dray changes two things on an issue — its status and its priority — and nothing else.
+Carbon reads issues from Linear and GitHub. You browse them on the Issues page, tag them into a prompt with `#`, and see the ones a session is working on in its right panel. Carbon changes two things on an issue — its status and its priority — and nothing else.
 
 ## Connect a tracker
 
@@ -17,20 +17,20 @@ At the top left of the page are two marks, Linear and GitHub. Click the one you 
 
 <Steps>
   <Step title="Make a key">
-    Click **Create a key in Linear** to open Linear's security settings, and create a personal API key. A key with read and write access lets you change status and priority from Dray. A read-only key works too; you just cannot change a status or priority.
+    Click **Create a key in Linear** to open Linear's security settings, and create a personal API key. A key with read and write access lets you change status and priority from Carbon. A read-only key works too; you just cannot change a status or priority.
   </Step>
   <Step title="Paste it">
-    Paste the key into the field (it starts `lin_api_`) and press **Connect**. Dray checks the key with Linear before saving it.
+    Paste the key into the field (it starts `lin_api_`) and press **Connect**. Carbon checks the key with Linear before saving it.
   </Step>
 </Steps>
 
-The key is saved in `~/.dray/credentials.json`, readable only by your user. To remove it, go to Settings → Integrations → Issue tracker and press **Disconnect**. Sessions keep the issues they are tagged with.
+The key is saved in `~/.carbon/credentials.json`, readable only by your user. To remove it, go to Settings → Integrations → Issue tracker and press **Disconnect**. Sessions keep the issues they are tagged with.
 
-The key fills Dray's own screens. It gives your agent nothing. For the agent to read and manage Linear issues in chat, add [Linear's MCP server](https://linear.app/docs/mcp) to your agent CLI.
+The key fills Carbon's own screens. It gives your agent nothing. For the agent to read and manage Linear issues in chat, add [Linear's MCP server](https://linear.app/docs/mcp) to your agent CLI.
 
 ### GitHub
 
-Dray reads GitHub issues through the `gh` CLI and stores no GitHub credential of its own.
+Carbon reads GitHub issues through the `gh` CLI and stores no GitHub credential of its own.
 
 1. If you don't have `gh`, install it: `brew install gh`.
 2. Run `gh auth login` in a terminal. You can also sign in from Settings → Accounts → GitHub, which opens Terminal for you.
@@ -101,19 +101,19 @@ The tab appears only once something is linked, and goes away when the last link 
 
 ### How issues get linked
 
-Linking is done by the agent, or by you from a terminal, with the `dray` CLI:
+Linking is done by the agent, or by you from a terminal, with the `carbon` CLI:
 
 ```bash
-dray issue link DRA-53 --title "Add issue tracker integration" --url "https://linear.app/…"
-dray issue link owner/repo#12 --title "…" --url "…"
+carbon issue link DRA-53 --title "Add issue tracker integration" --url "https://linear.app/…"
+carbon issue link owner/repo#12 --title "…" --url "…"
 ```
 
-A GitHub issue is always named `owner/repo#123`; a bare `#123` is refused, because a number alone names no repository. `dray new --issue DRA-53` links an issue to a session as it is created. All the commands and flags are on [Issues in the CLI](/cli/issues).
+A GitHub issue is always named `owner/repo#123`; a bare `#123` is refused, because a number alone names no repository. `carbon new --issue DRA-53` links an issue to a session as it is created. All the commands and flags are on [Issues in the CLI](/cli/issues).
 
 ## Limits
 
-- Dray changes status and priority only. Comments, assignees, labels and titles are edited in the tracker.
-- The `dray` CLI never changes an issue. It only records links.
+- Carbon changes status and priority only. Comments, assignees, labels and titles are edited in the tracker.
+- The `carbon` CLI never changes an issue. It only records links.
 - The connection is workspace-wide. There is no mapping from a project to a Linear team.
 - GitHub Projects are not read, and GitHub has no priority.
 - GitHub Enterprise hosts are not supported.

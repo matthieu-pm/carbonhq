@@ -6,13 +6,13 @@
 /// appear any number of times, so the caret finds its own token here rather
 /// than the token being found once up front.
 ///
-/// **The id is in the text because the id is the address.** `dray send` takes
+/// **The id is in the text because the id is the address.** `carbon send` takes
 /// a session id and matches it exactly — there is no prefix or title lookup —
 /// so a tag naming a session by title alone would leave the agent running
-/// `dray ls` and guessing between two sessions that share one. That is the same
+/// `carbon ls` and guessing between two sessions that share one. That is the same
 /// bargain [issue.ts] makes by writing the identifier and the title both, and
 /// the same one Rust's `attribute` already makes when it prefixes a relayed
-/// message with `the Dray session "title" (id)`.
+/// message with `the Carbon session "title" (id)`.
 ///
 /// So nothing crosses the bridge for this: no command, no wire field, no Rust.
 /// The picker writes text, the agent reads text.

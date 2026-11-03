@@ -409,8 +409,8 @@ describe("findBareUrls", () => {
   const hrefs = (text: string) => findBareUrls(text).map((u) => u.href);
 
   it("links a bare host, with its path, minus the sentence's punctuation", () => {
-    expect(hrefs("See drayhq.com/docs, then docs.github.com.")).toEqual([
-      "https://drayhq.com/docs",
+    expect(hrefs("See carbonhq.com/docs, then docs.github.com.")).toEqual([
+      "https://carbonhq.com/docs",
       "https://docs.github.com",
     ]);
     expect(hrefs("(example.co.uk)")).toEqual(["https://example.co.uk"]);
@@ -432,7 +432,7 @@ describe("findBareUrls", () => {
   it("leaves file names, paths, emails and versions alone", () => {
     expect(
       hrefs(
-        "README.md main.rs app.py Dray.app libx.so Node.js src/foo.com me@example.com v1.2.3 e.g. example.community config.dev.ts",
+        "README.md main.rs app.py Carbon.app libx.so Node.js src/foo.com me@example.com v1.2.3 e.g. example.community config.dev.ts",
       ),
     ).toEqual([]);
   });
@@ -443,8 +443,8 @@ describe("linkBareUrls", () => {
     const tree: Hast = {
       type: "root",
       children: [
-        { type: "text", value: "go to drayhq.com now" },
-        { type: "element", tagName: "code", children: [{ type: "text", value: "drayhq.com" }] },
+        { type: "text", value: "go to carbonhq.com now" },
+        { type: "element", tagName: "code", children: [{ type: "text", value: "carbonhq.com" }] },
         {
           type: "element",
           tagName: "a",
@@ -461,7 +461,7 @@ describe("linkBareUrls", () => {
       "code",
       "a",
     ]);
-    expect(tree.children?.[1].properties?.href).toBe("https://drayhq.com");
-    expect(tree.children?.[3].children?.[0].value).toBe("drayhq.com");
+    expect(tree.children?.[1].properties?.href).toBe("https://carbonhq.com");
+    expect(tree.children?.[3].children?.[0].value).toBe("carbonhq.com");
   });
 });

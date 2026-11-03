@@ -29,17 +29,17 @@ use super::parser::AvailableCommand;
 static CACHE: LazyLock<ProbeCache<Vec<SlashCommand>>> =
     LazyLock::new(|| ProbeCache::new(Duration::MAX));
 
-/// The commands Dray owns or cannot reconcile, which are dropped before the
+/// The commands Carbon owns or cannot reconcile, which are dropped before the
 /// list is stored.
 ///
 /// The same reading Claude Code's `clear`/`model`/`rename` take: each of these
 /// is either a control the app already draws in its own chrome, or an action
 /// whose effect never comes back on the wire in a form the app could follow.
 /// `always-approve` moves the session's stance behind the composer's back;
-/// `compact`, `context` and `session-info` report things Dray's own ring and
+/// `compact`, `context` and `session-info` report things Carbon's own ring and
 /// header already say; `plugins`, `hooks-*` and `feedback` are TUI screens; and
 /// `loop`, `goal`, `workflow` and `deep-research` each start work that outlives
-/// the turn with no lifecycle Dray can draw.
+/// the turn with no lifecycle Carbon can draw.
 ///
 /// Prefix-matched on `hooks-`, since that one is a family of five.
 const WITHHELD: &[&str] = &[

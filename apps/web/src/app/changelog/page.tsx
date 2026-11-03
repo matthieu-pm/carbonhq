@@ -6,8 +6,8 @@ import { SiteNav } from "@/components/home/SiteNav";
 import { loadChangelog, type Item } from "@/lib/changelog";
 
 export const metadata: Metadata = {
-  title: "Changelog - Dray",
-  description: "What changed in each Dray release.",
+  title: "Changelog - Carbon",
+  description: "What changed in each Carbon release.",
 };
 
 const LABEL = "font-mono text-[11px] leading-[14px] tracking-[0.06em] uppercase";
@@ -110,7 +110,7 @@ export default function Changelog() {
               Changelog
             </h1>
             <p className="mt-4 text-[16px] leading-6 tracking-[-0.01em] text-[#7C7C7C] light:text-[#8A8A8A]">
-              What changed in each Dray release.
+              What changed in each Carbon release.
             </p>
 
             <div className="mt-16 border-t border-white/20 light:border-black/15">

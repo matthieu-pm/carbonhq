@@ -19,7 +19,7 @@ import "../App.css";
 const ring = (c: BaseAudioContext, out: AudioNode, at: number, base: number, ratios: number[], gain: number, decay: number) =>
   ratios.forEach((r, i) => ping(c, out, at, "sine", base * r, base * r * 0.995, gain / (i + 1), decay / (1 + i * 0.4)));
 
-/// Judge these in Safari, not Dray's browser: the app is WebKit, which plays
+/// Judge these in Safari, not Carbon's browser: the app is WebKit, which plays
 /// the bare wheel much sharper than Chromium does. A 2ms onset, a 9kHz lowpass
 /// and a lower wheel lost to the 1ms eased one there.
 const TICKS: { id: string; name: string; like: string; voice: Voice }[] = [

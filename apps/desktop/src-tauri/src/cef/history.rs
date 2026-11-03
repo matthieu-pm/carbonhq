@@ -2,12 +2,12 @@
 //! first, for the empty state's recent list and the URL bar's suggestions.
 //!
 //! **Kept in the session's own profile directory**, so settling or deleting
-//! the session takes it along with the cookies. **Dray's record, not
+//! the session takes it along with the cookies. **Carbon's record, not
 //! Chromium's**: Chromium keeps one in the profile's `History`, but that is
 //! SQLite held under an exclusive lock while the profile is open, so reading
 //! it would cost a new dependency and a file copy per read.
 //!
-//! **The session's tab strip lives beside it** (`dray-tabs.json`), written by
+//! **The session's tab strip lives beside it** (`carbon-tabs.json`), written by
 //! the same thread, so a quit — an update's relaunch included — reopens on
 //! the tabs it left rather than on an empty pane.
 
@@ -17,9 +17,9 @@ use std::path::PathBuf;
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const FILE: &str = "dray-history.json";
+const FILE: &str = "carbon-history.json";
 const CAP: usize = 200;
-const STRIP_FILE: &str = "dray-tabs.json";
+const STRIP_FILE: &str = "carbon-tabs.json";
 
 /// A session's tabs as they stood, in strip order.
 #[derive(Clone, Default, Serialize, Deserialize)]

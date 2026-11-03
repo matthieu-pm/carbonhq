@@ -297,11 +297,11 @@ function App() {
   useEffect(() => {
     if (selectedSessionId) setOpenDraftId(null);
   }, [selectedSessionId]);
-  // Dray Island opens on this session when tapped over Dray's window.
+  // Carbon Island opens on this session when tapped over Carbon's window.
   useEffect(() => {
     void invoke("set_app_selection", { sessionId: selectedSessionId }).catch(() => {});
   }, [selectedSessionId]);
-  // `dray draft rm` or `start` can take the open draft away; leave it then.
+  // `carbon draft rm` or `start` can take the open draft away; leave it then.
   useEffect(() => {
     if (openDraftId && !drafts.some((d) => d.id === openDraftId)) setOpenDraftId(null);
   }, [drafts, openDraftId]);
@@ -1585,7 +1585,7 @@ function App() {
     composerCwd,
     harness,
   );
-  // `true` wherever Dray has no answer: the list may not have landed, and pi
+  // `true` wherever Carbon has no answer: the list may not have landed, and pi
   // picks its own model when none is named. A warning drawn on a guess is worse
   // than none, so absence reads as capable.
   const modelTakesImages =

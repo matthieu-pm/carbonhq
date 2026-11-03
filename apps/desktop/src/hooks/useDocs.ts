@@ -197,7 +197,7 @@ function patchReady(sid: string, path: string, next: (body: Ready) => Ready) {
 
 /// What a click on a path in the transcript does.
 ///
-/// Neither kind leaves Dray any more: markdown opens in the Docs panel, which
+/// Neither kind leaves Carbon any more: markdown opens in the Docs panel, which
 /// renders and edits it, and everything else opens in the Files view, which
 /// highlights it and takes the line the link named. A file this app can already
 /// show is not one to leave the app for — and the reader who wants their own

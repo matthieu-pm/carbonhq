@@ -1,16 +1,16 @@
 # Stage 6: the browser on a remote server
 
-monorepo-labs/dray#430. An agent on a VPS gets `dray browser`, driving a
+monorepo-labs/dray#430. An agent on a VPS gets `carbon browser`, driving a
 headless Chromium on that VPS. The reader's own browsing stays on the Mac, and
 the two are not connected: screenshots and recordings reach the reader through
 the transcript alone.
 
 ## What changes for the reader
 
-- **Agent side.** Same `dray browser` grammar, same `HELPERS_JS`, same skill
+- **Agent side.** Same `carbon browser` grammar, same `HELPERS_JS`, same skill
   text. A remote screenshot or recording is a path in the reply, which already
   opens (Files view, `read_file`) or plays inline (`VideoPlayer` through
-  `drayserver://` and `/file`).
+  `carbonserver://` and `/file`).
 - **Reader side.** A remote session's Browser tab is the Mac's own browser,
   exactly as for a local session. The one change is its server list: for a
   remote session it lists the dev servers running *on that server*, and a click
@@ -39,7 +39,7 @@ Measured, not assumed:
 - **CEF's Linux minimal tarball was the alternative** (same CDN as the Mac, one
   version for both). It ships `libcef.so` and no executable, so it needs a host
   binary running CEF off-screen with its own message loop, plus the `cef` crate
-  and its CMake build in `dray-serve`. Same system libraries on top. Far more
+  and its CMake build in `carbon-serve`. Same system libraries on top. Far more
   code for no gain the agent can see.
 - **Playwright's builds** were the fallback for arm64. Not needed now that CfT
   publishes it.
@@ -91,7 +91,7 @@ screen   reveal_for_input  relayout  cover  uncover  emit  browser_dir
 - `cfg`: headless is `all(feature = "serve", not(feature = "cef"))`, any unix.
   That is what the required `cargo check --no-default-features --features
   serve` compiles on the Mac, so the headless half is type-checked where
-  everyone builds; and a Mac `dray-serve` gets a browser too, which is how it
+  everyone builds; and a Mac `carbon-serve` gets a browser too, which is how it
   is tried locally. Downloads are pinned for linux64, linux-arm64, mac-arm64
   and mac-x64.
 
@@ -133,20 +133,20 @@ the reader's strip. So headless `emit` does nothing.
   the Mac's per-host level; CDP exposes no browser zoom.
 - **Before launching**, `ldd` on the binary and a look for
   `/etc/fonts/fonts.conf`. Missing either answers one sentence naming the
-  libraries and `dray setup`, rather than a crash in Chromium's words.
+  libraries and `carbon setup`, rather than a crash in Chromium's words.
 
 ## The download
 
-`chromium.rs`'s reading, under `<home>/chromium/` (`DRAY_HOME`-aware): zip to
+`chromium.rs`'s reading, under `<home>/chromium/` (`CARBON_HOME`-aware): zip to
 `.part` through `download::download_verified` (size and sha256), unpacked by
 the `zip` crate — already in the lockfile under the updater, and needed since a
 fresh Ubuntu has no `unzip` — into `<version>.part/`, renamed into place, older
-versions swept. Started by the first `dray browser` call that needs Chromium;
+versions swept. Started by the first `carbon browser` call that needs Chromium;
 that call answers "Chromium is still downloading (n%)", as later ones do until
 it lands. Backoff and retry as on the Mac. No UI: the status lives in the
 server's memory and reaches only the agent.
 
-`dray setup` gains two pick-list rows on Linux, apt only, installed the way
+`carbon setup` gains two pick-list rows on Linux, apt only, installed the way
 `git` is (root runs it, passwordless sudo runs it, anyone else is handed the
 command): **Browser for agents** (the libraries above) and **ffmpeg**. The
 libraries row reads as installed where `ldconfig -p` names every one and
@@ -163,7 +163,7 @@ fetches it on first use.
 - Recording: the same frame clock and the same Photo-JPEG `.mov` muxer, then
   `ffmpeg -c:v libx264 -pix_fmt yuv420p -movflags +faststart` where the Mac
   runs `avconvert`. A server with no `ffmpeg` refuses `record start` in one
-  sentence naming `dray setup`. A Mac `dray-serve` keeps `avconvert`.
+  sentence naming `carbon setup`. A Mac `carbon-serve` keeps `avconvert`.
 
 ## Forwarding ports
 
@@ -202,7 +202,7 @@ Each leaves the Mac browser exactly as it is.
 1. **Seam.** Move `automation.rs`, the backend functions into `cef.rs`.
    `cargo check --features cef` (with `CEF_PATH`), bare `cargo test`.
 2. **Headless + download + recording + `/file` + setup rows.** Proven by a
-   script against `dray-serve` in OrbStack Ubuntu, x86_64 and arm64: open,
+   script against `carbon-serve` in OrbStack Ubuntu, x86_64 and arm64: open,
    snapshot, click, type, screenshot, record, discard and wake, the
    downloading sentence, the missing-libraries sentence.
 3. **Forwards + `/proc` listing + the remote Browser tab.** Proven against the
@@ -213,7 +213,7 @@ x86_64 and on the VPS (Ubuntu 26.04 x86_64, as root, so without the sandbox) —
 the downloading sentence, every verb, popup and dialog, `set device`, full-page
 screenshot, recording to a 750×1334 H.264 MP4 where ffmpeg is installed and
 the refusal where it is not. A killed Chromium comes back on the next verb with
-its tabs. A bare Ubuntu answers the missing-libraries sentence, and `dray setup
+its tabs. A bare Ubuntu answers the missing-libraries sentence, and `carbon setup
 --install browser,ffmpeg` cures it. `ssh::forward` against the VPS fetched a
 page through the forwarded port (`forwards_a_real_dev_server`, ignored by
 default); `finds_its_own_listener` runs the real `/proc` read on Linux. The

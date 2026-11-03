@@ -1,4 +1,4 @@
-# `dray serve` — the core as a headless server
+# `carbon serve` — the core as a headless server
 
 monorepo-labs/dray#413, steps 1 and 2: the Rust core runs with no Tauri and
 speaks a WebSocket, and the frontend reaches either it or the in-process core
@@ -37,7 +37,7 @@ already one per process through `.manage()`; a static is what lets the server
 and orchestration reach it without a Tauri state map.
 
 **`crate::is_dev()` and `crate::spawn()`** stand in for Tauri's two. A server
-is never a dev build; it gets the same separation through `DRAY_HOME`.
+is never a dev build; it gets the same separation through `CARBON_HOME`.
 
 Every core command is then an ordinary function whose attribute is
 `#[cfg_attr(feature = "desktop", tauri::command)]`, and the server calls the
@@ -53,28 +53,28 @@ path).
   Mac-only dependencies (`transcribe-cpp`, `cpal`, `rubato`, `notify-rust`).
   Gates `lib.rs`'s `run()` and the Mac-only modules. `cef` implies it.
 - `serve` — off by default. `tokio-tungstenite`, the `serve` module and the
-  `dray-serve` binary (`required-features = ["serve"]`).
+  `carbon-serve` binary (`required-features = ["serve"]`).
 
 **The release pipeline does not move.** `tauri build` builds default features,
-which are today's features under a name, and skips `dray-serve` because of its
-`required-features`. The `dray` binary has `required-features = ["desktop"]`.
+which are today's features under a name, and skips `carbon-serve` because of its
+`required-features`. The `carbon` binary has `required-features = ["desktop"]`.
 
 ```bash
 cd apps/desktop/src-tauri
-cargo build --no-default-features --features serve --bin dray-serve
+cargo build --no-default-features --features serve --bin carbon-serve
 ```
 
 **Required check, every change to the core:**
 
 ```bash
-cargo check --no-default-features --features serve --bin dray-serve --tests
+cargo check --no-default-features --features serve --bin carbon-serve --tests
 ```
 
 Nothing else compiles this build — there is no per-PR CI — so a desktop-only
 call slipped into the core rots it silently. The same line belongs in
 `warm-cache.yml` on main beside the desktop build.
 
-Extracting a `crates/dray-core` was the alternative. It moves ~50k lines, and
+Extracting a `crates/carbon-core` was the alternative. It moves ~50k lines, and
 `cargo test` in `src-tauri` stops exporting the core's ts-rs types (a crate's
 tests only run in that crate), so `events.ts` would need a second regeneration
 path.
@@ -101,8 +101,8 @@ that never heard of the field ignores it, so no version moved, and the iOS app
 and the browser transport simply never ask.
 
 **The version is checked before anything else in the first frame**, and the
-refusal names which side is behind — `update the Dray app` or
-`update dray-serve` — the rule `dray_proto::PROTOCOL_VERSION` already follows.
+refusal names which side is behind — `update the Carbon app` or
+`update carbon-serve` — the rule `carbon_proto::PROTOCOL_VERSION` already follows.
 It is stated in `serve.rs` (`PROTOCOL`) and again in `transport.ts`.
 
 Commands run concurrently, as Tauri's async commands do, so a send that spawns
@@ -163,7 +163,7 @@ remote client.
 **A kept token plus an Origin check, binding `127.0.0.1`.**
 
 - **Token.** A TCP port on localhost is open to every account on the machine,
-  unlike `dray.sock` behind a `0700` directory, and a VPS is often shared. So
+  unlike `carbon.sock` behind a `0700` directory, and a VPS is often shared. So
   the server holds a 256-bit token in `<data dir>/serve-token`, `0600` from its
   create (`store::write_private_atomic`), and the first frame must carry it.
   Compared in equal time. It is also what remote reach will use.
@@ -180,15 +180,15 @@ remote client.
 
 ## Data directory
 
-`DRAY_HOME` overrides `~/.dray`, read in `get_home_app_dir` and the socket
+`CARBON_HOME` overrides `~/.carbon`, read in `get_home_app_dir` and the socket
 path. The index is rewritten whole under a *per-process* lock, so two processes
-on one data dir lose each other's writes — which is exactly a `dray-serve`
+on one data dir lose each other's writes — which is exactly a `carbon-serve`
 started on a Mac whose app is running. Unset on a VPS. So `run` refuses to
-start where `dray.sock` or `dray-dev.sock` in its home answers a connect, and
-names `DRAY_HOME` as the cure.
+start where `carbon.sock` or `carbon-dev.sock` in its home answers a connect, and
+names `CARBON_HOME` as the cure.
 
-The server also serves the orchestration socket, so `dray new`/`send`/`ls`
-from inside its agents reach it (`DRAY_ENDPOINT` is already injected).
+The server also serves the orchestration socket, so `carbon new`/`send`/`ls`
+from inside its agents reach it (`CARBON_ENDPOINT` is already injected).
 
 ## What stays desktop-only
 
@@ -223,15 +223,15 @@ Desktop-only commands reject with `unknown command`; the UI logs some
 
 ```bash
 cd apps/desktop/src-tauri
-cargo build --no-default-features --features serve --bin dray-serve
-DRAY_HOME=/tmp/dray-serve-home ./target/debug/dray-serve --port 7317
+cargo build --no-default-features --features serve --bin carbon-serve
+CARBON_HOME=/tmp/carbon-serve-home ./target/debug/carbon-serve --port 7317
 
 # a scripted turn
-cd .. && DRAY_HOME=/tmp/dray-serve-home node scripts/serve-smoke.mjs
+cd .. && CARBON_HOME=/tmp/carbon-serve-home node scripts/serve-smoke.mjs
 
 # the real UI in a browser
-DRAY_DEV_PORT=1477 pnpm dev
-open "http://localhost:1477/?token=$(cat /tmp/dray-serve-home/serve-token)"
+CARBON_DEV_PORT=1477 pnpm dev
+open "http://localhost:1477/?token=$(cat /tmp/carbon-serve-home/serve-token)"
 ```
 
 ## Stages
@@ -243,12 +243,12 @@ unchanged).
 2. **Features** — `desktop` default, Tauri and Mac-only deps behind it,
    `cfg_attr` on every command. `cargo tree --no-default-features` holds no
    `tauri`. Done.
-3. **Server** — `serve.rs` + `dray-serve`: WebSocket, hello, token, Origin,
+3. **Server** — `serve.rs` + `carbon-serve`: WebSocket, hello, token, Origin,
    event fan-out, orchestration socket, startup resets, the whole core table.
    Proven by `serve-smoke.mjs`: a Claude Code session created and a turn
    streamed. Done.
 4. **Frontend transport** — `transport.ts`, imports moved. Proven in a plain
-   browser against `dray-serve`: a session resumed and a new one created, both
+   browser against `carbon-serve`: a session resumed and a new one created, both
    streamed. Done.
 5. **Files and reconnect** — the `/file` route, `fileSrc`, `live_state`,
    log resync. Proven with a TCP proxy between the browser and the server, cut
@@ -260,7 +260,7 @@ unchanged).
 
 ## Verified
 
-- **Linux.** `dray-serve` builds on Debian bookworm (`rust:1-bookworm`,
+- **Linux.** `carbon-serve` builds on Debian bookworm (`rust:1-bookworm`,
   aarch64, via OrbStack) with no default features, first try. Run there, the
   smoke script got through the handshake, `agent_availability` and
   `add_project`, and `send_msg` answered "Claude Code isn't installed", which is
@@ -268,16 +268,16 @@ unchanged).
 - **The desktop with `cef`** still compiles (`cargo check --features cef`
   against the SDK in `~/.local/share/cef`).
 - **The dev app** was run by hand: turns, permission and question cards,
-  rename, Stop, a Codex turn, `dray new` appearing live, live file updates, and
+  rename, Stop, a Codex turn, `carbon new` appearing live, live file updates, and
   settle, delete and fork.
 
 ## Naming and distribution
 
-**The command people type is `dray serve`, as with opencode and T3 Code;
-`dray-serve` is only the file behind it.** No CLI change lands here: a
-`dray serve` shim with no install story would have nothing to find. At the
-SSH-connect issue, `install.sh` installs `dray` and `dray-serve` from one
-release tag at one version, and `dray serve` execs the binary beside itself.
+**The command people type is `carbon serve`, as with opencode and T3 Code;
+`carbon-serve` is only the file behind it.** No CLI change lands here: a
+`carbon serve` shim with no install story would have nothing to find. At the
+SSH-connect issue, `install.sh` installs `carbon` and `carbon-serve` from one
+release tag at one version, and `carbon serve` execs the binary beside itself.
 That is one install and no drift in practice, without the CLI crate linking the
 core. Folding the server into the CLI binary (opencode's own shape) was
 rejected: the CLI would carry tokio and the whole core, and lose the rule that

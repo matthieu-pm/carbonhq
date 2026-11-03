@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 // light headlines and the regular body.
 const inter = Inter({ variable: "--font-inter-sans", subsets: ["latin"] });
 
-const title = "Dray - Run every coding agent in one app.";
+const title = "Carbon - Run every coding agent in one app.";
 const description =
   "Supports Claude Code, Codex, Grok, pi and fx. Free and open source, runs on the subscriptions you already have.";
 
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title,
   description,
-  openGraph: { title, description, type: "website", siteName: "Dray" },
+  openGraph: { title, description, type: "website", siteName: "Carbon" },
   twitter: { card: "summary_large_image", title, description },
 };
 

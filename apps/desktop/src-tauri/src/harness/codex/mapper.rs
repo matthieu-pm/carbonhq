@@ -1,4 +1,4 @@
-//! Codex's vocabulary onto Dray's.
+//! Codex's vocabulary onto Carbon's.
 //!
 //! One notification can be several events — an `agentMessage` closing is both
 //! the end of its streamed block and the committed text that supersedes it — so
@@ -6,7 +6,7 @@
 //! returns an `Option`.
 //!
 //! Two events are synthesized rather than read, and both are noted where they
-//! are minted: Codex sends no "requesting" ping and no user-message echo Dray
+//! are minted: Codex sends no "requesting" ping and no user-message echo Carbon
 //! can use.
 
 use crate::events::{
@@ -26,12 +26,12 @@ use super::parser::{
 
 /// Per-session state the mapping needs across lines.
 pub struct Mapper {
-    /// Dray's own id, never Codex's thread id. Every event the frontend routes
+    /// Carbon's own id, never Codex's thread id. Every event the frontend routes
     /// is keyed on this, and the two are only joined on the index entry.
     session_id: String,
     seq: Arc<AtomicU64>,
     /// The open turn, so events inside it can name it. Codex is the first
-    /// harness to give Dray this at all.
+    /// harness to give Carbon this at all.
     turn_id: Option<String>,
     /// The newest occupancy reading, folded onto the turn's own
     /// `TurnCompleted` — the composer's ring reads it back out of the log, and
@@ -365,7 +365,7 @@ impl Mapper {
                 vec![self.event(AgentEventPayload::ContextCompactionStarted)]
             }
 
-            // `Other` includes Codex's echo of our prompt, which Dray already minted.
+            // `Other` includes Codex's echo of our prompt, which Carbon already minted.
             ThreadItem::Extension { .. } | ThreadItem::Other => Vec::new(),
         }
     }
@@ -1061,14 +1061,14 @@ mod tests {
     use serde_json::json;
 
     fn mapper() -> Mapper {
-        Mapper::new("dray-session".to_string(), Arc::new(AtomicU64::new(0)))
+        Mapper::new("carbon-session".to_string(), Arc::new(AtomicU64::new(0)))
     }
 
     fn map_one(m: &mut Mapper, method: &str, params: serde_json::Value) -> Vec<AgentEvent> {
         m.map(parse_notification(method, params).expect("should parse"))
     }
 
-    /// Codex echoes the prompt back as an item. Dray already minted its own
+    /// Codex echoes the prompt back as an item. Carbon already minted its own
     /// carrying the baseline, images and issue links, so drawing this too would
     /// show every prompt twice.
     #[test]
@@ -1084,7 +1084,7 @@ mod tests {
     }
 
     /// Every event inside a turn names it. Codex is the first harness to give
-    /// Dray a turn id at all, and it is what scopes a row to its exchange.
+    /// Carbon a turn id at all, and it is what scopes a row to its exchange.
     #[test]
     fn events_carry_the_open_turn_id() {
         let mut m = mapper();

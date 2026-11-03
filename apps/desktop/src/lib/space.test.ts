@@ -93,7 +93,7 @@ describe("spaces", () => {
 });
 
 describe("orderProjects", () => {
-  const vps = project("dray://vps/root/app", null);
+  const vps = project("carbon://vps/root/app", null);
   const merged = [...projects, vps];
   const paths = (list: Project[]) => list.map((p) => p.path);
 

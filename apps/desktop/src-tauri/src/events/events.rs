@@ -151,7 +151,7 @@ pub enum AgentEventPayload {
         /// it inside the running one and emits a single `result` for both.
         #[serde(default)]
         queued: bool,
-        /// The Dray session that relayed this prompt, when one did.
+        /// The Carbon session that relayed this prompt, when one did.
         ///
         /// `None` — the ordinary case — means the user typed it. Carried as a
         /// field rather than named in `text` because the transcript draws the
@@ -478,7 +478,7 @@ pub enum AgentEventPayload {
 
 impl AgentEventPayload {
     /// Every archived picture this payload points at. Both arms hold paths under
-    /// `~/.dray/attachments/<session-id>/`, so anything moving a log between
+    /// `~/.carbon/attachments/<session-id>/`, so anything moving a log between
     /// sessions has to repoint them — see
     /// [`copy_session_log`](crate::store::copy_session_log).
     pub fn images_mut(&mut self) -> &mut [ImageRef] {
@@ -707,7 +707,7 @@ pub struct ToolResult {
     pub exit_code: Option<i32>,
     pub duration_ms: Option<u64>,
     /// Pictures the tool handed back — a `Read` of a screenshot, an MCP tool
-    /// that answers in images. Archived under `~/.dray/attachments` before the
+    /// that answers in images. Archived under `~/.carbon/attachments` before the
     /// event is written, so this carries a path and never the bytes: the CLI
     /// sends the same image twice on one line and a session of screenshots was
     /// 12MB of base64 in a 14MB log.

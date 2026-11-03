@@ -54,7 +54,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// that could not be started at all, and the kill on the way out left the lock
 /// for the retry to fail on too.
 ///
-/// [`PiClient::close`] is the half that stops Dray *causing* this. The width
+/// [`PiClient::close`] is the half that stops Carbon *causing* this. The width
 /// here is the half that survives somebody else causing it: a slow start the
 /// reader waits out, rather than a failure they can do nothing about.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(45);
@@ -268,7 +268,7 @@ impl PiClient {
             return Incoming::Response { matched: false };
         };
 
-        // A response with no id answers a command sent without one. Dray always
+        // A response with no id answers a command sent without one. Carbon always
         // sends an id, so there is nothing of ours it could be settling.
         let Some(id) = response.id else {
             return Incoming::Response { matched: false };

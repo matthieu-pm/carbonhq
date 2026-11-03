@@ -102,12 +102,12 @@ fn set(app: &AppHandle, status: ChromiumStatus) {
     let _ = app.emit("chromium_status", status);
 }
 
-/// `~/.dray/cef/` (`cef-dev/` under `tauri dev`), one version directory at a time.
+/// `~/.carbon/cef/` (`cef-dev/` under `tauri dev`), one version directory at a time.
 fn cef_dir() -> PathBuf {
     // Split like the profile root: the sweep deletes every version but its
     // own, so a dev build on a newer CEF would take the release app's
     // framework out from under its running helpers.
-    let dir = if tauri::is_dev() { ".dray/cef-dev" } else { ".dray/cef" };
+    let dir = if tauri::is_dev() { ".carbon/cef-dev" } else { ".carbon/cef" };
     std::env::home_dir().unwrap_or_default().join(dir)
 }
 
@@ -122,7 +122,7 @@ pub fn installed_framework() -> Option<PathBuf> {
     framework.join(LIBRARY).is_file().then_some(framework)
 }
 
-/// Why a tab cannot open right now, worded for the pane and `dray browser`.
+/// Why a tab cannot open right now, worded for the pane and `carbon browser`.
 pub fn not_ready_reason() -> String {
     match status() {
         ChromiumStatus::Downloading { received, total } => {
@@ -197,7 +197,7 @@ async fn run(app: AppHandle) {
 async fn download(app: &AppHandle) -> Result<()> {
     let tarball = tarball().context("no Chromium build for this architecture")?;
     let dir = cef_dir();
-    fs::create_dir_all(&dir).await.context("could not create ~/.dray/cef")?;
+    fs::create_dir_all(&dir).await.context("could not create ~/.carbon/cef")?;
     let part = dir.join(format!("{}.part", tarball.name()));
 
     let total = tarball.size;
@@ -252,7 +252,7 @@ async fn download(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
-/// Everything in `~/.dray/cef` but the current version: older frameworks,
+/// Everything in `~/.carbon/cef` but the current version: older frameworks,
 /// stale `.part`s from a killed run.
 async fn sweep(dir: &Path) {
     let Ok(mut entries) = fs::read_dir(dir).await else { return };
@@ -316,7 +316,7 @@ pub async fn remove(app: &AppHandle) -> Result<()> {
     tokio::task::spawn_blocking(|| {
         let loaded = load_guard();
         if *loaded {
-            bail!("Chromium is in use. Quit and reopen Dray, then remove it.");
+            bail!("Chromium is in use. Quit and reopen Carbon, then remove it.");
         }
         match std::fs::remove_dir_all(version_dir()) {
             Ok(()) => Ok(()),
@@ -370,8 +370,8 @@ mod tests {
     fn version_is_the_crate_build_prefix() {
         assert!(BUILD.starts_with(VERSION));
         // Tests run as a dev build, so this also pins the split from the
-        // release app's `.dray/cef`.
-        assert!(version_dir().ends_with(Path::new(".dray/cef-dev").join(VERSION)));
+        // release app's `.carbon/cef`.
+        assert!(version_dir().ends_with(Path::new(".carbon/cef-dev").join(VERSION)));
     }
 
     #[test]

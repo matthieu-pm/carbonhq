@@ -1,6 +1,6 @@
-# Dray for iPhone
+# Carbon for iPhone
 
-A native SwiftUI client for `dray-serve`. It runs no core and no agent: every
+A native SwiftUI client for `carbon-serve`. It runs no core and no agent: every
 session lives on a server — This Mac through Remote access, or a VPS — and the
 phone reads and drives it over the same WebSocket the desktop uses
 ([SERVE-PLAN.md](../desktop/SERVE-PLAN.md)).
@@ -47,19 +47,19 @@ from `project.yml`; the `.xcodeproj` is not committed, since a hand-merged
 `project.pbxproj` is the one file in an iOS repo nobody can review.
 
 ```bash
-cd apps/ios && xcodegen && open Dray.xcodeproj
+cd apps/ios && xcodegen && open Carbon.xcodeproj
 ```
 
-Bundle id `com.yogesh.dray.ios`, team `7WYP3LRDL8`.
+Bundle id `com.yogesh.carbon.ios`, team `7WYP3LRDL8`.
 
 **To TestFlight** — with Xcode signed in to the team's Apple ID and the app
 record made in App Store Connect:
 
 ```bash
 cd apps/ios && xcodegen
-xcodebuild -project Dray.xcodeproj -scheme Dray -destination generic/platform=iOS \
-  -archivePath build/Dray.xcarchive -allowProvisioningUpdates archive
-xcodebuild -exportArchive -archivePath build/Dray.xcarchive \
+xcodebuild -project Carbon.xcodeproj -scheme Carbon -destination generic/platform=iOS \
+  -archivePath build/Carbon.xcarchive -allowProvisioningUpdates archive
+xcodebuild -exportArchive -archivePath build/Carbon.xcarchive \
   -exportOptionsPlist ExportOptions.plist -exportPath build -allowProvisioningUpdates
 ```
 
@@ -70,7 +70,7 @@ the build, so `CURRENT_PROJECT_VERSION` never needs bumping by hand.
 
 Dark only, one palette: the desktop's dark tokens, its one yellow and its
 radius scale. **Every colour, size, radius, font and haptic is in
-[Theme.swift](Dray/Theme.swift)** and nowhere else; a view naming a hex or a
+[Theme.swift](Carbon/Theme.swift)** and nowhere else; a view naming a hex or a
 point size is a bug. Yellow means *needs you* — a card, a refused token, an
 app to update — and nothing else, so the global tint is the page's ink.
 Rationale and the screens it was judged on are in #631.
@@ -79,7 +79,7 @@ Rationale and the screens it was judged on are in #631.
   the project menu between them once there are two projects.
 - **Each server reports its own trouble** in a banner at the top of the list
   and a strip above the composer, written by `Store.health`
-  ([ConnectionStatus.swift](Dray/ConnectionStatus.swift)): reconnecting with a
+  ([ConnectionStatus.swift](Carbon/ConnectionStatus.swift)): reconnecting with a
   visible countdown, can't reach, token refused, protocol behind in either
   direction, a list that failed to load. Each carries Retry or Fix, and none
   holds up another server. Offline is one banner, not one per server.
@@ -87,7 +87,7 @@ Rationale and the screens it was judged on are in #631.
   offers Retry under it; a failed transcript read is the screen's own empty
   state with Try again; an action with nowhere of its own is a toast, never an
   alert.
-- **Orbs.** [Orb.swift](Dray/Orb.swift) is the one place app states map to
+- **Orbs.** [Orb.swift](Carbon/Orb.swift) is the one place app states map to
   the package's: working, delegating (gyro), background (spiral), reconnecting
   (lighthouse, fast), loading. Dictation is the Island's `VoiceOrb`, shared by
   path from `apps/island/Island` the way the Island shares this app's client,
@@ -95,7 +95,7 @@ Rationale and the screens it was judged on are in #631.
 
 **Screens are checked by `DesignTests`**, which walks every screen and failure
 state and attaches a screenshot of each. Two stand-ins answer the failure
-states a real server cannot be made to show (`/tmp/dray631-fake.py` in #631).
+states a real server cannot be made to show (`/tmp/carbon631-fake.py` in #631).
 
 ## The wire, as the phone speaks it
 
@@ -166,16 +166,16 @@ matched on event id, never `seq`.
 
 ## Pairing
 
-A connect line is `<address> <64-hex token>`, what `dray server tunnel on`
-already prints. The QR encodes `dray://connect?url=<address>&token=<token>&name=<name>`,
+A connect line is `<address> <64-hex token>`, what `carbon server tunnel on`
+already prints. The QR encodes `carbon://connect?url=<address>&token=<token>&name=<name>`,
 which the phone registers as a URL scheme, so the system Camera opens it too.
 
 - **The Mac app** draws the QR on This Mac's Remote access row, beside the
   address, once the address is up.
-- **`dray server pair`** prints it in the terminal, for a VPS with no app.
+- **`carbon server pair`** prints it in the terminal, for a VPS with no app.
 
 ## PRs
 
 1. The app: connect by paste, list, transcript, reply, cards.
 2. New session.
-3. QR: the desktop row, `dray server pair`, the phone's scanner.
+3. QR: the desktop row, `carbon server pair`, the phone's scanner.

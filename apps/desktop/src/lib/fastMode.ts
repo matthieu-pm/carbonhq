@@ -29,7 +29,7 @@ export const FAST_MODE_BY_HARNESS: Record<Harness, FastModeSupport> = {
 
 /// Whether a harness's fast mode stands even with no model picked.
 ///
-/// fx alone. "Let fx decide" is its *ordinary* pick, since Dray names no
+/// fx alone. "Let fx decide" is its *ordinary* pick, since Carbon names no
 /// default for a multi-provider CLI whose own settings already hold one, and
 /// fx turns fast mode down in a sentence on a model with no fast lane — so the
 /// switch stays offered and a refusal is drawn in the transcript. The others

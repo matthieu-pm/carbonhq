@@ -44,7 +44,7 @@ use std::{
 /// back.
 ///
 /// Load-bearing rather than defensive. A bundled `.app` launched from Finder
-/// inherits launchd's `PATH` — `/usr/bin:/bin:/usr/sbin:/sbin` — so a `dray`
+/// inherits launchd's `PATH` — `/usr/bin:/bin:/usr/sbin:/sbin` — so a `carbon`
 /// installed to `~/.local/bin` is simply not there for the agent, and the
 /// failure reads as "the CLI is broken" rather than "the CLI is unreachable".
 /// Appended, not prepended: the user's own `PATH` should still win where the
@@ -161,7 +161,7 @@ pub async fn read_stderr(harness: Harness, stderr: tokio::process::ChildStderr) 
 /// per-repo, and a probe costs a child. `fresh_for` is how long an answer
 /// stands: `Duration::MAX` for the life of the process, where "restart the app"
 /// is the accepted cure, and a window where the reader can change the answer
-/// while Dray is open (pi's providers and extensions).
+/// while Carbon is open (pi's providers and extensions).
 ///
 /// A failed probe is never cached, and the lock is not held across one, so two
 /// early readers may probe twice rather than one waiting on the other.
@@ -338,7 +338,7 @@ mod capability_tests {
             if harness != Harness::ClaudeCode {
                 assert!(
                     !harness.caps().creates_own_worktree,
-                    "{harness:?} has no `-w`, so Dray has to make the tree"
+                    "{harness:?} has no `-w`, so Carbon has to make the tree"
                 );
             }
         }
@@ -431,16 +431,16 @@ mod install_tests {
         }
     }
 
-    /// `dray setup` installs agents off `dray_proto::AGENTS`, since the CLI
+    /// `carbon setup` installs agents off `carbon_proto::AGENTS`, since the CLI
     /// cannot link this crate. Both tables name every agent the same way.
     #[test]
-    fn dray_setup_installs_what_the_app_names() {
-        assert_eq!(dray_proto::AGENTS.len(), Harness::ALL.len());
+    fn carbon_setup_installs_what_the_app_names() {
+        assert_eq!(carbon_proto::AGENTS.len(), Harness::ALL.len());
         for harness in Harness::ALL {
-            let agent = dray_proto::AGENTS
+            let agent = carbon_proto::AGENTS
                 .iter()
                 .find(|a| a.id == harness.wire_name())
-                .unwrap_or_else(|| panic!("{harness:?} is missing from dray_proto::AGENTS"));
+                .unwrap_or_else(|| panic!("{harness:?} is missing from carbon_proto::AGENTS"));
             assert_eq!(agent.name, harness.label());
             assert_eq!(agent.install, harness.install_command());
             assert_eq!(agent.login, harness.login_command());
@@ -564,7 +564,7 @@ impl Harness {
         Harness::Grok,
     ];
 
-    /// How the wire spells it — what `dray new --harness` takes and what an
+    /// How the wire spells it — what `carbon new --harness` takes and what an
     /// index entry holds.
     ///
     /// Every caller that needs the *set* of spellings builds it from
@@ -639,7 +639,7 @@ impl FastMode {
 /// session would have bailed inside `Session::init` with its index row already
 /// written.
 ///
-/// **These describe what Dray does, not what the CLI can do.** pi answers
+/// **These describe what Carbon does, not what the CLI can do.** pi answers
 /// `set_model` on a live connection and this build still respawns for one,
 /// because nothing here drives that connection yet. A `false` is safe in a way
 /// a `true` is not: replacing a child always applies the change, where applying
@@ -648,7 +648,7 @@ impl FastMode {
 pub struct Capabilities {
     /// Whether the CLI creates a worktree itself, given a name.
     ///
-    /// Claude Code's `-w` does. Nothing else has such a flag, so Dray resolves
+    /// Claude Code's `-w` does. Nothing else has such a flag, so Carbon resolves
     /// a base ref and makes the tree before the spawn — and a harness wrongly
     /// marked `true` here never gets a tree at all.
     pub creates_own_worktree: bool,
@@ -679,7 +679,7 @@ pub struct Capabilities {
     pub forkable: bool,
     /// Whether a fork has a second half only the CLI can perform.
     ///
-    /// Claude Code's does. What Dray copies is its *own* log; the conversation
+    /// Claude Code's does. What Carbon copies is its *own* log; the conversation
     /// the CLI holds is forked lazily on the first send, with
     /// `--resume <parent> --fork-session`, so the fork's index entry carries
     /// `fork_from` as an instruction until that happens. grok's does too, by
@@ -733,7 +733,7 @@ impl Harness {
             // Forkable, and by the cheapest route of the three. pi's own `fork`
             // is still the wrong tool — `clone` hijacks the running process,
             // and `--fork` and `--session` are refused together, so pi would
-            // name the file rather than take the one Dray chose. It is not
+            // name the file rather than take the one Carbon chose. It is not
             // needed: pi's resume handle *is* a file, so copying it is the whole
             // fork. Verified live — a pi spawned on a copy reports the new path,
             // counts the parent's messages, and quotes its first prompt back.
@@ -760,7 +760,7 @@ impl Harness {
             // Forkable by pi's route: `fx session recover` copies the
             // conversation at the press with no child needed, so the first send
             // is an ordinary `session/resume` of the copy. 0.0.15's `/fork` is
-            // TUI-only, with no ACP method. No `-w`; Dray makes the tree.
+            // TUI-only, with no ACP method. No `-w`; Carbon makes the tree.
             Harness::Fx => Capabilities {
                 creates_own_worktree: false,
                 applies_model_in_place: true,
@@ -855,11 +855,11 @@ impl Harness {
     ///
     /// Each vendor's own installer, not npm: it is the one route that needs
     /// nothing already on the machine (no Node, no package manager) and it is
-    /// the one every other install surface — the vendor's own docs, `dray
+    /// the one every other install surface — the vendor's own docs, `carbon
     /// update`'s pattern for itself — already points at. Both verified live
     /// (`curl -fsSL … | sh -n`, a dry parse, not a run) before landing here.
     ///
-    /// Dray never runs this. Choosing the method for somebody installs a
+    /// Carbon never runs this. Choosing the method for somebody installs a
     /// second copy beside one they may already have, and a failure inside our
     /// installer is ours to debug where a failure on the vendor's page is
     /// theirs to follow.
@@ -893,7 +893,7 @@ impl Harness {
             Harness::Fx => "https://fx.sh/docs/getting-started/installation",
             Harness::Grok => "https://docs.x.ai/build/quickstart",
             // Empty, so the notice draws no link rather than a wrong one: the
-            // cure here is a newer Dray, not a CLI to install.
+            // cure here is a newer Carbon, not a CLI to install.
             Harness::Other(_) => "",
         }
     }

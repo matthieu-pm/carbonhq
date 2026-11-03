@@ -2,7 +2,7 @@
 
 monorepo-labs/dray#415, stage 4. Stage 3 ([SERVERS-PLAN.md](SERVERS-PLAN.md))
 holds a remote server as an address plus a token. Today a reader gets there by
-running `ssh -N -L …` in a terminal and copying `~/.dray/serve-token` by hand.
+running `ssh -N -L …` in a terminal and copying `~/.carbon/serve-token` by hand.
 This removes both steps: Add server takes the line they would type, `ssh
 user@address`, and the app does the rest.
 
@@ -41,15 +41,15 @@ lines on stdout and then `exec cat`s, so the session stays open while the app
 holds its stdin and closes if the app dies:
 
 ```text
-DRAY-SSH hello      logged in                    → "Finding the server"
-DRAY-SSH missing    no dray on PATH or ~/.local/bin
-DRAY-SSH starting   systemd says stopped         → "Starting the server"
-DRAY-SSH failed     dray service start refused; its output follows
-DRAY-SSH notoken    no ~/.dray/serve-token
-DRAY-SSH token <t>  done; open the WebSocket
+CARBON-SSH hello      logged in                    → "Finding the server"
+CARBON-SSH missing    no carbon on PATH or ~/.local/bin
+CARBON-SSH starting   systemd says stopped         → "Starting the server"
+CARBON-SSH failed     carbon service start refused; its output follows
+CARBON-SSH notoken    no ~/.carbon/serve-token
+CARBON-SSH token <t>  done; open the WebSocket
 ```
 
-`dray service start` runs only when `systemctl --user is-active dray` says no
+`carbon service start` runs only when `systemctl --user is-active carbon` says no
 and a user systemd exists. It is idempotent, but it sleeps 1.5s to check the
 server stayed up, which is not worth paying on every connect. A server started
 by hand under tmux (no systemd) is just tried.
@@ -67,7 +67,7 @@ is dropped (`kill_on_drop`) and the loop goes round with the backoff it already
 has. So a cut pipe is the Stage 3 reconnect plus a fresh `ssh`.
 
 **Some failures stop the loop instead of retrying**: a key ssh would not
-accept, an unknown or changed host key, Dray not installed, no token. Retrying
+accept, an unknown or changed host key, Carbon not installed, no token. Retrying
 those every 10s fixes nothing and, for a refused key, is exactly what
 fail2ban bans. The row parks on the problem and waits for Try again (or the
 toggle, which is the same command). Network failures — no route, timeout, refused — keep retrying, since
@@ -86,7 +86,7 @@ with, for both kinds, rather than `servers.json` and the credential store.
 | `needs_key` | `Permission denied` | "Set up a key first" + `ssh-copy-id [-p N] dest` to copy |
 | `unknown_host` | `Host key verification failed` | host-key dialog |
 | `changed_host` | `REMOTE HOST IDENTIFICATION HAS CHANGED` | ssh's warning in its words + `ssh-keygen -R host` to copy |
-| `not_installed` | `DRAY-SSH missing` | "Dray isn't installed there" + the install line to copy |
+| `not_installed` | `CARBON-SSH missing` | "Carbon isn't installed there" + the install line to copy |
 | `other` | everything else | ssh's last stderr line, or the script's output |
 
 ## First meeting: the host-key dialog
@@ -131,7 +131,7 @@ ssh -t [-p N] -- dest "sh -c 'PATH=\"\$HOME/.local/bin:…:\$PATH\"; exec <comma
 ```
 
 with the command looked up in `auth_options` exactly as `run_agent_login`
-does, and the PATH naming the dirs `dray setup` installs agents into. A server
+does, and the PATH naming the dirs `carbon setup` installs agents into. A server
 added by address has no login to borrow, so its Sign in shows the command to
 run there.
 
@@ -141,9 +141,9 @@ Live, from ignored tests in `ssh.rs` and `servers.rs` (each names its env var):
 
 - Against the VPS as root: add, `list_projects` through the tunnel, the `ssh`
   process killed and the loop back up in about 4s, off and on, no token in
-  `credentials.json`. A server stopped with `systemctl --user stop dray` was
+  `credentials.json`. A server stopped with `systemctl --user stop carbon` was
   started by the app and connected in 2.3s.
-- As a non-root user (`dray-test`, linger on, installed by the install line
+- As a non-root user (`carbon-test`, linger on, installed by the install line
   over its own login): the install's server could not start beside root's on
   7317; with root's stopped, the app started the user's failed unit, connected,
   and survived a killed pipe and off/on. Root's server was put back after.
@@ -152,27 +152,27 @@ Live, from ignored tests in `ssh.rs` and `servers.rs` (each names its env var):
   its ED25519 fingerprint matched the IP's existing entry.
 - A user with no key (`Permission denied (publickey,password)`), a name that
   does not resolve, an address that times out, and an OrbStack machine with no
-  Dray each say their own sentence; only the last two retry.
+  Carbon each say their own sentence; only the last two retry.
 - The Sign in line run with `--version`: Claude Code found in `~/.local/bin`
   over a non-login shell; the agents not installed there answer 127.
 
-## Stage 4b: installing Dray from the app
+## Stage 4b: installing Carbon from the app
 
-A server with no Dray on it parks on `missing`, which now carries
+A server with no Carbon on it parks on `missing`, which now carries
 `Fix::Install` rather than the line to copy. The row and the Add dialog draw an
 **Install** button; it opens one dialog that runs the whole first meeting.
 
 1. **Look.** One ssh login runs a short script and prints what is there: the OS,
-   which of git, gh and the five agents are on `PATH` or in `dray setup`'s
+   which of git, gh and the five agents are on `PATH` or in `carbon setup`'s
    home dirs, the package manager, and whether this user is root or has
-   passwordless sudo. No Dray needed. Not Linux → said, and nothing offered.
+   passwordless sudo. No Carbon needed. Not Linux → said, and nothing offered.
 2. **Pick.** Found tools are listed as found. Missing ones get a switch, git on
-   by default since Dray needs it. Git with no admin rights gets no switch: it
-   shows `sudo sh -c '<manager's command>'` to copy, the same line `dray setup`
-   prints. The managers table moves to `dray-proto` so the two cannot differ.
-3. **Install.** One more login runs the install line with `DRAY_UPDATING=1`
+   by default since Carbon needs it. Git with no admin rights gets no switch: it
+   shows `sudo sh -c '<manager's command>'` to copy, the same line `carbon setup`
+   prints. The managers table moves to `carbon-proto` so the two cannot differ.
+3. **Install.** One more login runs the install line with `CARBON_UPDATING=1`
    (skips its own setup, which has no terminal to ask in) and then
-   `~/.local/bin/dray setup --install <picks>`, which installs, starts the
+   `~/.local/bin/carbon setup --install <picks>`, which installs, starts the
    server and turns on linger. The picks are checked against the known ids
    before they reach a shell. Output streams into the dialog, colour codes
    stripped. A failure keeps the output on screen with Try again.

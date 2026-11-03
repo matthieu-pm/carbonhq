@@ -1,28 +1,28 @@
-# Stage 2: installing Dray on a VPS
+# Stage 2: installing Carbon on a VPS
 
 monorepo-labs/dray#415, flow A. The user SSHes into a fresh Linux box and pastes
 the line that already installs the CLI:
 
 ```bash
-curl -fsSL https://www.drayhq.com/install.sh | sh
+curl -fsSL https://www.carbonhq.com/install.sh | sh
 ```
 
-On Linux that line now leaves a whole Dray behind: `dray`, `dray-serve`, the
+On Linux that line now leaves a whole Carbon behind: `carbon`, `carbon-serve`, the
 tools the reader ticked, a server running in the background, and the line to
 paste into the app.
 
 ## Release
 
-**One archive per target, one tag.** `release-cli.yml` already builds `dray`
-for both Linux arches. The Linux legs also build `dray-serve` from
+**One archive per target, one tag.** `release-cli.yml` already builds `carbon`
+for both Linux arches. The Linux legs also build `carbon-serve` from
 `apps/desktop/src-tauri` (`--no-default-features --features serve`) and pack it
-into the same `dray-<target>.tar.gz`. One download, one checksum, so the two
+into the same `carbon-<target>.tar.gz`. One download, one checksum, so the two
 binaries can only ever arrive at one version. The macOS legs build it too
 (#470), for a Mac with no app; on a Mac with the app it sits unused.
 
 **Linux legs move to `ubuntu-22.04` / `ubuntu-22.04-arm`.** A binary needs the
 glibc it was linked against or newer; `ubuntu-latest` is 24.04 (glibc 2.39), so
-today's Linux `dray` refuses to run on Ubuntu 22.04 and Debian 12. Building on
+today's Linux `carbon` refuses to run on Ubuntu 22.04 and Debian 12. Building on
 22.04 sets the floor at glibc 2.35. musl was the other route and is not worth
 it for the core's C dependencies.
 
@@ -31,32 +31,32 @@ tag-matches-crate check.
 
 ## install.sh
 
-After the binaries land, not under `dray update` and not on a Mac with the Dray
-app, it runs `dray setup`. Whatever is in the archive is installed, so the script stays one
+After the binaries land, not under `carbon update` and not on a Mac with the Carbon
+app, it runs `carbon setup`. Whatever is in the archive is installed, so the script stays one
 code path for both platforms.
 
-`dray update` sets `DRAY_UPDATING=1` so the installer neither runs setup nor
+`carbon update` sets `CARBON_UPDATING=1` so the installer neither runs setup nor
 restarts the server. Restarting kills every running agent, and the usual caller
-of `dray update` is an agent inside that server. It prints the restart command
+of `carbon update` is an agent inside that server. It prints the restart command
 instead when a service is installed.
 
-`dray setup` gets `/dev/null` as stdin. Under `curl | sh` stdin is the rest of
+`carbon setup` gets `/dev/null` as stdin. Under `curl | sh` stdin is the rest of
 the script, and a child reading it eats the installer.
 
-## The `dray` binary
+## The `carbon` binary
 
 Three new subcommands. None talks to the app socket and none changes the wire,
 so no protocol bump.
 
-- **`dray serve [args]`** execs `dray-serve` beside itself.
-- **`dray setup [--install <names>]`**:
+- **`carbon serve [args]`** execs `carbon-serve` beside itself.
+- **`carbon setup [--install <names>]`**:
   1. Lists what is present: `git`, `gh`, `claude`, `codex`, `pi`, `fx`, `grok`.
      Found = on `PATH` or in `~/.local/bin` and the few dirs vendor installers
      use.
   2. Offers what is missing as a multi-select in the `npx skills` style, read
-     from `/dev/tty`. Arrow keys, space, enter; `git` preselected because Dray
+     from `/dev/tty`. Arrow keys, space, enter; `git` preselected because Carbon
      needs it. No terminal: installs only what `--install` names.
-  3. Agents: the vendor's own script, off `dray_proto::AGENTS`, which a test
+  3. Agents: the vendor's own script, off `carbon_proto::AGENTS`, which a test
      in `harness.rs` holds equal to `Harness::install_command` and
      `login_command` (the CLI cannot link the app). `gh`: its release tarball
      into `~/.local/bin`, checksum verified.
@@ -64,15 +64,15 @@ so no protocol bump.
      command and move on.
   4. Prints the logins still to do: `gh auth login` when `gh auth status`
      fails, and each installed agent's login command.
-  5. Runs `dray service start`.
+  5. Runs `carbon service start`.
   6. Prints `ssh user@address`, read off `SSH_CONNECTION` (the address the
      reader actually connected to; `-p` when not 22), falling back to the
      hostname.
-- **`dray service start | status | uninstall`**: a systemd user unit
-  `dray.service` plus `loginctl enable-linger`, so it survives logout and
-  reboot. `PATH` is captured at start into the unit, with `dray`'s own dir
+- **`carbon service start | status | uninstall`**: a systemd user unit
+  `carbon.service` plus `loginctl enable-linger`, so it survives logout and
+  reboot. `PATH` is captured at start into the unit, with `carbon`'s own dir
   first, so agents find what the reader's shell finds. No systemd: say so and
-  name `dray serve` under tmux as the fallback.
+  name `carbon serve` under tmux as the fallback.
 
 ## Not here
 
@@ -81,32 +81,32 @@ a stopped server.
 
 ## A Mac with no app (#470)
 
-`dray setup`, `dray serve` and `dray service` run on a Mac too, gated on the
+`carbon setup`, `carbon serve` and `carbon service` run on a Mac too, gated on the
 app being absent rather than on the OS: its login agent
-(`com.yogesh.dray.server.plist`) or `Dray.app` in either Applications folder
-means "the Dray app runs this Mac's server", and all three refuse. Setup still
-offers the tools there and stops. A `DRAY_HOME` of its own lets them through,
-the same way round `serve.lock` names. `dray service uninstall` is never
+(`com.yogesh.carbon.server.plist`) or `Carbon.app` in either Applications folder
+means "the Carbon app runs this Mac's server", and all three refuse. Setup still
+offers the tools there and stops. A `CARBON_HOME` of its own lets them through,
+the same way round `serve.lock` names. `carbon service uninstall` is never
 refused, since it is how a server set up before the app arrived hands over.
 
-- **`dray service`** is a LaunchAgent, `com.yogesh.dray-serve` in the `gui`
+- **`carbon service`** is a LaunchAgent, `com.yogesh.carbon-serve` in the `gui`
   domain, modelled on the app's launchd.rs: `KeepAlive` on a failed exit
-  (systemd's `Restart=on-failure`), `PATH` and `DRAY_HOME` in the plist, log in
+  (systemd's `Restart=on-failure`), `PATH` and `CARBON_HOME` in the plist, log in
   `<home>/server.log`. Restart is `bootout` then `bootstrap`, never
   `kickstart -k`, which reruns the job as loaded and misses a rewritten plist.
-  `service tunnel` is Linux only; `dray tunnel` runs in the foreground.
-- **`dray-serve` writes `serve-port`**, so an app installed later connects to
+  `service tunnel` is Linux only; `carbon tunnel` runs in the foreground.
+- **`carbon-serve` writes `serve-port`**, so an app installed later connects to
   it as This Mac, and answers `live_state`, which the app re-asks This Mac on
   startup. Remote access stays the app's server's alone. It answers the app's
   `restart_when_idle` with "unknown command" and stays up, and the app's own
-  agent fails on `serve.lock` and retries every 10s until `dray service
+  agent fails on `serve.lock` and retries every 10s until `carbon service
   uninstall` lets it take over.
 
 Tested on a Mac logged in at the GUI, with the app installed and a scratch
-`DRAY_HOME`: start, status, a Claude Code turn, launchd restarting a killed
+`CARBON_HOME`: start, status, a Claude Code turn, launchd restarting a killed
 server, a second start leaving it running, uninstall, and a client admitted the
 way the app's This Mac is, off `serve-port`. Not tested, beyond the app itself
-meeting a `dray-serve`:
+meeting a `carbon-serve`:
 
 1. **No GUI login, by design.** A `gui` domain job runs only while its user
    is logged in at the Mac: it stops at logout and starts again at login. A
@@ -120,7 +120,7 @@ meeting a `dray-serve`:
 3. **TCC.** `ls ~/Documents` from an agent under the job answered with no
    prompt on this Mac, which may hold grants a fresh one does not. On a fresh
    Mac keep repos out of `~/Documents`, `~/Desktop` and `~/Downloads`. The
-   binaries are ad-hoc signed, so each `dray update` is a new TCC identity
+   binaries are ad-hoc signed, so each `carbon update` is a new TCC identity
    until they carry the Developer ID.
 
 ## What testing found
@@ -136,7 +136,7 @@ meeting a `dray-serve`:
   (default No). pi offers to install Node, then to start pi (default Yes), so a
   reader pressing Enter lands in pi's TUI and setup carries on when they leave
   it. Left as the vendors wrote them.
-- **One server per machine.** `dray-serve` binds `127.0.0.1:7317`, so a second
+- **One server per machine.** `carbon-serve` binds `127.0.0.1:7317`, so a second
   user's server cannot start. Setup now checks the service stayed up and says
   so rather than claiming it runs. Stage 4 can read a port if this matters.
 - **Linger without sudo is refused** on Ubuntu 24.04; setup then prints the

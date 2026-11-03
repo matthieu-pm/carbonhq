@@ -15,10 +15,10 @@ To export, serve this folder and screenshot the page at 2x:
 
 ```sh
 python3 -m http.server 8799 --directory charts
-dray browser open http://127.0.0.1:8799/dictation-lengths.html
-dray browser set viewport 2000 1124
-dray browser zoom 200
-dray browser screenshot
+carbon browser open http://127.0.0.1:8799/dictation-lengths.html
+carbon browser set viewport 2000 1124
+carbon browser zoom 200
+carbon browser screenshot
 ```
 
 Fonts are under the SIL Open Font License; each one's notice is beside it in

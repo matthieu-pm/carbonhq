@@ -1,8 +1,12 @@
-# Dray
+# Carbon
 
-A desktop home for your coding agents. Dray wraps coding-agent CLIs (Claude
+A desktop home for your coding agents. Carbon wraps coding-agent CLIs (Claude
 Code, Codex, fx, pi) in a native chat UI. Run many sessions at once. Each gets
 its own worktree, diff view, PR panel, issue panel and embedded browser.
+
+Carbon is based on [Dray](https://github.com/monorepo-labs/dray) by yogesharc,
+used under the Apache License 2.0 (see [LICENSE](LICENSE)). This copy renames
+the project to Carbon and replaces its branding.
 
 ## Sponsors
 
@@ -12,7 +16,7 @@ its own worktree, diff view, PR panel, issue panel and embedded browser.
 
 [![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
 
-Want to sponsor Dray? [drayhq.com/support](https://www.drayhq.com/support)
+Want to sponsor Carbon? [carbonhq.com/support](https://www.carbonhq.com/support)
 
 ## Layout
 
@@ -20,9 +24,9 @@ Want to sponsor Dray? [drayhq.com/support](https://www.drayhq.com/support)
 | ------------------- | ------------------------------------------------------ |
 | `apps/desktop`      | The Tauri app. React 19 + Vite frontend, Rust backend. |
 | `apps/web`          | Marketing site. Next.js, deployed to Vercel.           |
-| `apps/docs`         | Docs at drayhq.com/docs. Blume, deployed to Vercel.    |
-| `apps/cli`          | The `dray` CLI agents use to fan work out.             |
-| `crates/dray-proto` | Wire types shared by the CLI and the app.              |
+| `apps/docs`         | Docs at carbonhq.com/docs. Blume, deployed to Vercel.    |
+| `apps/cli`          | The `carbon` CLI agents use to fan work out.             |
+| `crates/carbon-proto` | Wire types shared by the CLI and the app.              |
 
 ## Getting started
 
@@ -45,16 +49,16 @@ cd apps/desktop/src-tauri && cargo test
 `cargo test` regenerates `apps/desktop/src/types/events.ts`. Always follow a
 filtered run with a bare `cargo test`.
 
-## The `dray` CLI
+## The `carbon` CLI
 
-A standalone binary. It talks to the running app over `~/.dray/dray.sock`, so
+A standalone binary. It talks to the running app over `~/.carbon/carbon.sock`, so
 an agent in one session can create, list and message others.
 
 ```bash
-curl -fsSL https://www.drayhq.com/install.sh | sh
+curl -fsSL https://www.carbonhq.com/install.sh | sh
 ```
 
-On Linux the same line makes the machine a Dray server: [drayhq.com/docs/server](https://www.drayhq.com/docs/server).
+On Linux the same line makes the machine a Carbon server: [carbonhq.com/docs/server](https://www.carbonhq.com/docs/server).
 
 ## Releasing
 

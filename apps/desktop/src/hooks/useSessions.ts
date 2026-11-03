@@ -794,7 +794,7 @@ const handleSendMsg = async (
   // that draws it is handed these rather than describing its paths a second
   // time. The wire still takes paths alone.
   attachments: Attachment[] = [],
-  // Where a new session's worktree starts, from a draft `dray draft new
+  // Where a new session's worktree starts, from a draft `carbon draft new
   // --base` saved. Nothing in the composer sets one.
   baseRef: string | null = null,
 ): Promise<boolean> => {
@@ -957,12 +957,12 @@ const handleSendMsg = async (
       // What will actually happen, not what the picker last held. A stance can
       // reach here that this harness never offered — a spawned session takes
       // its parent's — and the index is read back, by a later build and by
-      // `dray new` inheriting it, so a stance nothing enforces is worse there
+      // `carbon new` inheriting it, so a stance nothing enforces is worse there
       // than on screen, where the control is at least hidden.
       permissionMode: stanceFor(harness, permissionMode),
       // Already narrowed to this agent and model, for the same reason the
       // stance above is: the index is read back by a later build and by
-      // `dray new` inheriting it, so a `true` nothing can honour is worse on
+      // `carbon new` inheriting it, so a `true` nothing can honour is worse on
       // disk than on screen.
       fast,
       cwd,
@@ -1431,7 +1431,7 @@ const detachSession = async (sessionId: string) => {
 
 /// Puts a session's index entry, as the store now holds it, into both copies.
 /// Shared by the sidebar's own writes and by `session_changed`, which carries
-/// the ones `dray session settle` and friends make.
+/// the ones `carbon session settle` and friends make.
 const applyIndexItem = (updated: SessionIndexItem) => {
   const { sessionId } = updated;
   setSessionIndexItems((prev) => {
@@ -1462,7 +1462,7 @@ const applyIndexItem = (updated: SessionIndexItem) => {
   // The open transcript keeps its own copy of the index fields, and it's what
   // the composer reads `archived` from — left alone, settling the session on
   // screen would swap in the unsettle bar only after a reselect. The location
-  // rides along for `dray session settle --delete-worktree`, which moves `cwd`
+  // rides along for `carbon session settle --delete-worktree`, which moves `cwd`
   // out of the deleted tree.
   setSessions((prev) =>
     prev.map((s) =>
@@ -1846,7 +1846,7 @@ useEffect(() => {
 
 /// Drops whatever the harnesses cached and reads again.
 ///
-/// pi is the case it exists for: a provider logged in while Dray is open is
+/// pi is the case it exists for: a provider logged in while Carbon is open is
 /// exactly the one somebody would then try to use, and waiting out the cache
 /// reads as the list being wrong. Codex's list is read too, and is kept for the
 /// life of the process — so this is the only way to see a model that arrived
@@ -2060,7 +2060,7 @@ useEffect(() => {
             // leaves the turn open and the screen dead until the model speaks.
             // `handleSendMsg` writes the wait optimistically for a prompt the
             // reader sent from the composer; this covers one the backend hands
-            // over — a flushed queue, a relayed `dray send`.
+            // over — a flushed queue, a relayed `carbon send`.
             //
             // The event is logged *before* the transport write, so it says the
             // prompt is on its way rather than that a child took it. That is
@@ -2320,7 +2320,7 @@ const asksBySessionRef = useRef(asksBySession);
 asksBySessionRef.current = asksBySession;
 
 /// Appends what a session's log gained since `held` — what the socket to a
-/// `dray-serve` missed while down, or what a kept transcript missed while
+/// `carbon-serve` missed while down, or what a kept transcript missed while
 /// evicted. Deltas are not logged and need nothing, being previews of what
 /// this delivers. Answers false where the server no longer has the session.
 const catchUp = async (
@@ -2382,7 +2382,7 @@ const missedFromTail = async (sessionId: string, held: AgentEvent[]) => {
   return missed ?? fetched;
 };
 
-/// A `dray-serve` sends this on every connect, the first included, and it
+/// A `carbon-serve` sends this on every connect, the first included, and it
 /// replaces rather than adds to what is held: a card answered while the socket
 /// was down must go, and one raised meanwhile must be drawn, or an agent waits
 /// on a question nobody can see. Applied quietly — none of it is news.
@@ -2983,7 +2983,7 @@ useEffect(() => {
 // listener rather than a branch in `agent_event`: nothing here came from the
 // agent, and it must not land in the session's event list.
 // A session created by something other than the composer — an agent calling the
-// `dray` CLI, which reaches the backend over its own socket. The row has to
+// `carbon` CLI, which reaches the backend over its own socket. The row has to
 // appear without a refetch, the way a composer-created one does.
 //
 // The index item alone, never a `SessionSnapshot`: `agent_event` writes into
@@ -3014,7 +3014,7 @@ useEffect(() => {
   };
 }, []);
 
-// `dray session settle`, `unsettle`, `set-aside` and their undoing, which reach
+// `carbon session settle`, `unsettle`, `set-aside` and their undoing, which reach
 // Rust over the orchestration socket, so the sidebar hears of them only here.
 const applyIndexItemRef = useRef(applyIndexItem);
 applyIndexItemRef.current = applyIndexItem;
@@ -3028,7 +3028,7 @@ useEffect(() => {
   };
 }, []);
 
-// `dray issue link` or `dray issue unlink`, which reach Rust over the
+// `carbon issue link` or `carbon issue unlink`, which reach Rust over the
 // orchestration socket without this hook asking for anything — so the Issue tab
 // used to wait on the next send's `SendOutcome.issues`, a reselect or a restart
 // (#256). The whole list rides the event, so `applyIssues` is the same merge

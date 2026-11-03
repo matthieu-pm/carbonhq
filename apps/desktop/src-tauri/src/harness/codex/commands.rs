@@ -2,7 +2,7 @@
 //!
 //! Codex's own `/` menu mixes two unlike things. Most rows — `/model`,
 //! `/approvals`, `/new`, `/diff` — are TUI actions that never reach the server,
-//! and Dray already owns every one of them in its own chrome, so listing them
+//! and Carbon already owns every one of them in its own chrome, so listing them
 //! would draw controls that do nothing. What is left is **skills**, and those
 //! are real: `skills/list` answers them and `turn/start` takes one as an input
 //! item of its own.
@@ -60,7 +60,7 @@ struct SkillsList {
 }
 
 /// Kept for the life of the process, keyed by directory, exactly as Claude
-/// Code's list is: a probe costs a child, and a skill installed while Dray is
+/// Code's list is: a probe costs a child, and a skill installed while Carbon is
 /// open is a restart away rather than a keystroke away.
 static CACHE: LazyLock<ProbeCache<Vec<Skill>>> = LazyLock::new(|| ProbeCache::new(Duration::MAX));
 

@@ -23,7 +23,7 @@ import "../App.css";
 /// or the app, never the session browser: JavaScriptCore is what the app runs
 /// and V8 hides the engine gap (see "Rendering code" in CLAUDE.md).
 
-const PATH = "/Users/me/dray/apps/desktop/src/App.tsx";
+const PATH = "/Users/me/carbon/apps/desktop/src/App.tsx";
 const lines = big.split("\n");
 const edited = lines.map((l, i) => (i === 120 ? `${l} // edited` : i === 900 ? "" : l)).join("\n");
 const fragment = lines.slice(100, 130).join("\n");
@@ -32,7 +32,7 @@ const fragmentNew = fragment.replace(/\n/, "\n// added by the edit\n");
 const FENCES = [
   "A markdown answer with fences in four languages.",
   "```ts\nexport function add(a: number, b: number): number {\n  return a + b; // sum\n}\n```",
-  '```rust\nfn main() {\n    let name = "dray";\n    println!("hello {name}");\n}\n```',
+  '```rust\nfn main() {\n    let name = "carbon";\n    println!("hello {name}");\n}\n```',
   "```python\ndef greet(name: str) -> str:\n    return f\"hi {name}\"\n```",
   "```bash\npnpm tauri dev --features cef\n```",
 ].join("\n\n");

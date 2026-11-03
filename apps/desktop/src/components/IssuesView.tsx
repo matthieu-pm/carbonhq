@@ -756,7 +756,7 @@ function Connect({
                   screen with no field on it should say what is filling in for
                   one rather than leave them hunting for it. */}
               <p className="text-ui text-muted-foreground">
-                Dray reads GitHub issues through the <code>gh</code> CLI and holds no credential of
+                Carbon reads GitHub issues through the <code>gh</code> CLI and holds no credential of
                 its own, so there is nothing to paste here.
               </p>
             </div>
@@ -819,7 +819,7 @@ function Connect({
               >
                 <code>{LOGIN_COMMAND}</code>
               </button>{" "}
-              — Dray reads GitHub issues through the <code>gh</code> CLI, so there is no key to
+              — Carbon reads GitHub issues through the <code>gh</code> CLI, so there is no key to
               paste.
             </span>
           </p>
@@ -843,7 +843,7 @@ function Connect({
             already has, and there is nothing to add. */}
         {tracker === "linear" && (
           <p className="border-t border-border pt-3 text-ui text-muted-foreground">
-            Dray reads your issues with this key, and writes only the status or priority you pick.
+            Carbon reads your issues with this key, and writes only the status or priority you pick.
             To let the agent read and manage issues in chat, add{" "}
             <button
               type="button"

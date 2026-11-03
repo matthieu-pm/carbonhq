@@ -3,7 +3,7 @@
   "bundle": {
     "macOS": {
       "files": {
-        "Helpers/Dray Island.app": "target/island/Dray Island.app"
+        "Helpers/Carbon Island.app": "target/island/Carbon Island.app"
       }
     }
   }

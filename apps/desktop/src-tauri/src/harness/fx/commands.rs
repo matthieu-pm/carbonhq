@@ -2,7 +2,7 @@
 //! same reading [`codex::commands`](super::super::codex::commands) takes, for
 //! the same reason. fx's own `/` menu (`/model`, `/clear`, `/login`,
 //! `/settings`, …) is TUI actions that never reach the server, every one of
-//! which Dray already owns in its own chrome.
+//! which Carbon already owns in its own chrome.
 //!
 //! **Read off disk, because nothing on the wire answers.** `fx acp` publishes
 //! `available_commands_update` with an empty list at `session/new`, still empty
@@ -69,7 +69,7 @@ const FRONTMATTER_BYTES: u64 = 4096;
 /// Uncached, unlike every other harness's list: those each spawn a child and pay
 /// seconds for it, where this is a dozen `read_dir`s. A cache here would buy a
 /// few milliseconds and cost what Claude Code's and Codex's already cost — a
-/// skill installed while Dray is open needing a restart to show up.
+/// skill installed while Carbon is open needing a restart to show up.
 ///
 /// Infallible by construction: an unreadable root is a root with no skills in
 /// it, which is also what an absent one is.
@@ -278,7 +278,7 @@ mod tests {
     }
 
     fn tmp(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dray-fx-skills-{label}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("carbon-fx-skills-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

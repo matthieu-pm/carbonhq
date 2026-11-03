@@ -1,18 +1,18 @@
 ---
 title: Sessions
-description: Start, list and message Dray sessions from the command line, with every flag for model, effort, agent, base branch, issues and fast mode.
+description: Start, list and message Carbon sessions from the command line, with every flag for model, effort, agent, base branch, issues and fast mode.
 sidebar:
   order: 2
 ---
 
-`dray session` starts and manages the same sessions you see in the sidebar. A session made here is an ordinary session: you can open it, read it, stop it or delete it like any other.
+`carbon session` starts and manages the same sessions you see in the sidebar. A session made here is an ordinary session: you can open it, read it, stop it or delete it like any other.
 
-Run from inside a Dray session, every command knows which session is calling. A new session is nested under the caller and inherits its settings. Run from your own terminal, there is no caller, so the app's defaults apply.
+Run from inside a Carbon session, every command knows which session is calling. A new session is nested under the caller and inherits its settings. Run from your own terminal, there is no caller, so the app's defaults apply.
 
 ## Start a session
 
 ```bash
-dray session new "Fix the login redirect loop. Steps to reproduce: …"
+carbon session new "Fix the login redirect loop. Steps to reproduce: …"
 ```
 
 Prints the new session's id, then a line like `Started "Fix login redirect loop" in worktree calm-owl`. It returns at once: the session starts working on its own and nothing waits for it.
@@ -34,9 +34,9 @@ Write the prompt for someone who has not read your conversation. The new session
 `--from` is an older name for `--base` and still works.
 
 ```bash
-dray session new --harness codex --effort high "Port the retry logic to the Go client"
-dray session new --model opus --fast "Rename the config keys listed below …"
-dray session new --issue DRA-53 --title "Add the issue panel" "Build the issue panel described in DRA-53"
+carbon session new --harness codex --effort high "Port the retry logic to the Go client"
+carbon session new --model opus --fast "Rename the config keys listed below …"
+carbon session new --issue DRA-53 --title "Add the issue panel" "Build the issue panel described in DRA-53"
 ```
 
 ### Always a worktree
@@ -57,12 +57,12 @@ The new session inherits no conversation. Put everything it needs in the prompt.
 
 ### How deep it can go
 
-A session you start from the composer may create sessions. Those may create sessions too. Their sessions may not. Past that, `dray session new` and `dray draft start` are refused with a message saying so. Start the next batch from a top-level session.
+A session you start from the composer may create sessions. Those may create sessions too. Their sessions may not. Past that, `carbon session new` and `carbon draft start` are refused with a message saying so. Start the next batch from a top-level session.
 
 ## List sessions
 
 ```bash
-dray session ls
+carbon session ls
 ```
 
 One line per session: id, status, title, branch. A session created by another one also says `spawned by <id>`, and a hidden one says `hidden`.
@@ -75,28 +75,28 @@ One line per session: id, status, title, branch. A session created by another on
 
 Status is `idle`, `in_progress` or `completed`. `completed` means the turn finished and nobody has opened the session since. Settled sessions are not listed.
 
-Nothing reports back on its own when a session finishes. To find out, check `dray session ls`, or have the session [message you](#send-a-message).
+Nothing reports back on its own when a session finishes. To find out, check `carbon session ls`, or have the session [message you](#send-a-message).
 
 ## Send a message
 
 ```bash
-dray session send 0198f0a2-1c5e-7000-8000-000000000000 "The API moved to /v2. Update the client to match."
+carbon session send 0198f0a2-1c5e-7000-8000-000000000000 "The API moved to /v2. Update the client to match."
 ```
 
-The message arrives as an ordinary prompt and starts a turn, so it wakes an idle session. If the session is mid-turn, the message is queued and picked up next; `dray` says `Queued — the session is mid-turn and will pick it up.` That is not a failure.
+The message arrives as an ordinary prompt and starts a turn, so it wakes an idle session. If the session is mid-turn, the message is queued and picked up next; `carbon` says `Queued — the session is mid-turn and will pick it up.` That is not a failure.
 
-Sent from inside a session, the receiving agent is told which session sent it, with its id, so it can reply with `dray session send`. A message never changes the receiving session's model, effort or permission mode.
+Sent from inside a session, the receiving agent is told which session sent it, with its id, so it can reply with `carbon session send`. A message never changes the receiving session's model, effort or permission mode.
 
 ## Rename, stop, settle
 
 ```bash
-dray session rename <id> "Add retry to the upload client"
-dray session stop <id>
-dray session settle <id>
-dray session settle <id> --delete-worktree
-dray session unsettle <id>
-dray session set-aside <id>
-dray session unset-aside <id>
+carbon session rename <id> "Add retry to the upload client"
+carbon session stop <id>
+carbon session settle <id>
+carbon session settle <id> --delete-worktree
+carbon session unsettle <id>
+carbon session set-aside <id>
+carbon session unset-aside <id>
 ```
 
 | Command | What it does |

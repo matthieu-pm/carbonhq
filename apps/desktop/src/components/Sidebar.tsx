@@ -920,7 +920,7 @@ export function SpaceSwitcher({
 /// On `main` it stays bare: that is the common case, and naming the default
 /// branch is a word the reader skips every time to reach the one that matters.
 /// A worktree's branch is already `worktree-<name>`, so the prefix goes and the
-/// badge names the tree the way the sidebar and `dray ls` do — stripped after
+/// badge names the tree the way the sidebar and `carbon ls` do — stripped after
 /// the `main` test, or a tree named `main` would read as no branch at all.
 function devBadgeLabel(branch: string | null): string {
   if (branch === null || branch === "" || branch === "main") return "Dev";

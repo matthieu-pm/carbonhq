@@ -41,7 +41,7 @@ import type { ImageRef, IssueRef, MessageSender } from "@/types/events";
 /// it; unwrapped, the image is its own edge. They stay inside this component and
 /// on its column, so the change is only what the reader sees.
 ///
-/// A message relayed by `dray send` keeps the user's side of the transcript —
+/// A message relayed by `carbon send` keeps the user's side of the transcript —
 /// whoever wrote it, it is not this session's assistant speaking — and is named
 /// above the bubble instead of being drawn as a second kind of speech. The name
 /// comes off the event's own `from` field and never out of the text: the model

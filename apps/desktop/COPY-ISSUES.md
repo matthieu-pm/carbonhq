@@ -69,9 +69,9 @@ page works, and two menus do not.
 
 **Note under it**, above a rule — the other half of the setup
 
-> Dray reads your issues with this key, and writes only the status or priority you pick. To let the agent read and manage issues in chat, add [Linear's MCP server](https://linear.app/docs/mcp) to your CLI.
+> Carbon reads your issues with this key, and writes only the status or priority you pick. To let the agent read and manage issues in chat, add [Linear's MCP server](https://linear.app/docs/mcp) to your CLI.
 
-Said here and only here. The key fills Dray's own screens and gives the agent
+Said here and only here. The key fills Carbon's own screens and gives the agent
 nothing; someone who finds that out later finds it out from a model working off
 a one-line title, which is the expensive way. No check behind it — a live health
 check was built and removed, since this is setup advice rather than a fault to
@@ -95,11 +95,11 @@ its tail, and a key revoked months ago.
 **The GitHub half, under a rule below the form** — with GitHub's mark beside
 it, and **only while GitHub is not connected either**
 
-> Or sign in to GitHub with `gh auth login` — Dray reads GitHub issues through the `gh` CLI, so there is no key to paste.
+> Or sign in to GitHub with `gh auth login` — Carbon reads GitHub issues through the `gh` CLI, so there is no key to paste.
 
 Second and quieter, because only one of the two asks anything of the reader:
 GitHub's credential is `gh`'s own, so there is no field here and nothing for
-Dray to hold. Said on this surface because this is the one with nothing to show,
+Carbon to hold. Said on this surface because this is the one with nothing to show,
 and somebody who already has `gh` signed in is one relaunch from a page full of
 issues without knowing it. `gh auth login` links to GitHub's own manual page for
 the reason the Linear key link does: the flow is theirs to change.
@@ -112,7 +112,7 @@ the reason the Linear key link does: the flow is theirs to change.
 
 **Subtext**
 
-> Dray reads GitHub issues through the `gh` CLI and holds no credential of its own, so there is nothing to paste here.
+> Carbon reads GitHub issues through the `gh` CLI and holds no credential of its own, so there is nothing to paste here.
 
 A screen with no field on it should say what is standing in for one. Without
 this the pane reads as a form that failed to load.
@@ -153,7 +153,7 @@ away, which is the only way off this pane short of relaunching the app.
 are one state here, so a button saying which one it had just fixed would be
 guessing; where the answer has not moved the pane simply stays.
 
-**No refusals here.** Dray runs no `gh` command from this pane — the reader
+**No refusals here.** Carbon runs no `gh` command from this pane — the reader
 signs in in their own terminal and comes back.
 
 ---
@@ -239,7 +239,7 @@ track-and-thumb switch the trackers use, with words rather than glyphs
 repository's name on its face — lit like a scope chip once set
 
 > Choose a repository
-> dray
+> carbon
 
 The value *is* the answer to "what am I looking at", which is why this one wears
 its name where the controls beside it are glyphs. Buried in the filter menu it
@@ -489,7 +489,7 @@ going
 
 It names no cure, and that is the point. A `#` in the composer is a *mention* —
 it reaches the model and draws as a button in the bubble, and records nothing.
-Linking is the agent's, through `dray issue link`, so a sentence here telling
+Linking is the agent's, through `carbon issue link`, so a sentence here telling
 the reader to do it by hand would be sending them after work they never had.
 
 The status is drawn as a glyph at the head of each row and **its name appears
@@ -588,24 +588,24 @@ is a row they cannot judge.
 **Once pressed**, the row asks before it acts — the key is not recoverable from
 here, so taking it back means a trip to Linear for a new one.
 
-> Dray will forget the key. Sessions keep the issues they are tagged with.
+> Carbon will forget the key. Sessions keep the issues they are tagged with.
 
 > Cancel
 > Disconnect
 
 ---
 
-## CLI — `dray`
+## CLI — `carbon`
 
-**`dray new --issue <ISSUE>`**
+**`carbon new --issue <ISSUE>`**
 
 > The issue this work is against, like DRA-53. Repeat for several.
 
-**`dray issue`**
+**`carbon issue`**
 
 > Tag a session with the issue its work is against.
 
-**`dray issue link` / `dray issue unlink`**
+**`carbon issue link` / `carbon issue unlink`**
 
 > Tag a session with one or more issues.
 > Remove issues from a session. The issues themselves are untouched.
@@ -624,7 +624,7 @@ documented call names no environment variable, which Claude Code refuses inside
 a worktree. Run from a person's own terminal there is nothing to fall back to,
 so the sentence names the cure rather than guessing at a session.
 
-> no session named, and DRAY_SESSION_ID is not set: name the session, as printed by `dray ls`
+> no session named, and CARBON_SESSION_ID is not set: name the session, as printed by `carbon ls`
 
 **Refused when a session is named and no issue is.** The same sentence the app
 answers with, so the two cannot drift into two ways of saying one thing.
@@ -633,13 +633,13 @@ answers with, so the two cannot drift into two ways of saying one thing.
 
 **A GitHub issue is named the same way**, in GitHub's own cross-repo spelling:
 
-> dray issue link owner/repo#12 --title "…" --url "…"
+> carbon issue link owner/repo#12 --title "…" --url "…"
 
 Never a bare `#12`. A number alone is meaningful only relative to a repository,
 and a prompt is full of them — so a tag that linked one would file a session
 under whichever repo happened to be nearest, which is a wrong link that reads
 exactly like a right one. The shape is also what says which tracker a link
-belongs to, since `dray issue link` asks the tracker nothing.
+belongs to, since `carbon issue link` asks the tracker nothing.
 
 **After a link or unlink**, the session's whole issue list, one per line:
 
@@ -672,6 +672,6 @@ identifier is a team key and a number and holds none.
 ## Settings dialog — the GitHub row
 
 Nothing. There is no row, no key and no Disconnect: the credential is `gh`'s
-own, so Dray has nothing to forget and nothing it could take back. Signing out
+own, so Carbon has nothing to forget and nothing it could take back. Signing out
 is `gh auth logout` in the reader's own terminal, and the Accounts tab beside
 this already says who `gh` is signed in as.

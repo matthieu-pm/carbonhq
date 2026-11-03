@@ -24,7 +24,7 @@ enum Capture {
 
     /// `nil` for a cancel.
     static func run() async throws -> Shot? {
-        guard let screen = screenUnderPointer() else { throw DrayError("No display to capture.") }
+        guard let screen = screenUnderPointer() else { throw CarbonError("No display to capture.") }
         let grab = try await reader(of: screen)
         let model = Marking(size: screen.frame.size) { rect in
             let image = await grab(rect)
@@ -50,11 +50,11 @@ enum Capture {
     static func reader(of screen: NSScreen) async throws -> (CGRect) async -> CGImage? {
         guard CGPreflightScreenCaptureAccess() else {
             _ = CGRequestScreenCaptureAccess()
-            throw DrayError("Allow Dray Island in System Settings → Privacy & Security → Screen Recording, then try again.")
+            throw CarbonError("Allow Carbon Island in System Settings → Privacy & Security → Screen Recording, then try again.")
         }
         let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = content.displays.first(where: { $0.displayID == id }) else { throw DrayError("No display to capture.") }
+        guard let display = content.displays.first(where: { $0.displayID == id }) else { throw CarbonError("No display to capture.") }
         let filter = SCContentFilter(display: display, excludingApplications: content.applications.filter { $0.processID == getpid() }, exceptingWindows: [])
         let scale = screen.backingScaleFactor
         return { rect in
@@ -160,7 +160,7 @@ enum Capture {
         }
     }
 
-    /// PNG, unless that passes the API's 5MB image ceiling — over it Dray sends
+    /// PNG, unless that passes the API's 5MB image ceiling — over it Carbon sends
     /// the file as a path the model has to open — so a big region steps down
     /// through JPEG qualities until it fits.
     static func write(_ image: CGImage) throws -> String {
@@ -170,8 +170,8 @@ enum Capture {
         for quality in [0.85, 0.7, 0.5, 0.3] where (data?.count ?? 0) > cap {
             (data, ext) = (rep.representation(using: .jpeg, properties: [.compressionFactor: quality]), "jpg")
         }
-        guard let data else { throw DrayError("Could not encode the screenshot.") }
-        let dir = FileManager.default.temporaryDirectory.appending(path: "dray-island")
+        guard let data else { throw CarbonError("Could not encode the screenshot.") }
+        let dir = FileManager.default.temporaryDirectory.appending(path: "carbon-island")
         sweep(dir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appending(path: "Screenshot \(UUID().uuidString.prefix(8)).\(ext)")

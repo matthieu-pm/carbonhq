@@ -2,7 +2,7 @@ use std::io::{BufRead, IsTerminal};
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
-use dray_proto::{AddServer, RenameServer, Request, Response, ServerRef, ServerSummary, SetServerOn};
+use carbon_proto::{AddServer, RenameServer, Request, Response, ServerRef, ServerSummary, SetServerOn};
 
 use super::{send, unexpected};
 
@@ -10,11 +10,11 @@ use super::{send, unexpected};
 pub enum MachineCommand {
     /// Add a machine this one can reach. It connects before it is saved, and
     /// its name must be one no other machine has.
-    #[command(after_help = "dray machine add vps root@203.0.113.7
-dray machine add vps ssh -p 2222 root@203.0.113.7
-dray machine add vps my-ssh-alias
-cat serve-token | dray machine add vps ws://127.0.0.1:7317
-dray machine add --token-file token mac wss://….opentunnel.xyz")]
+    #[command(after_help = "carbon machine add vps root@203.0.113.7
+carbon machine add vps ssh -p 2222 root@203.0.113.7
+carbon machine add vps my-ssh-alias
+cat serve-token | carbon machine add vps ws://127.0.0.1:7317
+carbon machine add --token-file token mac wss://….opentunnel.xyz")]
     Add(Add),
     /// List the machines this one reaches and whether each answers.
     Ls(ServerLs),
@@ -128,7 +128,7 @@ pub fn run(command: MachineCommand) -> Result<(), String> {
         }
         MachineCommand::Disconnect(args) => {
             let server = acted_on(Request::SetServerOn(SetServerOn { name: args.name, on: false }))?;
-            eprintln!("{} is disconnected. `dray machine connect {}` connects it again.", server.name, server.name);
+            eprintln!("{} is disconnected. `carbon machine connect {}` connects it again.", server.name, server.name);
             Ok(())
         }
     }
@@ -146,7 +146,7 @@ fn acted_on(request: Request) -> Result<ServerSummary, String> {
 fn read_token() -> Result<String, String> {
     let stdin = std::io::stdin();
     if stdin.is_terminal() {
-        eprint!("Paste the server's token (from ~/.dray/serve-token on it), then press Enter: ");
+        eprint!("Paste the server's token (from ~/.carbon/serve-token on it), then press Enter: ");
     }
     let mut token = String::new();
     stdin.lock().read_line(&mut token).map_err(|e| format!("could not read the token: {e}"))?;
@@ -168,7 +168,7 @@ mod tests {
     use clap::Parser;
 
     fn machine(args: &[&str]) -> MachineCommand {
-        let argv = ["dray", "machine"].iter().chain(args);
+        let argv = ["carbon", "machine"].iter().chain(args);
         match Cli::try_parse_from(argv).map(|cli| cli.command) {
             Ok(Command::Machine(command)) => command,
             Ok(_) => panic!("not a machine command"),
@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(add.token_file, Some(PathBuf::from("t")));
         assert_eq!(add.address, ["ws://box:7317"]);
 
-        assert!(Cli::try_parse_from(["dray", "machine", "add", "vps"]).is_err(), "no address");
+        assert!(Cli::try_parse_from(["carbon", "machine", "add", "vps"]).is_err(), "no address");
     }
 
     #[test]

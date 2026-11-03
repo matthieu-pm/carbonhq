@@ -151,7 +151,7 @@ type ChatInputProps = {
   /// Whether the picked model can be handed an image at all.
   ///
   /// `true` where nothing says otherwise, which covers the model list not
-  /// having landed and pi picking a model for itself — Dray has no answer in
+  /// having landed and pi picking a model for itself — Carbon has no answer in
   /// either case, and a warning drawn on a guess is worse than none.
   modelTakesImages?: boolean;
   /// The "hand it back" actions, clipped to a sliver above the card and opening
@@ -208,8 +208,8 @@ const NEW_TASK_MAX_ROWS = 20;
 // the CSS supplies the ink. Prefixed as well as not, for the older WebKit a
 // Linux build runs on.
 const WORDMARK_MASK = {
-  maskImage: "url(/assets/dray-logo.svg)",
-  WebkitMaskImage: "url(/assets/dray-logo.svg)",
+  maskImage: "url(/assets/carbon-logo.svg)",
+  WebkitMaskImage: "url(/assets/carbon-logo.svg)",
   maskSize: "contain",
   WebkitMaskSize: "contain",
   maskRepeat: "no-repeat",
@@ -417,7 +417,7 @@ export default function ChatInput({
   // is there. The `/` picker's distinction exactly: a query that finds nothing
   // closes quietly, because the reader can see the list it failed against,
   // where a list that is empty *for good* has to say so or the key reads as
-  // Dray being broken. The placeholder already withholds `&` here, so this is
+  // Carbon being broken. The placeholder already withholds `&` here, so this is
   // for somebody who reached for it anyway.
   const noSessions = session !== null && !canMentionSession;
 
@@ -439,7 +439,7 @@ export default function ChatInput({
   // the ones it does — `/xyzzy` in a Claude session still shuts the picker
   // quietly, since there the reader can see what the list holds. Silence is
   // only wrong where the list is empty for good: three of the four harnesses
-  // fill it, so a `/` that does nothing reads as Dray being broken rather than
+  // fill it, so a `/` that does nothing reads as Carbon being broken rather than
   // as fx having no commands. Waits on the probe, and on there being a
   // directory to probe in — with no project attached the honest answer is
   // "nobody has been asked" rather than "there are none".

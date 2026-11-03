@@ -29,7 +29,7 @@ export function usePendingLink(): string | null {
   return useSyncExternalStore(changed.subscribe, () => pending);
 }
 
-/// A click opens the link in Dray's browser; ⌘-click (Ctrl elsewhere) leaves
+/// A click opens the link in Carbon's browser; ⌘-click (Ctrl elsewhere) leaves
 /// for the system one, the way it means "not here" in every browser's own tab
 /// strip. `LinkDialog` is left mounted but nothing raises it: `askLink` is its
 /// way back in.
@@ -37,7 +37,7 @@ export function openLink(url: string, event?: { metaKey: boolean; ctrlKey: boole
   opener(url, { external: !!(event?.metaKey || event?.ctrlKey) });
 }
 
-/// Puts the question to the reader instead — in Dray or outside.
+/// Puts the question to the reader instead — in Carbon or outside.
 export function askLink(url: string) {
   set(url);
 }

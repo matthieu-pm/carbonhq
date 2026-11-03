@@ -57,7 +57,7 @@ struct LeadMark: View {
 }
 
 /// The selected session's title row: the title opens the task list behind its
-/// lead mark, ⌘-click opens the session in Dray, and the hints teach the keys.
+/// lead mark, ⌘-click opens the session in Carbon, and the hints teach the keys.
 struct TitleRow: View {
     let title: String
     let marks: Marks
@@ -87,7 +87,7 @@ struct TitleRow: View {
             .buttonStyle(.plain)
             .onHover { hovered = $0 }
             .animation(.easeOut(duration: 0.12), value: hovered)
-            .help("Tasks, ⌘-click to open in Dray")
+            .help("Tasks, ⌘-click to open in Carbon")
             if let hint {
                 Text(hint).font(.system(size: 12)).foregroundStyle(.white.opacity(0.3)).fixedSize()
                     .transition(.opacity)
@@ -166,7 +166,7 @@ struct AskTabs: View {
 }
 
 /// One waiting session over the card, as a browser tab: the active one names
-/// itself, the others are clipped short. ⌘-click opens it in Dray.
+/// itself, the others are clipped short. ⌘-click opens it in Carbon.
 struct AskTab: View {
     let title: String
     let active: Bool
@@ -226,7 +226,7 @@ struct AttentionPill: View {
     }
 }
 
-/// Sessions finished, in place of Dray's banner, newest first. One names
+/// Sessions finished, in place of Carbon's banner, newest first. One names
 /// itself and offers Open in app; several are a count that, under the pointer,
 /// grows a row each, five tall and then scrolling. A title opens the island on it.
 struct DonePill: View {

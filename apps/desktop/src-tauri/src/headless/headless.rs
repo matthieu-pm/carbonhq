@@ -1,4 +1,4 @@
-//! `dray browser` on a server: Chrome for Testing's `chrome-headless-shell`,
+//! `carbon browser` on a server: Chrome for Testing's `chrome-headless-shell`,
 //! one process per session, driven over the DevTools pipe. The verbs are
 //! `automation.rs`, shared with the Mac; this module answers the functions it
 //! reads and nothing else. See HEADLESS-PLAN.md.
@@ -97,11 +97,11 @@ const WINDOW: &str = "--window-size=1440,900";
 const DISCARD_AFTER: Duration = Duration::from_secs(30 * 60);
 const TIMEOUT: Duration = Duration::from_secs(30);
 
-// --- What `dray browser` reads ----------------------------------------------
+// --- What `carbon browser` reads ----------------------------------------------
 
 fn browser_dir() -> PathBuf {
     crate::store::home_override()
-        .unwrap_or_else(|| std::env::home_dir().unwrap_or_default().join(".dray"))
+        .unwrap_or_else(|| std::env::home_dir().unwrap_or_default().join(".carbon"))
         .join("browser")
 }
 
@@ -787,7 +787,7 @@ async fn preflight(exe: &Path) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "Chromium needs system libraries this server lacks ({}). Run `dray setup` there and pick \
+        "Chromium needs system libraries this server lacks ({}). Run `carbon setup` there and pick \
          Browser for agents, then try again.",
         missing.join(", ")
     ))

@@ -18,7 +18,7 @@ export async function SiteNav({ bare = false }: { bare?: boolean } = {}) {
 
   return (
     <nav aria-label="Main" className="flex h-10 items-start justify-between">
-      <Link href="/" aria-label="Dray home" className={`flex h-10 w-[120px] items-center pl-4 ${bare ? "" : "bg-black light:bg-white"}`}>
+      <Link href="/" aria-label="Carbon home" className={`flex h-10 w-[120px] items-center pl-4 ${bare ? "" : "bg-black light:bg-white"}`}>
         <Wordmark className="h-[11px] w-auto text-white light:text-[#0A0A0A]" />
       </Link>
       {/* The box draws its right and bottom edges; every cell draws its own
@@ -38,7 +38,7 @@ export async function SiteNav({ bare = false }: { bare?: boolean } = {}) {
           href={REPO}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label={`Dray on GitHub, ${formatStars(stars)} stars`}
+          aria-label={`Carbon on GitHub, ${formatStars(stars)} stars`}
           className={`${NAV_CELL} flex w-20 max-[359px]:hidden`}
         >
           <GitHubGlyph className="size-3" />

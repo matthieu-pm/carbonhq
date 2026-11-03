@@ -42,7 +42,7 @@ use tokio::{
 /// ACP protocol version fx speaks (`agentCapabilities` answered `1`).
 const PROTOCOL_VERSION: u64 = 1;
 
-/// Dray's rules, sent as `systemPrompt` on `session/new`.
+/// Carbon's rules, sent as `systemPrompt` on `session/new`.
 ///
 /// fx 0.0.14 advertises `sessionCapabilities.systemPrompt` and stores the text
 /// on its own session record, so a `session/resume` in a fresh process still
@@ -250,7 +250,7 @@ pub async fn init(
     let mut command = Command::new(&bin);
 
     if let Some(endpoint) = crate::orchestration::child_endpoint() {
-        command.env("DRAY_ENDPOINT", endpoint);
+        command.env("CARBON_ENDPOINT", endpoint);
     }
 
     command.arg("acp");
@@ -260,7 +260,7 @@ pub async fn init(
 
     let mut child = command
         .current_dir(cwd)
-        .env("DRAY_SESSION_ID", session_id)
+        .env("CARBON_SESSION_ID", session_id)
         .env("PATH", crate::harness::agent_path(&bin))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -465,7 +465,7 @@ async fn open_effort(
     asked: Option<Effort>,
 ) -> (Option<Effort>, Option<String>, Option<parser::ConfigOptions>) {
     // Absent means fx's `auto`, which is its own default and not a level
-    // Dray's ladder spells — so it is left alone rather than sent.
+    // Carbon's ladder spells — so it is left alone rather than sent.
     let Some(level) = asked else {
         return (None, None, None);
     };
@@ -569,7 +569,7 @@ fn note_config(
     announce_ladder(model, reading, app);
 }
 
-/// fx's level names as rungs Dray can spell.
+/// fx's level names as rungs Carbon can spell.
 ///
 /// `auto` and `none` are fx's own and are dropped — the ladder must not grow a
 /// variant for them, since an older build reading a level it cannot spell
@@ -610,7 +610,7 @@ async fn open_session(
                 // own tools, and advertising either would invite requests
                 // this build cannot serve.
                 "clientCapabilities": {},
-                "clientInfo": {"name": "dray", "title": "Dray", "version": env!("CARGO_PKG_VERSION")},
+                "clientInfo": {"name": "carbon", "title": "Carbon", "version": env!("CARGO_PKG_VERSION")},
             }),
         )
         .await?;
@@ -679,7 +679,7 @@ fn offers_code_mode(answer: &Value) -> bool {
 /// dead one under `policy=optional`, but over ACP the same entry fails the
 /// whole request with `-32602 Required MCP server '<name>' failed to start`.
 /// Left alone, one stale command or unreachable URL in `~/.fx/mcp.json` would
-/// make fx sessions uncreatable in Dray while working fine in a terminal. So
+/// make fx sessions uncreatable in Carbon while working fine in a terminal. So
 /// the named culprit is dropped and the request repeated; a refusal naming no
 /// server sheds them all. The child stays usable across a refused open —
 /// measured, for both methods. Each drop is logged, since the reader's only
@@ -832,7 +832,7 @@ async fn set_config(session: &FxSession, config_id: &str, value: &str) -> Result
         .await
 }
 
-/// Dray's stance onto ACP's three modes.
+/// Carbon's stance onto ACP's three modes.
 ///
 /// fx 0.0.14 exposes `auto`, `ask` and `full-access` over ACP and answers
 /// `-32602 Unknown mode` for anything else — `code` included, the name `auto`
@@ -881,7 +881,7 @@ fn opened_mode(answer: &Value) -> Option<&str> {
 /// fx refuses it mid-prompt like every other config change, so a mid-turn pick
 /// rides [`DeferredControls`]. A session with no `fast` option — an older fx, or
 /// a model with no fast lane — can only be asked to stay off; asking for on is
-/// refused here in Dray's words rather than sent.
+/// refused here in Carbon's words rather than sent.
 pub async fn set_fast(session: &FxSession, fast: bool) -> Result<()> {
     let current = *session.fast.lock().expect("fx fast poisoned");
     if current.unwrap_or(false) == fast {
@@ -1121,7 +1121,7 @@ async fn read_stdout(
 
         // fx's own title is deliberately dropped — see [`disable_fx_titles`].
         // With its generation off, what `session_info_update` carries is the
-        // raw first prompt, which is already what Dray's index holds; and fx
+        // raw first prompt, which is already what Carbon's index holds; and fx
         // **restates** that on every later turn, so honouring it would write the
         // prompt back over the title [`crate::title`] generated, mid-session.
 
@@ -1512,7 +1512,7 @@ mod tests {
     }
 
     /// The ladder rides `configOptions`, and `auto`/`none` are fx's own levels
-    /// rather than rungs Dray may spell — a new `Effort` variant is an index
+    /// rather than rungs Carbon may spell — a new `Effort` variant is an index
     /// an older build cannot parse (DRA-140), so they are dropped here.
     ///
     /// What the *session* may try is the list whole; what is remembered
@@ -1589,7 +1589,7 @@ mod tests {
         let params = new_session_params(hello, "/tmp/x");
         assert_eq!(params["systemPromptMode"], "append");
         let text = params["systemPrompt"][0]["text"].as_str().unwrap();
-        assert!(text.contains("You run inside Dray"));
+        assert!(text.contains("You run inside Carbon"));
 
         let old = include_str!("fixtures/cancel.jsonl")
             .lines()

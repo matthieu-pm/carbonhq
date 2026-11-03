@@ -1,11 +1,11 @@
-//! pi's typed events → Dray's [`AgentEvent`] vocabulary.
+//! pi's typed events → Carbon's [`AgentEvent`] vocabulary.
 //!
 //! Three facts shape everything here, and all three come from PI-PLAN.md §2 and
 //! §9.
 //!
-//! **pi has three nested lifecycles and only the outer one is Dray's turn.**
+//! **pi has three nested lifecycles and only the outer one is Carbon's turn.**
 //! `agent_start` … `agent_settled` is one prompt; `turn_start`/`turn_end` is one
-//! *model call*, of which a tool-using prompt has several. Reading Dray's turn
+//! *model call*, of which a tool-using prompt has several. Reading Carbon's turn
 //! off the inner pair would end the turn at the first tool call and reopen it a
 //! moment later, which draws as the session finishing and restarting itself.
 //!
@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 use super::parser::{AssistantEvent, ContentBlock, PiEvent, PiMessage};
 
-/// What pi calls the tools it ships, folded onto Dray's vocabulary.
+/// What pi calls the tools it ships, folded onto Carbon's vocabulary.
 ///
 /// Unknown names read as [`ToolType::Other`] rather than being guessed at: an
 /// extension may register a tool under any name, and a wrong `tool_type` draws
@@ -78,7 +78,7 @@ pub struct Mapper {
     /// handshake it settles the answer for — nothing but a line off stdout
     /// resolves a request, so the mapper exists a moment before its window
     /// does. Shared for a second reason too: the model can move under a running
-    /// child — Dray's own `set_model`, or a pi extension calling `setModel` —
+    /// child — Carbon's own `set_model`, or a pi extension calling `setModel` —
     /// and [`super::pi`] re-reads this after either.
     context_window: Arc<AtomicU64>,
     /// Whether a compaction has landed since the reading in `usage` was taken.
@@ -208,7 +208,7 @@ impl Mapper {
                 })]
             }
 
-            // One model call inside the run. Dray's transcript groups by user
+            // One model call inside the run. Carbon's transcript groups by user
             // message, so these draw nothing — the turn they sit inside is the
             // one the reader sees.
             PiEvent::TurnStart | PiEvent::TurnEnd => Vec::new(),
@@ -220,7 +220,7 @@ impl Mapper {
                     self.message_id = Some(Uuid::now_v7().to_string());
                     Vec::new()
                 }
-                // The prompt Dray itself sent, echoed back, and the tool result
+                // The prompt Carbon itself sent, echoed back, and the tool result
                 // `tool_execution_end` already reported. Both are second copies
                 // of what the app already knows.
                 _ => Vec::new(),
@@ -504,7 +504,7 @@ impl Mapper {
     }
 
     fn event(&self, payload: AgentEventPayload) -> AgentEvent {
-        // No turn id: pi has no turn identifier on the wire, and Dray's
+        // No turn id: pi has no turn identifier on the wire, and Carbon's
         // transcript groups by user message anyway — the reasoning Claude Code
         // already documents. No subagent: pi ships none, and one arriving
         // through an extension reaches the wire as ordinary tool calls with
@@ -620,7 +620,7 @@ mod tests {
 
     /// One prompt is one turn, however many model calls pi makes inside it.
     ///
-    /// The capture has three `turn_start`/`turn_end` pairs. Reading Dray's turn
+    /// The capture has three `turn_start`/`turn_end` pairs. Reading Carbon's turn
     /// off those would end it at the first tool call and reopen it, which draws
     /// as the session finishing and starting again on its own.
     #[test]
@@ -643,7 +643,7 @@ mod tests {
     /// The same run against a real pi a version later, which is the capture the
     /// spawn was wired with. A mapper that reads only the older shape draws a
     /// turn that opens and never closes — a session stuck `in_progress` with a
-    /// complete transcript on screen, which reads as Dray having hung.
+    /// complete transcript on screen, which reads as Carbon having hung.
     #[test]
     fn a_real_0_84_turn_draws_its_answer_and_closes() {
         let events = mapped(include_str!("fixtures/live_turn_0_84.jsonl"));
@@ -731,7 +731,7 @@ mod tests {
         }
     }
 
-    /// The echoes are dropped. Dray sent the prompt itself and already reported
+    /// The echoes are dropped. Carbon sent the prompt itself and already reported
     /// the tool result, so both would be second copies of what it knows.
     #[test]
     fn the_user_and_tool_result_echoes_draw_nothing() {
@@ -741,7 +741,7 @@ mod tests {
             !events
                 .iter()
                 .any(|e| matches!(e.payload, AgentEventPayload::UserMessage { .. })),
-            "pi's echo of Dray's own prompt reached the transcript"
+            "pi's echo of Carbon's own prompt reached the transcript"
         );
     }
 
@@ -841,7 +841,7 @@ mod tests {
     /// `failed_turn_live.jsonl` was captured against pi **0.74.2**, which sends
     /// `agent_end` and no `agent_settled`. So the turn opens and never closes:
     /// the session sits `in_progress` forever with a complete transcript on
-    /// screen, which reads as Dray being broken rather than as a stale CLI.
+    /// screen, which reads as Carbon being broken rather than as a stale CLI.
     ///
     /// This is what the capability check in `binpath` is for. If this test ever
     /// starts failing because the turn *did* close, the floor can be dropped —
@@ -1252,7 +1252,7 @@ mod tests {
     /// A tool an extension registered arrives as an ordinary tool call, under
     /// the name its author gave it.
     ///
-    /// This is the whole of what Dray has to do to support one, and it is why
+    /// This is the whole of what Carbon has to do to support one, and it is why
     /// there is no extension-tool code path: pi runs the tool itself and
     /// reports it on the same two lines a built-in uses, so a transcript draws
     /// it already. The capture is a probe extension registering `probe_tool`

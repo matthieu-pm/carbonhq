@@ -32,7 +32,7 @@ export default function AttachmentTray({
   modelTakesImages: boolean;
 }) {
   // Said, not enforced. The image is still sent, because the harness's own
-  // refusal names what was wrong where a guess made here could not — and Dray's
+  // refusal names what was wrong where a guess made here could not — and Carbon's
   // copy of what a model accepts can be stale, or absent where the harness
   // picked the model itself. Removing the tile, or refusing the drop, would act
   // on that guess.

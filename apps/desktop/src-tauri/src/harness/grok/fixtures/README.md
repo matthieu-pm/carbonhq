@@ -1,7 +1,7 @@
 # grok fixtures
 
 Real `grok agent --no-leader stdio` traffic, captured against **Grok Build
-1.0.40** (2026-09-22). `>> ` is a line Dray wrote, `<< ` one grok wrote.
+1.0.40** (2026-09-22). `>> ` is a line Carbon wrote, `<< ` one grok wrote.
 
 Captured under a scratch working directory, never inside this repo, and never
 with `authenticate` sent — that method mints a real credential silently.

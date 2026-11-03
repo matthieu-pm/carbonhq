@@ -426,7 +426,7 @@ pub async fn read_file(app: tauri::AppHandle, path: String) -> Result<FileBody, 
 /// rather than mangled — against a larger cap. Media is answered before the
 /// size check, since its bytes are never text and its cap is its own.
 ///
-/// What `dray-serve` answers `read_file` with: there is no asset protocol to
+/// What `carbon-serve` answers `read_file` with: there is no asset protocol to
 /// grant a video on, so a remote client gets the path and nothing to play it
 /// through until the server serves files.
 pub(crate) async fn read_body(path: &str) -> Result<FileBody, String> {
@@ -604,7 +604,7 @@ mod tests {
     }
 
     fn scratch() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("dray-files-{}", uuid::Uuid::now_v7()));
+        let dir = std::env::temp_dir().join(format!("carbon-files-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

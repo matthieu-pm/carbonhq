@@ -1,6 +1,6 @@
 ---
 title: Drafts
-description: Save a task for later with dray draft, list saved drafts, and start or remove them.
+description: Save a task for later with carbon draft, list saved drafts, and start or remove them.
 sidebar:
   order: 4
 ---
@@ -12,7 +12,7 @@ Drafts show in the sidebar's drafts view. Click **Show drafts** (the dashed circ
 ## Save a draft
 
 ```bash
-dray draft new "Add retry to the upload client. It should back off up to 30s."
+carbon draft new "Add retry to the upload client. It should back off up to 30s."
 ```
 
 Prints the draft's id.
@@ -26,13 +26,13 @@ Prints the draft's id.
 | `--fast` | Run at the agent's faster tier once started. |
 | `--base <session\|ref>` | Start its worktree from existing work once started: a session id, a branch, or any git ref. Committed work only. |
 
-The picks inherit from the calling session exactly as [`dray session new`](/cli/sessions#what-a-new-session-inherits) does. A draft made here always starts in its own worktree. A `--base` that cannot be found is refused when you save, and checked again when the draft starts.
+The picks inherit from the calling session exactly as [`carbon session new`](/cli/sessions#what-a-new-session-inherits) does. A draft made here always starts in its own worktree. A `--base` that cannot be found is refused when you save, and checked again when the draft starts.
 
 ## List drafts
 
 ```bash
-dray draft ls
-dray draft ls --all --json
+carbon draft ls
+carbon draft ls --all --json
 ```
 
 One line per draft, newest first: id, agent, model, then the first line of the prompt. `[checkout]` marks a draft that will start in the project's own checkout instead of a worktree; only a draft saved that way in the app does.
@@ -46,7 +46,7 @@ One line per draft, newest first: id, agent, model, then the first line of the p
 ## Start a draft
 
 ```bash
-dray draft start <draft-id>
+carbon draft start <draft-id>
 ```
 
 Starts the draft as a session and takes it off the draft list. Prints the new session's id and a line like `Started "…" in worktree calm-owl`. Run from inside a session, the new session is nested under the caller, and the [depth limit](/cli/sessions#how-deep-it-can-go) applies. If the start fails, the draft goes back on the list.
@@ -54,12 +54,12 @@ Starts the draft as a session and takes it off the draft list. Prints the new se
 ## Remove a draft
 
 ```bash
-dray draft rm <draft-id>
+carbon draft rm <draft-id>
 ```
 
 Deletes the draft.
 
 ## Limits
 
-- A draft made with `dray` cannot be edited from the CLI. Edit it in the app.
+- A draft made with `carbon` cannot be edited from the CLI. Edit it in the app.
 - No flag makes a draft start in the project checkout.

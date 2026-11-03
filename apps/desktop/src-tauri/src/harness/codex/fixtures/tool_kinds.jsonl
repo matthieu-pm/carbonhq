@@ -1,5 +1,5 @@
-{"dir": "out", "line": "{\"id\": 1, \"method\": \"initialize\", \"params\": {\"clientInfo\": {\"name\": \"dray-capture\", \"title\": \"Dray\", \"version\": \"0\"}}}"}
-{"dir": "in", "line": "{\"id\":1,\"result\":{\"userAgent\":\"dray-capture/0.151.0-alpha.7.1 (Mac OS 26.5.0; arm64) unknown (dray-capture; 0)\",\"codexHome\":\"/Users/dev/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"}
+{"dir": "out", "line": "{\"id\": 1, \"method\": \"initialize\", \"params\": {\"clientInfo\": {\"name\": \"carbon-capture\", \"title\": \"Carbon\", \"version\": \"0\"}}}"}
+{"dir": "in", "line": "{\"id\":1,\"result\":{\"userAgent\":\"carbon-capture/0.151.0-alpha.7.1 (Mac OS 26.5.0; arm64) unknown (carbon-capture; 0)\",\"codexHome\":\"/Users/dev/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"}
 {"dir": "in", "line": "{\"method\":\"remoteControl/status/changed\",\"params\":{\"status\":\"disabled\",\"serverName\":\"Yogeshs-MacBook-Pro.local\",\"installationId\":\"51827900-aa1b-4cba-a989-40afaf25dfcf\",\"environmentId\":null},\"emittedAtMs\":1787990116641}"}
 {"dir": "out", "line": "{\"method\": \"initialized\", \"params\": {}}"}
 {"dir": "out", "line": "{\"id\": 2, \"method\": \"thread/start\", \"params\": {\"cwd\": \"/tmp/codex-capture/probe\", \"model\": \"gpt-5.6-sol\", \"approvalPolicy\": \"on-request\", \"sandbox\": \"workspace-write\"}}"}

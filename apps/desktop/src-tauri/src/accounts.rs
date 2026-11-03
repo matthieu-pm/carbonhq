@@ -12,7 +12,7 @@
 //! `codex login --with-api-key` reads one off stdin, and pi's own store is a
 //! JSON file this module writes. Everything else is a terminal.
 //!
-//! Dray keeps no copy of any key. A pasted one is handed to the CLI's own store
+//! Carbon keeps no copy of any key. A pasted one is handed to the CLI's own store
 //! and dropped — a second store here would be free to disagree with the one the
 //! CLI actually reads.
 
@@ -158,7 +158,7 @@ pub struct AuthOption {
     /// runs [`command`](Self::command) themselves.
     pub needs_key: bool,
     /// The command to run, spelled the way the reader would type it, for every
-    /// option Dray cannot carry out.
+    /// option Carbon cannot carry out.
     ///
     /// **Shown, copyable, and run by [`run_agent_login`] on the reader's say
     /// so.** Every one of these is a literal in [`auth_options`], which is what
@@ -431,7 +431,7 @@ pub fn auth_options(harness: Harness, provider: Option<&str>) -> Vec<AuthOption>
         )],
         // Two browser flows against `auth.x.ai` and no key form at all: the
         // `XAI_API_KEY` route is an environment variable the reader exports for
-        // themselves, which is not a credential Dray could save anywhere. Listed
+        // themselves, which is not a credential Carbon could save anywhere. Listed
         // as two because the device flow is the only way in on a machine with no
         // browser, and a reader on one has no other route to find.
         Harness::Grok => vec![
@@ -664,7 +664,7 @@ struct PiCheck {
 /// **No provider table decides what is *drawn* here**, for the reason
 /// `pi/models.rs` gives about its own list: which providers exist is the
 /// reader's business, not a constant this build could keep current. So the rows
-/// come from the model list Dray already reads. [`PI_PROVIDERS`] is a different
+/// come from the model list Carbon already reads. [`PI_PROVIDERS`] is a different
 /// question — what to *offer* — and is a shortlist rather than an authority.
 ///
 /// The model list alone would answer "is it signed in" by omission. It is asked
@@ -823,7 +823,7 @@ fn pi_auth_path() -> Option<PathBuf> {
     Some(std::env::home_dir()?.join(".pi/agent/auth.json"))
 }
 
-/// Serializes Dray's own read-modify-write of pi's credential file.
+/// Serializes Carbon's own read-modify-write of pi's credential file.
 ///
 /// The file is rewritten **whole**, so two of these interleaving loses whichever
 /// read first — and the pair that can do it is ordinary: saving a key while a
@@ -871,7 +871,7 @@ fn pi_auth_strict() -> Result<Map<String, Value>, String> {
         return Ok(Map::new());
     }
     serde_json::from_str(&raw).map_err(|err| {
-        format!("pi's credential file isn't readable JSON ({err}), so Dray won't overwrite it.")
+        format!("pi's credential file isn't readable JSON ({err}), so Carbon won't overwrite it.")
     })
 }
 
@@ -1002,7 +1002,7 @@ pub async fn add_agent_account(
 
     // Refused before anything is spawned or written: an empty key handed to
     // `codex login --with-api-key` comes back as its usage text, which reads as
-    // Dray malfunctioning rather than as an empty field.
+    // Carbon malfunctioning rather than as an empty field.
     let key = key.unwrap_or_default().trim().to_string();
     if key.is_empty() {
         return Err("Paste a key first.".to_string());
@@ -1036,7 +1036,7 @@ pub async fn add_agent_account(
 /// Hands a key to Codex's own store.
 ///
 /// `codex login --with-api-key` reads it off **stdin**, so nothing is written
-/// by Dray and nothing is kept. It also **flips `auth_mode`**, which is why the
+/// by Carbon and nothing is kept. It also **flips `auth_mode`**, which is why the
 /// option carrying it says out loud that it replaces the ChatGPT sign-in — the
 /// switch is the CLI's, but the sentence has to be ours, since `codex` says
 /// nothing before doing it.
@@ -1104,7 +1104,7 @@ struct GrokCredential {
 ///
 /// No file means signed out, and that is exact here rather than cautious:
 /// `session/new` refuses with `-32000 Authentication required` and **writes
-/// nothing to stderr**, so a Dray session simply could not start.
+/// nothing to stderr**, so a Carbon session simply could not start.
 async fn grok() -> anyhow::Result<Vec<Account>> {
     let home = match std::env::var_os("GROK_HOME").filter(|home| !home.is_empty()) {
         Some(home) => std::path::PathBuf::from(home),
@@ -1127,7 +1127,7 @@ async fn grok() -> anyhow::Result<Vec<Account>> {
     };
 
     // An API key is grok's other route and it lives in the reader's own
-    // environment, so there is nothing on disk to read and nothing for Dray to
+    // environment, so there is nothing on disk to read and nothing for Carbon to
     // save. Reported because a machine running on one is signed in and a row
     // saying otherwise would send the reader to fix nothing.
     let api_key = std::env::var_os("XAI_API_KEY").is_some_and(|key| !key.is_empty());
@@ -1144,7 +1144,7 @@ async fn grok() -> anyhow::Result<Vec<Account>> {
             detail: api_key.then(|| "XAI_API_KEY in this environment".to_string()),
             auth_type: api_key.then(|| "API key".to_string()),
             // `grok logout` has nothing to drop, and unsetting somebody's
-            // environment variable is not Dray's to do.
+            // environment variable is not Carbon's to do.
             can_sign_out: false,
             can_change_method: auth_options(Harness::Grok, None).len() > 1,
         }]);
@@ -1203,7 +1203,7 @@ pub async fn sign_out_agent(harness: Harness, provider: Option<String>) -> Resul
             }
             return pi_forget_provider(provider);
         }
-        Harness::Other(_) => return Err("Dray cannot drive that agent.".to_string()),
+        Harness::Other(_) => return Err("Carbon cannot drive that agent.".to_string()),
     };
 
     // Bounded like the probes: a CLI that decides to prompt instead of
@@ -1448,7 +1448,7 @@ mod tests {
     }
 
     /// Every option that is not a key field carries the command the reader is
-    /// meant to run. Dray runs none of them — macOS lets no app type into
+    /// meant to run. Carbon runs none of them — macOS lets no app type into
     /// another's prompt — so an option with neither a field nor a command is a
     /// step that asks for something and says nothing.
     #[test]

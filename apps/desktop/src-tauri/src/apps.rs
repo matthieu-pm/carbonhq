@@ -205,7 +205,7 @@ fn read_icon(bundle: &Path) -> Option<String> {
     let icon = icns_path(bundle).and_then(|icns| {
         // A temp file rather than stdout: `sips` writes the paths it worked on
         // to stdout and only ever writes the image to a path.
-        let out = std::env::temp_dir().join(format!("dray-appicon-{}.png", uuid::Uuid::now_v7()));
+        let out = std::env::temp_dir().join(format!("carbon-appicon-{}.png", uuid::Uuid::now_v7()));
         let ok = Command::new("sips")
             .args(["-s", "format", "png", "-Z", "64"])
             .arg(&icns)
@@ -277,7 +277,7 @@ fn detect() -> Vec<ExternalApp> {
 ///
 /// Re-scanned on every call rather than held for the process: the walk is a
 /// handful of `read_dir`s, and only the icons are dear enough to cache — so an
-/// editor installed while Dray is running shows up the next time the panel
+/// editor installed while Carbon is running shows up the next time the panel
 /// asks, instead of needing a restart the way the slash-command cache does.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_open_apps() -> Vec<ExternalApp> {
@@ -316,16 +316,16 @@ pub async fn open_in_app(app_path: String, path: String) -> Result<(), String> {
     Err(crate::git::stderr_or(&out, || format!("could not open {path}")))
 }
 
-/// Writes the modifier that opens Dray Island (`control`, `option`, `command`)
+/// Writes the modifier that opens Carbon Island (`control`, `option`, `command`)
 /// into the island's own preferences, which it reads at every tap, and starts it
 /// to match — or quits it, for `off`.
 ///
 /// Its own defaults domain rather than `settings.json`, since the island is the
 /// one that reads it. `open` without `-n` is a no-op for an island already up,
-/// and it outlives Dray on purpose: it talks to the background server, which
+/// and it outlives Carbon on purpose: it talks to the background server, which
 /// does too — so the launch also pings it, and an island left on a binary an
-/// update replaced restarts onto the new one. A build with no island inside it
-/// (`tauri dev`) only writes the pick.
+/// update replaced restarts onto the new one. A dev build with no island built
+/// into `apps/island/out` only writes the pick.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn configure_island(key: String) -> Result<(), String> {
     use tokio::process::Command;
@@ -335,16 +335,20 @@ pub async fn configure_island(key: String) -> Result<(), String> {
     async fn run(cmd: &mut Command) -> Result<std::process::Output, String> {
         cmd.output().await.map_err(|err| format!("could not configure the island: {err}"))
     }
-    run(Command::new("defaults").args(["write", "com.yogesh.dray.island", "island.key", "-string", &key])).await?;
+    run(Command::new("defaults").args(["write", "com.yogesh.carbon.island", "island.key", "-string", &key])).await?;
     if key == "off" {
         // Exit 1 is "nothing running", which is what was asked for.
-        run(Command::new("pkill").args(["-x", "Dray Island"])).await?;
+        run(Command::new("pkill").args(["-x", "Carbon Island"])).await?;
         return Ok(());
     }
-    let Some(app) = std::env::current_exe()
+    let bundled = std::env::current_exe()
         .ok()
-        .and_then(|exe| Some(exe.parent()?.parent()?.join("Helpers/Dray Island.app")))
-        .filter(|app| app.exists())
+        .and_then(|exe| Some(exe.parent()?.parent()?.join("Helpers/Carbon Island.app")));
+    // `tauri dev` bundles no island, so a debug build falls back to the one
+    // `apps/island/build.sh apps/island/out` leaves in the tree.
+    let local = cfg!(debug_assertions)
+        .then(|| std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../island/out/Carbon Island.app")));
+    let Some(app) = bundled.into_iter().chain(local).find(|app| app.exists())
     else {
         return Ok(());
     };
@@ -352,18 +356,18 @@ pub async fn configure_island(key: String) -> Result<(), String> {
     open.arg("-g");
     // The island finds its server through the home, so a moved one must ride along.
     if let Some(home) = crate::store::home_override() {
-        open.arg("--env").arg(format!("DRAY_HOME={}", home.display()));
+        open.arg("--env").arg(format!("CARBON_HOME={}", home.display()));
     }
     let out = run(open.arg(&app)).await?;
     if out.status.success() {
-        run(Command::new("notifyutil").args(["-p", "com.yogesh.dray.island.update"])).await?;
+        run(Command::new("notifyutil").args(["-p", "com.yogesh.carbon.island.update"])).await?;
         return Ok(());
     }
-    Err(crate::git::stderr_or(&out, || "could not start Dray Island".into()))
+    Err(crate::git::stderr_or(&out, || "could not start Carbon Island".into()))
 }
 
-/// The session Dray's window has open, which the island opens on when tapped
-/// over a frontmost Dray. Held here since the island asks through the server,
+/// The session Carbon's window has open, which the island opens on when tapped
+/// over a frontmost Carbon. Held here since the island asks through the server,
 /// and the server can only ask the app's Rust side.
 static APP_SELECTION: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
@@ -377,18 +381,18 @@ pub fn app_selection() -> Option<String> {
     APP_SELECTION.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
-/// Whether Dray Island is running, asked at each permission or question so a
+/// Whether Carbon Island is running, asked at each permission or question so a
 /// island the reader quit never swallows the banner that would have replaced it.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn island_running() -> bool {
     tokio::process::Command::new("pgrep")
-        .args(["-x", "Dray Island"])
+        .args(["-x", "Carbon Island"])
         .output()
         .await
         .is_ok_and(|out| out.status.success())
 }
 
-/// Hands a finished session to Dray Island, which shows it in place of the
+/// Hands a finished session to Carbon Island, which shows it in place of the
 /// banner. A Darwin notification carries no payload, so each session is an
 /// empty file named for it in `island_done_dir`: the island deletes only the
 /// files it read, where a shared list read and then cleared would drop one
@@ -402,13 +406,13 @@ pub async fn island_done(session_id: String) -> Result<(), String> {
     let dir = island_done_dir().ok_or("no home directory")?;
     tokio::fs::create_dir_all(&dir).await.map_err(|err| format!("could not reach the island: {err}"))?;
     tokio::fs::write(dir.join(&session_id), b"").await.map_err(|err| format!("could not reach the island: {err}"))?;
-    tokio::process::Command::new("notifyutil").args(["-p", "com.yogesh.dray.island.done"]).output().await.ok();
+    tokio::process::Command::new("notifyutil").args(["-p", "com.yogesh.carbon.island.done"]).output().await.ok();
     Ok(())
 }
 
 /// The island's inbox for finished sessions; `Delegate.doneDir` in the island names it too.
 fn island_done_dir() -> Option<std::path::PathBuf> {
-    Some(std::env::home_dir()?.join("Library/Caches/com.yogesh.dray.island/done"))
+    Some(std::env::home_dir()?.join("Library/Caches/com.yogesh.carbon.island/done"))
 }
 
 /// The island preferences Settings draws. The island's own right-click menu
@@ -437,7 +441,7 @@ fn island_pref_valid(name: &str, value: &str) -> bool {
 pub async fn island_prefs() -> std::collections::HashMap<String, String> {
     let reads = ISLAND_PREFS.map(|name| async move {
         let out = tokio::process::Command::new("defaults")
-            .args(["read", "com.yogesh.dray.island", name])
+            .args(["read", "com.yogesh.carbon.island", name])
             .output()
             .await
             .ok()
@@ -456,7 +460,7 @@ pub async fn set_island_pref(name: String, value: String) -> Result<(), String> 
         return Err(format!("not an island setting: {name} = {value}"));
     }
     let out = Command::new("defaults")
-        .args(["write", "com.yogesh.dray.island", &name, "-string", &value])
+        .args(["write", "com.yogesh.carbon.island", &name, "-string", &value])
         .output()
         .await
         .map_err(|err| format!("could not save the island setting: {err}"))?;
@@ -466,8 +470,8 @@ pub async fn set_island_pref(name: String, value: String) -> Result<(), String> 
     // An island that is not running reads the file when it starts. Position and
     // layout, and the transcript, are only judged on screen, so those open the panel to show them.
     let ping = match name.as_str() {
-        "island.placement" | "island.mode" | "island.transcript" => "com.yogesh.dray.island.show",
-        _ => "com.yogesh.dray.island.prefs",
+        "island.placement" | "island.mode" | "island.transcript" => "com.yogesh.carbon.island.show",
+        _ => "com.yogesh.carbon.island.prefs",
     };
     Command::new("notifyutil").args(["-p", ping]).output().await.ok();
     Ok(())
@@ -554,7 +558,7 @@ pub(crate) async fn run_in_terminal(command: &str, cwd: &str) -> Result<(), Stri
     };
     let script = format!("#!/bin/sh\n{enter}{command}\nrm -f -- \"$0\"\n");
 
-    let path = std::env::temp_dir().join(format!("dray-login-{}.command", uuid::Uuid::now_v7()));
+    let path = std::env::temp_dir().join(format!("carbon-login-{}.command", uuid::Uuid::now_v7()));
     write_script(&path, &script)
         .map_err(|err| format!("could not write the login script: {err}"))?;
 
@@ -648,7 +652,7 @@ mod tests {
     /// last. Icons are not read, so nothing spawns.
     #[test]
     fn resolves_in_table_order_with_finder_last() {
-        let tmp = std::env::temp_dir().join(format!("dray-apps-{}", uuid::Uuid::now_v7()));
+        let tmp = std::env::temp_dir().join(format!("carbon-apps-{}", uuid::Uuid::now_v7()));
         let apps_dir = bundle(&tmp, "Applications");
         // Deliberately created in the order that would be wrong if read_dir
         // order leaked through.
@@ -671,7 +675,7 @@ mod tests {
     /// Services. A `HashMap` insert in the other order would silently flip it.
     #[test]
     fn first_directory_wins() {
-        let tmp = std::env::temp_dir().join(format!("dray-apps-{}", uuid::Uuid::now_v7()));
+        let tmp = std::env::temp_dir().join(format!("carbon-apps-{}", uuid::Uuid::now_v7()));
         let system = bundle(&tmp, "Applications");
         let user = bundle(&tmp, "home/Applications");
         let expected = bundle(&system, "Zed.app");
@@ -688,7 +692,7 @@ mod tests {
     /// count to pin. Kept because detection failing silently — an empty menu —
     /// is the one failure here that looks exactly like "nothing is installed".
     ///
-    /// `cargo test -p dray --lib apps -- --ignored --nocapture`
+    /// `cargo test -p carbon --lib apps -- --ignored --nocapture`
     #[test]
     #[ignore = "reports what is installed; asserts nothing"]
     fn report_detected_apps() {

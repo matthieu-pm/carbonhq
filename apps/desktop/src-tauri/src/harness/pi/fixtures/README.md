@@ -11,7 +11,7 @@ the next one depends on. `t` is added here and not there; it is what shows that
 a `*_end` delta arrives after two later blocks have already started.
 
 Home paths are rewritten to `/Users/dev`, the probe tree to `/work`, and the
-session directory to `/Users/dev/.dray/pi-sessions`. Nothing else is edited.
+session directory to `/Users/dev/.carbon/pi-sessions`. Nothing else is edited.
 
 ## Versions, and why there are two
 
@@ -72,7 +72,7 @@ been believed:
 | `resume.jsonl` | 0.84.4 | stub | Resume: a second process spawned with `--session <the same path>` comes back with **the same `sessionId`** and all nine messages. `contextUsage.tokens` (2840) against cumulative `tokens.total` (8960) — the occupancy trap, already answered by name. Also `compaction_start`/`compaction_end` on the failure path, where `result` is absent rather than null. |
 | `commands_and_clone.jsonl` | 0.84.4 | stub | Command error shapes (`Unknown command`, `Model not found`), `get_entries`' typed session tree, and **`clone` hijacking the running process**: `get_state` afterwards names a new session id and a file path pi chose, not the one `--session` was given. |
 | `fork_flag_refused.jsonl` | 0.84.4 | — | Three lines, and they settle the fork design: `--fork cannot be combined with --session`. pi will not let a client name the path a fork lands at. |
-| `session_id_not_adopted.jsonl` | 0.84.4 | — | `--session` pointed at a file named `019a0000-dead-7000-8000-000000000001.jsonl`. pi writes the session there and reports a `sessionId` of its own. The path is a handle Dray can choose; the id is not. Two lines, and PI-PLAN.md §4 rests on them. |
+| `session_id_not_adopted.jsonl` | 0.84.4 | — | `--session` pointed at a file named `019a0000-dead-7000-8000-000000000001.jsonl`. pi writes the session there and reports a `sessionId` of its own. The path is a handle Carbon can choose; the id is not. Two lines, and PI-PLAN.md §4 rests on them. |
 | `live_turn.jsonl` | 0.84.4 | **real** (xai/grok-4.6) | The same scenario as `no_approvals.jsonl` against a real model. Three model calls, a `read` and a `write`. **Zero usage on every `message_update`**, and **one `toolcall_delta` per call** carrying the whole argument object — both differ from the stub, and both matter. Also 41 thinking deltas of real reasoning text, where Claude Code's thinking blocks arrive empty. `contextUsage.tokens` 2139 against cumulative `tokens.total` 6288. |
 | `live_models.jsonl` | 0.84.4 | **real** | `get_available_models` on a machine with two providers logged in: 11 models across `openai-codex` and `xai`, context windows from 128k to 1M. It grew from 10 to 11 the moment a second provider was added, which is the whole argument of PI-PLAN.md §7. `gpt-5.3-codex-spark` reports `input: ["text"]` — a real model that takes no images, which is what `accepts_images` is for. |
 | `failed_turn_live.jsonl` | 0.74.2 | **real** | A failed turn against a real provider with expired credentials. There is no error *event* in pi: the failure is `stopReason: "error"` plus `errorMessage` on the assistant message, and `agent_end` closes the run normally. The sentence — "No API key for provider: openai-codex" — is the one a row should draw. Also the user-message echo, on the live wire rather than the stub's. |

@@ -103,7 +103,7 @@ pub struct SessionIndexItem {
     /// has exactly one of them — Claude Code's `fastMode` flag setting, Codex's
     /// `priority` service tier, fx's `fast_mode` — and a two-valued switch is
     /// the honest shape for all three. A variant is also what an older build
-    /// sharing `~/.dray` cannot spell, which fails the line and reads the whole
+    /// sharing `~/.carbon` cannot spell, which fails the line and reads the whole
     /// index as no sessions at all; `false` is what a bool degrades to there,
     /// which is a session running at ordinary speed and nothing worse.
     ///
@@ -132,7 +132,7 @@ pub struct SessionIndexItem {
     /// two ids and this is the mapping between them.
     ///
     /// Ours stays primary — it keys the index, the log filename, the
-    /// attachments directory and every `dray` address, and all of those are
+    /// attachments directory and every `carbon` address, and all of those are
     /// written *before* the child answers. This is read by resume alone.
     #[serde(default)]
     pub thread_id: Option<String>,
@@ -156,7 +156,7 @@ pub struct SessionIndexItem {
     pub archived: bool,
     pub pinned: bool,
     /// Left out of the sidebar and drawn only in its parent's crew — a review
-    /// session nobody means to read on its own. `dray new --hidden` sets it,
+    /// session nobody means to read on its own. `carbon new --hidden` sets it,
     /// the crew row's menu clears it, and detaching clears it too, since a
     /// session with no parent has no crew to be drawn in.
     ///
@@ -181,7 +181,7 @@ pub struct SessionIndexItem {
     /// Every key this build does not know, carried through untouched.
     ///
     /// The index is rewritten **whole**, and `INDEX_LOCK` is an in-process
-    /// mutex — so two Dray builds sharing `~/.dray` do not merely race, they
+    /// mutex — so two Carbon builds sharing `~/.carbon` do not merely race, they
     /// downgrade each other's schema. The older one round-trips all 200-odd
     /// entries through *its* struct and silently drops every field it cannot
     /// represent. Observed: a released 0.8.2 running beside a dev build erased
@@ -219,8 +219,8 @@ pub struct SessionSnapshot {
 
 static INDEX_LOCK: Mutex<()> = Mutex::const_new(());
 
-/// `~/.dray`, creating it if this is the first run. If `~/.automedon` exists
-/// from before the app's rename and `~/.dray` doesn't yet, the old directory
+/// `~/.carbon`, creating it if this is the first run. If `~/.automedon` exists
+/// from before the app's rename and `~/.carbon` doesn't yet, the old directory
 /// is moved into place so a rename never orphans a user's session history.
 ///
 /// The migration and chmod run once per process: this ran on every persisted
@@ -231,34 +231,34 @@ pub async fn get_home_app_dir() -> Result<PathBuf> {
     DIR.get_or_try_init(make_home_app_dir).await.cloned()
 }
 
-/// `DRAY_HOME`, where set: a data directory other than `~/.dray`. The index is
+/// `CARBON_HOME`, where set: a data directory other than `~/.carbon`. The index is
 /// rewritten whole under a per-*process* lock, so two processes sharing one
-/// directory lose each other's writes — which is a `dray-serve` started on a
+/// directory lose each other's writes — which is a `carbon-serve` started on a
 /// Mac whose app is running. This is what lets the two sit side by side.
 ///
-/// A dev build answers [`dev_home`] where `DRAY_HOME` is unset: its app and
+/// A dev build answers [`dev_home`] where `CARBON_HOME` is unset: its app and
 /// its background server are one binary, so both read this and agree with
 /// nothing passed between them, and neither touches the real sessions.
 pub fn home_override() -> Option<PathBuf> {
-    std::env::var_os("DRAY_HOME")
+    std::env::var_os("CARBON_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .or_else(|| crate::is_dev().then(dev_home))
 }
 
-/// `~/.dray-dev`, or `~/.dray-worktrees/<name>` for a build compiled in a
+/// `~/.carbon-dev`, or `~/.carbon-worktrees/<name>` for a build compiled in a
 /// worktree. One home is one server, so worktrees sharing one ran whichever
 /// build's server started first and never their own code (#495).
 fn dev_home() -> PathBuf {
     let home = std::env::home_dir().unwrap_or_default();
     match worktree_name(env!("CARGO_MANIFEST_DIR")) {
-        Some(name) => home.join(".dray-worktrees").join(name),
-        None => home.join(".dray-dev"),
+        Some(name) => home.join(".carbon-worktrees").join(name),
+        None => home.join(".carbon-dev"),
     }
 }
 
 /// Where projects, settings and credentials live: the home, except that every
-/// worktree's dev build shares `~/.dray-dev`'s, so a project attached or a
+/// worktree's dev build shares `~/.carbon-dev`'s, so a project attached or a
 /// login made in one is there in all. Each writer takes
 /// [`lock_across_processes`], which is what makes several servers on one
 /// file safe. Sessions stay per home, since two servers would resume one
@@ -268,7 +268,7 @@ pub async fn config_dir() -> Result<PathBuf> {
     if !crate::is_dev() || home != dev_home() {
         return Ok(home);
     }
-    let shared = std::env::home_dir().context("could not resolve home directory")?.join(".dray-dev");
+    let shared = std::env::home_dir().context("could not resolve home directory")?.join(".carbon-dev");
     fs::create_dir_all(&shared).await?;
     restrict_to_owner(&shared).await;
     Ok(shared)
@@ -289,7 +289,7 @@ async fn make_home_app_dir() -> Result<PathBuf> {
     }
 
     let home = std::env::home_dir().context("could not resolve home directory")?;
-    let path = home.join(".dray");
+    let path = home.join(".carbon");
 
     if !fs::try_exists(&path).await.unwrap_or(false) {
         let legacy = home.join(".automedon");
@@ -326,7 +326,7 @@ async fn restrict_to_owner(path: &PathBuf) {
     }
 }
 
-/// `~/.dray/<name>`, creating it if needed.
+/// `~/.carbon/<name>`, creating it if needed.
 pub async fn app_subdir(name: &str) -> Result<PathBuf> {
     let path = get_home_app_dir().await?.join(name);
 
@@ -337,12 +337,12 @@ pub async fn app_subdir(name: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// `~/.dray/sessions`, creating it if needed.
+/// `~/.carbon/sessions`, creating it if needed.
 pub async fn get_sessions_dir() -> Result<PathBuf> {
     app_subdir("sessions").await
 }
 
-/// `~/.dray/pi-sessions`, creating it if needed.
+/// `~/.carbon/pi-sessions`, creating it if needed.
 pub async fn get_pi_sessions_dir() -> Result<PathBuf> {
     app_subdir("pi-sessions").await
 }
@@ -350,9 +350,9 @@ pub async fn get_pi_sessions_dir() -> Result<PathBuf> {
 /// Where pi writes this session's own transcript.
 ///
 /// pi's resume handle is the *file*, not an id it adopts: it mints its own
-/// session id and reports it back, so the path is the one thing Dray gets to
+/// session id and reports it back, so the path is the one thing Carbon gets to
 /// choose and the one thing a resume needs. Its own directory rather than
-/// beside Dray's `<id>.jsonl` logs, because two unrelated formats under one
+/// beside Carbon's `<id>.jsonl` logs, because two unrelated formats under one
 /// name pattern can only be told apart by whoever remembers the difference.
 pub async fn pi_session_file(session_id: &str) -> Result<PathBuf> {
     Ok(get_pi_sessions_dir()
@@ -369,7 +369,7 @@ pub async fn pi_session_file(session_id: &str) -> Result<PathBuf> {
 ///
 /// The copy keeps pi's own session id inside it, so two files name one pi
 /// session. That collides with nothing: pi's id is not an address anything here
-/// uses — Dray's own id is — and pi reports the *file* as what it resumed.
+/// uses — Carbon's own id is — and pi reports the *file* as what it resumed.
 ///
 /// A source that cannot be read is a failure, and the caller decides whether
 /// that matters: only a pi session has a transcript, so the fork path calls
@@ -394,7 +394,7 @@ pub async fn copy_pi_session_file(from: &str, to: &str) -> Result<()> {
 ///
 /// A second file per session, so a second thing to delete — without this a
 /// deleted pi session leaves its whole conversation on disk under
-/// `~/.dray/pi-sessions/`, which is every file the agent read and wrote in it.
+/// `~/.carbon/pi-sessions/`, which is every file the agent read and wrote in it.
 /// Nothing would ever read it again, since the index entry naming it is gone.
 ///
 /// A missing file is success, not an error: every non-pi session has none, and
@@ -438,8 +438,8 @@ static INDEX_CACHE: std::sync::Mutex<Option<(IndexStamp, Arc<Vec<SessionIndexIte
 
 /// The parsed index, from memory while the file has not moved.
 ///
-/// **A cache of the file, never the truth in its place.** A second Dray build
-/// sharing `~/.dray` writes this file too, and a copy that ignored its writes
+/// **A cache of the file, never the truth in its place.** A second Carbon build
+/// sharing `~/.carbon` writes this file too, and a copy that ignored its writes
 /// would erase them on the next whole-file rewrite here. So every read still
 /// asks the file — one `stat` — and parses only when it changed, which is what
 /// a parse per `get_session_index_item` used to cost on every send and status
@@ -473,7 +473,7 @@ async fn cached_index_at(path: &Path) -> Result<Arc<Vec<SessionIndexItem>>> {
 }
 
 /// One JSON file, read whole. A missing or blank file is the default — the
-/// convention every file under `~/.dray` shares, since "nothing written yet"
+/// convention every file under `~/.carbon` shares, since "nothing written yet"
 /// is the ordinary state on a fresh install and never an error.
 pub async fn read_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> Result<T> {
     let contents = match fs::read_to_string(path).await {
@@ -515,7 +515,7 @@ pub fn write_private_atomic(path: &Path, contents: &[u8]) -> std::io::Result<()>
     use std::io::Write;
 
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".dray-{}", uuid::Uuid::now_v7()));
+    name.push(format!(".carbon-{}", uuid::Uuid::now_v7()));
     let tmp = path.with_file_name(name);
 
     let mut options = std::fs::OpenOptions::new();
@@ -579,7 +579,7 @@ pub async fn list_session_index_items(
 /// candidates is on disk.
 ///
 /// **A managed worktree is never the answer, even where it is the recorded
-/// project and still on disk.** `dray new` used to record the *caller's* own
+/// project and still on disk.** `carbon new` used to record the *caller's* own
 /// worktree as the project, and that caller is usually a live session — so
 /// taking `project_path` at its word would move this session into another
 /// session's checkout, which is the one thing a worktree per session exists to
@@ -602,12 +602,12 @@ fn surviving_root(item: &SessionIndexItem, dir_exists: impl Fn(&str) -> bool) ->
     .map(str::to_string)
 }
 
-/// The project root a session belongs to, which is **never a worktree Dray
-/// manages**: an entry filed under one is a mis-filed record, since `dray new`
+/// The project root a session belongs to, which is **never a worktree Carbon
+/// manages**: an entry filed under one is a mis-filed record, since `carbon new`
 /// used to record the caller's own tree as the new session's project.
 ///
 /// Both places that move a session out of its worktree need this — the backfill
-/// below and [`relocate_session_to_project`], which is Dray's own delete. The
+/// below and [`relocate_session_to_project`], which is Carbon's own delete. The
 /// delete had it wrong and the backfill could not heal it: it rewrote `cwd` to
 /// `project_path` unconditionally, and the result *exists*, so the pass that
 /// repairs a missing `cwd` never looks at it again.
@@ -616,7 +616,7 @@ fn project_root_of(project_path: &str) -> &str {
 }
 
 /// The project a `<project>/.claude/worktrees/<name>` path belongs to, or
-/// `None` where the path is not a worktree **Dray manages**.
+/// `None` where the path is not a worktree **Carbon manages**.
 ///
 /// `<name>` has to be a *direct* child, which is the same reading
 /// `git::is_managed_worktree` takes before it deletes one, and for the
@@ -1237,7 +1237,7 @@ pub async fn set_session_flags(
 /// Matched on the tracker's own id **or** the human identifier, within a
 /// tracker — the same reading [`unlink_session_issue`] takes, and for a sharper
 /// reason. The two write different things into `id`: a resolved link carries
-/// Linear's UUID, while one written blind (`dray issue link`, or a tag no key
+/// Linear's UUID, while one written blind (`carbon issue link`, or a tag no key
 /// could be found for) carries the identifier itself. Keyed on `id` alone,
 /// `DRA-53` linked blind and `DRA-53` resolved a moment later are two rows for
 /// one issue. Neither spelling can collide with the other — one is a UUID.
@@ -1399,11 +1399,11 @@ pub async fn relocate_session_to_project(
 /// rather than anything destructive.
 ///
 /// It also repairs the entries that shape cannot describe: a tree removed by
-/// anything but Dray's own delete leaves `cwd` naming a directory that is gone,
+/// anything but Carbon's own delete leaves `cwd` naming a directory that is gone,
 /// and every `git` and `gh` spawned there then fails with ENOENT before the
 /// binary is reached. See [`surviving_root`] for where those go.
 ///
-/// Those get `worktree_removed` too, including the mis-filed `dray new` entries
+/// Those get `worktree_removed` too, including the mis-filed `carbon new` entries
 /// that were never worktree sessions at all — so `session_branch` answers their
 /// recorded branch, which is the *caller's*, and their PR tab draws the caller's
 /// PR. That is the same false positive the shape rule above can produce,
@@ -1523,7 +1523,7 @@ pub async fn set_session_thread_id(session_id: &str, thread_id: &str) -> Result<
 
 /// A level no shipped build can spell, written as one every build can.
 ///
-/// An older Dray sharing `~/.dray` deserializes `effort` as its own closed
+/// An older Carbon sharing `~/.carbon` deserializes `effort` as its own closed
 /// `Effort`, and serde fails a line on an unknown *variant* where it tolerates
 /// an unknown field. The index is one JSON array, so that failed line is the
 /// whole file: a single session on `ultra` would read as **no sessions at all**
@@ -1889,7 +1889,7 @@ pub async fn list_session_events(session_id: &str) -> Result<Vec<AgentEvent>> {
 /// fork's own attachment directory. Returns what the fork will replay.
 ///
 /// The rewrite is what makes the copy stand alone. `ImageRef.path` names a file
-/// under `~/.dray/attachments/<session-id>/`, so a log copied verbatim would
+/// under `~/.carbon/attachments/<session-id>/`, so a log copied verbatim would
 /// draw its pictures out of the parent's directory — and deleting the parent
 /// takes that directory with it, blanking images in a session that outlived it.
 ///
@@ -1930,7 +1930,7 @@ pub async fn copy_session_log(from: &str, to: &str, from_cwd: &str) -> Result<Ve
 }
 
 /// Rewrites a copied log to belong to `to`. Split out from the copy so it can be
-/// tested without a `~/.dray` to write into.
+/// tested without a `~/.carbon` to write into.
 fn repoint_events(
     events: &mut [AgentEvent],
     to: &str,
@@ -2135,7 +2135,7 @@ mod tests {
     /// whole-file rewrite here erases what it wrote.
     #[tokio::test]
     async fn the_index_cache_sees_a_file_replaced_under_it() {
-        let dir = std::env::temp_dir().join(format!("dray-index-{}", Uuid::now_v7()));
+        let dir = std::env::temp_dir().join(format!("carbon-index-{}", Uuid::now_v7()));
         fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("index.json");
         let item = |id: &str| {
@@ -2185,7 +2185,7 @@ mod tests {
     /// by this one.
     ///
     /// This is the failure it exists for, and it is not hypothetical: a
-    /// released 0.8.2 sharing `~/.dray` with a dev build rewrote the whole
+    /// released 0.8.2 sharing `~/.carbon` with a dev build rewrote the whole
     /// index through its own struct and erased `threadId` from every Codex
     /// session, which turned live work into "this session has no Codex thread
     /// to resume". Without the catch-all, the assert below is what breaks.
@@ -2243,7 +2243,7 @@ mod tests {
                 "id": "b8f1e0aa-0000-4000-8000-000000000001",
                 "identifier": "DRA-53",
                 "title": "Add the issue panel",
-                "url": "https://linear.app/drayhq/issue/DRA-53",
+                "url": "https://linear.app/carbonhq/issue/DRA-53",
             }],
             "parentSessionId": "0198c0de-dead-7000-8000-00000000f00d",
             "created": "2026-08-30T09:00:00Z",
@@ -2363,7 +2363,7 @@ mod tests {
     /// The whole reason `ultra` is not written as itself. Serde tolerates an
     /// unknown *field* and fails a line on an unknown *variant*, and the index
     /// is one array — so one session on `ultra` would read as **no sessions**
-    /// in a release build sharing `~/.dray` with this one.
+    /// in a release build sharing `~/.carbon` with this one.
     #[test]
     fn an_older_build_reads_every_session_beside_an_ultra_one() {
         let written =
@@ -2844,8 +2844,8 @@ mod tests {
     /// directory goes blank the moment the parent is deleted.
     #[test]
     fn a_copied_log_belongs_to_the_fork_that_replays_it() {
-        let from_dir = Path::new("/home/.dray/attachments/parent");
-        let to_dir = Path::new("/home/.dray/attachments/child");
+        let from_dir = Path::new("/home/.carbon/attachments/parent");
+        let to_dir = Path::new("/home/.carbon/attachments/child");
 
         let image = |path: &str| ImageRef {
             path: Some(path.to_string()),
@@ -2866,7 +2866,7 @@ mod tests {
         let mut events = vec![
             event(AgentEventPayload::UserMessage {
                 text: "look at this".into(),
-                images: vec![image("/home/.dray/attachments/parent/a.png")],
+                images: vec![image("/home/.carbon/attachments/parent/a.png")],
                 issues: vec![],
                 baseline: None,
                 queued: false,
@@ -2894,7 +2894,7 @@ mod tests {
                     exit_code: None,
                     duration_ms: None,
                     images: vec![
-                        image("/home/.dray/attachments/parent/b.png"),
+                        image("/home/.carbon/attachments/parent/b.png"),
                         // Not ours to move: an image the archive never took.
                         image("/tmp/elsewhere.png"),
                     ],
@@ -2926,8 +2926,8 @@ mod tests {
         assert_eq!(
             paths,
             vec![
-                "/home/.dray/attachments/child/a.png",
-                "/home/.dray/attachments/child/b.png",
+                "/home/.carbon/attachments/child/a.png",
+                "/home/.carbon/attachments/child/b.png",
                 "/tmp/elsewhere.png",
             ]
         );
@@ -3027,7 +3027,7 @@ mod tests {
         );
     }
 
-    /// A tree removed by anything but Dray's own delete leaves `cwd` naming a
+    /// A tree removed by anything but Carbon's own delete leaves `cwd` naming a
     /// directory that is gone, and every `git` and `gh` the session runs then
     /// fails with ENOENT before the binary is reached — which reaches the
     /// reader as the PR panel saying it could not run `gh` while the sidebar's
@@ -3054,7 +3054,7 @@ mod tests {
         let mut items = vec![
             // The tree went without the index hearing about it.
             session("/p/.claude/worktrees/calm-owl", "/p", Some("calm-owl")),
-            // `dray new` recorded the caller's own worktree as the project, so
+            // `carbon new` recorded the caller's own worktree as the project, so
             // both fields dangle and only the shape says where the repo is.
             session(
                 "/p/.claude/worktrees/gone",
@@ -3084,7 +3084,7 @@ mod tests {
         );
     }
 
-    /// Dray's own delete used to set `cwd = project_path` flat, so a session
+    /// Carbon's own delete used to set `cwd = project_path` flat, so a session
     /// whose project was the caller's tree landed in that caller's checkout —
     /// and the backfill could never heal it, since the result exists.
     #[test]
@@ -3097,7 +3097,7 @@ mod tests {
         );
     }
 
-    /// A path is only a worktree Dray manages where `<name>` is a direct child,
+    /// A path is only a worktree Carbon manages where `<name>` is a direct child,
     /// so an ordinary repository that happens to sit below such a segment is
     /// left to speak for itself rather than redirected to an ancestor.
     #[test]

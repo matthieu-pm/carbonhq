@@ -269,7 +269,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
                 active={view === "browser"}
                 onClick={() => setView("browser")}
               />
-              <ItemTab icon={<VercelMark className="size-3.5" />} label="dray – Deployments – Vercel" />
+              <ItemTab icon={<VercelMark className="size-3.5" />} label="carbon – Deployments – Vercel" />
               <ItemTab
                 icon={<GitHubGlyph className="size-3.5 shrink-0" />}
                 label="Stop background tasks · Pull Request #44"
@@ -358,7 +358,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
                 />
               )}
               {panelTab === "Changes" && <ChangesBody />}
-              {panelTab === "Browser" && <DevServerPage tab="Dray — Run every agent harness in one app" />}
+              {panelTab === "Browser" && <DevServerPage tab="Carbon — Run every agent harness in one app" />}
               {panelTab === "More" && <MoreBody />}
             </Panel>
           )

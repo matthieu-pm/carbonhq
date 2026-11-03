@@ -1,5 +1,5 @@
 //! Where the core's events go: the desktop's webview, or every client of a
-//! `dray-serve`. The one thing the core used `AppHandle` for, so it is the one
+//! `carbon-serve`. The one thing the core used `AppHandle` for, so it is the one
 //! seam between the core and Tauri. See SERVE-PLAN.md.
 
 use std::sync::Arc;

@@ -87,9 +87,9 @@ const UNAVAILABLE: Record<PrUnavailable["kind"], string> = {
 /// A reader without it has the command to search for, which is the same place
 /// GitHub's own install page would have sent them.
 const INSTALL_COMMAND = "brew install gh";
-/// On a server, `dray setup`'s pick-list, which installs `gh` from its release
+/// On a server, `carbon setup`'s pick-list, which installs `gh` from its release
 /// tarball whatever the distribution.
-const SERVER_INSTALL_COMMAND = "dray setup";
+const SERVER_INSTALL_COMMAND = "carbon setup";
 const LOGIN_COMMAND = "gh auth login";
 
 /// The pull requests opened from this session's branch, one collapsible row
@@ -183,7 +183,7 @@ function errorText(error: PrUnavailable): string {
 /// because that is the thing being taken; the terminal opens at the session's
 /// own directory, so what they paste runs against this repo.
 ///
-/// **Recheck rather than "restart Dray"**: `recheck_gh` throws away the cached
+/// **Recheck rather than "restart Carbon"**: `recheck_gh` throws away the cached
 /// absence, so an install made on this pane's say-so is found from this pane.
 /// It says when it still finds nothing, since a button that redraws the same
 /// screen reads as a broken button — the one thing a pane asking for an install
@@ -240,7 +240,7 @@ export function MissingCli({
       <p className="max-w-64 text-balance text-center text-ui text-muted-foreground">
         {lead ??
           (kind === "no_cli"
-            ? "This branch's pull requests belong here. Dray reads them through GitHub's CLI."
+            ? "This branch's pull requests belong here. Carbon reads them through GitHub's CLI."
             : "GitHub's CLI is here but not logged in.")}
       </p>
 
@@ -278,7 +278,7 @@ export function MissingCli({
 
       {stillMissing && (
         <p className="max-w-64 text-balance text-center text-ui text-muted-foreground">
-          Still no <code className="text-foreground">gh</code> — Dray looks where your login shell
+          Still no <code className="text-foreground">gh</code> — Carbon looks where your login shell
           looks.
         </p>
       )}

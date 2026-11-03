@@ -103,7 +103,7 @@ pub struct PullRequest {
     pub head_ref_exists: bool,
     /// Whether the head branch lives in a fork rather than in this repo.
     ///
-    /// `head_ref_name` is bare either way — a PR from `alice/dray:feature`
+    /// `head_ref_name` is bare either way — a PR from `alice/carbon:feature`
     /// reports `feature` — so the name cannot be told apart from a branch of
     /// our own, and joining it to this repo's slug addresses a *different*
     /// branch that merely shares its name. Unknown reads as `true`, because
@@ -171,7 +171,7 @@ impl MergeMethod {
 /// charges on the shape asked for, not on what comes back: nested `first`s
 /// multiply, so one connection at `20 × 50 × 50` reserved a thousand thread
 /// comments and cost 11 points per read *of a branch with no PR at all* —
-/// 2640 an hour at the settling poll, which is how two Dray instances alone
+/// 2640 an hour at the settling poll, which is how two Carbon instances alone
 /// drained the 5000/hour budget and every agent's own `gh` call started
 /// failing (DRA-247). Only a connection's *parents* multiply, so the fifty
 /// replies under each thread are a leaf and cost nothing; thirty threads is
@@ -773,7 +773,7 @@ pub(crate) const NO_CLI: &str = "GitHub CLI (gh) not found.";
 pub(crate) async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
     let bin = binpath::gh().await.ok_or(NO_CLI)?;
 
-    // A worktree removed outside Dray leaves the session's `cwd` naming a
+    // A worktree removed outside Carbon leaves the session's `cwd` naming a
     // directory that is gone, and the spawn then fails with ENOENT *before*
     // `gh` is reached — which reads as `gh` itself being missing. The startup
     // backfill repairs the entry, so this is the window before the next launch.
@@ -1523,7 +1523,7 @@ mod tests {
         assert_eq!(deleted[0].head_ref_name, "fix/thing");
     }
 
-    /// A fork's head is reported bare — `feature`, not `alice/dray:feature` —
+    /// A fork's head is reported bare — `feature`, not `alice/carbon:feature` —
     /// so joining it to this repo's slug addresses *our* `feature` and deletes
     /// the wrong branch while the fork's survives. Verified against the live
     /// API on a real cross-repo PR (`cli/cli#13807`): `headRefName` came back

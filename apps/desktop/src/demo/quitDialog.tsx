@@ -69,7 +69,7 @@ const ghost = ({ Action }: Kit, label: string) => (
 function Header({ description = DESCRIPTION }: { description?: ReactNode }) {
   return (
     <AlertDialogHeader>
-      <AlertDialogTitle>Quit Dray?</AlertDialogTitle>
+      <AlertDialogTitle>Quit Carbon?</AlertDialogTitle>
       <AlertDialogDescription>{description}</AlertDialogDescription>
     </AlertDialogHeader>
   );

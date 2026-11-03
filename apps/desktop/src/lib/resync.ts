@@ -1,7 +1,7 @@
 import type { AgentEvent, QueueChangedEvent } from "@/types/events";
 import { retireOldestProvisional } from "@/lib/provisional";
 
-/// What a `dray-serve` sends on every connect: what lives in its memory and in
+/// What a `carbon-serve` sends on every connect: what lives in its memory and in
 /// no log. A request is only ever answerable by the child that asked, so this
 /// is the whole truth about which cards are open — a reconnect that kept its
 /// own copy could draw one already answered, or miss one raised meanwhile.

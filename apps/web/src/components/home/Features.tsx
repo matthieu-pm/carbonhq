@@ -20,7 +20,7 @@ export function Features() {
           }
         />
         <Column art={<PullRequest />} title="Review and merge here." body="Your pull request's checks and comments sit right beside the chat." />
-        <Column art={<Browser />} title="Test it right in Dray." body="Open your dev server in the built-in browser. Your agent tests in it too." />
+        <Column art={<Browser />} title="Test it right in Carbon." body="Open your dev server in the built-in browser. Your agent tests in it too." />
       </div>
     </Section>
   );
@@ -58,7 +58,7 @@ function Issues() {
   return (
     <div aria-hidden className="flex flex-col bg-[#0A0A0A] light:bg-white light:shadow-[0_0_0_1px_#0000000F]">
       <IssueRow id="DRA-53" title="Add issue tracker" />
-      <IssueRow id="dray#255" title="Paste images" selected />
+      <IssueRow id="carbon#255" title="Paste images" selected />
       <IssueRow id="DRA-61" title="Retry uploads" />
     </div>
   );

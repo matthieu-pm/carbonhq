@@ -181,7 +181,7 @@ function DigitRow({ id, label, slots }: { id: DigitChordId; label: string; slots
 /// they mean opposite things: removing leaves the action with no chord at all,
 /// where resetting puts back what this build ships. Removing that quietly
 /// restored the default would hand the key back to whatever the reader was
-/// clearing it for — the clash is usually with something outside Dray, and the
+/// clearing it for — the clash is usually with something outside Carbon, and the
 /// default is what clashes. A cross per row was the first shape and read as
 /// noise down a column of keycaps; the recorder already owns "what is this
 /// key", so emptying it lives there, named in its own prompt.
@@ -200,7 +200,7 @@ export default function ShortcutsSettings({ onOpenIsland }: { onOpenIsland: () =
     rows: SHORTCUTS.filter((s) => s.group === group && matches(s.label, group)),
     digits: DIGIT_CHORDS.filter((c) => c.group === group && matches(c.label, group)),
   })).filter((g) => g.rows.length + g.digits.length > 0);
-  const islandShown = IS_MAC && matches("Open Dray Island", "Dray Island");
+  const islandShown = IS_MAC && matches("Open Carbon Island", "Carbon Island");
 
   return (
     <div className="flex flex-col gap-5">
@@ -221,7 +221,7 @@ export default function ShortcutsSettings({ onOpenIsland }: { onOpenIsland: () =
       />
       {islandShown && (
         <p className="text-ui text-muted-foreground">
-          Dray Island's open and screenshot keys are under{" "}
+          Carbon Island's open and screenshot keys are under{" "}
           <button
             type="button"
             onClick={onOpenIsland}

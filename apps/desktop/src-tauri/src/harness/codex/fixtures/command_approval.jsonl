@@ -1,5 +1,5 @@
-{"dir": "out", "line": "{\"method\": \"initialize\", \"id\": 1, \"params\": {\"clientInfo\": {\"name\": \"dray\", \"title\": \"Dray\", \"version\": \"0.8.2\"}}}"}
-{"dir": "in", "line": "{\"id\":1,\"result\":{\"userAgent\":\"dray/0.148.0-alpha.21 (Mac OS 26.5.0; arm64) unknown (dray; 0.8.2)\",\"codexHome\":\"/Users/dev/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"}
+{"dir": "out", "line": "{\"method\": \"initialize\", \"id\": 1, \"params\": {\"clientInfo\": {\"name\": \"carbon\", \"title\": \"Carbon\", \"version\": \"0.8.2\"}}}"}
+{"dir": "in", "line": "{\"id\":1,\"result\":{\"userAgent\":\"carbon/0.148.0-alpha.21 (Mac OS 26.5.0; arm64) unknown (carbon; 0.8.2)\",\"codexHome\":\"/Users/dev/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"}
 {"dir": "in", "line": "{\"method\":\"remoteControl/status/changed\",\"params\":{\"status\":\"disabled\",\"serverName\":\"Yogeshs-MacBook-Pro.local\",\"installationId\":\"51827900-aa1b-4cba-a989-40afaf25dfcf\",\"environmentId\":null},\"emittedAtMs\":1787939338092}"}
 {"dir": "out", "line": "{\"method\": \"initialized\"}"}
 {"dir": "out", "line": "{\"method\": \"thread/start\", \"id\": 2, \"params\": {\"cwd\": \"/tmp/codex-probe/wk3\", \"approvalPolicy\": \"on-request\", \"sandbox\": \"read-only\"}}"}

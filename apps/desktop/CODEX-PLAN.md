@@ -1,7 +1,7 @@
 # Codex as a second harness, over `codex app-server`
 
 Architecture plan. Written against the app-server README and the v2 protocol
-types checked out at `codex-rs/`, and against Dray as of `main` at `f095e2a7`.
+types checked out at `codex-rs/`, and against Carbon as of `main` at `f095e2a7`.
 
 **Captured live against `codex-cli 0.148.0-alpha.21`** — the binary bundled at
 `/Applications/ChatGPT.app/Contents/Resources/codex`, which on this machine is
@@ -33,7 +33,7 @@ And four things the docs do not say at all:
 - **`agentMessage` carries `phase`**: `commentary` for the running narration,
   `final_answer` for the answer. Claude has no equivalent.
 - **`userMessage` is echoed back as an item.** Confirmed, and it is why the
-  mapper must drop it — Dray mints its own with `baseline`, `images` and
+  mapper must drop it — Carbon mints its own with `baseline`, `images` and
   `issues`, none of which the echo carries.
 - **Server-initiated request ids start at 0** and live in their own id space,
   independent of ours. The client's pending map must be keyed on our own
@@ -50,7 +50,7 @@ a linked worktree, `requestUserInput` without the experimental capability.
 
 ## TLDR for human
 
-- Keep Dray's session id as the primary key. Store Codex's thread id as one
+- Keep Carbon's session id as the primary key. Store Codex's thread id as one
   new `#[serde(default)]` field on the index entry. Nothing else about identity
   changes.
 - One `codex app-server` process per session, same shape as today.
@@ -64,18 +64,18 @@ a linked worktree, `requestUserInput` without the experimental capability.
   Rust, exactly as Claude's rules are. `requestUserInput` maps onto
   `QuestionsAsked`. MCP elicitation forms are refused, not rendered, in the
   first pass.
-- Worktrees use the `create_worktree` path Dray already has for `--from`.
+- Worktrees use the `create_worktree` path Carbon already has for `--from`.
   Codex always takes it, so its baseline is exact where Claude's is a guess.
 - The three Codex fixtures on disk are the wrong protocol and get deleted.
   Capture `codex app-server` stdio, both directions, per scenario.
-- Four things in Dray should change to make room, all in `session.rs` and
+- Four things in Carbon should change to make room, all in `session.rs` and
   `permissions.rs`, all refactors Claude's tests can pin: shared ingest step,
   harness-neutral transport handle, harness on `deliver_prompt`, generic
   pending-permission reply.
 
 ---
 
-## 1. What app-server is, in Dray's terms
+## 1. What app-server is, in Carbon's terms
 
 Claude Code is a one-way pipe with a control side-channel bolted on. app-server
 is a JSON-RPC peer: both sides send requests, both sides answer. Three things
@@ -100,7 +100,7 @@ come up (`thread/settings/update`, `thread/backgroundTerminals/*`), and both
 have a stable route that costs one more round trip.
 
 ```
-   Dray (Rust)                              codex app-server (child, one per session)
+   Carbon (Rust)                              codex app-server (child, one per session)
    ───────────                              ─────────────────────────────────────────
    initialize ─────────────────────────────▶
    ◀───────────────────────────────────────  {result: {userAgent, codexHome, …}}
@@ -132,13 +132,13 @@ have a stable route that costs one more round trip.
 ### The problem, precisely
 
 `ThreadStartParams` has no client-supplied id. `thread/start` mints one and
-returns it. Dray mints its session id in the frontend (`crypto.randomUUID()`)
+returns it. Carbon mints its session id in the frontend (`crypto.randomUUID()`)
 before anything is spawned, and that id is:
 
 - the index entry's key and `sessions/<id>.jsonl`'s filename
 - `attachments/<id>/`, written *before* the prompt is sent
-- `DRAY_SESSION_ID` in the child's env, and the address `dray send` uses
-- `parent_session_id`, `fork_from`, and what `dray new --from <id>` resolves
+- `CARBON_SESSION_ID` in the child's env, and the address `carbon send` uses
+- `parent_session_id`, `fork_from`, and what `carbon new --from <id>` resolves
 - what `handleSendMsg` selects optimistically while the create is in flight
 
 Every one of those is written before the child answers. That ordering is
@@ -146,7 +146,7 @@ deliberate: CLAUDE.md says a session is indexed before spawn so one that
 fails to start is still visible, and the fork copies the log under the new id
 before the CLI has heard of it.
 
-### Decision: Dray's id stays primary; the thread id is a mapping
+### Decision: Carbon's id stays primary; the thread id is a mapping
 
 Add one field to `SessionIndexItem`:
 
@@ -165,17 +165,17 @@ out. Read by exactly one thing: the resume path.
 
 | feature | what happens |
 |---|---|
-| log filename, attachments dir | Dray id, unchanged |
+| log filename, attachments dir | Carbon id, unchanged |
 | `session_branch`, `--from` | resolve session → branch off the index entry, unchanged; they never touch the thread |
-| `DRAY_SESSION_ID`, `dray send` | Dray id, unchanged — one address space across harnesses |
+| `CARBON_SESSION_ID`, `carbon send` | Carbon id, unchanged — one address space across harnesses |
 | resume (process gone, id known) | spawn, `initialize`, `thread/resume {threadId: item.thread_id}` |
 | resume with `thread_id: None` | the create died between index write and `thread/start` answering. Treat as a fresh `thread/start` — same shape as Claude's "no conversation found", but recoverable |
-| fork | unchanged on Dray's side: copy log, write entry with `fork_from`. On first send: look up parent's `thread_id`, call `thread/fork {threadId}`, record the *new* thread id on the fork's entry, clear `fork_from`. Refused while parent busy, same guard — and app-server would otherwise "snapshot as if interrupted", which is a worse outcome than a refusal |
+| fork | unchanged on Carbon's side: copy log, write entry with `fork_from`. On first send: look up parent's `thread_id`, call `thread/fork {threadId}`, record the *new* thread id on the fork's entry, clear `fork_from`. Refused while parent busy, same guard — and app-server would otherwise "snapshot as if interrupted", which is a worse outcome than a refusal |
 | delete | `thread/delete {threadId}` best effort if a child is live, else nothing. Claude's transcript under `~/.claude/projects` is not deleted today either, so leaving the rollout is consistent; the call is cheap and the process is already there when it is |
-| orchestration `create_session` | returns Dray id immediately, unchanged. Thread id lands later in the index; nothing over the socket reads it |
+| orchestration `create_session` | returns Carbon id immediately, unchanged. Thread id lands later in the index; nothing over the socket reads it |
 
 **Cost:** one more nullable field, and one window — between index write and
-`thread/start` answering — where a Codex thread can exist that Dray has
+`thread/start` answering — where a Codex thread can exist that Carbon has
 forgotten. The orphan is a rollout file in `~/.codex/sessions`; the session
 recovers by starting a new thread. Acceptable.
 
@@ -199,7 +199,7 @@ that costs:
   but now the fork is eager, not lazy — a child process per fork, which
   CLAUDE.md rejected for cost.
 - The two harnesses would mint ids in two places by two rules. Claude keeps
-  frontend-minted; Codex server-minted. `dray` would still work (both are
+  frontend-minted; Codex server-minted. `carbon` would still work (both are
   UUIDs), but every "who mints the id" comment in the codebase would need a
   second sentence.
 
@@ -243,7 +243,7 @@ Why not one shared process:
 - **`initialize` is per connection and unrepeatable.** Capabilities are
   negotiated once for the process lifetime. Per session means a session can
   opt into something the next one doesn't need.
-- **Environment.** `DRAY_SESSION_ID` and `DRAY_ENDPOINT` are injected into the
+- **Environment.** `CARBON_SESSION_ID` and `CARBON_ENDPOINT` are injected into the
   child's env (orchestration). A shared process has one env.
 
 What it costs: one process per open session, each loading config, each
@@ -264,13 +264,13 @@ holds more than one conversation.
 ### Spawn
 
 `codex app-server` with stdio, cwd = the session's tree (or project root, see
-worktrees), env with `PATH` put back (`agent_path()`), `DRAY_SESSION_ID`,
-`DRAY_ENDPOINT`. Binary through `binpath.rs` like `claude` and `gh`:
+worktrees), env with `PATH` put back (`agent_path()`), `CARBON_SESSION_ID`,
+`CARBON_ENDPOINT`. Binary through `binpath.rs` like `claude` and `gh`:
 inherited `PATH`, then known dirs (`~/.local/bin`, `~/.bun/bin`,
 `~/.npm-global/bin`, Homebrew, nvm globs), then `$SHELL -l -c 'command -v
 codex'`. Missing binary = one readable error at send, never a spawn error.
 
-`initialize` with `clientInfo: {name: "dray", title: "Dray", version}`. The
+`initialize` with `clientInfo: {name: "carbon", title: "Carbon", version}`. The
 README says `clientInfo.name` feeds OpenAI's compliance logs and enterprise
 clients should register the name. Note it; do nothing yet.
 
@@ -421,7 +421,7 @@ opinion on a question the tracker already answers.
 | `turn/completed` `completed` | `TurnCompleted{status: Success, usage, duration_ms}` | `head` filled by ingest as today |
 | `turn/completed` `failed` | `TurnCompleted{status: Error, final_text: error.message, stop_reason: codexErrorInfo}` | `final_text` is what the row draws; `stop_reason` is the wire token, never drawn — same rule as Claude's `stop_sequence` |
 | `turn/completed` `interrupted` | `TurnCompleted{status: Success, stop_reason: "interrupted"}` | User's own Stop. Drawn as nothing, like `aborted_*`. **Not** a new `TurnStatus` variant: `TurnStatus` has no `#[serde(other)]`, so an old build reading a new variant drops the line, and a dropped `turn_completed` loses `head` for the changes panel |
-| `item/started` `userMessage` | `None` | Dray mints its own `UserMessage` with `baseline` in `deliver_prompt`. The echo carries `clientId` = our `clientUserMessageId`; assert it matches in tests, draw nothing |
+| `item/started` `userMessage` | `None` | Carbon mints its own `UserMessage` with `baseline` in `deliver_prompt`. The echo carries `clientId` = our `clientUserMessageId`; assert it matches in tests, draw nothing |
 | `item/started` `agentMessage` | `Delta(BlockStart{block: {message_id: item.id, index: 0}, block_type: Text})` | Codex has no message/block split: one item = one block, index always 0 |
 | `item/agentMessage/delta` | `Delta(TextDelta)` | Same `BlockRef` |
 | `item/completed` `agentMessage` | `Delta(BlockStop)` then `AssistantText{block: Some(ref), text}` | Committed wins. `phase` and `memoryCitation` dropped |
@@ -442,7 +442,7 @@ opinion on a question the tracker already answers.
 | `plan` item | `AssistantText` | Model prose. The `<proposed_plan>` block is text the reader wants to read |
 | `turn/plan/updated` | `ToolCallStarted{name: "update_plan", tool_type: Other, input: {explanation, plan}}` + immediate `ToolCallCompleted{text: ""}` | Synthesized pair, `call_id: "plan:<turnId>:<n>"`. `TodoWrite` already renders a checklist from the same shape. Dropping it loses the one thing Codex does that Claude's TodoWrite does |
 | `contextCompaction` started / completed | `ContextCompactionStarted` / `ContextCompacted{trigger: None, pre_tokens: None, post_tokens: None}` | Counts absent on the wire. Every count is already `Option`; the UI drops the saving line rather than draws a wrong one. `compacted` (deprecated) → `None` |
-| `enteredReviewMode` / `exitedReviewMode` | `None` / `AssistantText{text: review}` | Only reachable if Dray ever calls `review/start`. It doesn't, yet |
+| `enteredReviewMode` / `exitedReviewMode` | `None` / `AssistantText{text: review}` | Only reachable if Carbon ever calls `review/start`. It doesn't, yet |
 | `collabToolCall` | see subagents | |
 | `subAgentActivity` | `SubagentProgress` | |
 | `hookPrompt` | `None` | |
@@ -454,8 +454,8 @@ opinion on a question the tracker already answers.
 | `warning`, `configWarning`, `guardianWarning` | `Error{source: Harness, fatal: false}` | One row each. `deprecationNotice` → log only |
 | `model/rerouted` | `SettingsChanged{model: toModel}` | The composer's model picker should say what is actually running |
 | `model/safetyBuffering/updated`, `model/verification`, `turn/moderationMetadata` | `None` | Parsed so they don't pollute the failure log |
-| `turn/diff/updated` | `None`, and not emitted | Dray's changes panel diffs two tree snapshots on purpose (CLAUDE.md, *Changes panel diff two snapshots*). This notification is the transcript-derived alternative that design rejected: it misses what a command did, and it never sees a mid-turn commit. Dropping it is the design, not a gap. Opt out via `optOutNotificationMethods` once captures confirm its volume |
-| `thread/status/changed`, `thread/closed`, `thread/archived`, `thread/name/updated` | `None` | Status is the tracker's; naming is Dray's |
+| `turn/diff/updated` | `None`, and not emitted | Carbon's changes panel diffs two tree snapshots on purpose (CLAUDE.md, *Changes panel diff two snapshots*). This notification is the transcript-derived alternative that design rejected: it misses what a command did, and it never sees a mid-turn commit. Dropping it is the design, not a gap. Opt out via `optOutNotificationMethods` once captures confirm its volume |
+| `thread/status/changed`, `thread/closed`, `thread/archived`, `thread/name/updated` | `None` | Status is the tracker's; naming is Carbon's |
 | `rawResponseItem/completed` | `None` | Only with `experimentalRawEvents` |
 
 ### Two synthesized events
@@ -476,7 +476,7 @@ opinion on a question the tracker already answers.
 
 ### Context occupancy and the ring
 
-Dray reads the ring back out of persisted events: `turn_completed.usage.
+Carbon reads the ring back out of persisted events: `turn_completed.usage.
 contextWindow` and `context_compacted.postTokens`. For Codex:
 
 - `thread/tokenUsage/updated.tokenUsage.modelContextWindow` → `ContextWindow.max`.
@@ -507,7 +507,7 @@ decides the subagent design**, and a capture settles it:
 - If they do: the reader keeps `HashMap<thread_id, call_id>` from spawn calls
   and fills `Subagent{id: call_id, label: agentNickname}` on the envelope for
   every line whose `threadId` is in the map. `id` = the spawning
-  `collabToolCall`'s item id, matching Dray's rule that a subagent is
+  `collabToolCall`'s item id, matching Carbon's rule that a subagent is
   correlated by the call that spawned it. Depth beyond one level (a child
   spawning) folds into the nearest known ancestor.
 - If they don't: the subagent panel shows only what `subAgentActivity` and
@@ -529,25 +529,25 @@ written against `codex exec`; app-server's `SubAgentActivity` carries both
 
 ### Gaps, both directions
 
-**Codex → Dray, dropped on purpose:** `turn/diff/updated` (design), `sleep`,
+**Codex → Carbon, dropped on purpose:** `turn/diff/updated` (design), `sleep`,
 safety buffering, moderation, verification, realtime, `fs/*`, `process/*`,
-apps, plugins, hooks, goals, memory. None of these draw anything in Dray
+apps, plugins, hooks, goals, memory. None of these draw anything in Carbon
 today; each costs a parsed-and-`None` so the failure log stays a signal.
 
-**Codex → Dray, no home and worth one later:**
+**Codex → Carbon, no home and worth one later:**
 
 - **Live command output** (`outputDelta`). Claude has no equivalent, so no row
   draws it. A `ToolCallProgress{call_id, text}` variant — emitted, never
   persisted, like `Delta` — is the shape. Slice 4 or later; the committed
   `aggregatedOutput` arrives either way.
 - **Plan mode** (`collaborationMode`, experimental) and **review mode**
-  (`review/start`). Both are turn *kinds*, not events. Dray's composer has no
+  (`review/start`). Both are turn *kinds*, not events. Carbon's composer has no
   place to pick one. When it does, `enteredReviewMode` → a turn-kind marker;
   until then nothing sends one so nothing arrives.
-- **`thread/name/updated`**: Codex can name threads. Dray owns titles. Ignore
+- **`thread/name/updated`**: Codex can name threads. Carbon owns titles. Ignore
   both ways.
 
-**Dray → Codex, expressed differently:**
+**Carbon → Codex, expressed differently:**
 
 - **`ApiRetry`**: covered above; count is ours, ceiling unknown.
 - **`BackgroundTasksChanged`**: no wire set; §4 synthesized-events note.
@@ -569,14 +569,14 @@ today; each costs a parsed-and-`None` so the failure log stays a signal.
 
 **No new variant in slices 0–3.** The log-evolution rules make adding one
 safe (`Unrecognized` catches it in old builds), but every candidate above is
-either not persisted (progress) or a turn kind Dray can't start yet.
+either not persisted (progress) or a turn kind Carbon can't start yet.
 
 ## 6. Permissions
 
 ### Approvals → `PermissionRequested`
 
 Every server request registers a `PendingRequest` keyed on the JSON-RPC id
-(stringified; `RequestId` is int-or-string and Dray's `request_id` is a
+(stringified; `RequestId` is int-or-string and Carbon's `request_id` is a
 string), emits one event, and holds the fully built reply per option. The
 frontend picks an id; Rust sends what it built. Nothing about a decision ever
 crosses to TypeScript.
@@ -613,7 +613,7 @@ the card can show the paths without the transcript row beside it.
 **`item/permissions/requestApproval`:** the request is a profile (write roots,
 read roots, network). Options: `once` → grant the whole requested profile with
 `scope: "turn"`; `session` → same profile, `scope: "session"`; `deny` → empty
-`permissions`. A partial grant would need a checklist card; Dray has none, and
+`permissions`. A partial grant would need a checklist card; Carbon has none, and
 the README's "any permissions omitted are treated as denied" makes the empty
 grant a clean refusal. `blocked_path` = first write root; `input` = the
 profile.
@@ -623,7 +623,7 @@ profile.
 turn start/complete/interrupt. If we already answered, nothing — the
 notification is confirmation, and the card was retired when we replied.
 
-**`ApprovalPolicy` → Codex.** Dray's stance is one closed enum; Codex has two
+**`ApprovalPolicy` → Codex.** Carbon's stance is one closed enum; Codex has two
 axes. Mapping:
 
 | `ApprovalPolicy` | `approvalPolicy` | `sandbox` |
@@ -656,16 +656,16 @@ nothing visible.
 **`item/tool/requestUserInput` → `QuestionsAsked`.** One to three questions,
 each `{id, header, question, isOther, isSecret, options?: [{label,
 description}]}`. Map onto `Question{question, header, multi_select: false,
-options}`. The card is Dray's existing `QuestionRequest`, unchanged.
+options}`. The card is Carbon's existing `QuestionRequest`, unchanged.
 
 The answer shape differs in one way that matters: Codex keys answers by
-question `id`, Dray's form names items by question *text* (Claude's rule,
+question `id`, Carbon's form names items by question *text* (Claude's rule,
 pinned both sides). Keep the frontend as it is and remap in Rust: the pending
 entry holds `Vec<(text, id)>` and `answer_questions` builds
 `{answers: {id: {answers: [text]}}}`. `isOther: false` means the tool did not
-ask for free text; Dray always shows the box (CLAUDE.md: not optional to
+ask for free text; Carbon always shows the box (CLAUDE.md: not optional to
 render), so the reply may carry text the tool didn't offer. Harmless — it is a
-string either way. `isSecret` has no Dray home; render as text and note it in
+string either way. `isSecret` has no Carbon home; render as text and note it in
 the failure log so it is counted. `autoResolutionMs` means the server answers
 itself after a deadline and sends `serverRequest/resolved`, which retires the
 card by the path above.
@@ -677,7 +677,7 @@ is, is unclear. Capture will show whether it arrives without opt-in.
 **`mcpServer/elicitation/request`.** Three modes:
 
 - `form` / `openai/form` with `requestedSchema` — a JSON-schema-driven form.
-  Dray has no renderer for one. Refused (`{action: "decline", content: null}`)
+  Carbon has no renderer for one. Refused (`{action: "decline", content: null}`)
   from the reader task, filed `unsupported_request`. **Except** when `meta.
   codex_approval_kind == "mcp_tool_call"`: that is an approval wearing an
   elicitation's clothes, and it maps onto `PermissionRequested` with
@@ -690,14 +690,14 @@ half-honouring it stays Claude's.
 
 ## 7. Worktrees
 
-Codex has no `-w`. Dray already has the other route: `create_worktree(cwd,
+Codex has no `-w`. Carbon already has the other route: `create_worktree(cwd,
 name, base)` runs `git worktree add --no-track -B worktree-<name> <path>
-<base>` and the child spawns *into* the tree. Built for `dray new --from`, and
+<base>` and the child spawns *into* the tree. Built for `carbon new --from`, and
 it is the whole worktree story for Codex.
 
 **What changes in `send_msg`:** `owned_worktree` becomes true for every Codex
 worktree creation, not only when `base_ref` is given. The default base has to
-be resolved by Dray, because nothing downstream will: `base_ref_tree` already
+be resolved by Carbon, because nothing downstream will: `base_ref_tree` already
 resolves the fork point `-w` uses (`origin/<default>`, falling back to local
 `HEAD`), and the same resolution hands `create_worktree` its base. It does
 **not** fetch first. Say so in the composer's "resolved base" line, and leave
@@ -737,7 +737,7 @@ What it misses, or might:
   on branch `worktree-<name>`, because `worktree_path`, `session_branch`,
   `remove_worktree`'s shape guard and the `backfill_removed_worktrees` pass
   all key on that shape. Renaming the directory per harness buys nothing and
-  splits four functions. Keep it; it is Dray's convention now, not Claude's.
+  splits four functions. Keep it; it is Carbon's convention now, not Claude's.
 - **AGENTS.md discovery.** Codex walks from cwd to the git root; a linked
   worktree's root is the tree itself, so `<project>/AGENTS.md` is found via
   the checkout, not the main repo. Same as Claude's CLAUDE.md. No gap.
@@ -750,7 +750,7 @@ the turn id. `clientUserMessageId` = the `UserMessage` event's own id, so the
 `userMessage` echo can be asserted against it in tests and ignored in the
 mapper.
 
-**Queued prompts become `turn/steer`.** Dray holds a prompt typed mid-turn
+**Queued prompts become `turn/steer`.** Carbon holds a prompt typed mid-turn
 until a boundary because Claude injects a buffered prompt at the next tool
 result and nowhere sooner. Codex has `turn/steer {expectedTurnId}`, which
 appends to the running turn now. So for Codex, `queue_msg` sends a steer
@@ -841,7 +841,7 @@ Nothing runs a real `codex` binary in CI. The captures are the contract.
 
 ## 10. Staging
 
-### Slice 0 — make room (Dray only, no Codex code)
+### Slice 0 — make room (Carbon only, no Codex code)
 
 - Lift the post-mapper half of `claude_code::read_stdout` into
   `session::ingest`. Claude's reader calls it; tests unchanged.
@@ -890,7 +890,7 @@ it.
 - `owned_worktree` for every Codex worktree; default base from
   `base_ref_tree`'s resolution. `thread/fork` on first send with `fork_from`.
   Fork-in-worktree takes the parent's tip as base.
-- `dray new --harness codex` already parses; make it work end to end,
+- `carbon new --harness codex` already parses; make it work end to end,
   including `--from`. `thread/delete` on session delete.
 - Steer for queued prompts, with the boundary-queue fallback.
 - Fixtures: `fork`, `worktree_git`, `compaction`.
@@ -926,7 +926,7 @@ ever wants it.
 
 ## 12. What this deliberately does not do
 
-- No Codex-side reading of history. Dray's log is the transcript; `turns` on
+- No Codex-side reading of history. Carbon's log is the transcript; `turns` on
   `thread/resume` are received and ignored. Same rule as Claude's replay log.
 - No `turn/diff/updated`. The changes panel is snapshot-based by design.
 - No second worktree path convention.

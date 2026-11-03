@@ -14,7 +14,7 @@ struct OrbPalette: Identifiable, Hashable {
     static let all = [
         OrbPalette(name: "Rainbow", colors: PrismOrb.rainbow, spectral: true),
         OrbPalette(name: "Siri", colors: [rgb(1, 0.32, 0.62), rgb(0.56, 0.32, 1), rgb(0.18, 0.52, 1), rgb(0.2, 0.9, 0.86)]),
-        OrbPalette(name: "Dray", colors: [rgb(0.95, 0.78, 0.3), rgb(1, 0.55, 0.15), rgb(1, 0.93, 0.7), rgb(0.95, 0.38, 0.2)]),
+        OrbPalette(name: "Carbon", colors: [rgb(0.95, 0.78, 0.3), rgb(1, 0.55, 0.15), rgb(1, 0.93, 0.7), rgb(0.95, 0.38, 0.2)]),
         OrbPalette(name: "Mono", colors: [rgb(1, 1, 1), rgb(0.55, 0.55, 0.58), rgb(0.85, 0.85, 0.88), rgb(0.32, 0.32, 0.35)]),
         OrbPalette(name: "Aurora", colors: [rgb(0.2, 0.95, 0.55), rgb(0.1, 0.75, 0.8), rgb(0.15, 0.35, 0.95), rgb(0.55, 0.3, 0.95)]),
         OrbPalette(name: "Ember", colors: [rgb(1, 0.22, 0.25), rgb(1, 0.52, 0.1), rgb(0.9, 0.15, 0.6), rgb(1, 0.8, 0.3)]),

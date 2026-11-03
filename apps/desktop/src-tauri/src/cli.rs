@@ -1,11 +1,11 @@
-//! The `dray` CLI the bundle carries as `Contents/MacOS/dray-cli`
+//! The `carbon` CLI the bundle carries as `Contents/MacOS/carbon-cli`
 //! (tauri.cli.conf.json), put where agents and shells find it.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// Copies the bundled CLI to `~/.local/bin/dray` where the bytes there differ,
+/// Copies the bundled CLI to `~/.local/bin/carbon` where the bytes there differ,
 /// then has it write its skill. Every launch of a release build, off the main
 /// thread; dev and debug builds skip it, since the CLI on disk belongs to the
 /// release app.
@@ -18,7 +18,7 @@ pub fn install() {
         return;
     }
     tauri::async_runtime::spawn(async {
-        let shell = crate::binpath::shell_dray().await;
+        let shell = crate::binpath::shell_carbon().await;
         let done = tauri::async_runtime::spawn_blocking(move || install_bundled(shell)).await;
         if let Ok(Err(e)) = done {
             eprintln!("[cli install] {e}");
@@ -30,17 +30,17 @@ fn install_bundled(shell: Option<PathBuf>) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("no exe path: {e}"))?;
     // Absent from a bundle built without the CLI overlay, which is every
     // local `tauri build`.
-    let Ok(bundled) = std::fs::read(exe.with_file_name("dray-cli")) else {
+    let Ok(bundled) = std::fs::read(exe.with_file_name("carbon-cli")) else {
         return Ok(());
     };
     let home = std::env::home_dir().ok_or("no home directory")?;
-    let dest = home.join(".local/bin/dray");
+    let dest = home.join(".local/bin/carbon");
     copy_if_changed(&bundled, &dest).map_err(|e| format!("{}: {e}", dest.display()))?;
 
-    // A CLI installed elsewhere with `DRAY_INSTALL_DIR` sits ahead of this copy
+    // A CLI installed elsewhere with `CARBON_INSTALL_DIR` sits ahead of this copy
     // on the reader's PATH, and would keep answering stale. A symlink is left
     // alone: somebody pointed it at a build of their own on purpose.
-    if let Some(shell) = shell.filter(|p| *p != dest && is_plain_dray(p)) {
+    if let Some(shell) = shell.filter(|p| *p != dest && is_plain_carbon(p)) {
         if let Err(e) = copy_if_changed(&bundled, &shell) {
             eprintln!("[cli install] {}: {e}", shell.display());
         }
@@ -58,19 +58,19 @@ fn install_bundled(shell: Option<PathBuf>) -> Result<(), String> {
     status
         .success()
         .then_some(())
-        .ok_or_else(|| format!("dray skill install failed ({status})"))
+        .ok_or_else(|| format!("carbon skill install failed ({status})"))
 }
 
-/// A regular file answering `--version` the way Dray's CLI does — the name is
+/// A regular file answering `--version` the way Carbon's CLI does — the name is
 /// generic enough for something else on PATH to carry it.
-fn is_plain_dray(path: &Path) -> bool {
+fn is_plain_carbon(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
         && Command::new(path)
             .arg("--version")
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .output()
-            .is_ok_and(|out| out.status.success() && out.stdout.starts_with(b"dray "))
+            .is_ok_and(|out| out.status.success() && out.stdout.starts_with(b"carbon "))
 }
 
 /// Writes `bytes` to `dest` unless it holds them already, answering whether it
@@ -88,7 +88,7 @@ fn copy_if_changed(bytes: &[u8], dest: &Path) -> std::io::Result<bool> {
     let dir = dest.parent().expect("dest names a file in a directory");
     std::fs::create_dir_all(dir)?;
     // Per process, since an `open -n` relaunch can run two of these at once.
-    let tmp = dir.join(format!(".dray.{}", std::process::id()));
+    let tmp = dir.join(format!(".carbon.{}", std::process::id()));
     let written = std::fs::write(&tmp, bytes)
         .and_then(|()| std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)))
         .and_then(|()| std::fs::rename(&tmp, dest));
@@ -105,8 +105,8 @@ mod tests {
 
     #[test]
     fn copies_only_what_differs_and_leaves_it_executable() {
-        let dir = std::env::temp_dir().join(format!("dray-cli-test-{}", std::process::id()));
-        let dest = dir.join("bin/dray");
+        let dir = std::env::temp_dir().join(format!("carbon-cli-test-{}", std::process::id()));
+        let dest = dir.join("bin/carbon");
 
         assert!(copy_if_changed(b"one", &dest).unwrap(), "absent: written");
         assert!(!copy_if_changed(b"one", &dest).unwrap(), "same bytes: left alone");

@@ -47,7 +47,7 @@ pub struct StoredDraft {
     pub permission_mode: ApprovalPolicy,
     pub fast: bool,
     pub use_worktree: bool,
-    /// Where the worktree starts, from `dray draft new --base`: a session id,
+    /// Where the worktree starts, from `carbon draft new --base`: a session id,
     /// branch or ref, resolved when the draft starts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base: Option<String>,

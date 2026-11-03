@@ -355,7 +355,7 @@ function Demo() {
           tabs={tabOrder({ pr: false, docs: false, issue: false, more: true })}
           tab="more"
           onTabChange={() => {}}
-          cwd="/Users/you/code/dray"
+          cwd="/Users/you/code/carbon"
         >
           <TabBody active>
             <MorePanel

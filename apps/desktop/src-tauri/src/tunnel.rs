@@ -1,6 +1,6 @@
 //! Public addresses through OpenTunnel, a blind TLS relay: TLS ends in this
 //! process, so the relay never sees plaintext. A tunnel's identity is kept in
-//! `<home>/opentunnel`, so its addresses outlive a restart, and each Dray home
+//! `<home>/opentunnel`, so its addresses outlive a restart, and each Carbon home
 //! (dev build, worktree) gets its own. Deleting that directory is the only
 //! way to new ones. See #518.
 //!
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn a_stalled_registration_is_dropped_and_an_issued_one_kept() {
-        let root = std::env::temp_dir().join(format!("dray-tunnel-test-{}", uuid::Uuid::new_v4().simple()));
+        let root = std::env::temp_dir().join(format!("carbon-tunnel-test-{}", uuid::Uuid::new_v4().simple()));
         for (profile, files) in [
             ("pending", &["pending.json", "token", "private-key.pem"][..]),
             ("issued", &["tunnel.json", "certificate.pem", "token"][..]),

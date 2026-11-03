@@ -5,13 +5,13 @@ sidebar:
   order: 3
 ---
 
-Orchestration is one agent starting other sessions with `dray`. You ask the agent in one session to "work through these four issues", and it starts four sessions, one per issue, each with its own worktree, branch and sidebar row. You watch them beside the conversation that started them.
+Orchestration is one agent starting other sessions with `carbon`. You ask the agent in one session to "work through these four issues", and it starts four sessions, one per issue, each with its own worktree, branch and sidebar row. You watch them beside the conversation that started them.
 
 Use it for work that is truly separate: separate branches, separate pull requests. Steps of one task belong in one session.
 
 ## Before you start
 
-Install `dray` and its skill. See [Install](/cli#install). The skill tells Claude Code, Codex and pi when and how to use `dray`, so you can ask in plain words. You do not type the commands yourself.
+Install `carbon` and its skill. See [Install](/cli#install). The skill tells Claude Code, Codex and pi when and how to use `carbon`, so you can ask in plain words. You do not type the commands yourself.
 
 ## Fan work out
 
@@ -19,7 +19,7 @@ Ask in the conversation, for example:
 
 > Start a session for each of DRA-51, DRA-52 and DRA-53.
 
-The agent runs `dray session new` once per piece of work. Each new session:
+The agent runs `carbon session new` once per piece of work. Each new session:
 
 - gets its own worktree, starting at `origin/<default branch>`
 - inherits the caller's agent, model, effort, fast mode and permission mode, unless the agent passes flags
@@ -46,22 +46,22 @@ A session started with `--hidden` shows in the crew only, not the sidebar. The s
 `--base` starts a session's worktree from existing work. Point it at a session id and the new session gets its own checkout of that session's branch:
 
 ```bash
-dray session new --hidden --harness codex --base <session-id> \
-  "Review the work on this branch. Send your findings back to <session-id> with dray session send."
+carbon session new --hidden --harness codex --base <session-id> \
+  "Review the work on this branch. Send your findings back to <session-id> with carbon session send."
 ```
 
 Ask for this in plain words: "have Codex review this". The reviewer reads the same commits in its own worktree, so it collides with nobody.
 
 - **Committed work only.** Changes not yet committed are not in the reviewer's tree. Commit first, or the review misses them.
 - **A new branch.** The reviewer works on its own `worktree-<name>` branch. It never checks out yours, so it cannot commit onto your work.
-- `dray` prints what the id resolved to: `Started "…" in worktree calm-owl, based on worktree-brisk-jade`.
+- `carbon` prints what the id resolved to: `Started "…" in worktree calm-owl, based on worktree-brisk-jade`.
 
 `--base` also takes a branch, tag or commit.
 
 ## Messages between sessions
 
 ```bash
-dray session send <session-id> "Review done: two findings, both fixed on worktree-calm-owl."
+carbon session send <session-id> "Review done: two findings, both fixed on worktree-calm-owl."
 ```
 
 Any session can message any other. A child reports back to its parent, or a parent hands a child more context. The message starts a turn in the receiving session, or waits for the current turn to end. The receiver is told which session sent it and its id, so it can reply.
@@ -71,18 +71,18 @@ Each message costs the receiver a whole turn, so agents should send one when the
 ## Check on sessions
 
 ```bash
-dray session ls
+carbon session ls
 ```
 
 Lists the project's sessions with their status. Nothing reports back on its own. If you want to know when sessions finish, watch the sidebar and the crew, or ask the children to send a summary when they are done.
 
 ## Permission prompts
 
-A spawned session inherits the permission mode of the session that started it, and `dray session new` has no flag to change it. If the calling session asks before it edits files or runs commands, so does every session it starts. Each one stops at its first permission card and waits for you.
+A spawned session inherits the permission mode of the session that started it, and `carbon session new` has no flag to change it. If the calling session asks before it edits files or runs commands, so does every session it starts. Each one stops at its first permission card and waits for you.
 
 Answer those cards in the crew, or open the session. To have children run without stopping, change the permission mode of the parent before it fans out.
 
-`dray` itself never raises a permission card in a Claude Code session.
+`carbon` itself never raises a permission card in a Claude Code session.
 
 ## Limits
 

@@ -47,7 +47,7 @@ function start() {
         servers = list;
         changed.emit();
       })
-      // A build with no remote support — a plain browser on a dray-serve —
+      // A build with no remote support — a plain browser on a carbon-serve —
       // answers `unknown command`, which is a list of none.
       .catch(() => {}),
   );

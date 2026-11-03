@@ -1,4 +1,4 @@
-/// The installer's channel resolver decides which binary every `dray update`
+/// The installer's channel resolver decides which binary every `carbon update`
 /// downloads, and it is shell, so it is checked here where release-cli's test
 /// job already runs.
 #[test]

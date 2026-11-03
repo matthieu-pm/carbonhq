@@ -2,7 +2,7 @@ import { readLocalStorage } from "@/hooks/useLocalStorage";
 import { IS_MAC } from "@/lib/platform";
 import { invoke } from "@/lib/transport";
 
-/// The modifier tapped alone to open Dray Island, and again to dictate.
+/// The modifier tapped alone to open Carbon Island, and again to dictate.
 export type IslandKey = "control" | "option" | "command";
 
 export const ISLAND_KEYS: { value: IslandKey; label: string }[] = [
@@ -32,7 +32,7 @@ export async function applyIsland(pick: { on?: boolean; key?: IslandKey } = {}) 
   }
 }
 
-/// Whether Dray Island is up to take permission and question cards: asked of the
+/// Whether Carbon Island is up to take permission and question cards: asked of the
 /// process, since the switch says nothing about an island the reader quit. A
 /// failed ask reads as no island, so the banner is the one lost to doubt never.
 export async function islandOn(): Promise<boolean> {

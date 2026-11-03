@@ -44,7 +44,7 @@ pub struct UpdateNotification {
 /// One streamed update, tagged on `sessionUpdate`.
 ///
 /// The unit variants are updates seen and drawn as nothing: `user_message_chunk`
-/// is the `session/load` replay of a prompt Dray already logged,
+/// is the `session/load` replay of a prompt Carbon already logged,
 /// `available_commands_update` arrived empty on every capture. The distinction
 /// from [`Self::Unknown`] is what keeps the failure log a signal.
 #[derive(Debug, Deserialize)]
@@ -401,7 +401,7 @@ mod tests {
             .expect("the capture switches onto grok-4.6");
         assert_eq!(grok.effort_levels(), None);
 
-        // And onto gpt-5.4-nano, which offers a level Dray cannot spell. Its
+        // And onto gpt-5.4-nano, which offers a level Carbon cannot spell. Its
         // list also carries the `max` this session was left on — the carryover
         // `effort_carryover.jsonl` pins — so only the first reply above is
         // trusted past the session.
@@ -510,7 +510,7 @@ mod tests {
 
     /// Both refusals are `-32602` and their sentences differ by one word, so
     /// neither the code nor the text can be matched on to tell "this model has
-    /// no effort" from "not that rung". Dray writes its own sentence off the
+    /// no effort" from "not that rung". Carbon writes its own sentence off the
     /// ladder instead, and this is what says why.
     #[test]
     fn fx_refuses_two_different_things_with_one_code() {

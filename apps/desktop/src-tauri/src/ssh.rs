@@ -1,9 +1,9 @@
-//! Reaching a remote `dray-serve` through the reader's own SSH login. See
+//! Reaching a remote `carbon-serve` through the reader's own SSH login. See
 //! SSH-PLAN.md.
 //!
 //! **The system `ssh`, never a library.** It reads the reader's config, keys,
 //! agent and `known_hosts`, so host keys are checked exactly as they would be
-//! in a terminal and Dray stores nothing but the destination.
+//! in a terminal and Carbon stores nothing but the destination.
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,23 +25,23 @@ const KEYGEN: &str = "/usr/bin/ssh-keygen";
 /// The machine logging in, in a failure's words: a Linux server runs this too.
 const HERE: &str = if cfg!(target_os = "macos") { "This Mac" } else { "This machine" };
 
-/// Where `dray-serve` listens on the server, as `dray setup` leaves it.
-const REMOTE_PORT: u16 = dray_proto::SERVE_PORT;
+/// Where `carbon-serve` listens on the server, as `carbon setup` leaves it.
+const REMOTE_PORT: u16 = carbon_proto::SERVE_PORT;
 
-/// The longest line the script is read for, and the most of `dray service
+/// The longest line the script is read for, and the most of `carbon service
 /// start`'s output kept. A server on the far side of a network decides what
 /// it sends, and an unbounded `read_line` would grow until the app fell over.
 const MAX_READ: usize = 4096;
 
-/// A whole connect: login, script, `dray service start`'s own 1.5s check.
+/// A whole connect: login, script, `carbon service start`'s own 1.5s check.
 const OPEN: Duration = Duration::from_secs(45);
 
-const INSTALLER: &str = "https://www.drayhq.com/install.sh";
+const INSTALLER: &str = "https://www.carbonhq.com/install.sh";
 
 /// An install over a login: a package manager and five vendor scripts.
 const INSTALLING: Duration = Duration::from_secs(30 * 60);
 
-/// Where `dray setup` puts agents (the CLI's `HOME_BIN_DIRS`). A non-login
+/// Where `carbon setup` puts agents (the CLI's `HOME_BIN_DIRS`). A non-login
 /// `ssh host cmd` reads no `.profile`, so none of these are on its `PATH`.
 const AGENT_DIRS: &str =
     "$HOME/.local/bin:$HOME/.grok/bin:$HOME/.pi/agent/bin:$HOME/.bun/bin:$HOME/.npm-global/bin";
@@ -127,9 +127,9 @@ pub fn parse(line: &str) -> Result<Target, String> {
 pub enum Stage {
     /// `ssh` is logging in.
     Connecting,
-    /// Logged in; looking for Dray and its token.
+    /// Logged in; looking for Carbon and its token.
     Finding,
-    /// The server was stopped, and `dray service start` is running.
+    /// The server was stopped, and `carbon service start` is running.
     Starting,
 }
 
@@ -143,7 +143,7 @@ pub enum Fix {
     /// SSH has never met this server: show its key and ask.
     #[serde(rename_all = "camelCase")]
     TrustHost { host: String, key_type: String, fingerprint: String },
-    /// Dray is not on the server: the app can install it over the login.
+    /// Carbon is not on the server: the app can install it over the login.
     Install,
     /// The server's quick tunnel restarted under a new address, which only
     /// the reader can bring here; the token is kept.
@@ -199,13 +199,13 @@ impl Tunnel {
 /// single quote and no backslash: the reader's login shell parses that quoting
 /// first, and fish reads backslashes inside single quotes where sh does not.
 const SCRIPT: &str = concat!(
-    "PATH=\"$HOME/.local/bin:$PATH\"; echo DRAY-SSH hello; ",
-    "command -v dray >/dev/null 2>&1 || { echo DRAY-SSH missing; exit 0; }; ",
-    "if ! systemctl --user is-active --quiet dray 2>/dev/null && systemctl --user show-environment >/dev/null 2>&1; then ",
-    "echo DRAY-SSH starting; if ! out=$(dray service start 2>&1); then echo DRAY-SSH failed; echo \"$out\"; exit 0; fi; fi; ",
-    "[ -r \"$HOME/.dray/serve-token\" ] || { echo DRAY-SSH notoken; exit 0; }; ",
-    "[ -r \"$HOME/.dray/tunnel-url\" ] && echo \"DRAY-SSH tunnel $(cat \"$HOME/.dray/tunnel-url\")\"; ",
-    "echo \"DRAY-SSH token $(cat \"$HOME/.dray/serve-token\")\"; exec cat",
+    "PATH=\"$HOME/.local/bin:$PATH\"; echo CARBON-SSH hello; ",
+    "command -v carbon >/dev/null 2>&1 || { echo CARBON-SSH missing; exit 0; }; ",
+    "if ! systemctl --user is-active --quiet carbon 2>/dev/null && systemctl --user show-environment >/dev/null 2>&1; then ",
+    "echo CARBON-SSH starting; if ! out=$(carbon service start 2>&1); then echo CARBON-SSH failed; echo \"$out\"; exit 0; fi; fi; ",
+    "[ -r \"$HOME/.carbon/serve-token\" ] || { echo CARBON-SSH notoken; exit 0; }; ",
+    "[ -r \"$HOME/.carbon/tunnel-url\" ] && echo \"CARBON-SSH tunnel $(cat \"$HOME/.carbon/tunnel-url\")\"; ",
+    "echo \"CARBON-SSH token $(cat \"$HOME/.carbon/serve-token\")\"; exec cat",
 );
 
 /// Logs in, makes sure the server is up, reads its token and forwards a free
@@ -251,7 +251,7 @@ pub async fn open(target: &Target, stage: impl Fn(Stage)) -> Result<Tunnel, Fail
                 }
                 continue;
             }
-            match said.strip_prefix("DRAY-SSH ") {
+            match said.strip_prefix("CARBON-SSH ") {
                 Some("hello") => stage(Stage::Finding),
                 Some("starting") => stage(Stage::Starting),
                 Some("missing") => return Ok(Err("missing")),
@@ -278,17 +278,17 @@ pub async fn open(target: &Target, stage: impl Fn(Stage)) -> Result<Tunnel, Fail
             Ok(Tunnel { child, _stdin: stdin, _stdout: stdout, port, token, address, stderr })
         }
         Ok(Ok(Ok(_) | Err("notoken"))) => Err(Failure::new(
-            format!("Dray is on {host} but its server has never run there."),
-            Some(Fix::Copy { command: "dray service start".into() }),
+            format!("Carbon is on {host} but its server has never run there."),
+            Some(Fix::Copy { command: "carbon service start".into() }),
             true,
         )),
         Ok(Ok(Err("oversize"))) => Err(Failure::new(
-            format!("{host} answered with something that is not Dray."),
+            format!("{host} answered with something that is not Carbon."),
             None,
             true,
         )),
         Ok(Ok(Err(_))) => Err(Failure::new(
-            format!("Dray isn't installed on {host}."),
+            format!("Carbon isn't installed on {host}."),
             Some(Fix::Install),
             true,
         )),
@@ -605,7 +605,7 @@ fn append(path: &std::path::Path, line: &str) -> std::io::Result<()> {
     file.write_all(line.as_bytes())
 }
 
-/// A tool `dray setup --install` takes, as a server has it.
+/// A tool `carbon setup --install` takes, as a server has it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "events.ts")]
 pub struct Tool {
@@ -614,7 +614,7 @@ pub struct Tool {
     pub found: bool,
 }
 
-/// What a server has before Dray is installed on it.
+/// What a server has before Carbon is installed on it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "events.ts")]
 #[serde(rename_all = "camelCase")]
@@ -623,25 +623,25 @@ pub struct Survey {
     pub os: String,
     pub tools: Vec<Tool>,
     /// Where git is missing and this login has no admin rights to install it:
-    /// the line to run as root, the one `dray setup` would print.
+    /// the line to run as root, the one `carbon setup` would print.
     pub git_command: Option<String>,
 }
 
-/// `(id, name, bin)` of everything `dray setup --install` takes, in its order.
+/// `(id, name, bin)` of everything `carbon setup --install` takes, in its order.
 fn setup_tools() -> Vec<(&'static str, &'static str, &'static str)> {
     let mut tools = vec![("git", "git", "git"), ("gh", "GitHub CLI", "gh")];
-    tools.extend(dray_proto::AGENTS.iter().map(|a| (a.id, a.name, a.bin)));
+    tools.extend(carbon_proto::AGENTS.iter().map(|a| (a.id, a.name, a.bin)));
     tools
 }
 
-/// Looks at a server with no Dray on it: which tools it has, its package
+/// Looks at a server with no Carbon on it: which tools it has, its package
 /// manager, and whether this login can install git.
 pub async fn survey(target: &Target) -> Result<Survey, Failure> {
     let tools = setup_tools();
     let bins: Vec<_> = tools.iter().map(|t| t.2).collect();
-    let managers: Vec<_> = dray_proto::GIT_INSTALLS.iter().map(|g| g.0).collect();
+    let managers: Vec<_> = carbon_proto::GIT_INSTALLS.iter().map(|g| g.0).collect();
     let script = format!(
-        "PATH=\"{AGENT_DIRS}:$PATH\"; echo DRAY-SSH hello; echo \"os $(uname -s)\"; \
+        "PATH=\"{AGENT_DIRS}:$PATH\"; echo CARBON-SSH hello; echo \"os $(uname -s)\"; \
          for b in {}; do command -v $b >/dev/null 2>&1 && echo \"found $b\"; done; \
          for m in {}; do command -v $m >/dev/null 2>&1 && {{ echo \"pm $m\"; break; }}; done; \
          {{ [ \"$(id -u)\" = 0 ] || sudo -n true 2>/dev/null; }} && echo admin; true",
@@ -655,7 +655,7 @@ pub async fn survey(target: &Target) -> Result<Survey, Failure> {
     let os = said.iter().find_map(|l| l.strip_prefix("os ")).unwrap_or_default().to_string();
     let manager = said.iter().find_map(|l| l.strip_prefix("pm "));
     let git_command = (!found("git") && !has("admin"))
-        .then(|| dray_proto::GIT_INSTALLS.iter().find(|g| Some(g.0) == manager))
+        .then(|| carbon_proto::GIT_INSTALLS.iter().find(|g| Some(g.0) == manager))
         .flatten()
         .map(|(_, cmd)| format!("sudo sh -c '{cmd}'"));
     Ok(Survey {
@@ -665,22 +665,22 @@ pub async fn survey(target: &Target) -> Result<Survey, Failure> {
     })
 }
 
-/// Installs Dray and `picks` over the login, then starts the server: the
+/// Installs Carbon and `picks` over the login, then starts the server: the
 /// install line with its own setup skipped, since there is no terminal for it
-/// to ask in, and `dray setup --install` with the answers instead. Each line of
+/// to ask in, and `carbon setup --install` with the answers instead. Each line of
 /// output goes to `line`.
 pub async fn install(target: &Target, picks: &[String], line: impl FnMut(&str)) -> Result<(), Failure> {
     let tools = setup_tools();
     // These reach a shell.
     if let Some(bad) = picks.iter().find(|p| !tools.iter().any(|t| t.0 == p.as_str())) {
-        return Err(Failure::new(format!("{bad} is not something Dray installs"), None, true));
+        return Err(Failure::new(format!("{bad} is not something Carbon installs"), None, true));
     }
     let install = if picks.is_empty() { String::new() } else { format!(" --install {}", picks.join(",")) };
     let script = format!(
-        "PATH=\"{AGENT_DIRS}:$PATH\"; echo DRAY-SSH hello; exec 2>&1; \
+        "PATH=\"{AGENT_DIRS}:$PATH\"; echo CARBON-SSH hello; exec 2>&1; \
          s=$(curl -fsSL {INSTALLER} 2>/dev/null || wget -qO- {INSTALLER} 2>/dev/null) \
          || {{ echo Could not download {INSTALLER}; exit 1; }}; \
-         DRAY_UPDATING=1 sh -c \"$s\" && \"$HOME/.local/bin/dray\" setup{install}"
+         CARBON_UPDATING=1 sh -c \"$s\" && \"$HOME/.local/bin/carbon\" setup{install}"
     );
     if run(target, &script, INSTALLING, line).await? {
         Ok(())
@@ -690,7 +690,7 @@ pub async fn install(target: &Target, picks: &[String], line: impl FnMut(&str)) 
 }
 
 /// Runs `script` over a login with no forward and answers whether it exited 0.
-/// The script opens with `DRAY-SSH hello`; what it prints after that goes to
+/// The script opens with `CARBON-SSH hello`; what it prints after that goes to
 /// `line`, colour codes stripped. A login that never got that far fails the
 /// way a connect does.
 async fn run(target: &Target, script: &str, limit: Duration, mut line: impl FnMut(&str)) -> Result<bool, Failure> {
@@ -730,7 +730,7 @@ async fn run(target: &Target, script: &str, limit: Duration, mut line: impl FnMu
             if logged_in {
                 line(&text);
             } else {
-                logged_in = text == "DRAY-SSH hello";
+                logged_in = text == "CARBON-SSH hello";
             }
         }
         (logged_in, child.wait().await.is_ok_and(|s| s.success()))
@@ -784,13 +784,13 @@ pub fn terminal_line(target: &Target, command: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Against a real server: `DRAY_SSH_TEST=user@host` and something listening
-    /// on `DRAY_SSH_TEST_PORT` there.
+    /// Against a real server: `CARBON_SSH_TEST=user@host` and something listening
+    /// on `CARBON_SSH_TEST_PORT` there.
     #[tokio::test]
     #[ignore]
     async fn forwards_a_real_dev_server() {
-        let target = parse(&std::env::var("DRAY_SSH_TEST").unwrap()).unwrap();
-        let remote: u16 = std::env::var("DRAY_SSH_TEST_PORT").unwrap().parse().unwrap();
+        let target = parse(&std::env::var("CARBON_SSH_TEST").unwrap()).unwrap();
+        let remote: u16 = std::env::var("CARBON_SSH_TEST_PORT").unwrap().parse().unwrap();
         let mut forward = forward(&target, remote).await.unwrap();
         let body = crate::http().get(format!("http://localhost:{}/", forward.port)).send().await.unwrap().text().await.unwrap();
         assert!(!body.is_empty());
@@ -872,11 +872,11 @@ mod tests {
         assert_eq!(r(22, Some("vps")).known_as(), "vps");
     }
 
-    /// `DRAY_TEST_SSH="ssh root@host" cargo test ssh::tests::opens_a_live_tunnel -- --ignored`
+    /// `CARBON_TEST_SSH="ssh root@host" cargo test ssh::tests::opens_a_live_tunnel -- --ignored`
     #[tokio::test]
     #[ignore]
     async fn opens_a_live_tunnel() {
-        let target = parse(&std::env::var("DRAY_TEST_SSH").expect("DRAY_TEST_SSH")).unwrap();
+        let target = parse(&std::env::var("CARBON_TEST_SSH").expect("CARBON_TEST_SSH")).unwrap();
         let stages = Mutex::new(Vec::new());
         let tunnel = open(&target, |s| stages.lock().unwrap().push(s)).await.map_err(|f| f.message).unwrap();
         assert_eq!(tunnel.token.len(), 64);
@@ -884,18 +884,18 @@ mod tests {
         tokio::net::TcpStream::connect(("127.0.0.1", tunnel.port)).await.expect("forwarded port answers");
     }
 
-    /// A Linux login with no Dray on it, which this installs: `DRAY_TEST_INSTALL="ssh me@host"`,
-    /// and `DRAY_TEST_PICKS="git,gh"` for what else to install.
+    /// A Linux login with no Carbon on it, which this installs: `CARBON_TEST_INSTALL="ssh me@host"`,
+    /// and `CARBON_TEST_PICKS="git,gh"` for what else to install.
     #[tokio::test]
     #[ignore]
     async fn installs_on_a_live_server() {
-        let target = parse(&std::env::var("DRAY_TEST_INSTALL").expect("DRAY_TEST_INSTALL")).unwrap();
+        let target = parse(&std::env::var("CARBON_TEST_INSTALL").expect("CARBON_TEST_INSTALL")).unwrap();
         let fix = open(&target, |_| {}).await.err().and_then(|f| f.fix);
-        assert_eq!(fix, Some(Fix::Install), "Dray is already there");
+        assert_eq!(fix, Some(Fix::Install), "Carbon is already there");
         let survey = survey(&target).await.map_err(|f| f.message).unwrap();
         println!("{survey:#?}");
         assert_eq!(survey.os, "Linux");
-        let picks: Vec<String> = std::env::var("DRAY_TEST_PICKS")
+        let picks: Vec<String> = std::env::var("CARBON_TEST_PICKS")
             .map(|p| p.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect())
             .unwrap_or_default();
         install(&target, &picks, |line| println!("| {line}")).await.map_err(|f| f.message).unwrap();
@@ -904,11 +904,11 @@ mod tests {
     }
 
     /// A host `known_hosts` does not list yet — the VPS by a nip.io name works:
-    /// `DRAY_TEST_SSH_NEW="root@1.2.3.4.nip.io"`. Removes the key it wrote.
+    /// `CARBON_TEST_SSH_NEW="root@1.2.3.4.nip.io"`. Removes the key it wrote.
     #[tokio::test]
     #[ignore]
     async fn trusts_a_live_host() {
-        let target = parse(&std::env::var("DRAY_TEST_SSH_NEW").expect("DRAY_TEST_SSH_NEW")).unwrap();
+        let target = parse(&std::env::var("CARBON_TEST_SSH_NEW").expect("CARBON_TEST_SSH_NEW")).unwrap();
         let fix = open(&target, |_| {}).await.err().and_then(|f| f.fix);
         let Some(Fix::TrustHost { fingerprint, .. }) = fix else { panic!("not an unknown host: {fix:?}") };
         assert!(trust(&target, "SHA256:not-it").await.unwrap_err().contains("different key"));
@@ -923,7 +923,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn a_live_terminal_line_finds_agents() {
-        let target = parse(&std::env::var("DRAY_TEST_SSH").expect("DRAY_TEST_SSH")).unwrap();
+        let target = parse(&std::env::var("CARBON_TEST_SSH").expect("CARBON_TEST_SSH")).unwrap();
         for agent in ["claude", "codex", "pi", "fx", "grok"] {
             let line = terminal_line(&target, &format!("{agent} --version"));
             let out = Command::new("/bin/sh").args(["-c", &line]).stdin(Stdio::null()).output().await.unwrap();
@@ -931,11 +931,11 @@ mod tests {
         }
     }
 
-    /// Prints what each line in `DRAY_TEST_SSH_FAILS` (`;`-separated) fails with.
+    /// Prints what each line in `CARBON_TEST_SSH_FAILS` (`;`-separated) fails with.
     #[tokio::test]
     #[ignore]
     async fn says_why_live_lines_fail() {
-        for line in std::env::var("DRAY_TEST_SSH_FAILS").expect("DRAY_TEST_SSH_FAILS").split(';') {
+        for line in std::env::var("CARBON_TEST_SSH_FAILS").expect("CARBON_TEST_SSH_FAILS").split(';') {
             match open(&parse(line).unwrap(), |_| {}).await {
                 Ok(_) => println!("{line}\n  connected"),
                 Err(f) => println!("{line}\n  {} | permanent={} | {:?}", f.message, f.permanent, f.fix),

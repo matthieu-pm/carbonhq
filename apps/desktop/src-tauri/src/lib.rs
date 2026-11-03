@@ -36,7 +36,7 @@ pub mod chromium;
 mod trackpad;
 #[cfg(all(feature = "desktop", target_os = "macos"))]
 mod cli;
-// `dray browser` on a server: a headless Chromium under the same verbs the
+// `carbon browser` on a server: a headless Chromium under the same verbs the
 // Mac's CEF answers. In the desktop build too, since that binary is also the
 // Mac's background server. See HEADLESS-PLAN.md.
 #[cfg(any(feature = "serve", feature = "desktop"))]
@@ -95,7 +95,7 @@ pub mod updater;
 
 /// Whether this is a `tauri dev` build. Always false off the desktop: the dev
 /// split exists so a dev app can run beside the release one, and a server
-/// gets the same through `DRAY_HOME`.
+/// gets the same through `CARBON_HOME`.
 pub fn is_dev() -> bool {
     #[cfg(feature = "desktop")]
     let dev = tauri::is_dev();
@@ -106,7 +106,7 @@ pub fn is_dev() -> bool {
 
 pub(crate) static SERVER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Whether this process is a server — `dray-serve`, or the app's binary run
+/// Whether this process is a server — `carbon-serve`, or the app's binary run
 /// as the Mac's background server — rather than the app with a window. One
 /// binary is both on a Mac, so this is a reading at runtime, not a feature.
 pub fn is_server() -> bool {
@@ -171,7 +171,7 @@ pub fn http() -> &'static reqwest::Client {
         // use ring. Err means one of them installed it first.
         let _ = rustls::crypto::ring::default_provider().install_default();
         reqwest::Client::builder()
-            .user_agent(concat!("Dray/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("Carbon/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("reqwest client")
     })
@@ -195,7 +195,7 @@ async fn send_msg(
     branch: Option<&str>,
     use_worktree: bool,
     worktree_name: Option<&str>,
-    // A draft `dray draft new --base` saved, opened and sent from the
+    // A draft `carbon draft new --base` saved, opened and sent from the
     // composer. `None` for everything else the composer sends.
     base_ref: Option<&str>,
     is_new_session: bool,
@@ -211,8 +211,8 @@ async fn send_msg(
 
     // Reported here rather than inside `SessionManager::send_msg`, which is the
     // chokepoint for *prompts* and not for people: the orchestration socket
-    // reaches that function directly, both to relay a `dray send` and to start
-    // a session `dray new` asked for, and an agent finishing at 3am would mark
+    // reaches that function directly, both to relay a `carbon send` and to start
+    // a session `carbon new` asked for, and an agent finishing at 3am would mark
     // the day active with nobody in the room. A Tauri command is reachable from
     // the webview alone, so getting here means somebody pressed send. Not for
     // another Mac's app sending here: that reader was active on their own
@@ -222,7 +222,7 @@ async fn send_msg(
     }
 
     // A draft keeps its base as written, a session id among the spellings, so
-    // it is resolved here the way `dray draft start` resolves it.
+    // it is resolved here the way `carbon draft start` resolves it.
     let base_ref = match base_ref {
         Some(base) if is_new_session => Some(orchestration::resolve_base(base, cwd).await?),
         _ => None,
@@ -264,7 +264,7 @@ async fn send_msg(
         )
         .await?;
     // The new entry rides back to the caller alone, so every other client — the
-    // app beside an Island or a phone that started it — hears of it as `dray new`'s
+    // app beside an Island or a phone that started it — hears of it as `carbon new`'s
     // sessions are heard of. The caller's own copy replaces itself.
     if let Some(snap) = &outcome.snapshot {
         sink.emit(orchestration::SESSION_CREATED, &snap.index_item).ok();
@@ -321,7 +321,7 @@ async fn unavailable_reason(harness: harness::Harness) -> (String, bool) {
     // Asked before drivability, and the order is the whole of it. A CLI that is
     // not on the machine is missing whatever this build could do with it, and
     // the install command is the answer — the same one Claude and Codex give.
-    // Checking drivability first told a reader with no pi at all that Dray
+    // Checking drivability first told a reader with no pi at all that Carbon
     // cannot run pi, which is true, useless, and hides the one thing they could
     // have done about it.
     if !binpath::agent_installed(harness).await {
@@ -331,7 +331,7 @@ async fn unavailable_reason(harness: harness::Harness) -> (String, bool) {
         );
     }
 
-    (format!("Dray can't run {label} sessions yet."), false)
+    (format!("Carbon can't run {label} sessions yet."), false)
 }
 
 #[derive(serde::Serialize, ts_rs::TS)]
@@ -432,7 +432,7 @@ fn track_feature(feature: String, target: Option<BrowserTarget>) {
     analytics::track("feature_used", props);
 }
 
-/// What a page the reader opened in Dray's browser was, as `browser_open`
+/// What a page the reader opened in Carbon's browser was, as `browser_open`
 /// reports it: a dev server on this machine or its network, or anything else.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
@@ -471,7 +471,7 @@ fn track_render_error(code: Option<u32>, frames: Vec<String>) {
 /// not know.
 ///
 /// Codex and fx answer with their **skills**, since the rest of what each draws
-/// behind a slash is TUI actions Dray already owns in its chrome. Codex is asked
+/// behind a slash is TUI actions Carbon already owns in its chrome. Codex is asked
 /// (`skills/list`); fx publishes nothing on the wire at all, so its roots are
 /// walked on disk. Only `Other` answers none, which is the honest picker for a
 /// CLI this build has never heard of.
@@ -801,15 +801,15 @@ pub fn run() {
             analytics::track("app_started", serde_json::json!({}));
             // The guaranteed half of `track_active_day`: `focus.ts` reports focus
             // *changes*, so a window that comes up already frontmost never
-            // reports gaining it, and somebody who opens Dray, works and quits
+            // reports gaining it, and somebody who opens Carbon, works and quits
             // without switching apps would go uncounted. Free to state beside
             // the other two sites — all three claim one daily key.
             analytics::track_active_day();
 
             Ok(())
         })
-        .register_asynchronous_uri_scheme_protocol("drayserver", |_ctx, request, responder| {
-            // `drayserver://localhost/?server=<id>&path=<path>`: a remote
+        .register_asynchronous_uri_scheme_protocol("carbonserver", |_ctx, request, responder| {
+            // `carbonserver://localhost/?server=<id>&path=<path>`: a remote
             // server's file, fetched with its token in a header.
             let query = request.uri().query().unwrap_or_default().to_string();
             tauri::async_runtime::spawn(async move {
@@ -826,7 +826,7 @@ pub fn run() {
                         .header("Content-Type", kind)
                         .body(body),
                     Err(e) => {
-                        eprintln!("[drayserver {server}] {path}: {e}");
+                        eprintln!("[carbonserver {server}] {path}: {e}");
                         tauri::http::Response::builder().status(404).body(Vec::new())
                     }
                 };

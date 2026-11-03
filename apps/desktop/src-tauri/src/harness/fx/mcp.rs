@@ -2,12 +2,12 @@
 //!
 //! **`fx acp` reads no MCP config of its own** — the ACP client owns the list,
 //! so `session/new` with `mcpServers: []` is literally "this session has no MCP
-//! servers" and fx honours it. That is what left Dray's fx sessions with none
+//! servers" and fx honours it. That is what left Carbon's fx sessions with none
 //! while the same machine's `fx` shell had all of them (DRA-220). So the list
 //! is read here, off `~/.fx/mcp.json`, the file `fx mcp add` writes and
 //! `fx mcp path` names.
 //!
-//! **Dray forwards only what the user already wrote into their own fx config.**
+//! **Carbon forwards only what the user already wrote into their own fx config.**
 //! A literal `headers` entry, or a `header_env`/`bearer_token_env` naming an
 //! environment variable. **A bearer token has exactly one spelling,
 //! `bearer_token_env`**: fx refuses a literal `Authorization` under `headers`
@@ -49,7 +49,7 @@
 //!
 //! Project-scoped `.mcp.json` is deliberately not read. A repo-supplied server
 //! names a command to execute, so honouring one would make cloning a hostile
-//! repo enough to run it, and Dray has no trust prompt to put in front of that.
+//! repo enough to run it, and Carbon has no trust prompt to put in front of that.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -90,7 +90,7 @@ struct ServerConfig {
     bearer_token_env: Option<String>,
 }
 
-/// Every server fx is configured with that Dray can hand over, in ACP's shape.
+/// Every server fx is configured with that Carbon can hand over, in ACP's shape.
 ///
 /// Answers an empty list for a missing, unreadable or unparseable file —
 /// a session with no MCP servers is the resting state, and failing the spawn
@@ -389,7 +389,7 @@ mod tests {
     }
 
     /// The motivating case: an OAuth-authenticated HTTP server carries no
-    /// header Dray may fill, and fx will not lend its own credentials. It has
+    /// header Carbon may fill, and fx will not lend its own credentials. It has
     /// to be **skipped** — passing it fails the whole `session/new`, since
     /// every ACP server is required. fx's own reading is what says so.
     #[test]
@@ -445,7 +445,7 @@ mod tests {
         assert!(parse_auth_states("No MCP servers configured.\n").is_empty());
     }
 
-    /// A stdio server beside it still goes over, so one server Dray cannot
+    /// A stdio server beside it still goes over, so one server Carbon cannot
     /// authenticate never costs the others.
     #[test]
     fn one_skipped_server_does_not_take_the_rest_with_it() {
@@ -566,7 +566,7 @@ mod tests {
     /// whatever this machine happens to be configured with.
     ///
     /// Read it beside `fx mcp list`: a server healthy there and absent here is
-    /// one Dray is skipping, and for an `auth=authenticated` HTTP server that
+    /// one Carbon is skipping, and for an `auth=authenticated` HTTP server that
     /// is the documented outcome, not a defect.
     #[tokio::test]
     #[ignore]

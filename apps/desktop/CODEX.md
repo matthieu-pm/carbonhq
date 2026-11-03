@@ -1,6 +1,6 @@
 # Codex, in plain terms
 
-Dray now runs two agents. This is what you need to know to work on the second
+Carbon now runs two agents. This is what you need to know to work on the second
 one. The full design, with the alternatives that were rejected and why, is in
 [CODEX-PLAN.md](CODEX-PLAN.md).
 
@@ -21,7 +21,7 @@ Three consequences:
   back as an error instead of a prompt that silently vanished.
 - **Silence is dangerous.** When Codex asks us something it stops and waits. Not
   answering hangs the turn with nothing on screen saying why.
-- **We are not in charge of ids.** Codex mints its own thread id. Dray has always
+- **We are not in charge of ids.** Codex mints its own thread id. Carbon has always
   minted the session id and had the CLI adopt it.
 
 ## How a Codex session runs
@@ -52,7 +52,7 @@ The code is four files under `src-tauri/src/harness/codex/`:
 |---|---|
 | `rpc.rs` | The JSON-RPC plumbing. One writer queue, a map of what we're waiting on, and a demux that sorts each line by whether it has an id, a method, or both. |
 | `parser.rs` | Wire shapes → typed Rust. Hand-written, because nobody publishes a schema. |
-| `mapper.rs` | Those → Dray's own `AgentEvent`s, the same vocabulary Claude Code maps onto. |
+| `mapper.rs` | Those → Carbon's own `AgentEvent`s, the same vocabulary Claude Code maps onto. |
 | `codex.rs` | Spawn, handshake, the read loop, and sending a turn. |
 
 That's the same `parser` / `mapper` split Claude Code uses, so a wire change
@@ -60,8 +60,8 @@ touches one file and a vocabulary change touches the other.
 
 ## Two ids, and ours stays in charge
 
-Dray's session id keys the log filename, the attachments directory, the index,
-and every `dray` command. All of those are written **before** the child starts —
+Carbon's session id keys the log filename, the attachments directory, the index,
+and every `carbon` command. All of those are written **before** the child starts —
 that's deliberate, so a session whose agent fails to launch is still visible.
 
 Codex's thread id can't do that job: it doesn't exist until the child answers.
@@ -106,7 +106,7 @@ tests — see `src-tauri/src/harness/codex/fixtures/README.md`.
 
 ## Things that would have bitten silently
 
-- **Codex echoes your prompt back** as a `userMessage` item. Dray already mints
+- **Codex echoes your prompt back** as a `userMessage` item. Carbon already mints
   its own — carrying the tree baseline, images and issue links, none of which
   the echo has. The mapper drops the echo, or every prompt would appear twice.
 - **A stale `codex` wins PATH.** There's a `codex-cli 0.29.0` in an nvm bin
@@ -121,7 +121,7 @@ tests — see `src-tauri/src/harness/codex/fixtures/README.md`.
   fires once and stays quiet for the rest of the turn.
 - **Steering works, and not through `turn/steer`.** The server exposes that
   method — it sits beside `turn/start` and `turn/interrupt` in the binary's
-  client-method list — and Dray never calls it. A prompt typed mid-turn goes out
+  client-method list — and Carbon never calls it. A prompt typed mid-turn goes out
   as an ordinary `turn/start`, which the server accepts on a thread that already
   has a turn running and folds into it. Verified live. `start_turn` awaits its
   answer for exactly this reason, so a turn that *cannot* be steered comes back
@@ -131,7 +131,7 @@ tests — see `src-tauri/src/harness/codex/fixtures/README.md`.
 - **An item kind we have not typed vanishes without a trace.** An unknown
   *method* files a parse failure; an unknown **item kind** falls into
   `ThreadItem::Other`, maps to nothing, and files no failure at all. A real
-  session made 62 tool calls and Dray drew 34 — `mcpToolCall`, `webSearch`,
+  session made 62 tool calls and Carbon drew 34 — `mcpToolCall`, `webSearch`,
   `imageView`, `subAgentActivity` and `collabAgentToolCall` all drew nothing,
   and the only way that surfaced was reading Codex's own rollout beside our log.
   `tool_kinds.jsonl` and `every_captured_tool_kind_draws_a_row` exist so the
@@ -146,7 +146,7 @@ tests — see `src-tauri/src/harness/codex/fixtures/README.md`.
   `apply_patch` rendered as lowercase wire tokens beside Claude's "Bash" and
   "Edited" until both were added to `TOOL_VERBS`. Any tool name a new mapper arm
   invents needs a row there in the same change.
-- **The server sends about eighty notifications and Dray draws nine.** Growing
+- **The server sends about eighty notifications and Carbon draws nine.** Growing
   the "seen, drawn as nothing" list one failure at a time makes the failure log
   useless, because every ordinary turn files gaps that are not gaps — an
   interrupted command narrates itself on
@@ -158,7 +158,7 @@ tests — see `src-tauri/src/harness/codex/fixtures/README.md`.
   strings -a <codex> | grep -o 'ServerNotificationthread/started.*setupCompleted'
   ```
 
-  What stays *unknown* is the rule. Surfaces Dray never opens — realtime voice,
+  What stays *unknown* is the rule. Surfaces Carbon never opens — realtime voice,
   fuzzy file search sessions, the Windows sandbox, config import — are left out
   deliberately, so one arriving is real news rather than more chatter.
 
@@ -195,9 +195,9 @@ inside it, so a write outside the workspace fails outright. That is why
 "approve for me" works the way it does: the agent runs freely *inside* the
 sandbox and only stops to ask when it needs to step outside.
 
-Codex's own UI names three combinations. Dray's stances land on them:
+Codex's own UI names three combinations. Carbon's stances land on them:
 
-| Dray | Codex | wire |
+| Carbon | Codex | wire |
 |---|---|---|
 | Ask every time | Ask for approval | `untrusted` + `workspace-write` |
 | Auto | Approve for me | `on-request` + `workspace-write` |
@@ -208,7 +208,7 @@ asking turned off, still inside the same sandbox. **Plan is hidden for Codex**:
 it maps onto read-only-and-ask, which is close, but it is a stance Codex never
 names. It is still mapped, because a spawned session inherits its parent's.
 
-`acceptEdits` was a sixth Dray stance and is gone. It applied edits without
+`acceptEdits` was a sixth Carbon stance and is gone. It applied edits without
 asking while still asking about commands — a promise too narrow to fit on a
 button beside Auto. Sessions started under it read back as Auto; the alias in
 `ApprovalPolicy` is what keeps their index entries loading.
@@ -226,12 +226,12 @@ is always a legal answer, so it is added when the server names none.
 
 ## Turn boundaries, and why the transcript ignores them
 
-Codex gives Dray what Claude Code cannot: real `turn/started` and
+Codex gives Carbon what Claude Code cannot: real `turn/started` and
 `turn/completed` lines, a `duration_ms` on the close, and a final summary
 message. Codex's own app uses them to collapse a whole turn behind one
 "Worked for 19s" header, from the moment you send.
 
-Dray keeps its own grouping instead, deliberately. The transcript infers turns
+Carbon keeps its own grouping instead, deliberately. The transcript infers turns
 for Claude and segments them at **queued prompts**, so a message typed mid-turn
 stays where it was typed — and *when* the reader said something is part of what
 they said. Codex's single group loses that. The duration is mapped and
@@ -327,11 +327,11 @@ before the prompt goes out. Measured on 0.164: the fork answers the parent's
 turns and remembers them, works while the parent is loaded in another
 app-server, and resumes in a fresh process. It carries the **parent's own**
 `developerInstructions` — the ones sent on the fork, or on a later resume, are
-not read — so a Dray parent's rules come across with it. Its model and effort
+not read — so a Carbon parent's rules come across with it. Its model and effort
 are the config's, not the parent's, which is why the fork call restates them.
 
 **An image is a `localImage` input item** naming the archived copy under
-`~/.dray/attachments`, so Codex reads the file itself.
+`~/.carbon/attachments`, so Codex reads the file itself.
 
 ## What doesn't, yet
 
@@ -352,9 +352,9 @@ thread opened under sends that answered policy. Mid-turn the controls stay
 locked, since a steered `turn/start` ignores them.
 
 Worktrees **do** work, by a different route. Claude gets a `-w` flag and makes
-its own tree; Codex has none, so Dray creates the tree first — resolving the
+its own tree; Codex has none, so Carbon creates the tree first — resolving the
 same `origin/HEAD` base the CLI would have — and starts Codex inside it. That is
-the route `dray new --from` already took, so a Codex session's tree is on disk
+the route `carbon new --from` already took, so a Codex session's tree is on disk
 and clean before the first turn, which makes its changes baseline exact rather
 than the approximation a `-w` session starts with.
 

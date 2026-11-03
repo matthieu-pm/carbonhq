@@ -15,7 +15,7 @@ export default function (pi) {
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "probe_tool") return;
 
-    ctx.ui.setStatus("dray-probe", "probing");
+    ctx.ui.setStatus("carbon-probe", "probing");
     ctx.ui.notify("a notify from the probe extension", "info");
 
     const picked = await ctx.ui.select("Allow probe_tool?", [

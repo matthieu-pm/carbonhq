@@ -13,7 +13,7 @@ Click **New Task** at the top of the sidebar, or press `⌘N`. The composer sits
 
 <Steps>
   <Step title="Attach a project">
-    Click **Attach project** in the control row. The dialog lists your GitHub repositories, read through `gh`. Pick one and click **Attach**: Dray clones it into `~/dray`. A repository you have already cloned is marked **Cloned**; one already attached is marked **Attached**.
+    Click **Attach project** in the control row. The dialog lists your GitHub repositories, read through `gh`. Pick one and click **Attach**: Carbon clones it into `~/carbon`. A repository you have already cloned is marked **Cloned**; one already attached is marked **Attached**.
 
     For a folder already on your Mac, click **Select folder**, or **Enter path** and type it, like `~/code/project`.
 
@@ -22,26 +22,26 @@ Click **New Task** at the top of the sidebar, or press `⌘N`. The composer sits
   <Step title="Pick an agent and a model">
     Open the model picker, the control showing an agent mark and a model name. The row of marks at the top is the agent: Claude Code, Codex, pi, fx and Grok Build. Click one, then pick a model from the list below it. `⌘⇧A` steps to the next agent, and `⇧Tab` to the next model.
 
-    A model with effort levels opens a submenu when you hover it. **Fast mode** sits under the models where the agent and model have one. See [Agents](/using-dray/agents) for what each one offers.
+    A model with effort levels opens a submenu when you hover it. **Fast mode** sits under the models where the agent and model have one. See [Agents](/using-carbon/agents) for what each one offers.
   </Step>
   <Step title="Choose where it runs">
-    Turn on **Worktree** to give the session its own checkout. Dray makes a new git worktree under `<project>/.claude/worktrees/`, on a branch named `worktree-<name>`. The line beside the switch shows where it starts, like `from origin/main`. Your own checkout is left alone, so several agents can work in one project at once. `⌘⇧T` toggles it. See [Worktrees](/using-dray/worktrees).
+    Turn on **Worktree** to give the session its own checkout. Carbon makes a new git worktree under `<project>/.claude/worktrees/`, on a branch named `worktree-<name>`. The line beside the switch shows where it starts, like `from origin/main`. Your own checkout is left alone, so several agents can work in one project at once. `⌘⇧T` toggles it. See [Worktrees](/using-carbon/worktrees).
 
-    Leave it off to run in the project's own folder. Then the branch picker shows the branch checked out there. Picking another branch checks it out for real. If you have uncommitted files, Dray asks first:
+    Leave it off to run in the project's own folder. Then the branch picker shows the branch checked out there. Picking another branch checks it out for real. If you have uncommitted files, Carbon asks first:
 
     - **Stash changes**: they stay on the current branch, saved for later.
     - **Bring changes**: they move to the new branch with you.
     - **Cancel**: nothing changes.
   </Step>
   <Step title="Pick a permission mode">
-    The last control sets when the agent asks before it acts. **Auto** is the default. See [Permissions](/using-dray/permissions).
+    The last control sets when the agent asks before it acts. **Auto** is the default. See [Permissions](/using-carbon/permissions).
   </Step>
   <Step title="Send a prompt">
-    Type what you want done and press `⏎`. `⇧⏎` adds a new line. In the prompt you can mention files with `@`, run commands and skills with `/`, and attach images and files with `⌘⌥O` or by dropping them on the window. See [The composer](/using-dray/composer).
+    Type what you want done and press `⏎`. `⇧⏎` adds a new line. In the prompt you can mention files with `@`, run commands and skills with `/`, and attach images and files with `⌘⌥O` or by dropping them on the window. See [The composer](/using-carbon/composer).
   </Step>
 </Steps>
 
-Project, branch, worktree and agent are fixed once the session starts, so those controls go away. Model, effort, fast mode and permission mode stay, and you can change them between turns. Some agents take a change during a turn too: see [Agents](/using-dray/agents).
+Project, branch, worktree and agent are fixed once the session starts, so those controls go away. Model, effort, fast mode and permission mode stay, and you can change them between turns. Some agents take a change during a turn too: see [Agents](/using-carbon/agents).
 
 ## What the transcript shows
 
@@ -63,7 +63,7 @@ If you type while the agent works, the button sends instead. Your prompt waits u
 
 The session appears in the sidebar as soon as you send. Its row shows a title, and shows that the agent is working. When the turn ends, the row gets a green mark until you look at it. A yellow mark means the agent is waiting on you: a permission or a question.
 
-You can switch to other sessions while this one runs. It keeps going, and keeps going after you quit Dray. See [Sessions](/using-dray/sessions).
+You can switch to other sessions while this one runs. It keeps going, and keeps going after you quit Carbon. See [Sessions](/using-carbon/sessions).
 
 Shortcuts here are the defaults. You can change any of them in Settings → Shortcuts.
 

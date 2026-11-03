@@ -1,5 +1,5 @@
-//! Remote Dray servers the desktop app is connected to, beside its own
-//! in-process core. Each is a `dray-serve` reached over its WebSocket; this
+//! Remote Carbon servers the desktop app is connected to, beside its own
+//! in-process core. Each is a `carbon-serve` reached over its WebSocket; this
 //! module holds the connections so the token never leaves Rust, and the
 //! frontend reaches a server through `server_invoke` and hears it through
 //! `server_event`. See SERVERS-PLAN.md.
@@ -184,7 +184,7 @@ fn latest(conn: &Conn) -> Option<String> {
     (behind && conn.saved.ignored.as_ref() != Some(&newest)).then_some(newest)
 }
 
-/// The newest CLI releases out, each channel's. A `dray-serve` ships in them.
+/// The newest CLI releases out, each channel's. A `carbon-serve` ships in them.
 #[derive(Debug, Clone, Default)]
 struct Releases {
     stable: Option<semver::Version>,
@@ -246,8 +246,8 @@ async fn refresh_releases(fresh: Duration) -> Result<(), String> {
     }
     let read = async {
         let list: Vec<Value> = crate::http()
-            .get("https://api.github.com/repos/monorepo-labs/dray/releases?per_page=100")
-            .header("User-Agent", "dray")
+            .get("https://api.github.com/repos/matthieu-pm/carbonhq/releases?per_page=100")
+            .header("User-Agent", "carbon")
             .timeout(Duration::from_secs(10))
             .send()
             .await?
@@ -510,7 +510,7 @@ async fn run(id: String) {
                     json!({ "feature": "server_connected", "via": via }),
                 );
                 // This Mac's rule: a server running older code than its own
-                // binary restarts once idle. Covers a `dray update` run by
+                // binary restarts once idle. Covers a `carbon update` run by
                 // hand there too.
                 if welcome.stale {
                     let restart = json!({ "id": 0, "cmd": "restart_when_idle", "args": {} });
@@ -532,7 +532,7 @@ async fn run(id: String) {
                     &id,
                     ServerStatus::Disconnected,
                     None,
-                    Some("The server's tunnel has a new address. Paste it here: dray service status on the server prints it.".into()),
+                    Some("The server's tunnel has a new address. Paste it here: carbon service status on the server prints it.".into()),
                     Some(ssh::Fix::NewAddress),
                 );
                 return;
@@ -757,7 +757,7 @@ pub async fn set_server_address(id: String, url: String) -> Result<(), String> {
     save().await
 }
 
-/// A name is how `dray --machine <name>` picks one server, so two may not
+/// A name is how `carbon --machine <name>` picks one server, so two may not
 /// share it. `except` is the server being renamed or re-added, which may keep
 /// its own.
 fn refuse_taken(list: &[Conn], name: &str, except: Option<&str>) -> Result<(), String> {
@@ -838,14 +838,14 @@ pub async fn add_ssh_server(line: String, name: Option<String>) -> Result<Server
     added.ok_or_else(|| failed("the server was removed while it was being added".into()))
 }
 
-/// What a server with no Dray on it already has, for the install dialog.
+/// What a server with no Carbon on it already has, for the install dialog.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn survey_server(line: String) -> Result<ssh::Survey, ssh::Failure> {
     let target = ssh::parse(&line).map_err(|message| ssh::Failure { message, fix: None, permanent: true })?;
     ssh::survey(&target).await
 }
 
-/// Installs Dray and the picked tools on a server and starts it there. Its
+/// Installs Carbon and the picked tools on a server and starts it there. Its
 /// output streams as `server_installing`, keyed by the line, so a dialog
 /// closed meanwhile simply stops listening.
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -1044,7 +1044,7 @@ pub async fn update_server(server: String) -> Result<String, String> {
         Err(err) => {
             let err = err.as_str().map_or_else(|| err.to_string(), str::to_owned);
             return Err(if err.starts_with("unknown command") {
-                "This server is too old to update from the app. Update it once on the server: dray update, then restart it.".into()
+                "This server is too old to update from the app. Update it once on the server: carbon update, then restart it.".into()
             } else {
                 err
             });
@@ -1174,7 +1174,7 @@ fn live_forward(conn: &mut Conn, port: u16) -> Option<u16> {
 
 /// A file on a remote server — an attachment, a recording — fetched through
 /// its `/file` route with the token in a header, for the webview's
-/// `drayserver://` scheme. The token stays out of every URL the page holds.
+/// `carbonserver://` scheme. The token stays out of every URL the page holds.
 /// Attachments are kept in [`FILES`], since a transcript drawn again asks
 /// for every picture in it again and the webview keeps none of a custom
 /// scheme's answers.
@@ -1196,15 +1196,15 @@ pub async fn fetch_file(server: &str, path: &str) -> Result<(String, Vec<u8>), S
 /// Written once under a fresh uuid (`attachments/<session>/<uuid>.<ext>`)
 /// and never rewritten, so a copy can't go stale. Recordings are kept by a
 /// name a re-recording overwrites, so they are always fetched. The uuid is
-/// what tells Dray's own from a project's `attachments` folder, which the
+/// what tells Carbon's own from a project's `attachments` folder, which the
 /// Files view also reads through `/file` and whose files do change.
 fn is_attachment(path: &str) -> bool {
     let path = std::path::Path::new(path);
-    let named_by_dray = path
+    let named_by_carbon = path
         .file_stem()
         .and_then(|s| s.to_str())
         .is_some_and(|s| uuid::Uuid::parse_str(s).is_ok());
-    named_by_dray
+    named_by_carbon
         && path
             .components()
             .rev()
@@ -1339,7 +1339,7 @@ pub async fn upload_attachment(server: String, path: String, id: String) -> Resu
     // and refuses it, which is the one cure worth naming.
     if !response.status().is_success() {
         return Err(format!(
-            "Could not upload {name} ({}). Update Dray on the server if it is older than this app.",
+            "Could not upload {name} ({}). Update Carbon on the server if it is older than this app.",
             response.status()
         ));
     }
@@ -1353,10 +1353,10 @@ mod tests {
     #[test]
     fn keeps_attachments_alone_within_budget() {
         assert!(is_attachment(
-            "/home/u/.dray/attachments/s1/019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b.png"
+            "/home/u/.carbon/attachments/s1/019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b.png"
         ));
         assert!(!is_attachment("/repo/attachments/demo/clip.mp4"));
-        assert!(!is_attachment("/home/u/.dray/browser/recordings/s1/flow.mp4"));
+        assert!(!is_attachment("/home/u/.carbon/browser/recordings/s1/flow.mp4"));
         assert!(!is_attachment("/home/u/attachments/flow.mp4"));
 
         let key = |n: usize| ("srv".to_string(), format!("/a/{n}"));
@@ -1482,7 +1482,7 @@ mod tests {
 
     #[test]
     fn names_a_server_by_its_host() {
-        assert_eq!(default_name("ws://dray-vps:7317"), "dray-vps");
+        assert_eq!(default_name("ws://carbon-vps:7317"), "carbon-vps");
     }
 
     async fn next_event(rx: &mut mpsc::UnboundedReceiver<(String, Value)>, want: impl Fn(&str, &Value) -> bool) -> Value {
@@ -1498,20 +1498,20 @@ mod tests {
         .expect("no such event in time")
     }
 
-    /// Against a running `dray-serve`, in a throwaway `DRAY_HOME`:
+    /// Against a running `carbon-serve`, in a throwaway `CARBON_HOME`:
     ///
     /// ```text
-    /// DRAY_TEST_SERVER=127.0.0.1:7318 DRAY_TEST_TOKEN=$(cat …/serve-token) \
+    /// CARBON_TEST_SERVER=127.0.0.1:7318 CARBON_TEST_TOKEN=$(cat …/serve-token) \
     ///   cargo test servers::tests::talks_to_a_live_server -- --ignored
     /// ```
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn talks_to_a_live_server() {
-        let url = std::env::var("DRAY_TEST_SERVER").expect("DRAY_TEST_SERVER");
-        let token = std::env::var("DRAY_TEST_TOKEN").expect("DRAY_TEST_TOKEN");
-        let home = std::env::temp_dir().join(format!("dray-servers-test-{}", uuid::Uuid::new_v4().simple()));
+        let url = std::env::var("CARBON_TEST_SERVER").expect("CARBON_TEST_SERVER");
+        let token = std::env::var("CARBON_TEST_TOKEN").expect("CARBON_TEST_TOKEN");
+        let home = std::env::temp_dir().join(format!("carbon-servers-test-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&home).unwrap();
-        std::env::set_var("DRAY_HOME", &home);
+        std::env::set_var("CARBON_HOME", &home);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         start(Sink::new(move |event, payload| {
@@ -1551,24 +1551,24 @@ mod tests {
         assert!(gone.as_str().unwrap().contains("no server"));
     }
 
-    /// Against a server running `dray server tunnel on`, reached over SSH only
+    /// Against a server running `carbon server tunnel on`, reached over SSH only
     /// to restart it. A server added by its tunnel address comes back at the
     /// same address after a restart, with nothing asked of the reader; an SSH
     /// server records the address and connects by it when the login fails.
     ///
     /// ```text
-    /// DRAY_TEST_SSH="ssh root@host" cargo test servers::tests::keeps_the_tunnels_address -- --ignored --nocapture
+    /// CARBON_TEST_SSH="ssh root@host" cargo test servers::tests::keeps_the_tunnels_address -- --ignored --nocapture
     /// ```
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn keeps_the_tunnels_address() {
-        let line = std::env::var("DRAY_TEST_SSH").expect("DRAY_TEST_SSH");
+        let line = std::env::var("CARBON_TEST_SSH").expect("CARBON_TEST_SSH");
         let target = ssh::parse(&line).unwrap();
         let on_server = |cmd: &str| {
             let out = std::process::Command::new("ssh").args(["-o", "BatchMode=yes", "--", &target.dest, cmd]).output().unwrap();
             String::from_utf8_lossy(&out.stdout).trim().to_string()
         };
-        let address = || on_server("cat ~/.dray/tunnel-url");
+        let address = || on_server("cat ~/.carbon/tunnel-url");
         let connected = |what: &str| {
             let t0 = std::time::Instant::now();
             while list_servers()[0].status != ServerStatus::Connected {
@@ -1577,11 +1577,11 @@ mod tests {
             }
             eprintln!("connected {what} in {:?}", t0.elapsed());
         };
-        let home = std::env::temp_dir().join(format!("dray-tunnel-test-{}", uuid::Uuid::new_v4().simple()));
+        let home = std::env::temp_dir().join(format!("carbon-tunnel-test-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&home).unwrap();
-        std::env::set_var("DRAY_HOME", &home);
+        std::env::set_var("CARBON_HOME", &home);
         start(Sink::new(|_, _| {})).await;
-        let token = on_server("cat ~/.dray/serve-token");
+        let token = on_server("cat ~/.carbon/serve-token");
         let first = address();
         assert!(first.ends_with(".opentunnel.xyz"), "is the tunnel on? {first}");
 
@@ -1591,7 +1591,7 @@ mod tests {
         assert!(server_invoke(added.id.clone(), "list_projects".into(), json!({})).await.is_ok());
 
         // A restart: the same address, and the row reconnects on its own.
-        on_server("systemctl --user restart dray");
+        on_server("systemctl --user restart carbon");
         let t0 = std::time::Instant::now();
         while address() != first {
             assert!(t0.elapsed() < Duration::from_secs(60), "the address moved or never came back: {}", address());
@@ -1626,19 +1626,19 @@ mod tests {
         remove_server(added.id).await.unwrap();
     }
 
-    /// Through a real SSH login, in a throwaway `DRAY_HOME`. Kills the `ssh`
+    /// Through a real SSH login, in a throwaway `CARBON_HOME`. Kills the `ssh`
     /// process mid-connection and waits for the loop to log in again.
     ///
     /// ```text
-    /// DRAY_TEST_SSH="ssh root@host" cargo test servers::tests::reconnects_through_ssh -- --ignored
+    /// CARBON_TEST_SSH="ssh root@host" cargo test servers::tests::reconnects_through_ssh -- --ignored
     /// ```
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn reconnects_through_ssh() {
-        let line = std::env::var("DRAY_TEST_SSH").expect("DRAY_TEST_SSH");
-        let home = std::env::temp_dir().join(format!("dray-ssh-test-{}", uuid::Uuid::new_v4().simple()));
+        let line = std::env::var("CARBON_TEST_SSH").expect("CARBON_TEST_SSH");
+        let home = std::env::temp_dir().join(format!("carbon-ssh-test-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&home).unwrap();
-        std::env::set_var("DRAY_HOME", &home);
+        std::env::set_var("CARBON_HOME", &home);
         let (tx, mut rx) = mpsc::unbounded_channel();
         start(Sink::new(move |event, payload| {
             let _ = tx.send((event.to_string(), payload));

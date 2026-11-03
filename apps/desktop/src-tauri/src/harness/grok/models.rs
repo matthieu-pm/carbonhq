@@ -1,7 +1,7 @@
 //! Which models Grok Build can run here, asked of grok.
 //!
 //! Codex's shape one harness over, and for its reason: a model xAI ships would
-//! otherwise be unpickable until Dray ships too. The difference is where the
+//! otherwise be unpickable until Carbon ships too. The difference is where the
 //! answer lives — Codex has a `model/list` method and grok puts the whole thing
 //! on the handshake, so the probe is an `initialize` that opens no session and
 //! writes nothing to disk.
@@ -51,7 +51,7 @@ pub async fn list() -> Vec<Model> {
 /// Every model including the fast twins the picker hides.
 ///
 /// **Hidden is never unrunnable** — the gateway's own rule next door. A session
-/// recorded on `grok-4.7-build-fast`, whether by `dray new --model` or by a
+/// recorded on `grok-4.7-build-fast`, whether by `carbon new --model` or by a
 /// build that listed it, has to resolve to a real row: filtered here it would
 /// answer `None`, spawn with no model at all and record its own model as unset,
 /// which is silent on screen and in the log.

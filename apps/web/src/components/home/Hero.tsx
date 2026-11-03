@@ -44,7 +44,7 @@ export function Hero() {
               nothing. */}
           <img
             src="/hero-mobile.webp"
-            alt="The Dray window: sessions in the sidebar, an agent's report in the chat, and its pull request's checks in the side panel."
+            alt="The Carbon window: sessions in the sidebar, an agent's report in the chat, and its pull request's checks in the side panel."
             width={1200}
             height={786}
             loading="lazy"
@@ -52,7 +52,7 @@ export function Hero() {
           />
           <img
             src="/hero-mobile-light.webp"
-            alt="The Dray window: sessions in the sidebar, an agent's report in the chat, and its pull request's checks in the side panel."
+            alt="The Carbon window: sessions in the sidebar, an agent's report in the chat, and its pull request's checks in the side panel."
             width={1440}
             height={920}
             loading="lazy"

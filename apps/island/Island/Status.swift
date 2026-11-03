@@ -31,7 +31,7 @@ struct AskCard: View {
                         .onTapGesture {
                             if NSEvent.modifierFlags.contains(.command) { Task { await composer.showInApp(key) } }
                         }
-                        .help("⌘-click to open in Dray")
+                        .help("⌘-click to open in Carbon")
                 }
                 Spacer(minLength: 0)
                 Text(composer.closeHint).font(.system(size: 12)).foregroundStyle(.white.opacity(0.3))

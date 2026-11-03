@@ -707,8 +707,8 @@
    using the palette's own token names throughout rather than colours picked to
    look close.
 
-   The one liberty: Dray's background is Catppuccin's `mantle` rather than `base`,
-   with `base` standing in as `--surface-raised`. Dray's ladder is tight near the
+   The one liberty: Carbon's background is Catppuccin's `mantle` rather than `base`,
+   with `base` standing in as `--surface-raised`. Carbon's ladder is tight near the
    bottom — background, inset chrome and card sit inside one narrow band — and
    starting at `base` leaves nothing real between it and `surface0`. Both are
    background tokens in the palette, so nothing is invented; the whole room is one
@@ -817,7 +817,7 @@
 
    **The foreground pair is deliberately not One Dark Pro's own, and this is the part
    worth reading.** Upstream's `editor.foreground` is `#abb2bf` at L 0.762, and its
-   description text sits at 0.566. Dray's dark ramp asks for 0.985 and 0.708 — so
+   description text sits at 0.566. Carbon's dark ramp asks for 0.985 and 0.708 — so
    taking the editor's values wholesale put *body prose* below the lightness this app
    uses for secondary labels, and every muted string in the chrome (`Pinned`, `All
    Projects`, a breadcrumb, a panel tab) below that again. It read as the theme being
@@ -860,7 +860,7 @@
 
    The page is `editor.background`, not the darker chrome Cobalt2 paints its sidebar
    with. That inverts how the theme dresses a VS Code window, deliberately: there the
-   navy is the surface you read, and in Dray the surface you read is the transcript,
+   navy is the surface you read, and in Carbon the surface you read is the transcript,
    which sits on `--background`. Taking the chrome colour instead would put the colour
    the theme is known for on cards and menus only.
 
@@ -875,7 +875,7 @@
    value in between to compromise on. So the outlier stands, on purpose.
 
    Comments here are blue and italic rather than grey — `--accent-thinking` is that
-   blue, since dimmed prose in a transcript is the nearest thing Dray has to one. */
+   blue, since dimmed prose in a transcript is the nearest thing Carbon has to one. */
 [data-theme="cobalt2"][data-mode="dark"] {
   --background: #193549; /* editor.background */
   --surface-raised: #243e51;
@@ -1347,7 +1347,7 @@
      `[data-theme][data-mode]` is unlayered, and unlayered beats `@layer
      utilities` whatever the specificity says.
 
-     Two tokens, not one. Every theme Dray ships is dark, so the backdrop alone
+     Two tokens, not one. Every theme Carbon ships is dark, so the backdrop alone
      is three near-blacks a millimetre apart — true, and useless as a picker. The
      card wedge is what tells them apart, and it is the surface the reader is
      about to see under every card in the app. */

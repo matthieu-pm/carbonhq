@@ -6,12 +6,12 @@
   "type": "module",
   "packageManager": "pnpm@11.9.0",
   "scripts": {
-    "app": "pnpm --filter dray run app",
-    "tauri": "pnpm --filter dray run tauri",
-    "web": "pnpm --filter @dray/web run dev",
-    "docs": "pnpm --filter @dray/docs run dev",
-    "build:app": "pnpm --filter dray run build",
-    "build:web": "pnpm --filter @dray/web run build",
-    "test": "pnpm --filter dray run test"
+    "app": "pnpm --filter carbon run app",
+    "tauri": "pnpm --filter carbon run tauri",
+    "web": "pnpm --filter @carbon/web run dev",
+    "docs": "pnpm --filter @carbon/docs run dev",
+    "build:app": "pnpm --filter carbon run build",
+    "build:web": "pnpm --filter @carbon/web run build",
+    "test": "pnpm --filter carbon run test"
   }
 }

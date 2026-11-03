@@ -1,5 +1,5 @@
-//! Other machines a Dray server reaches for `dray --machine`, in every server
-//! — a Linux `dray-serve`, a headless Mac, the Mac app's own background one
+//! Other machines a Carbon server reaches for `carbon --machine`, in every server
+//! — a Linux `carbon-serve`, a headless Mac, the Mac app's own background one
 //! (#760). The list is `servers.json` beside this server's sessions, tokens in
 //! `credentials.json` under `server:<id>`. Trust is per token: a machine
 //! reaches whatever it was handed a token for, in either direction.
@@ -24,7 +24,7 @@ use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 /// How long a probe or a reconnect may take to be admitted.
 pub const ADMIT: Duration = Duration::from_secs(5);
 
-/// A forwarded `dray session new` makes a worktree and spawns an agent before
+/// A forwarded `carbon session new` makes a worktree and spawns an agent before
 /// it answers.
 const CALL: Duration = Duration::from_secs(120);
 
@@ -272,7 +272,7 @@ pub fn explain(failure: ssh::Failure, login: &str) -> String {
             format!("{message} Add it from the app's Settings → Servers, which can install it.")
         }
         Some(ssh::Fix::Install) => {
-            format!("{message} Install it there first: curl -fsSL https://www.drayhq.com/install.sh | sh")
+            format!("{message} Install it there first: curl -fsSL https://www.carbonhq.com/install.sh | sh")
         }
         // A reconnect's fix, never an add's; the sentence already says it.
         Some(ssh::Fix::NewAddress) | None => message,
@@ -337,7 +337,7 @@ pub fn find(list: &[Saved], name: &str) -> Result<Saved, String> {
     }
     let matches: Vec<_> = list.iter().filter(|s| s.name == name).collect();
     match matches.as_slice() {
-        [] => Err(format!("no machine named {name} — `dray machine ls` lists them")),
+        [] => Err(format!("no machine named {name} — `carbon machine ls` lists them")),
         [one] => Ok((*one).clone()),
         many => Err(format!(
             "{} machines are named {name} — name one by id: {}",
@@ -351,12 +351,12 @@ pub fn find(list: &[Saved], name: &str) -> Result<Saved, String> {
 pub async fn on(name: &str) -> Result<Saved, String> {
     let saved = find(&load().await, name)?;
     match saved.off {
-        true => Err(format!("{} is turned off — `dray machine connect {}` turns it on", saved.name, saved.name)),
+        true => Err(format!("{} is turned off — `carbon machine connect {}` turns it on", saved.name, saved.name)),
         false => Ok(saved),
     }
 }
 
-/// A machine as `dray machine` answers it.
+/// A machine as `carbon machine` answers it.
 pub struct Row {
     pub saved: Saved,
     /// `connected`, `disconnected` or `off`, the app's own words.

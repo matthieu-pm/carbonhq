@@ -426,12 +426,12 @@ impl std::fmt::Display for IssueUnavailable {
         match self {
             Self::NotConnected => write!(
                 f,
-                "Dray is not connected to an issue tracker. Connect Linear in Dray's settings, \
+                "Carbon is not connected to an issue tracker. Connect Linear in Carbon's settings, \
                  or sign in to GitHub with `gh auth login`."
             ),
             Self::Unauthorized => write!(
                 f,
-                "Linear rejected the stored key. Reconnect it in Dray's settings."
+                "Linear rejected the stored key. Reconnect it in Carbon's settings."
             ),
             Self::Offline(detail) => write!(f, "Could not reach Linear: {detail}"),
             Self::Other(detail) => write!(f, "{detail}"),
@@ -443,7 +443,7 @@ impl std::error::Error for IssueUnavailable {}
 
 // ── the connection ───────────────────────────────────────────────────────────
 
-/// Where the key lives: `~/.dray/credentials.json`, `0600`.
+/// Where the key lives: `~/.carbon/credentials.json`, `0600`.
 ///
 /// **Not the OS keychain, and that was a considered retreat.** macOS ties a
 /// keychain grant to the exact binary that asked for it, so every rebuild is a
@@ -454,7 +454,7 @@ impl std::error::Error for IssueUnavailable {}
 ///
 /// What the retreat costs is worth stating plainly: this key is readable by
 /// anything running as the user, where a keychain entry is not. What makes it
-/// tolerable is the company it keeps — `~/.dray` is `0700` and already holds
+/// tolerable is the company it keeps — `~/.carbon` is `0700` and already holds
 /// every transcript, which is to say every file the agent has read or written
 /// on this machine. A read-only issue-tracker key is not the most sensitive
 /// thing in that directory by a wide margin. `gh`, `npm` and `aws` all make the
@@ -470,14 +470,14 @@ const CREDENTIALS_FILE: &str = "credentials.json";
 static CREDENTIALS_LOCK: Mutex<()> = Mutex::const_new(());
 
 /// What Linear's key is filed under, on disk. GitHub's credential is `gh`'s own
-/// and Dray stores none, so this is the only entry.
+/// and Carbon stores none, so this is the only entry.
 const LINEAR_CREDENTIAL: &str = "linear";
 
 async fn credentials_path() -> Result<PathBuf, String> {
     crate::store::config_dir()
         .await
         .map(|dir| dir.join(CREDENTIALS_FILE))
-        .map_err(|e| format!("could not open the Dray directory: {e}"))
+        .map_err(|e| format!("could not open the Carbon directory: {e}"))
 }
 
 async fn read_credentials() -> HashMap<String, String> {
@@ -518,7 +518,7 @@ async fn write_credentials(next: &HashMap<String, String>) -> Result<(), String>
 }
 
 /// Takes the path so a test can round-trip against a tempdir and read the mode
-/// back, rather than writing into the real `~/.dray`.
+/// back, rather than writing into the real `~/.carbon`.
 fn write_credentials_at(
     path: &std::path::Path,
     next: &HashMap<String, String>,
@@ -606,7 +606,7 @@ fn pr_numbers(numbers: impl Iterator<Item = u32>) -> Vec<u32> {
 /// say, and a transcript that had to strip its own prompt back apart is a
 /// pattern match waiting to eat somebody's sentence.
 pub fn tag_text(issue: &IssueRef) -> String {
-    // A link made without a title — `dray issue link` writes down what it is
+    // A link made without a title — `carbon issue link` writes down what it is
     // given — leaves the identifier standing alone rather than a trailing
     // space nobody typed. Matches `issueTag` in issue.ts, which has to agree
     // with this or a tag reads one way in the composer and another once sent.
@@ -727,7 +727,7 @@ pub struct ExpandedTags {
 }
 
 /// A link with the identifier and nothing else — what is written down when the
-/// tracker could not be asked, and what `dray issue link` writes when its caller
+/// tracker could not be asked, and what `carbon issue link` writes when its caller
 /// passes no `--title`. `tag_text` drops the trailing space for one of these and
 /// `openIssue` reads the empty address as none, so a ⌘-click on its tag opens
 /// no page rather than one that is not there.
@@ -747,7 +747,7 @@ fn bare_ref(identifier: String) -> IssueRef {
 /// The prompt as the model will see it, and every issue it is against.
 ///
 /// Two sources, one answer: the `#ABC-123` tags already in the text, and
-/// identifiers named outright — `dray new --issue`, the only caller that does.
+/// identifiers named outright — `carbon new --issue`, the only caller that does.
 /// A named issue that is not already tagged in the text
 /// is **appended as a tag**, in the same `#DRA-53 Title` form the composer's
 /// picker writes, so there is one shape a tag takes and one thing the
@@ -767,7 +767,7 @@ fn bare_ref(identifier: String) -> IssueRef {
 /// model a prompt with no mention of the work at all, and answered identically
 /// to success — the caller asked for a session about `DRA-53` and got one about
 /// nothing. So a named issue that could not be resolved is appended bare and
-/// linked bare, exactly as `dray issue link` writes one. Absent metadata is an
+/// linked bare, exactly as `carbon issue link` writes one. Absent metadata is an
 /// ordinary state here, not an error.
 ///
 /// Sequential rather than concurrent: a prompt carries a handful of tags at
@@ -935,7 +935,7 @@ pub struct IntegrationsView {
 /// `settings.json` remembers whose it is, so a cached account with no key
 /// behind it reads as disconnected — the key *is* the connection, and the cache
 /// only saves a round trip to draw a name. GitHub's is `gh`'s own token, which
-/// Dray neither holds nor can invalidate, so the only honest question is
+/// Carbon neither holds nor can invalidate, so the only honest question is
 /// whether the CLI still answers.
 ///
 /// Asked only where `gh` resolves, so a machine that has never had the CLI
@@ -1118,7 +1118,7 @@ pub async fn update_issue(
 ///
 /// **The whole reason this command exists.** Linear's uploads live behind the
 /// same auth the API does, so the `<img src>` in a description resolves to a
-/// 401 and the webview draws its broken-image box — which reads as "Dray cannot
+/// 401 and the webview draws its broken-image box — which reads as "Carbon cannot
 /// show this" rather than "this needs a key". Fetching here and handing back a
 /// `data:` URL is what makes an image in an issue an image on screen.
 ///
@@ -1208,7 +1208,7 @@ mod tests {
         );
         assert_eq!(out.linked.len(), 1);
         assert_eq!(out.linked[0].identifier, "DRA-53");
-        // Bare — an identifier and no more, exactly as `dray issue link` writes
+        // Bare — an identifier and no more, exactly as `carbon issue link` writes
         // one with no `--title`.
         assert!(out.linked[0].title.is_empty());
         assert!(out.linked[0].url.is_empty());
@@ -1278,7 +1278,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = std::env::temp_dir().join(format!(
-            "dray-credentials-{}-{}",
+            "carbon-credentials-{}-{}",
             std::process::id(),
             uuid::Uuid::now_v7()
         ));

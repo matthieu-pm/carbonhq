@@ -2,11 +2,11 @@ import { defineConfig } from "blume";
 import { posthog, script } from "blume/analytics";
 
 export default defineConfig({
-  title: "Dray Docs",
-  description: "How to install and use Dray, the desktop app for coding agents.",
+  title: "Carbon Docs",
+  description: "How to install and use Carbon, the desktop app for coding agents.",
   // The wordmark already says the name, so no text beside it. `href` leaves
   // the docs for the site, since `/` here is the docs' own index.
-  logo: { image: "/logo.svg", text: "", href: "https://www.drayhq.com" },
+  logo: { image: "/logo.svg", text: "", href: "https://www.carbonhq.com" },
   content: { root: "content" },
   // Dark first, like the site and the app. The palette is the site's: neutral
   // ramp, near-white accent, Geist.
@@ -22,7 +22,7 @@ export default defineConfig({
   // The site's PostHog project and settings (apps/web instrumentation-client.ts):
   // the same cookie, so a visitor moving between the site and the docs stays one
   // person, no autocapture, no recording. `/ingest` is the site's own
-  // rewrite, reachable because the docs are served through drayhq.com.
+  // rewrite, reachable because the docs are served through carbonhq.com.
   // `source` is registered through the snippet's queue, which replays before
   // the first pageview fires, so every docs event can be told from the site's.
   analytics: [
@@ -41,15 +41,15 @@ export default defineConfig({
   agents: {
     llmsTxt: {
       details:
-        "Dray is a free, open-source macOS app that runs coding-agent CLIs (Claude Code, Codex, pi, fx and Grok Build) in one chat window, many sessions at once, each optionally in its own git worktree. Download it from https://www.drayhq.com. Its `dray` command line (`curl -fsSL https://www.drayhq.com/install.sh | sh`) lets you or an agent create, list and message sessions, save drafts, link issues, share a dev server by public link and drive the built-in browser. Dray can also run headless on a Linux server and be driven from the Mac app. Reach for these docs to answer what Dray can do, where in the app a feature lives, and the exact steps, commands and flags.",
+        "Carbon is a free, open-source macOS app that runs coding-agent CLIs (Claude Code, Codex, pi, fx and Grok Build) in one chat window, many sessions at once, each optionally in its own git worktree. Download it from https://www.carbonhq.com. Its `carbon` command line (`curl -fsSL https://www.carbonhq.com/install.sh | sh`) lets you or an agent create, list and message sessions, save drafts, link issues, share a dev server by public link and drive the built-in browser. Carbon can also run headless on a Linux server and be driven from the Mac app. Reach for these docs to answer what Carbon can do, where in the app a feature lives, and the exact steps, commands and flags.",
     },
   },
-  github: { owner: "monorepo-labs", repo: "dray", dir: "apps/docs" },
+  github: { owner: "matthieu-pm", repo: "carbonhq", dir: "apps/docs" },
   footer: {
-    copyright: `© ${new Date().getFullYear()} Dray`,
+    copyright: `© ${new Date().getFullYear()} Carbon`,
     socials: { x: "https://x.com/yogesharc" },
   },
-  // Served at drayhq.com/docs through a rewrite in apps/web. The content
+  // Served at carbonhq.com/docs through a rewrite in apps/web. The content
   // folder is not named `docs`, or every page would land at /docs/docs/….
-  deployment: { site: "https://www.drayhq.com", base: "/docs" },
+  deployment: { site: "https://www.carbonhq.com", base: "/docs" },
 });

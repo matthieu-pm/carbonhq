@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Dray",
+  "productName": "Carbon",
   "version": "0.29.17",
-  "identifier": "com.yogesh.dray",
+  "identifier": "com.yogesh.carbon",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Dray",
+        "title": "Carbon",
         "width": 1200,
         "height": 800,
         "minWidth": 720,
@@ -33,13 +33,13 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$HOME/.dray/attachments/**",
-          "$HOME/.dray/browser/recordings/**",
-          "$HOME/.dray/browser-dev/recordings/**",
-          "$HOME/.dray-dev/attachments/**",
-          "$HOME/.dray-dev/browser/recordings/**",
-          "$HOME/.dray-worktrees/*/attachments/**",
-          "$HOME/.dray-worktrees/*/browser/recordings/**"
+          "$HOME/.carbon/attachments/**",
+          "$HOME/.carbon/browser/recordings/**",
+          "$HOME/.carbon/browser-dev/recordings/**",
+          "$HOME/.carbon-dev/attachments/**",
+          "$HOME/.carbon-dev/browser/recordings/**",
+          "$HOME/.carbon-worktrees/*/attachments/**",
+          "$HOME/.carbon-worktrees/*/browser/recordings/**"
         ]
       }
     }
@@ -64,7 +64,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyRjQxNERDMkE4NDU0MkEKUldRcVZJUXEzQlQwVWcxVUdGL1hkaGpibFBxOE5PVWc4WURveTh4MFpuZGMwVkNZVWQ5QkZtalEK",
-      "endpoints": ["https://monorepo-labs.github.io/dray/stable.json"]
+      "endpoints": ["https://matthieu-pm.github.io/carbonhq/stable.json"]
     }
   }
 }

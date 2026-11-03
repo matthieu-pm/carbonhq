@@ -10,7 +10,7 @@
 //!
 //! Four things differ from fx and each is measured, not assumed:
 //!
-//! - **Dray picks the session id.** `_meta.sessionId` on `session/new` is
+//! - **Carbon picks the session id.** `_meta.sessionId` on `session/new` is
 //!   honoured and `session/resume` in a fresh process finds it, so the index id
 //!   *is* the resume handle and `thread_id` stays `None`.
 //! - **Rules ride `session/new._meta.rules`** and persist onto grok's own
@@ -26,7 +26,7 @@
 //!   change replaces the child — see [`Harness::caps`](crate::harness::Harness).
 //!
 //! Rejected: `grok -p --output-format streaming-messages-json` parses with
-//! Dray's Claude Code parser almost unchanged and is read-only and single-turn
+//! Carbon's Claude Code parser almost unchanged and is read-only and single-turn
 //! — no stdin input format, no permission channel. See
 //! `apps/desktop/GROK-PLAN.md`.
 
@@ -57,7 +57,7 @@ use tokio::{
     sync::Mutex,
 };
 
-/// Dray's rules, which grok takes as a real field rather than as prompt text.
+/// Carbon's rules, which grok takes as a real field rather than as prompt text.
 ///
 /// `_meta.rules` on `session/new` is "appended to the system prompt", and it
 /// **persists onto the session**: a codeword rule sent once was obeyed on the
@@ -75,7 +75,7 @@ const SYSTEM_PROMPT: &str = include_str!("system_prompt.md");
 #[derive(Clone, Debug)]
 pub struct GrokSession {
     pub client: RpcClient,
-    /// **Dray's own id**, which grok adopted — not one grok minted. So this is
+    /// **Carbon's own id**, which grok adopted — not one grok minted. So this is
     /// the index's `session_id` and the `--resume` handle both, and no
     /// `thread_id` slot is needed.
     pub id: String,
@@ -116,7 +116,7 @@ pub async fn init(
     probe::child_env(&mut command, &bin);
 
     if let Some(endpoint) = crate::orchestration::child_endpoint() {
-        command.env("DRAY_ENDPOINT", endpoint);
+        command.env("CARBON_ENDPOINT", endpoint);
     }
 
     // **Agent-level flags go between `agent` and `stdio`.** `--allow`,
@@ -125,7 +125,7 @@ pub async fn init(
     // stance rides `_meta` and the rules ride `session/new`.
     //
     // `--no-leader` regardless of the reader's `[cli] use_leader`, which
-    // defaults off: turned on, every Dray session would be multiplexed through
+    // defaults off: turned on, every Carbon session would be multiplexed through
     // one shared grok process.
     command.args(["agent", "--no-leader"]);
     // The fast tier is a model id rather than a flag, so the switch is resolved
@@ -149,18 +149,18 @@ pub async fn init(
 
     let mut child = command
         .current_dir(cwd)
-        .env("DRAY_SESSION_ID", session_id)
+        .env("CARBON_SESSION_ID", session_id)
         // **Trust is a per-child decision and this is it.** grok gates the
         // repo's own `CLAUDE.md`/`AGENTS.md`, its project hooks, project skills
         // and project MCP servers behind `~/.grok/trusted_folders.toml` — and
         // over stdio it **never asks**: no `folder_trust` request reaches the
         // client on any capture, the folder is simply untrusted and every one of
-        // those surfaces silently missing. A Dray worktree under
+        // those surfaces silently missing. A Carbon worktree under
         // `<project>/.claude/worktrees/<name>` is its own workspace to grok
         // ("a nested git checkout is a separate workspace"), so even a trusted
-        // project would not cover it. Claude Code under Dray runs the repo's
+        // project would not cover it. Claude Code under Carbon runs the repo's
         // hooks and MCP with no prompt either, so this is parity rather than an
-        // escalation — but it *is* Dray deciding, and grok's own note is that
+        // escalation — but it *is* Carbon deciding, and grok's own note is that
         // the grant "is process-local only and will not survive restart", which
         // is exactly the scope of this variable.
         .env("GROK_FOLDER_TRUST", "0")
@@ -295,10 +295,10 @@ fn takes_effort(model: Option<&Model>, effort: Option<Effort>) -> bool {
 /// `initialize`, then `session/new` or `session/resume`.
 ///
 /// The stance rides `_meta` and the rules ride creation alone. **MCP is grok's
-/// own and Dray hands over nothing**: `mcpServers: []` and grok merges
+/// own and Carbon hands over nothing**: `mcpServers: []` and grok merges
 /// `~/.grok/config.toml`, the project's, *and* Claude's and Cursor's through its
 /// compat scanners — six of the reader's servers came up on every capture with
-/// no Dray involvement, and grok runs its own OAuth flow for the ones that need
+/// no Carbon involvement, and grok runs its own OAuth flow for the ones that need
 /// it. The opposite of fx, where the empty list means "this session has none".
 async fn open_session(
     client: &RpcClient,
@@ -366,7 +366,7 @@ async fn open_session(
         .context("session/new answered with no session id")?;
     anyhow::ensure!(
         minted == session_id,
-        "grok opened session {minted} rather than the id Dray chose — this build cannot resume it"
+        "grok opened session {minted} rather than the id Carbon chose — this build cannot resume it"
     );
 
     Ok(answer)
@@ -375,7 +375,7 @@ async fn open_session(
 /// The directory grok filed `session_id` under, read out of grok's own store.
 ///
 /// **Asked rather than inferred, and that is the whole point of it.** grok
-/// addresses a conversation by session id *and* directory, and Dray's index
+/// addresses a conversation by session id *and* directory, and Carbon's index
 /// stops naming the right directory the moment a worktree is removed — `cwd`
 /// is rewritten to the project root, where grok never put anything. Guessing
 /// from `branch` was the first shape and it is a guess: that field is kept for
@@ -501,7 +501,7 @@ fn fork_params(parent: &str, source_cwd: &str, session_id: &str, session_cwd: &s
 /// The resume that follows is what this build wants and `session/load` is what
 /// it must not become: **`load` replays the copied conversation as
 /// `session/update`s** and `resume` sends nothing but `available_commands_update`,
-/// so a load would draw the parent's turns a second time under Dray's own
+/// so a load would draw the parent's turns a second time under Carbon's own
 /// copied log. Measured both ways.
 ///
 /// `sourceCwd` comes off the parent's index entry rather than being handed
@@ -536,7 +536,7 @@ async fn fork_conversation(
         _ => crate::store::get_session_index_item(parent)
             .await?
             .map(|item| item.cwd)
-            .with_context(|| format!("can't fork {parent} — Dray has no record of it"))?,
+            .with_context(|| format!("can't fork {parent} — Carbon has no record of it"))?,
     };
 
     let answer = client
@@ -548,7 +548,7 @@ async fn fork_conversation(
         .with_context(|| format!("couldn't fork grok session {parent} in {source_cwd}"))?;
 
     // Same guard `session/new` takes one function down, and for the same
-    // reason: grok honouring Dray's id is what makes the index entry the resume
+    // reason: grok honouring Carbon's id is what makes the index entry the resume
     // handle. Unchecked, a grok that stopped honouring it would leave the
     // resume below failing with "no such session" — about an id this call had
     // silently declined to use.
@@ -558,22 +558,22 @@ async fn fork_conversation(
         .context("_x.ai/session/fork answered with no session id")?;
     anyhow::ensure!(
         minted == session_id,
-        "grok forked into session {minted} rather than the id Dray chose — this build cannot resume it"
+        "grok forked into session {minted} rather than the id Carbon chose — this build cannot resume it"
     );
 
     Ok(())
 }
 
-/// Dray's stance as the `_meta` key grok reads it from, or `None` for the
+/// Carbon's stance as the `_meta` key grok reads it from, or `None` for the
 /// narrowest, which is grok's own default and needs nothing said.
 ///
-/// **Three of Dray's five reach grok and the mapping is measured.** grok's TUI
+/// **Three of Carbon's five reach grok and the mapping is measured.** grok's TUI
 /// has four modes and only three have a `session/new` surface: normal (ask),
 /// `autoMode`, `yoloMode`. Plan is entered by prompt text and has no toggle at
 /// all, so it lands on ask — a session recorded `plan` must never come out
 /// freer than the reader asked.
 ///
-/// **`autoMode` is a classifier, not a bypass, and Dray never sees it work.** A
+/// **`autoMode` is a classifier, not a bypass, and Carbon never sees it work.** A
 /// blocked call fails the *tool* with a sentence to the model — "Auto mode
 /// blocked this action (…)" — and raises no `session/request_permission` at all,
 /// so no card is ever drawn under it and the refusal shows only where the model
@@ -855,7 +855,7 @@ async fn read_stdout(
                                     );
                                     continue;
                                 }
-                                // A turn Dray opened ends on its prompt's answer,
+                                // A turn Carbon opened ends on its prompt's answer,
                                 // which lands just after this. One grok opened
                                 // itself — an interject arriving after the turn it
                                 // was aimed at — has no answer coming, so without
@@ -1206,7 +1206,7 @@ mod tests {
         }
     }
 
-    /// Three of Dray's five stances reach grok, and the two that do not fall
+    /// Three of Carbon's five stances reach grok, and the two that do not fall
     /// the *narrow* way — a session recorded `plan` must never come out freer
     /// than the reader asked, and grok has no plan mode to put it in.
     #[test]
@@ -1273,7 +1273,7 @@ mod tests {
     /// told — the one promise fx cannot make.
     #[test]
     fn the_rules_ride_the_session_and_never_a_prompt() {
-        assert!(SYSTEM_PROMPT.contains("You run inside Dray"));
+        assert!(SYSTEM_PROMPT.contains("You run inside Carbon"));
         // Named here because each harness's copy has to name the tools its own
         // agent actually has.
         assert!(SYSTEM_PROMPT.contains("spawn_subagent"));
@@ -1290,7 +1290,7 @@ mod tests {
     /// parent's own, and forking into a worktree to the tree `send_msg` made a
     /// moment earlier. Both measured.
     #[test]
-    fn the_fork_names_both_directories_and_the_id_dray_chose() {
+    fn the_fork_names_both_directories_and_the_id_carbon_chose() {
         let here = fork_params("parent", "/repo", "child", "/repo");
         assert_eq!(here["sourceSessionId"], "parent");
         assert_eq!(here["sourceCwd"], "/repo");
@@ -1341,7 +1341,7 @@ mod tests {
     /// otherwise take Fork away from every session at once.
     #[tokio::test]
     async fn the_store_answers_where_a_session_was_filed() {
-        let root = std::env::temp_dir().join(format!("dray-grokstore-{}", uuid::Uuid::now_v7()));
+        let root = std::env::temp_dir().join(format!("carbon-grokstore-{}", uuid::Uuid::now_v7()));
         let sessions = root.join("sessions");
         let filed = "/Users/x/Documents/ade/.claude/worktrees/gentle-emerald-harbor";
         let encoded = "%2FUsers%2Fx%2FDocuments%2Fade%2F.claude%2Fworktrees%2Fgentle-emerald-harbor";

@@ -121,9 +121,9 @@ describe("highlightSegments", () => {
   });
 
   it("marks a bare host and gives it a scheme to open under", () => {
-    expect(highlightSegments("try drayhq.com/docs, or localhost:3000.")).toEqual([
+    expect(highlightSegments("try carbonhq.com/docs, or localhost:3000.")).toEqual([
       { kind: "text", text: "try " },
-      { kind: "url", text: "drayhq.com/docs", href: "https://drayhq.com/docs" },
+      { kind: "url", text: "carbonhq.com/docs", href: "https://carbonhq.com/docs" },
       { kind: "text", text: ", or " },
       { kind: "url", text: "localhost:3000", href: "http://localhost:3000" },
       { kind: "text", text: "." },
@@ -394,7 +394,7 @@ describe("splitMention", () => {
 
 
 describe("withLineBreaks", () => {
-  /// An agent relaying through `dray send` writes its message inside a shell
+  /// An agent relaying through `carbon send` writes its message inside a shell
   /// string, where the escape is left uninterpreted, so the two characters
   /// arrive verbatim and the whole report drew as one paragraph.
   it("turns a literal backslash-n into a break", () => {

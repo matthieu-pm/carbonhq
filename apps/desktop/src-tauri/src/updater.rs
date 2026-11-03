@@ -16,8 +16,8 @@ use ts_rs::TS;
 
 use crate::analytics;
 
-const STABLE_MANIFEST: &str = "https://monorepo-labs.github.io/dray/stable.json";
-const BETA_MANIFEST: &str = "https://monorepo-labs.github.io/dray/beta.json";
+const STABLE_MANIFEST: &str = "https://matthieu-pm.github.io/carbonhq/stable.json";
+const BETA_MANIFEST: &str = "https://matthieu-pm.github.io/carbonhq/beta.json";
 
 /// The app menu's "Check for Updates…" item.
 pub const CHECK_UPDATE_ID: &str = "check_update";
@@ -312,7 +312,7 @@ fn relaunch(app: &AppHandle) -> Result<(), String> {
 
 /// The `.app` an executable sits in, or `None` for a bare binary.
 ///
-/// `…/Dray.app/Contents/MacOS/dray` — the fourth ancestor. Counting it wrong
+/// `…/Carbon.app/Contents/MacOS/carbon` — the fourth ancestor. Counting it wrong
 /// costs no error, it just falls through to spawning the executable, so this is
 /// pinned rather than left to be read off the call site.
 #[cfg(target_os = "macos")]
@@ -363,8 +363,8 @@ mod tests {
     #[test]
     fn finds_the_bundle_an_executable_sits_in() {
         assert_eq!(
-            bundle_of(Path::new("/Applications/Dray.app/Contents/MacOS/dray")),
-            Some(Path::new("/Applications/Dray.app"))
+            bundle_of(Path::new("/Applications/Carbon.app/Contents/MacOS/carbon")),
+            Some(Path::new("/Applications/Carbon.app"))
         );
     }
 
@@ -387,8 +387,8 @@ mod tests {
     #[test]
     fn a_bare_binary_has_no_bundle() {
         // What `pnpm tauri dev` runs, and what the `open` branch must not take.
-        assert_eq!(bundle_of(Path::new("/x/target/debug/dray")), None);
+        assert_eq!(bundle_of(Path::new("/x/target/debug/carbon")), None);
         // Deep enough to have a fourth ancestor, but it is not a bundle.
-        assert_eq!(bundle_of(Path::new("/a/b/c/d/dray")), None);
+        assert_eq!(bundle_of(Path::new("/a/b/c/d/carbon")), None);
     }
 }

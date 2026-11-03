@@ -67,7 +67,7 @@ describe("fastRetired", () => {
   });
 });
 
-/// "Let fx decide" is fx's *ordinary* pick, not a gap — Dray names no default
+/// "Let fx decide" is fx's *ordinary* pick, not a gap — Carbon names no default
 /// for a multi-provider CLI — and fx applies fast mode per model itself. So the
 /// unset model must not be what hides the row there, where on the two harnesses
 /// that answer per model it has to.

@@ -4,7 +4,7 @@
 // button in the bar across the top; a state past the first screen is reached
 // by the bar clicking through the real UI, the way a reader would.
 //
-// For the whole app against real `dray-serve`s instead, see /demo/servers.html.
+// For the whole app against real `carbon-serve`s instead, see /demo/servers.html.
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -90,19 +90,19 @@ const FAIL = {
     message: `Could not reach ${host}: ssh: connect to host ${host} port 22: Operation timed out`,
     fix: null,
   }),
-  missing: (host: string): Failure => ({ message: `Dray isn't installed on ${host}.`, fix: { kind: "install" } }),
+  missing: (host: string): Failure => ({ message: `Carbon isn't installed on ${host}.`, fix: { kind: "install" } }),
   neverRun: (host: string): Failure => ({
-    message: `Dray is on ${host} but its server has never run there.`,
-    fix: { kind: "copy", command: "dray service start" },
+    message: `Carbon is on ${host} but its server has never run there.`,
+    fix: { kind: "copy", command: "carbon service start" },
   }),
 };
 
-/// What each SSH line answers: how its login goes, and what state Dray is in there.
+/// What each SSH line answers: how its login goes, and what state Carbon is in there.
 type Host = {
   login: keyof typeof FAIL | null;
-  dray: "running" | "stopped" | "missing" | "never";
+  carbon: "running" | "stopped" | "missing" | "never";
   survey: Survey;
-  /// Picks that `dray setup` warns about and carries on past.
+  /// Picks that `carbon setup` warns about and carries on past.
   stubborn: string[];
 };
 
@@ -119,7 +119,7 @@ const tools = (found: string[]) =>
 
 const freshHost = (over: Partial<Host> = {}): Host => ({
   login: null,
-  dray: "running",
+  carbon: "running",
   survey: { os: "Linux", tools: tools(["git", "codex"]), gitCommand: null },
   stubborn: [],
   ...over,
@@ -164,25 +164,25 @@ async function dial(line: string, report: (stage: Stage) => void): Promise<Failu
   if (h.login) return FAIL[h.login](name, line);
   report("finding");
   await pause(STEP);
-  if (h.dray === "missing") return FAIL.missing(name);
-  if (h.dray === "never") return FAIL.neverRun(name);
-  if (h.dray === "stopped") {
+  if (h.carbon === "missing") return FAIL.missing(name);
+  if (h.carbon === "never") return FAIL.neverRun(name);
+  if (h.carbon === "stopped") {
     report("starting");
     await pause(STEP);
-    h.dray = "running";
+    h.carbon = "running";
   }
   return null;
 }
 
-/// `dray setup --install` as the dialog sees it: one line at a time, ANSI gone.
+/// `carbon setup --install` as the dialog sees it: one line at a time, ANSI gone.
 function installScript(line: string, picks: string[]): string[] {
   const h = host(line);
   const name = (id: string) => h.survey.tools.find((t) => t.id === id)?.name ?? id;
   const found = h.survey.tools.filter((t) => t.found).map((t) => t.name);
   const out = [
-    "Downloading dray 0.9.0 for linux-x86_64…",
-    "Installed dray to /root/.local/bin/dray",
-    "┌  Dray setup",
+    "Downloading carbon 0.9.0 for linux-x86_64…",
+    "Installed carbon to /root/.local/bin/carbon",
+    "┌  Carbon setup",
   ];
   if (found.length) out.push("│", `◇  Found ${found.join(", ")}`);
   for (const id of picks) {
@@ -197,7 +197,7 @@ function installScript(line: string, picks: string[]): string[] {
     "│",
     "◇  Server running in the background",
     "│  The server is running in the background.",
-    "└  In the Dray app, Add server and paste:",
+    "└  In the Carbon app, Add server and paste:",
     "",
     `   ${line}`,
   ];
@@ -386,7 +386,7 @@ async function core(cmd: string, a: Record<string, unknown>, server: string): Pr
       const slug = String(a.slug);
       const name = slug.split("/")[1];
       for (const line of [
-        `Cloning into '/root/dray/${name}'...`,
+        `Cloning into '/root/carbon/${name}'...`,
         "Receiving objects:  48% (1204/2508)",
         "Receiving objects: 100% (2508/2508), 4.10 MiB | 9.80 MiB/s, done.",
         "Resolving deltas: 100% (1610/1610), done.",
@@ -394,7 +394,7 @@ async function core(cmd: string, a: Record<string, unknown>, server: string): Pr
         await pause(STEP / 2);
         void emit("server_event", { server, event: "clone_progress", payload: { slug, line } satisfies CloneProgress });
       }
-      return [{ path: `/root/dray/${name}`, name, space: null }];
+      return [{ path: `/root/carbon/${name}`, name, space: null }];
     }
     case "get_integrations":
       return {
@@ -412,7 +412,7 @@ async function core(cmd: string, a: Record<string, unknown>, server: string): Pr
 /// cloned there, so it draws its Cloned mark.
 const REPOS: GithubRepo[] = [
   { slug: "octocat/storefront", description: "The shop's Next.js frontend", path: null },
-  { slug: "octocat/api", description: "Orders and payments API", path: "/root/dray/api" },
+  { slug: "octocat/api", description: "Orders and payments API", path: "/root/carbon/api" },
   { slug: "octocat/mobile", description: "iOS and Android app", path: null },
   { slug: "octocat/infra", description: "Terraform for every environment", path: null },
   { slug: "octocat/docs", description: null, path: null },
@@ -506,14 +506,14 @@ mockIPC(
         const fail = takeFail();
         for (const [i, text] of script.entries()) {
           if (fail && i === 6) {
-            void emit("server_installing", { line, text: "curl: (6) Could not resolve host: dray.sh" });
+            void emit("server_installing", { line, text: "curl: (6) Could not resolve host: carbon.sh" });
             throw { message: `The install on ${hostOf(line)} did not finish.`, fix: null } satisfies Failure;
           }
           await pause(lineDelay);
           void emit("server_installing", { line, text });
         }
         for (const t of h.survey.tools) if (picks.includes(t.id) && !h.stubborn.includes(t.id)) t.found = true;
-        h.dray = "running";
+        h.carbon = "running";
         return null;
       }
       case "run_server_login":
@@ -575,7 +575,7 @@ async function addOverSsh(d: Drive, submit = true) {
   await d.type('input[placeholder="vps"]', "vps");
   if (submit) await d.click("Add");
 }
-/// Add, find no Dray, install it with gh, land on the logins.
+/// Add, find no Carbon, install it with gh, land on the logins.
 async function toLogins(d: Drive) {
   await addOverSsh(d);
   await d.toggle("Install GitHub CLI");
@@ -588,7 +588,7 @@ type Scenario = {
   id: string;
   label: string;
   tab: "servers" | "accounts";
-  /// The selected session's directory; a `dray://` one picks that server on Accounts.
+  /// The selected session's directory; a `carbon://` one picks that server on Accounts.
   cwd?: string;
   /// The composer's Attach project dialog, open over the page on the VPS.
   attach?: boolean;
@@ -638,9 +638,9 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
             const at = `${name}.example.net`;
             const failure = h.login
               ? FAIL[h.login](at, line)
-              : h.dray === "missing"
+              : h.carbon === "missing"
                 ? FAIL.missing(at)
-                : h.dray === "never"
+                : h.carbon === "never"
                   ? FAIL.neverRun(at)
                   : null;
             return serverInfo({ id: name, name, ssh: line, status: "disconnected", error: failure?.message ?? null, fix: failure?.fix ?? null, ...over });
@@ -653,8 +653,8 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
             row("rekeyed", { login: "changedKey" }, {}),
             row("password", { login: "password" }, {}),
             row("unreachable", { login: "unreachable" }, {}),
-            row("bare", { dray: "missing" }, {}),
-            row("never-run", { dray: "never" }, {}),
+            row("bare", { carbon: "missing" }, {}),
+            row("never-run", { carbon: "never" }, {}),
             row("off", {}, { on: false }),
           ];
         },
@@ -682,7 +682,7 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
         id: "add-stages",
         label: "Connecting, each stage",
         tab: "servers",
-        setup: () => hosts.set(LINE, freshHost({ dray: "stopped" })),
+        setup: () => hosts.set(LINE, freshHost({ carbon: "stopped" })),
         drive: (d) => addOverSsh(d),
       },
       {
@@ -715,21 +715,21 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
       },
       {
         id: "add-never-run",
-        label: "Dray there, never run",
+        label: "Carbon there, never run",
         tab: "servers",
-        setup: () => hosts.set(LINE, freshHost({ dray: "never" })),
+        setup: () => hosts.set(LINE, freshHost({ carbon: "never" })),
         drive: (d) => addOverSsh(d),
       },
     ],
   },
   {
-    title: "Install Dray",
+    title: "Install Carbon",
     scenarios: [
       {
         id: "missing",
-        label: "Dray missing: the pick-list",
+        label: "Carbon missing: the pick-list",
         tab: "servers",
-        setup: () => hosts.set(LINE, freshHost({ dray: "missing" })),
+        setup: () => hosts.set(LINE, freshHost({ carbon: "missing" })),
         drive: (d) => addOverSsh(d),
       },
       {
@@ -740,7 +740,7 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
           hosts.set(
             LINE,
             freshHost({
-              dray: "missing",
+              carbon: "missing",
               survey: { os: "Linux", tools: tools(["codex"]), gitCommand: "sudo sh -c 'apt-get update && apt-get install -y git'" },
             }),
           ),
@@ -750,14 +750,14 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
         id: "not-linux",
         label: "Not Linux",
         tab: "servers",
-        setup: () => hosts.set(LINE, freshHost({ dray: "missing", survey: { os: "Darwin", tools: tools(["git"]), gitCommand: null } })),
+        setup: () => hosts.set(LINE, freshHost({ carbon: "missing", survey: { os: "Darwin", tools: tools(["git"]), gitCommand: null } })),
         drive: (d) => addOverSsh(d),
       },
       {
         id: "installing",
         label: "Installing, with progress",
         tab: "servers",
-        setup: () => hosts.set(LINE, freshHost({ dray: "missing" })),
+        setup: () => hosts.set(LINE, freshHost({ carbon: "missing" })),
         drive: async (d) => {
           await addOverSsh(d);
           await d.toggle("Install GitHub CLI");
@@ -771,7 +771,7 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
         tab: "servers",
         setup: () => {
           lineDelay = 60;
-          hosts.set(LINE, freshHost({ dray: "missing", stubborn: ["gh"] }));
+          hosts.set(LINE, freshHost({ carbon: "missing", stubborn: ["gh"] }));
         },
         drive: async (d) => {
           await addOverSsh(d);
@@ -783,7 +783,7 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
         id: "install-failed",
         label: "Install failed",
         tab: "servers",
-        setup: () => hosts.set(LINE, freshHost({ dray: "missing" })),
+        setup: () => hosts.set(LINE, freshHost({ carbon: "missing" })),
         drive: async (d) => {
           await addOverSsh(d);
           await d.toggle("Install GitHub CLI");
@@ -797,7 +797,7 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
         tab: "servers",
         setup: () => {
           lineDelay = 0;
-          hosts.set(LINE, freshHost({ dray: "missing" }));
+          hosts.set(LINE, freshHost({ carbon: "missing" }));
         },
         drive: (d) => toLogins(d),
       },
@@ -828,7 +828,7 @@ const GROUPS: { title: string; scenarios: Scenario[] }[] = [
         id: "accounts-remote",
         label: "A server picked",
         tab: "accounts",
-        cwd: "dray://vps1/root/app",
+        cwd: "carbon://vps1/root/app",
         setup: setUpVps,
       },
     ],
@@ -962,7 +962,7 @@ function Demo() {
             onInstallUpdate={() => {}}
             updateChannel="stable"
             onUpdateChannelChange={() => {}}
-            cwd={picked.scenario.cwd ?? "/Users/you/code/dray"}
+            cwd={picked.scenario.cwd ?? "/Users/you/code/carbon"}
           />
           {picked.scenario.attach && (
             <AttachProjectDialog

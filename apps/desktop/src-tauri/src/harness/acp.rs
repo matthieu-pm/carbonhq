@@ -67,7 +67,7 @@ pub enum ToolKind {
 }
 
 impl ToolKind {
-    /// Dray's row type, the fallback once each agent's own name checks miss.
+    /// Carbon's row type, the fallback once each agent's own name checks miss.
     pub fn tool_type(self) -> ToolType {
         match self {
             ToolKind::Read => ToolType::FileRead,
@@ -171,7 +171,7 @@ pub fn commit(block: OpenBlock, mut event: impl FnMut(AgentEventPayload) -> Agen
 ///
 /// **The options are the agent's own**: ACP names each with an `optionId` and
 /// a `kind`, and the button carries the id back untouched inside the outcome
-/// envelope, so a decision Dray never composes is one it can never compose
+/// envelope, so a decision Carbon never composes is one it can never compose
 /// wrongly. `prefix` keeps one agent's button ids apart from another's.
 pub fn pending_for(
     prefix: &str,

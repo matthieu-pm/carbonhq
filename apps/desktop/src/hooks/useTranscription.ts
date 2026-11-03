@@ -255,7 +255,7 @@ export function useRecorder<T>({
 
       if (refusal?.kind === "needsPermission") {
         handlers.current.onMessage(
-          "Dray needs microphone access. Turn it on in System Settings › Privacy & Security › Microphone.",
+          "Carbon needs microphone access. Turn it on in System Settings › Privacy & Security › Microphone.",
         );
         return;
       }
@@ -271,7 +271,7 @@ export function useRecorder<T>({
       setSavedAudio(null);
       setState("recording");
       // After the refusals, never before: a tone that plays and is then
-      // followed by "Dray needs microphone access" has already told the reader
+      // followed by "Carbon needs microphone access" has already told the reader
       // the mic is open.
       playDictationSound("start");
     } catch (e) {

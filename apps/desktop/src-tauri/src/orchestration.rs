@@ -1,14 +1,14 @@
-//! The socket an agent reaches Dray through.
+//! The socket an agent reaches Carbon through.
 //!
 //! Every other command in this app travels frontend → Rust. This one travels
-//! the other way: the `dray` CLI connects, asks for a session, and the frontend
+//! the other way: the `carbon` CLI connects, asks for a session, and the frontend
 //! learns about it from an event rather than from the return value of something
 //! it called. That inversion is the whole of what this module adds — the work
 //! itself goes through [`SessionManager::send_msg`], the same function the
 //! composer reaches, so a session created here is not a second kind of session.
 //!
-//! Newline-delimited JSON over a unix socket at `~/.dray/dray.sock` — or
-//! `dray-dev.sock` for a dev build, see [`socket_path`] — one
+//! Newline-delimited JSON over a unix socket at `~/.carbon/carbon.sock` — or
+//! `carbon-dev.sock` for a dev build, see [`socket_path`] — one
 //! request per connection. Nothing on the network can reach it at all, and
 //! access control is the containing directory's `0700` — see
 //! [`serve`](serve) for why the socket's own mode cannot be the boundary.
@@ -23,7 +23,7 @@ use crate::{
     store::{self, SessionIndexItem},
 };
 use anyhow::{bail, Context, Result};
-use dray_proto::{
+use carbon_proto::{
     encode_line, CreateDraft, CreateSession, DraftSummary, Envelope, StartDraft, IssueInput, IssueLink, LinkIssues, ListSessions, Request,
     Response, SendMessage, SessionSummary, MAX_LINE, OLDEST_SPOKEN, PROTOCOL_VERSION,
 };
@@ -50,7 +50,7 @@ pub const SESSION_CREATED: &str = "session_created";
 /// the frontend made those writes and merges what they answered.
 pub const SESSION_CHANGED: &str = "session_changed";
 
-/// Emitted when `dray issue link` or `dray issue unlink` changes what a session
+/// Emitted when `carbon issue link` or `carbon issue unlink` changes what a session
 /// is tagged with, so the panel's Issue tab appears, redraws or goes away
 /// without a reselect.
 ///
@@ -75,27 +75,27 @@ pub struct IssuesChangedEvent {
 /// field free to disagree with the chain it describes.
 const MAX_DEPTH: usize = 2;
 
-/// The socket this build listens on: `dray-dev.sock` under `pnpm tauri dev`,
-/// `dray.sock` otherwise.
+/// The socket this build listens on: `carbon-dev.sock` under `pnpm tauri dev`,
+/// `carbon.sock` otherwise.
 ///
 /// Split by build because the release app is normally running while this one is
 /// being developed, and one path between them means whichever started last owns
 /// the channel — `bind` unlinks the other's socket, so the app left behind
-/// keeps a listener no `dray` will ever reach again.
+/// keeps a listener no `carbon` will ever reach again.
 ///
-/// Under `DRAY_HOME` the socket moves with the data, so a second process on
+/// Under `CARBON_HOME` the socket moves with the data, so a second process on
 /// its own directory takes no channel from the app's.
 pub fn socket_path() -> Option<std::path::PathBuf> {
     if let Some(home) = store::home_override() {
-        return Some(home.join(dray_proto::SOCKET_NAME));
+        return Some(home.join(carbon_proto::SOCKET_NAME));
     }
-    dray_proto::socket_path(crate::is_dev())
+    carbon_proto::socket_path(crate::is_dev())
 }
 
-/// What a spawned agent's `DRAY_ENDPOINT` is set to.
+/// What a spawned agent's `CARBON_ENDPOINT` is set to.
 ///
 /// Injected rather than left to the CLI's own default, so a session started by
-/// the dev app reaches the dev app. Without it every `dray` call inside a dev
+/// the dev app reaches the dev app. Without it every `carbon` call inside a dev
 /// session would go to the release app's socket and create sessions in the
 /// wrong sidebar.
 pub fn child_endpoint() -> Option<String> {
@@ -110,7 +110,7 @@ pub fn child_endpoint() -> Option<String> {
 pub async fn serve(app: Sink) -> Result<()> {
     let path = socket_path().context("could not resolve the socket path")?;
 
-    // Creates `~/.dray` and narrows it to `0700`, which is what actually
+    // Creates `~/.carbon` and narrows it to `0700`, which is what actually
     // guards this socket. `bind` applies the process umask, so under a
     // permissive one the socket lands world-writable and stays that way until
     // `restrict` runs a moment later — a window another local account can
@@ -200,12 +200,12 @@ fn restrict(path: &Path) -> Result<()> {
 /// work out which half to touch.
 fn mismatch(theirs: u32) -> String {
     let cure = if theirs < PROTOCOL_VERSION {
-        "run `dray update`"
+        "run `carbon update`"
     } else {
-        "update the Dray app"
+        "update the Carbon app"
     };
 
-    format!("this dray CLI speaks protocol v{theirs}, the app speaks v{PROTOCOL_VERSION} — {cure}")
+    format!("this carbon CLI speaks protocol v{theirs}, the app speaks v{PROTOCOL_VERSION} — {cure}")
 }
 
 /// Answered before the request is even looked at: a CLI older than
@@ -310,11 +310,11 @@ fn this_machine_only(request: &Request) -> bool {
 #[cfg(any(feature = "serve", feature = "desktop"))]
 async fn on_machine(machine: &str, request: Request) -> Result<Response> {
     if this_machine_only(&request) {
-        bail!("`dray machine` and `dray server` act on this machine alone — drop --machine");
+        bail!("`carbon machine` and `carbon server` act on this machine alone — drop --machine");
     }
     if machine == "all" {
         let Request::ListSessions(list) = request else {
-            bail!("only `dray session ls` takes --machine all");
+            bail!("only `carbon session ls` takes --machine all");
         };
         return elsewhere::list_everywhere(list).await;
     }
@@ -419,7 +419,7 @@ async fn localize(request: &mut Request, origin: Option<&str>) -> Result<()> {
     }
     let attached: Vec<_> = projects.iter().map(|p| p.path.as_str()).collect();
     bail!(
-        "this machine has no checkout of {} — attach one in Dray, or pass --project with a path here. Its projects: {}",
+        "this machine has no checkout of {} — attach one in Carbon, or pass --project with a path here. Its projects: {}",
         origin.unwrap_or(&path),
         if attached.is_empty() { "none".to_string() } else { attached.join(", ") }
     )
@@ -454,7 +454,7 @@ mod elsewhere {
         let saved = machines::on(machine).await.map_err(anyhow::Error::msg)?;
         let answer = machines::call(&saved, "orchestrate", serde_json::to_value(forward)?).await.map_err(|e| {
             match e.starts_with("unknown command") {
-                true => anyhow!("{}'s Dray server is too old to take dray requests — update it", saved.name),
+                true => anyhow!("{}'s Carbon server is too old to take carbon requests — update it", saved.name),
                 false => anyhow!(e),
             }
         })?;
@@ -535,7 +535,7 @@ mod elsewhere {
     /// The name a relayed sender gives this machine, which the far side may
     /// hold under a name of its own.
     async fn this_machine() -> String {
-        tokio::task::spawn_blocking(dray_proto::machine_name).await.unwrap_or_else(|_| "another machine".into())
+        tokio::task::spawn_blocking(carbon_proto::machine_name).await.unwrap_or_else(|_| "another machine".into())
     }
 
     /// `session ls --machine all`: this machine's sessions, then each
@@ -639,16 +639,16 @@ pub async fn answer_host(cmd: &str, args: serde_json::Value) -> Result<serde_jso
         }
         "show_session" => {
             let id = args["sessionId"].as_str().ok_or("show_session wants a sessionId")?;
-            let app = crate::transcription::app().ok_or("Dray is not ready yet.")?;
+            let app = crate::transcription::app().ok_or("Carbon is not ready yet.")?;
             crate::notifications::activate(app, id);
             Ok(serde_json::Value::Null)
         }
-        // Only while the window has focus: the island opens on Dray's pick when
-        // tapped over Dray, and asking here rather than by bundle id there also
+        // Only while the window has focus: the island opens on Carbon's pick when
+        // tapped over Carbon, and asking here rather than by bundle id there also
         // covers `tauri dev`, whose bare binary has none.
         "selected_session" => {
             use tauri::Manager;
-            let app = crate::transcription::app().ok_or("Dray is not ready yet.")?;
+            let app = crate::transcription::app().ok_or("Carbon is not ready yet.")?;
             let focused = app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
             Ok(serde_json::json!(focused.then(crate::apps::app_selection).flatten()))
         }
@@ -677,12 +677,12 @@ async fn answer_on_screen(request: Request) -> Result<Response> {
     }
 }
 
-/// `dray machine` on a server with no app to ask: a Linux `dray-serve`, a
+/// `carbon machine` on a server with no app to ask: a Linux `carbon-serve`, a
 /// headless Mac, the Mac's own server while the window is closed.
 #[cfg(any(feature = "serve", feature = "desktop"))]
 async fn machine_list(request: Request) -> Result<Response> {
     use crate::machines;
-    let summarize = |row: machines::Row| dray_proto::ServerSummary {
+    let summarize = |row: machines::Row| carbon_proto::ServerSummary {
         address: row.saved.address(),
         id: row.saved.id,
         name: row.saved.name,
@@ -702,14 +702,14 @@ async fn machine_list(request: Request) -> Result<Response> {
     Ok(Response::Server { server: summarize(row.map_err(anyhow::Error::msg)?) })
 }
 
-/// `dray machine`, through Settings → Servers' own commands, so the CLI is
+/// `carbon machine`, through Settings → Servers' own commands, so the CLI is
 /// refused exactly where the Add dialog would be and the page hears the same
 /// `servers_changed`.
 #[cfg(feature = "desktop")]
 mod server_list {
     use crate::servers::{self, ServerInfo, ServerStatus};
     use anyhow::{bail, Context, Result};
-    use dray_proto::{AddServer, Request, Response, ServerSummary};
+    use carbon_proto::{AddServer, Request, Response, ServerSummary};
 
     pub async fn answer(request: Request) -> Result<Response> {
         match request {
@@ -767,16 +767,16 @@ mod server_list {
         Ok(Response::Server { server: summarize(server) })
     }
 
-    async fn rename(rename: dray_proto::RenameServer) -> Result<Response> {
+    async fn rename(rename: carbon_proto::RenameServer) -> Result<Response> {
         let id = find(&rename.name)?.id;
         servers::rename_server(id.clone(), rename.new_name).await.map_err(anyhow::Error::msg)?;
         Ok(Response::Server { server: summarize(current(&id)?) })
     }
 
-    /// On waits for the attempt to settle, so `dray machine connect` answers
+    /// On waits for the attempt to settle, so `carbon machine connect` answers
     /// whether it connected rather than "connecting". A whole SSH connect is
     /// capped at 45s; past that the answer is the row as it stands.
-    async fn set_on(set: dray_proto::SetServerOn) -> Result<Response> {
+    async fn set_on(set: carbon_proto::SetServerOn) -> Result<Response> {
         let id = find(&set.name)?.id;
         servers::set_server_on(id.clone(), set.on).await.map_err(anyhow::Error::msg)?;
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(50);
@@ -795,10 +795,10 @@ mod server_list {
     }
 }
 
-/// `dray share`: a public link to one of the session's dev servers, made on
+/// `carbon share`: a public link to one of the session's dev servers, made on
 /// this machine. Every verb answers the session's links after it.
-async fn share_port(request: dray_proto::ShareRequest) -> Result<Response> {
-    use dray_proto::ShareAction;
+async fn share_port(request: carbon_proto::ShareRequest) -> Result<Response> {
+    use carbon_proto::ShareAction;
     let session = request.session_id;
     let done = match request.action {
         ShareAction::Start { port } => crate::share::start(&session, port, "cli").await.map(drop),
@@ -811,7 +811,7 @@ async fn share_port(request: dray_proto::ShareRequest) -> Result<Response> {
     })
 }
 
-/// `dray share ls`: links in the caller's project, or every one with `--all`.
+/// `carbon share ls`: links in the caller's project, or every one with `--all`.
 async fn list_shares(list: ListSessions) -> Result<Response> {
     let scope = scope_of(&list).await?;
     let items = store::list_session_index_items(false).await?;
@@ -828,7 +828,7 @@ async fn list_shares(list: ListSessions) -> Result<Response> {
 
 /// Settles or unsettles through the sidebar's own command, which also stops
 /// a settled session's processes and carries its hidden children along.
-async fn settle_session(settle: dray_proto::SettleSession, app: &Sink) -> Result<Response> {
+async fn settle_session(settle: carbon_proto::SettleSession, app: &Sink) -> Result<Response> {
     let id = settle.session_id.as_str();
     let item = store::get_session_index_item(id).await?.with_context(|| format!("no session {id}"))?;
     if settle.settled && manager().turn_in_flight(id).await {
@@ -866,9 +866,9 @@ async fn answer_session(id: &str) -> Result<Response> {
     Ok(Response::Session { session: summarize(item) })
 }
 
-/// One `dray browser` step: CEF's tabs in the Mac app, a headless Chromium
+/// One `carbon browser` step: CEF's tabs in the Mac app, a headless Chromium
 /// in a server or an app built without CEF.
-async fn browse(request: dray_proto::BrowserRequest) -> Result<Response> {
+async fn browse(request: carbon_proto::BrowserRequest) -> Result<Response> {
     let answered = |answer: Result<_, String>| match answer {
         Ok((output, data)) => Response::Browser { output, data },
         Err(message) => Response::error(message),
@@ -966,14 +966,14 @@ async fn apply_issue(link: &LinkIssues, input: &IssueInput) -> Result<Vec<IssueR
         store::link_session_issue(
             &link.session_id,
             IssueRef {
-                // By shape: `dray issue link` asks the tracker nothing, so
+                // By shape: `carbon issue link` asks the tracker nothing, so
                 // the identifier is the only thing that can say which one
                 // this belongs to — `owner/repo#12` is GitHub's.
                 tracker: IssueTracker::of(&identifier),
                 // No tracker call, so no stable tracker id to record. The
                 // identifier stands in: `unlink_session_issue` already
                 // matches on either, so a link made here is removable by
-                // the panel's button and by `dray issue unlink` alike.
+                // the panel's button and by `carbon issue unlink` alike.
                 id: identifier.clone(),
                 identifier,
                 title: input.title.clone().unwrap_or_default(),
@@ -1076,7 +1076,7 @@ async fn create_session(create: CreateSession, caller: Option<&Caller>, app: &Si
     })
 }
 
-/// Saves a task for later with the picks `dray new` would have given it, and
+/// Saves a task for later with the picks `carbon new` would have given it, and
 /// always with a worktree: an agent that leaves work for the reader has no
 /// standing to put it in the reader's own checkout.
 async fn create_draft(create: CreateDraft, caller: Option<&Caller>, app: &Sink) -> Result<Response> {
@@ -1225,8 +1225,8 @@ async fn start_session(
 /// other ref.
 ///
 /// A session id is tried first, because it is the address everywhere else in
-/// `dray` — `ls` prints it, `send` takes it — and an agent holding one should
-/// not have to learn how Dray names branches to point at that session's work.
+/// `carbon` — `ls` prints it, `send` takes it — and an agent holding one should
+/// not have to learn how Carbon names branches to point at that session's work.
 /// A ref that happens to look like a session id is the only ambiguity, and a
 /// v7 UUID is not a branch name anybody types.
 ///
@@ -1500,17 +1500,17 @@ async fn send_message(send: SendMessage, carried: Option<MessageSender>, app: &S
 ///
 /// Both built from one [`MessageSender`], so the two cannot name different
 /// sessions. The id rides along because it is the address: the agent answers
-/// with `dray send <id>` rather than paying a `dray ls` to work out who asked.
+/// with `carbon send <id>` rather than paying a `carbon ls` to work out who asked.
 ///
-/// A sender on another machine is named with it. `dray session send <id>`
+/// A sender on another machine is named with it. `carbon session send <id>`
 /// finds that machine where this one holds a token for it.
 fn attribute(prompt: &str, from: Option<&MessageSender>) -> String {
     match from {
         Some(MessageSender { session_id, title, machine: None }) => {
-            format!("[message from the Dray session \"{title}\" ({session_id})]\n\n{prompt}")
+            format!("[message from the Carbon session \"{title}\" ({session_id})]\n\n{prompt}")
         }
         Some(MessageSender { session_id, title, machine: Some(machine) }) => {
-            format!("[message from the Dray session \"{title}\" ({session_id}) on {machine}]\n\n{prompt}")
+            format!("[message from the Carbon session \"{title}\" ({session_id}) on {machine}]\n\n{prompt}")
         }
         None => prompt.to_string(),
     }
@@ -1724,7 +1724,7 @@ mod tests {
         let prompt = attribute("review is done", Some(&from));
 
         assert!(prompt.starts_with(
-            "[message from the Dray session \"Fix the login redirect\" (abc-123)]\n\n"
+            "[message from the Carbon session \"Fix the login redirect\" (abc-123)]\n\n"
         ));
         assert!(prompt.ends_with("review is done"));
     }
@@ -1740,7 +1740,7 @@ mod tests {
         };
         assert_eq!(
             attribute("go", Some(&from)),
-            "[message from the Dray session \"Fan out\" (abc-123) on Yogesh's Mac]\n\ngo"
+            "[message from the Carbon session \"Fan out\" (abc-123) on Yogesh's Mac]\n\ngo"
         );
     }
 
@@ -1755,9 +1755,9 @@ mod tests {
     /// command that cannot fix what they have.
     #[test]
     fn the_mismatch_names_whichever_side_is_behind() {
-        assert!(mismatch(PROTOCOL_VERSION - 1).contains("dray update"));
-        assert!(mismatch(PROTOCOL_VERSION + 1).contains("update the Dray app"));
-        assert!(!mismatch(PROTOCOL_VERSION + 1).contains("dray update"));
+        assert!(mismatch(PROTOCOL_VERSION - 1).contains("carbon update"));
+        assert!(mismatch(PROTOCOL_VERSION + 1).contains("update the Carbon app"));
+        assert!(!mismatch(PROTOCOL_VERSION + 1).contains("carbon update"));
     }
 
     /// CLI 0.9.0 stamps v6 on everything a stable 0.26.0 app can run, and
@@ -1769,10 +1769,10 @@ mod tests {
 
         assert_eq!(refusal(&line(OLDEST_SPOKEN)), None);
         assert_eq!(refusal(&line(PROTOCOL_VERSION)), None);
-        assert!(refusal(&line(OLDEST_SPOKEN - 1)).unwrap().contains("dray update"));
+        assert!(refusal(&line(OLDEST_SPOKEN - 1)).unwrap().contains("carbon update"));
         assert!(refusal(&line(PROTOCOL_VERSION + 1))
             .unwrap()
-            .contains("update the Dray app"));
+            .contains("update the Carbon app"));
     }
 
     /// Every harness the app can run is reachable by name from the CLI.

@@ -22,7 +22,7 @@ export default class CrashScreen extends Component<{ children: ReactNode }, { cr
     if (!this.state.crashed) return this.props.children;
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background text-center text-ui text-muted-foreground">
-        <p>Dray hit an error and stopped drawing. Your sessions are still running.</p>
+        <p>Carbon hit an error and stopped drawing. Your sessions are still running.</p>
         <Button onClick={() => window.location.reload()}>Reload</Button>
       </div>
     );

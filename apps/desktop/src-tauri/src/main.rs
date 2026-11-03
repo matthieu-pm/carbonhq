@@ -9,7 +9,7 @@ async fn main() {
     if std::env::args().nth(1).as_deref() == Some("--serve") {
         ade_lib::analytics::install_panic_hook();
         if let Err(e) = ade_lib::serve::run_mac().await {
-            eprintln!("dray --serve: {e:#}");
+            eprintln!("carbon --serve: {e:#}");
             std::process::exit(1);
         }
         return;

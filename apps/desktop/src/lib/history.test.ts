@@ -7,7 +7,7 @@ const visit = (url: string, title = "", visits = 1): BrowserVisit => ({ url, tit
 describe("matchHistory", () => {
   const list = [
     visit("https://docs.example.com/guide", "Example guide"),
-    visit("https://www.github.com/monorepo-labs/dray", "dray", 3),
+    visit("https://www.github.com/monorepo-labs/dray", "carbon", 3),
     visit("https://news.ycombinator.com/", "Hacker News"),
     visit("http://localhost:5173/", "Vite app", 9),
   ];

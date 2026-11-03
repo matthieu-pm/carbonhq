@@ -90,7 +90,7 @@ describe("the unset model", () => {
     expect(isUnsetModel("unknown" as never)).toBe(false);
   });
 
-  /// Under a harness Dray names a default for, the sentinel is a pick nobody
+  /// Under a harness Carbon names a default for, the sentinel is a pick nobody
   /// made and gives way to that default.
   it("gives way once a real list arrives", () => {
     expect(usableModel(CLAUDE, UNSET_MODEL, "claude_code")).toBe("opus");

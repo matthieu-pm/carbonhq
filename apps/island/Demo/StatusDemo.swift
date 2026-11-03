@@ -131,7 +131,7 @@ private let sections: [(String, [Case])] = [
 
 private func session(_ id: String, _ title: String, status: String = "idle", branch: String? = nil) -> SessionItem {
     var o: [String: Any] = [
-        "sessionId": id, "harness": "claude_code", "cwd": "/Users/me/dray", "projectPath": "/Users/me/dray",
+        "sessionId": id, "harness": "claude_code", "cwd": "/Users/me/carbon", "projectPath": "/Users/me/carbon",
         "title": title, "model": "opus", "effort": "high", "permissionMode": "auto", "status": status,
         "modified": stamp(),
     ]
@@ -150,7 +150,7 @@ private let withPr = session("s8", "Sidebar globe icon for Mac remote", branch: 
 private let workingPr = session("s9", "Integrate Devin CLI harness", status: "in_progress", branch: "worktree-globe")
 
 private func pr(_ state: String, _ checks: String) -> [String: [String: PrMark]] {
-    ["/Users/me/dray": ["worktree-globe": PrMark(number: 573, headRefName: "worktree-globe", isDraft: false, state: state, checksState: checks)]]
+    ["/Users/me/carbon": ["worktree-globe": PrMark(number: 573, headRefName: "worktree-globe", isDraft: false, state: state, checksState: checks)]]
 }
 
 private func ask(_ s: SessionItem, _ payload: [String: Any]) -> AgentEvent {
@@ -172,14 +172,14 @@ private func bash(_ s: SessionItem) -> AgentEvent {
 
 private func edit(_ s: SessionItem) -> AgentEvent {
     ask(s, ["type": "permission_requested", "requestId": "e-\(s.sessionId)", "toolName": "Edit", "title": "Edit a file",
-            "input": ["file_path": "/Users/me/dray/apps/desktop/src/components/ThemeSwatches.tsx"],
+            "input": ["file_path": "/Users/me/carbon/apps/desktop/src/components/ThemeSwatches.tsx"],
             "options": options([("Allow", "allow"), ("Allow edits this session", "allow"), ("Deny", "deny")])])
 }
 
 private func longBash(_ s: SessionItem) -> AgentEvent {
     ask(s, ["type": "permission_requested", "requestId": "l-\(s.sessionId)", "toolName": "Bash", "title": "Run a command",
             "description": "Rebuild the island, swap it for the running one and relaunch it against the release server",
-            "input": ["command": "sh apps/island/build.sh /tmp/out && pkill -x 'Dray Island'; sleep 1; open -g '/tmp/out/Dray Island.app' && pgrep -lf 'Dray Island' | head -2 && echo relaunched"],
+            "input": ["command": "sh apps/island/build.sh /tmp/out && pkill -x 'Carbon Island'; sleep 1; open -g '/tmp/out/Carbon Island.app' && pgrep -lf 'Carbon Island' | head -2 && echo relaunched"],
             "options": options([("Allow once", "allow"), ("Always allow sh", "allow"), ("Always allow pkill", "allow"),
                                 ("Always allow open", "allow"), ("Allow everything in this session", "allow"),
                                 ("Always allow in this project", "allow"), ("Deny", "deny"), ("Deny and stop", "deny")])])
@@ -209,7 +209,7 @@ private func multiSelect(_ s: SessionItem) -> AgentEvent {
 
 private func threeQuestions(_ s: SessionItem) -> AgentEvent {
     ask(s, ["type": "questions_asked", "requestId": "t-\(s.sessionId)", "questions": [
-        q("Replace Dray's banner or show beside it?", [("Replace", nil), ("Both", nil)]),
+        q("Replace Carbon's banner or show beside it?", [("Replace", nil), ("Both", nil)]),
         q("What shape?", [("Pill, fades", "Hover holds it."), ("Pill until clicked", nil), ("Open the panel", nil)]),
         q("Show it when the session is on screen?", [("No", nil), ("Always", nil)]),
     ]])
@@ -315,14 +315,14 @@ private func marks(_ turn: MockTurn, _ pull: Pull) -> Marks {
 /// One row per state, so the marks can be read against each other.
 private struct ListMock: View {
     private let rows: [(String, String, Marks)] = [
-        ("Fix the login redirect", "dray", marks(.asking, .none)),
-        ("Island status in the task list", "dray", marks(.working, .checks)),
-        ("Paste images into the composer", "dray", marks(.done, .open)),
-        ("Theme swatches in settings", "dray", marks(.idle, .failing)),
-        ("Orb lab", "dray", marks(.working, .none)),
+        ("Fix the login redirect", "carbon", marks(.asking, .none)),
+        ("Island status in the task list", "carbon", marks(.working, .checks)),
+        ("Paste images into the composer", "carbon", marks(.done, .open)),
+        ("Theme swatches in settings", "carbon", marks(.idle, .failing)),
+        ("Orb lab", "carbon", marks(.working, .none)),
         ("Docs for remote access", "web", marks(.idle, .draft)),
         ("Changelog for 0.12", "web", marks(.done, .merged)),
-        ("Spike: CEF memory", "dray", marks(.idle, .none)),
+        ("Spike: CEF memory", "carbon", marks(.idle, .none)),
     ]
 
     var body: some View {

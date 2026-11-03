@@ -58,8 +58,8 @@ const FX_DEFAULT_STARS: Record<string, string[]> = {
 /// The default stars for a harness, narrowed to models it actually serves.
 ///
 /// Claude Code, Codex and grok star every row not marked `secondary` — the
-/// short list Dray names. pi seeds nothing: its list is whatever the reader's
-/// providers serve, and Dray has no opinion on which of them to work with.
+/// short list Carbon names. pi seeds nothing: its list is whatever the reader's
+/// providers serve, and Carbon has no opinion on which of them to work with.
 ///
 /// A needle matches a whole id or its last segment: the gateway names a model
 /// `openai/gpt-5.6-sol` where fx's own providers name the same thing
@@ -175,7 +175,7 @@ export function toggleStar(starred: ModelId[], id: ModelId): ModelId[] {
 /// Case-insensitive substring, over everything on the row a reader can see plus
 /// the id underneath it.
 ///
-/// The id is searched because it is what `dray new --model` takes and what an
+/// The id is searched because it is what `carbon new --model` takes and what an
 /// error names, so somebody arriving with one in hand can find its row.
 export function matchesQuery(model: Model, query: string): boolean {
   const q = query.trim().toLowerCase();

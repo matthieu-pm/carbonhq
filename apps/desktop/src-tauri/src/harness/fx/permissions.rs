@@ -1,4 +1,4 @@
-//! fx's `session/request_permission` onto Dray's permission card, through
+//! fx's `session/request_permission` onto Carbon's permission card, through
 //! [`acp::pending_for`].
 
 use crate::events::PermissionOption;

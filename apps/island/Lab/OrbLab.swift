@@ -301,7 +301,7 @@ private struct PanelMock: View {
 
     private var hint: String {
         switch state {
-        case .idle: "Reply to Dray…"
+        case .idle: "Reply to Carbon…"
         case .starting, .recording: "Listening…"
         case .transcribing: "Transcribing…"
         }

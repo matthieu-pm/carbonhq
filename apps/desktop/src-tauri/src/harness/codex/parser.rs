@@ -418,7 +418,7 @@ pub struct ApprovalRequest {
     /// **Not in the generated schema**, which lists neither this nor the field
     /// on the command params; it is on the wire, and the capture is what proves
     /// it. Kept as raw values because the answer echoes one back untouched: a
-    /// decision Dray retyped would be a decision it could get wrong.
+    /// decision Carbon retyped would be a decision it could get wrong.
     #[serde(default, deserialize_with = "crate::harness::null_as_default")]
     pub available_decisions: Vec<Value>,
 }
@@ -446,7 +446,7 @@ pub fn parse_notification(method: &str, params: Value) -> Result<CodexEvent, ser
         // Taken from the server's own `ServerNotification` enum, read out of
         // the `codex` binary rather than guessed at from what has happened to
         // fire here — a method reaches this arm the first time it arrives, not
-        // the second. What is *left* out is the rule: surfaces Dray never opens
+        // the second. What is *left* out is the rule: surfaces Carbon never opens
         // (`thread/realtime/*` voice, `fuzzyFileSearch/*` sessions, Windows
         // sandbox setup, `externalAgentConfig/import/*`, login completion) stay
         // `Unknown`, because one of those arriving would mean this app started
@@ -456,7 +456,7 @@ pub fn parse_notification(method: &str, params: Value) -> Result<CodexEvent, ser
         // `thread/status/changed` is a second opinion on a question
         // `StatusTracker` already answers from the turn lifecycle, and taking
         // both would let them disagree. `turn/diff/updated` is the
-        // transcript-derived diff Dray's snapshot design deliberately rejects.
+        // transcript-derived diff Carbon's snapshot design deliberately rejects.
         // `rawResponse*` is the model's own wire echo of items already drawn.
         // The rest are chatter with no row to draw.
         "thread/started"
@@ -496,7 +496,7 @@ pub fn parse_notification(method: &str, params: Value) -> Result<CodexEvent, ser
         | "autoApprovalReview/strictReviewRequired"
         | "rawResponseItem/completed"
         | "rawResponse/completed"
-        // Connection-scoped exec, which Dray does not use — it runs commands
+        // Connection-scoped exec, which Carbon does not use — it runs commands
         // through the agent, not around it.
         | "command/exec/outputDelta"
         | "process/outputDelta"
@@ -583,7 +583,7 @@ mod tests {
         ));
     }
 
-    /// The other half of that rule. A surface Dray never opens has to stay
+    /// The other half of that rule. A surface Carbon never opens has to stay
     /// `Unknown`, because one arriving means this build is speaking a protocol
     /// it does not know it speaks — which is a gap, not chatter.
     #[test]
@@ -598,7 +598,7 @@ mod tests {
     /// the turn around it still has to draw.
     #[test]
     fn unmodelled_item_kind_degrades() {
-        // `imageGeneration` is in the server's own variant list and Dray draws
+        // `imageGeneration` is in the server's own variant list and Carbon draws
         // nothing for it. Pick a kind from that list rather than an invented
         // one, so this keeps testing the case that actually happens.
         let params = json!({
