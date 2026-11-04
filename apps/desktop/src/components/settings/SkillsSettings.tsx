@@ -3,14 +3,15 @@ import { open as openFolder } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import AgentIcon from "@/components/AgentIcon";
+import CarbonIcon from "@/components/CarbonIcon";
 import {
   ArrowLeftOutline12,
   CircleWarningOutline12,
+  CubesGlyph18,
   DotsOutline12,
   FolderImportOutline18,
   FolderOpenOutline12,
   LockOutline12,
-  MagicWandSparkleGlyph18,
   PenOutline12,
   PlusOutline12,
   RefreshClockwiseOutline12,
@@ -156,8 +157,10 @@ export default function SkillsSettings() {
             <section key={root.id} className="flex flex-col gap-1">
               <GroupHeader
                 icon={
-                  root.writable ? (
-                    <MagicWandSparkleGlyph18 className="size-3.5" />
+                  root.writable && !root.project ? (
+                    <CarbonIcon className="size-3.5" />
+                  ) : root.writable ? (
+                    <CubesGlyph18 className="size-3.5" />
                   ) : (
                     <AgentIcon harness={root.readers[0]} className="size-3.5" />
                   )
