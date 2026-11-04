@@ -69,30 +69,90 @@ async fn dirty_count(cwd: &str) -> u32 {
     git(cwd, &["status", "--porcelain"]).await.map_or(0, |s| count_changes(&s))
 }
 
-/// Local branches, the current one, and whether the tree is dirty.
+/// The branches the picker offers, the current one, and whether the tree is dirty.
 ///
-/// A directory that isn't a repo reads as an empty list rather than an error:
+/// Offered = local branches plus `origin`'s, minus local ones whose upstream is
+/// gone — so the list reads like GitHub as of the last [`fetch_branches`]. A
+/// directory that isn't a repo reads as an empty list rather than an error:
 /// the user is allowed to attach any folder, and the picker hides itself when
 /// there are no branches.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_branches(cwd: &str) -> Result<BranchList, Fail> {
     // `for-each-ref` is plumbing; `git branch` decorates the current entry with
-    // `* ` and can paginate or colorize depending on the user's config.
+    // `* ` and can paginate or colorize depending on the user's config. A tab
+    // splits safely, since git forbids control characters in ref names.
     let Some(raw) = git(
         cwd,
-        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+        &[
+            "for-each-ref",
+            "--format=%(refname)\t%(upstream:track)",
+            "refs/heads",
+            "refs/remotes/origin",
+        ],
     )
     .await
     else {
         return Ok(BranchList::default());
     };
 
+    let current = head_branch(cwd).await;
     Ok(BranchList {
-        current: head_branch(cwd).await,
-        branches: parse_branches(&raw),
+        branches: offered_branches(&raw, current.as_deref()),
+        current,
         default_base: default_base(cwd).await,
         dirty: dirty_count(cwd).await,
     })
+}
+
+/// When each repo last fetched, so a picker opened and closed in a row costs
+/// one round trip to GitHub rather than one per open.
+static LAST_FETCH: std::sync::Mutex<Option<HashMap<String, std::time::Instant>>> =
+    std::sync::Mutex::new(None);
+
+const FETCH_GAP: std::time::Duration = std::time::Duration::from_secs(10);
+const FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Fetches `origin` with `--prune`, then answers [`list_branches`]. Without the
+/// fetch the picker shows what this checkout last heard, which is branches long
+/// deleted on GitHub and none of the ones pushed from elsewhere.
+///
+/// A failed fetch — offline, no `origin`, credentials wanted — still answers
+/// the local view: stale beats empty.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn fetch_branches(cwd: &str) -> Result<BranchList, Fail> {
+    let due = {
+        let mut last = LAST_FETCH.lock().unwrap_or_else(|e| e.into_inner());
+        let last = last.get_or_insert_with(HashMap::new);
+        let now = std::time::Instant::now();
+        let due = last.get(cwd).is_none_or(|at| now.duration_since(*at) >= FETCH_GAP);
+        if due {
+            last.insert(cwd.to_string(), now);
+        }
+        due
+    };
+
+    if due && git_line(cwd, &["remote", "get-url", "origin"]).await.is_some() {
+        let mut cmd = Command::new("git");
+        cmd.args(["fetch", "--prune", "--no-tags", "--quiet", "origin"])
+            .current_dir(cwd)
+            // A credential prompt has nobody to answer it and would hang the fetch.
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let _ = tokio::time::timeout(FETCH_TIMEOUT, cmd.status()).await;
+    }
+
+    list_branches(cwd).await
+}
+
+/// Every local branch, gone upstream or not. What a name must not collide with,
+/// as opposed to what the picker offers.
+pub async fn local_branches(cwd: &str) -> Vec<String> {
+    git(cwd, &["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+        .await
+        .map(|raw| parse_branches(&raw))
+        .unwrap_or_default()
 }
 
 /// Every `worktree-<name>` branch this repo knows of, local and remote-tracking,
@@ -289,8 +349,14 @@ pub async fn checkout_branch(cwd: &str, branch: &str, stash: bool) -> Result<Bra
 
     // Bare `checkout` carries uncommitted changes across when the file is
     // identical on both branches, and refuses when it isn't. That refusal is
-    // the whole safety story here, so it must not be forced away.
-    run(cwd, &["checkout", branch]).await?;
+    // the whole safety story here, so it must not be forced away. A branch only
+    // `origin` has gets a local one tracking it, named the same.
+    let local = format!("refs/heads/{branch}");
+    if git(cwd, &["rev-parse", "--verify", "--quiet", &local]).await.is_some() {
+        run(cwd, &["checkout", branch]).await?;
+    } else {
+        run(cwd, &["checkout", "--track", &format!("origin/{branch}")]).await?;
+    }
 
     list_branches(cwd).await
 }
@@ -333,6 +399,41 @@ pub(crate) fn stderr_or(out: &std::process::Output, fallback: impl FnOnce() -> S
 /// Porcelain prints one line per changed path, so the count is the line count.
 fn count_changes(raw: &str) -> u32 {
     raw.lines().filter(|l| !l.trim().is_empty()).count() as u32
+}
+
+/// Reads `%(refname)\t%(upstream:track)` lines into the picker's list, sorted.
+///
+/// A local branch whose upstream is `[gone]` was deleted on GitHub, usually by a
+/// merge, so it is dropped — unless it is checked out, since the picker must
+/// still name where the tree is. An `origin` branch with no local twin is kept.
+fn offered_branches(raw: &str, current: Option<&str>) -> Vec<String> {
+    let mut local = Vec::new();
+    let mut remote = Vec::new();
+
+    for line in raw.lines() {
+        let (refname, track) = line.split_once('\t').unwrap_or((line, ""));
+        if let Some(name) = refname.strip_prefix("refs/heads/") {
+            if track != "[gone]" || current == Some(name) {
+                local.push(name.to_string());
+            }
+        } else if let Some(name) = refname.strip_prefix("refs/remotes/origin/") {
+            if name != "HEAD" {
+                remote.push(name.to_string());
+            }
+        }
+    }
+
+    // A local branch hidden as gone still owns its name, so the remote side
+    // can't offer it again either — checking it out would hit the local one.
+    let locals: std::collections::HashSet<_> = raw
+        .lines()
+        .filter_map(|l| l.split('\t').next()?.strip_prefix("refs/heads/"))
+        .collect();
+    remote.retain(|name| !locals.contains(name.as_str()));
+
+    local.extend(remote);
+    local.sort();
+    local
 }
 
 fn parse_branches(raw: &str) -> Vec<String> {
@@ -1766,6 +1867,22 @@ mod tests {
     }
 
     #[test]
+    fn offers_remote_only_branches_and_hides_gone_ones() {
+        let raw = "refs/heads/main\t[behind 2]\n\
+                   refs/heads/merged\t[gone]\n\
+                   refs/heads/local-only\t\n\
+                   refs/heads/here\t[gone]\n\
+                   refs/remotes/origin/HEAD\t\n\
+                   refs/remotes/origin/main\t\n\
+                   refs/remotes/origin/pushed-elsewhere\t\n";
+
+        assert_eq!(
+            offered_branches(raw, Some("here")),
+            vec!["here", "local-only", "main", "pushed-elsewhere"],
+        );
+    }
+
+    #[test]
     fn empty_output_is_no_branches() {
         assert!(parse_branches("").is_empty());
         assert!(parse_branches("\n\n").is_empty());
@@ -2984,6 +3101,43 @@ mod tests {
         assert_eq!(pushed_branch(at, "v-elsewhere").await.unwrap(), "v-elsewhere");
         let here = current_branch(at).await.unwrap();
         assert_eq!(pushed_branch(at, &here).await.unwrap(), here);
+
+        fs::remove_dir_all(&dir).await.ok();
+        fs::remove_dir_all(&bare).await.ok();
+    }
+
+    /// The picker follows GitHub: after a fetch, a branch deleted on `origin`
+    /// leaves the list, one pushed from elsewhere joins it, and picking that one
+    /// checks out a local branch tracking it.
+    #[tokio::test]
+    async fn fetched_branches_follow_origin() {
+        let dir = scratch_repo().await;
+        let at = dir.to_str().unwrap();
+        let bare = std::env::temp_dir().join(format!("carbon-origin-{}", Uuid::now_v7()));
+        fs::create_dir_all(&bare).await.unwrap();
+        let origin = bare.to_str().unwrap();
+        run(origin, &["init", "-q", "--bare", "."]).await.unwrap();
+        run(at, &["remote", "add", "origin", origin]).await.unwrap();
+        run(at, &["branch", "merged"]).await.unwrap();
+        run(at, &["push", "-q", "-u", "origin", "merged"]).await.unwrap();
+
+        // Elsewhere: GitHub deletes `merged` and someone pushes `fresh`.
+        run(origin, &["branch", "fresh", "merged"]).await.unwrap();
+        run(origin, &["branch", "-D", "merged"]).await.unwrap();
+
+        let here = current_branch(at).await.unwrap();
+        let sorted = |mut v: Vec<String>| {
+            v.sort();
+            v
+        };
+        assert_eq!(list_branches(at).await.unwrap().branches, sorted(vec!["merged".into(), here.clone()]));
+
+        let list = fetch_branches(at).await.unwrap();
+        assert_eq!(list.branches, sorted(vec!["fresh".into(), here]));
+
+        let list = checkout_branch(at, "fresh", false).await.unwrap();
+        assert_eq!(list.current.as_deref(), Some("fresh"));
+        assert_eq!(upstream_branch(at).await.as_deref(), Some("origin/fresh"));
 
         fs::remove_dir_all(&dir).await.ok();
         fs::remove_dir_all(&bare).await.ok();

@@ -14,11 +14,13 @@ export default function BranchSelector({
   branches,
   value,
   onSelect,
+  onOpen,
   disabled = false,
 }: {
   branches: BranchList | null;
   value: string | null;
   onSelect: (branch: string) => void;
+  onOpen?: () => void;
   /// True while the switch popover is open over this picker — reopening the
   /// menu underneath it would offer a second branch before the first resolves.
   disabled?: boolean;
@@ -28,7 +30,7 @@ export default function BranchSelector({
   if (!branches?.branches.length) return null;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => open && onOpen?.()}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"

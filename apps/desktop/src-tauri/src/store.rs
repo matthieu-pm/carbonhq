@@ -854,10 +854,7 @@ pub async fn resolve_unclaimed_worktree_name(
     // One spawn, read once. A directory that is not a repository answers
     // nothing, which reads as no branches — right, since there is no branch
     // there to reset.
-    let branches = crate::git::list_branches(project_path)
-        .await
-        .map(|list| list.branches)
-        .unwrap_or_default();
+    let branches = crate::git::local_branches(project_path).await;
 
     let on_disk = |name: &str| Path::new(&worktree_path(project_path, name)).exists();
     let taken = |name: &str| {
