@@ -1345,6 +1345,20 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         check_agent_updates() => ok(crate::agent_updates::check_agent_updates().await);
         update_agent(harness: Harness) => crate::agent_updates::update_agent(harness).await;
 
+        // Settings → MCP and Skills: the agents' own config, read and written.
+        list_mcp_servers() => crate::mcp_servers::list_mcp_servers().await;
+        mcp_server_status() => ok(crate::mcp_servers::mcp_server_status().await);
+        save_mcp_server(target: crate::mcp_servers::McpTarget, original: Option<String>, server: crate::mcp_servers::McpServerEntry) =>
+            crate::mcp_servers::save_mcp_server(target, original, server).await;
+        remove_mcp_server(target: crate::mcp_servers::McpTarget, name: String) =>
+            crate::mcp_servers::remove_mcp_server(target, name).await;
+        list_skills() => crate::skills::list_skills().await;
+        read_skill(path: String) => crate::skills::read_skill(path).await;
+        create_skill(root: String, skill: crate::skills::SkillDocument) => crate::skills::create_skill(root, skill).await;
+        save_skill(path: String, skill: crate::skills::SkillDocument) => crate::skills::save_skill(path, skill).await;
+        remove_skill(path: String) => crate::skills::remove_skill(path).await;
+        import_skill(root: String, source: String) => crate::skills::import_skill(root, source).await;
+
         // Projects and settings.
         list_projects() => crate::projects::list_projects().await;
         add_project(path: String) => crate::projects::add_project(&path).await;

@@ -73,6 +73,15 @@ pub async fn list_commands(cwd: &str) -> Vec<SlashCommand> {
 /// to where it runs, so a probe spawned anywhere else answers for the wrong
 /// project.
 async fn probe(cwd: &str) -> Result<Vec<SlashCommand>> {
+    probe_rows(cwd).await.map(|data| read_rows(&data))
+}
+
+/// Settings needs fresh resource paths and provenance that the command picker discards.
+pub(crate) async fn skill_sources(cwd: &str) -> Result<Value> {
+    probe_rows(cwd).await
+}
+
+async fn probe_rows(cwd: &str) -> Result<Value> {
     let (mut child, client) = super::spawn_probe(Some(cwd), "commands").await?;
 
     let listed = client
@@ -83,10 +92,8 @@ async fn probe(cwd: &str) -> Result<Vec<SlashCommand>> {
     // `~/.pi/agent/auth.json.lock` while it runs and a kill leaves it, so the
     // cost lands on the next pi to start — which here is very likely the
     // session the reader is about to open.
-    let answer = listed.map(|data| read_rows(&data));
     super::shutdown(&mut child, &client).await;
-
-    answer
+    listed
 }
 
 /// Folds pi's answer onto the picker's own vocabulary.
