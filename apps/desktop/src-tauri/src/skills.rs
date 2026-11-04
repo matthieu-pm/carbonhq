@@ -10,14 +10,14 @@
 //!
 //! **Some skills are not the reader's to edit.** `carbon` is rewritten by
 //! `carbon skill install` on every launch, Codex's `.system` skills ship with
-//! it, and a plugin's skills belong to the plugin. Those are listed and marked,
-//! never written.
+//! it. Those are listed and marked, never written. Plugin skills stay with
+//! their plugins and are not listed here.
 
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use ts_rs::TS;
 
 use crate::harness::Harness;
@@ -87,7 +87,7 @@ pub struct SkillRoot {
     pub path: String,
     pub project: Option<String>,
     pub readers: Vec<Harness>,
-    /// What to call a plugin's or a built-in group, which has no folder of the
+    /// What to call a built-in or package group, which has no folder of the
     /// reader's to name.
     pub label: Option<String>,
     pub skills: Vec<SkillEntry>,
@@ -186,8 +186,7 @@ fn root_of(known: &Known, skills: Vec<SkillEntry>, error: Option<String>) -> Ski
     }
 }
 
-/// Every skill folder on this machine an agent here loads, plus the plugin and
-/// built-in skills that ride along with Claude Code and Codex.
+/// Standalone skill folders and built-in skills, without plugin-owned skills.
 ///
 /// Read fresh on every call: a skill added in a terminal must show the next
 /// time the tab opens, and this is a few dozen `read_dir`s.
@@ -208,11 +207,8 @@ pub async fn list_skills() -> Result<SkillsListing, Fail> {
             root.readers.retain(|h| *h != Pi);
         }
     }
-    let codex_extra = codex_plugin_skills(&home);
-
     let walked = tokio::task::spawn_blocking({
         let home = home.clone();
-        let projects = projects.clone();
         move || {
             let mut roots = Vec::new();
             let mut targets = Vec::new();
@@ -248,7 +244,6 @@ pub async fn list_skills() -> Result<SkillsListing, Fail> {
                     ));
                 }
             }
-            roots.extend(claude_plugin_skills(&home, &projects));
             (roots, targets)
         }
     })
@@ -291,12 +286,6 @@ pub async fn list_skills() -> Result<SkillsListing, Fail> {
         }
         for root in pi_roots {
             merge_pi_roots(&mut roots, vec![root]);
-        }
-    }
-    let walked_paths: Vec<String> = roots.iter().map(|r| r.path.clone()).collect();
-    for root in codex_extra.await {
-        if !walked_paths.contains(&root.path) {
-            roots.push(root);
         }
     }
     Ok(SkillsListing { roots, targets })
@@ -513,307 +502,6 @@ fn read_head(path: &Path) -> Result<String> {
         .take(FRONTMATTER_BYTES)
         .read_to_end(&mut bytes)?;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
-}
-
-fn plugin_skills(path: &Path) -> Result<Vec<SkillEntry>> {
-    if !path.join("SKILL.md").is_file() {
-        return walk(path, false);
-    }
-    let text = std::fs::read_to_string(path.join("SKILL.md"))?;
-    let (frontmatter, _) = split_frontmatter(&text);
-    metadata(frontmatter)?;
-    Ok(vec![SkillEntry {
-        name: frontmatter
-            .and_then(|f| field(f, "name"))
-            .unwrap_or_else(|| {
-                path.file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned()
-            }),
-        description: frontmatter
-            .and_then(|f| field(f, "description"))
-            .unwrap_or_default(),
-        path: path.to_string_lossy().into_owned(),
-        locked: None,
-        linked: std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()),
-    }])
-}
-
-/// Plugin enablement follows the same user, project, local and managed precedence as Claude.
-fn plugin_settings(home: &Path, project: Option<&Path>) -> Result<serde_json::Map<String, Value>> {
-    let mut paths = vec![home.join(".claude/settings.json")];
-    if let Some(project) = project {
-        paths.extend([
-            project.join(".claude/settings.json"),
-            project.join(".claude/settings.local.json"),
-        ]);
-    }
-    paths.push(if cfg!(target_os = "macos") {
-        PathBuf::from("/Library/Application Support/ClaudeCode/managed-settings.json")
-    } else {
-        PathBuf::from("/etc/claude-code/managed-settings.json")
-    });
-    let mut enabled = serde_json::Map::new();
-    for path in paths {
-        let text = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(err) => {
-                return Err(err).with_context(|| format!("couldn't read {}", path.display()))
-            }
-        };
-        let settings: Value = serde_json::from_str(&text)
-            .with_context(|| format!("couldn't parse {}", path.display()))?;
-        if let Some(value) = settings.get("enabledPlugins") {
-            enabled.extend(
-                value
-                    .as_object()
-                    .ok_or_else(|| anyhow!("enabledPlugins in {} isn't an object", path.display()))?
-                    .clone(),
-            );
-        }
-    }
-    Ok(enabled)
-}
-
-fn claude_plugin_skills(home: &Path, projects: &[PathBuf]) -> Vec<SkillRoot> {
-    let registry = home.join(".claude/plugins/installed_plugins.json");
-    let read = || -> Result<Vec<SkillRoot>> {
-        let text = match std::fs::read_to_string(&registry) {
-            Ok(text) => text,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(err) => return Err(err).context("couldn't read Claude Code's plugin registry"),
-        };
-        let installed: Value =
-            serde_json::from_str(&text).context("couldn't parse Claude Code's plugin registry")?;
-        let plugins = installed
-            .get("plugins")
-            .and_then(Value::as_object)
-            .ok_or_else(|| anyhow!("Claude Code's plugin registry has no plugins object"))?;
-        let global = plugin_settings(home, None)?;
-        let mut roots = Vec::new();
-        for (id, installs) in plugins {
-            let name = id.split('@').next().unwrap_or(id);
-            for install in installs.as_array().into_iter().flatten() {
-                let Some(path) = install
-                    .get("installPath")
-                    .and_then(Value::as_str)
-                    .map(Path::new)
-                else {
-                    continue;
-                };
-                let installed_project = install
-                    .get("projectPath")
-                    .and_then(Value::as_str)
-                    .map(Path::new);
-                let scopes: Vec<Option<&Path>> = match installed_project {
-                    Some(project) if projects.iter().any(|p| p == project) => vec![Some(project)],
-                    Some(_) => continue,
-                    None => std::iter::once(None)
-                        .chain(projects.iter().map(|p| Some(p.as_path())))
-                        .collect(),
-                };
-                let mut default_enabled = true;
-                let mut directories = vec![path.join("skills")];
-                let manifest = path.join(".claude-plugin/plugin.json");
-                match std::fs::read_to_string(&manifest) {
-                    Ok(text) => {
-                        let value: Value = serde_json::from_str(&text)
-                            .with_context(|| format!("couldn't parse {}", manifest.display()))?;
-                        default_enabled = value
-                            .get("defaultEnabled")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(true);
-                        if let Some(skills) = value.get("skills") {
-                            for extra in skills.as_str().into_iter().chain(
-                                skills
-                                    .as_array()
-                                    .into_iter()
-                                    .flatten()
-                                    .filter_map(Value::as_str),
-                            ) {
-                                let dir = path.join(extra);
-                                if !directories.contains(&dir) {
-                                    directories.push(dir);
-                                }
-                            }
-                        }
-                    }
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => {
-                        return Err(err)
-                            .with_context(|| format!("couldn't read {}", manifest.display()))
-                    }
-                }
-                for project in scopes {
-                    let enabled = match plugin_settings(home, project) {
-                        Ok(enabled) => enabled,
-                        Err(err) => {
-                            roots.push(discovery_error(
-                                "Claude Code plugins",
-                                project.unwrap_or(home),
-                                vec![Claude],
-                                format!("{err:#}"),
-                            ));
-                            continue;
-                        }
-                    };
-                    if !enabled
-                        .get(id)
-                        .and_then(Value::as_bool)
-                        .unwrap_or(default_enabled)
-                    {
-                        continue;
-                    }
-                    if installed_project.is_none()
-                        && project.is_some()
-                        && global
-                            .get(id)
-                            .and_then(Value::as_bool)
-                            .unwrap_or(default_enabled)
-                    {
-                        continue;
-                    }
-                    for dir in &directories {
-                        match plugin_skills(dir) {
-                            Ok(skills) if !skills.is_empty() => {
-                                let mut root = locked_root(
-                                    &dir,
-                                    &format!("Plugin: {name}"),
-                                    vec![Claude],
-                                    skills,
-                                    &format!("From the {name} plugin"),
-                                );
-                                root.project = project.map(|p| p.to_string_lossy().into_owned());
-                                root.id = format!(
-                                    "{}:{}",
-                                    root.id,
-                                    root.project.as_deref().unwrap_or("")
-                                );
-                                roots.push(root);
-                            }
-                            Ok(_) => {}
-                            Err(err)
-                                if err
-                                    .downcast_ref::<std::io::Error>()
-                                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {}
-                            Err(err) => roots.push(discovery_error(
-                                &format!("Plugin: {name}"),
-                                &dir,
-                                vec![Claude],
-                                format!("{err:#}"),
-                            )),
-                        }
-                    }
-                }
-            }
-        }
-        Ok(roots)
-    };
-    let mut roots = read().unwrap_or_else(|err| {
-        vec![discovery_error(
-            "Claude Code plugins",
-            &registry,
-            vec![Claude],
-            format!("{err:#}"),
-        )]
-    });
-    let mut ids = std::collections::HashSet::new();
-    roots.retain(|root| ids.insert(root.id.clone()));
-    roots
-}
-
-/// Codex's plugin skills, which only Codex can say are on — its cache holds
-/// every version of every plugin it ever fetched. Asked of a throwaway
-/// app-server, and given up on quietly: these are read-only extras.
-async fn codex_plugin_skills(home: &Path) -> Vec<SkillRoot> {
-    if !crate::binpath::agent_installed(Codex).await {
-        return Vec::new();
-    }
-    let home_str = home.to_string_lossy().into_owned();
-    let asked = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        crate::harness::codex::probe::ask(Some(&home_str), "skills/list", json!({})),
-    )
-    .await;
-    let Ok(Ok(answer)) = asked else {
-        return Vec::new();
-    };
-    let cache = home.join(".codex/plugins/cache");
-    let mut by_plugin: std::collections::BTreeMap<String, (PathBuf, Vec<SkillEntry>)> =
-        Default::default();
-    for scope in answer
-        .get("data")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        for skill in scope
-            .get("skills")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let Some(path) = skill.get("path").and_then(Value::as_str).map(Path::new) else {
-                continue;
-            };
-            let Ok(rest) = path.strip_prefix(&cache) else {
-                continue;
-            };
-            // `<market>/<plugin>/<version>/skills/<skill>/SKILL.md`
-            let parts: Vec<_> = rest.components().collect();
-            if parts.len() < 6 {
-                continue;
-            }
-            let plugin = parts[1].as_os_str().to_string_lossy().into_owned();
-            let Some(skill_dir) = path.parent() else {
-                continue;
-            };
-            let Some(root) = skill_dir.parent() else {
-                continue;
-            };
-            let entry = SkillEntry {
-                name: skill
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| {
-                        skill_dir
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned()
-                    }),
-                description: skill
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                path: skill_dir.to_string_lossy().into_owned(),
-                locked: Some(format!("From the {plugin} plugin")),
-                linked: false,
-            };
-            by_plugin
-                .entry(plugin)
-                .or_insert_with(|| (root.to_path_buf(), Vec::new()))
-                .1
-                .push(entry);
-        }
-    }
-    by_plugin
-        .into_iter()
-        .map(|(plugin, (root, skills))| {
-            let why = format!("From the {plugin} plugin");
-            locked_root(
-                &root,
-                &format!("Plugin: {plugin}"),
-                vec![Codex],
-                skills,
-                &why,
-            )
-        })
-        .collect()
 }
 
 /// `(frontmatter, body)`. A file with no leading `---` block is all body.
@@ -1230,6 +918,7 @@ fn copy_contents(from: &Path, to: &Path, ancestors: &mut Vec<PathBuf>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn reads_every_description_shape() {
@@ -1492,56 +1181,6 @@ mod tests {
     }
 
     #[test]
-    fn review_claude_plugins_honor_enabled_scope_extra_paths_and_errors() {
-        let home = test_dir();
-        let project = home.join("project");
-        let plugin = home.join("plugin");
-        std::fs::create_dir_all(home.join(".claude/plugins")).unwrap();
-        std::fs::create_dir_all(project.join(".claude")).unwrap();
-        std::fs::create_dir_all(plugin.join(".claude-plugin")).unwrap();
-        std::fs::create_dir_all(plugin.join("extra-skills/example")).unwrap();
-        std::fs::write(
-            plugin.join("extra-skills/example/SKILL.md"),
-            "---\nname: example\ndescription: Extra\n---\nbody",
-        )
-        .unwrap();
-        std::fs::write(
-            plugin.join(".claude-plugin/plugin.json"),
-            r#"{"skills":["./extra-skills"]}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            home.join(".claude/plugins/installed_plugins.json"),
-            json!({"plugins":{"example@market":[{"installPath":plugin,"scope":"user"}]}})
-                .to_string(),
-        )
-        .unwrap();
-        std::fs::write(
-            home.join(".claude/settings.json"),
-            r#"{"enabledPlugins":{"example@market":false}}"#,
-        )
-        .unwrap();
-        assert!(claude_plugin_skills(&home, &[project.clone()]).is_empty());
-        std::fs::write(
-            project.join(".claude/settings.json"),
-            r#"{"enabledPlugins":{"example@market":true}}"#,
-        )
-        .unwrap();
-        let roots = claude_plugin_skills(&home, &[project.clone()]);
-        assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].project.as_deref(), project.to_str());
-        assert_eq!(roots[0].skills[0].name, "example");
-        assert!(roots[0].skills[0].locked.is_some());
-        std::fs::write(
-            home.join(".claude/plugins/installed_plugins.json"),
-            "invalid",
-        )
-        .unwrap();
-        assert!(claude_plugin_skills(&home, &[project])[0].error.is_some());
-        std::fs::remove_dir_all(home).unwrap();
-    }
-
-    #[test]
     fn review_numeric_looking_metadata_round_trips_as_text() {
         for value in ["0xff", "0o777", ".inf", "1_000", "true", "ordinary words"] {
             let doc = SkillDocument {
@@ -1565,40 +1204,5 @@ mod tests {
         let answer = json!({"commands":[{"source":"skill","name":"skill:carbon","sourceInfo":{"path":path,"scope":"user","origin":"top-level"}}]});
         let roots = pi_roots_from_commands(&answer, None);
         assert!(roots[0].skills[0].locked.is_some());
-    }
-
-    #[test]
-    fn review_direct_plugin_skills_and_default_enablement_are_respected() {
-        let home = test_dir();
-        let plugin = home.join("plugin");
-        std::fs::create_dir_all(home.join(".claude/plugins")).unwrap();
-        std::fs::create_dir_all(plugin.join(".claude-plugin")).unwrap();
-        std::fs::write(
-            plugin.join("SKILL.md"),
-            "---\nname: example\ndescription: Direct skill\n---\nbody",
-        )
-        .unwrap();
-        std::fs::write(
-            plugin.join(".claude-plugin/plugin.json"),
-            r#"{"skills":".","defaultEnabled":false}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            home.join(".claude/plugins/installed_plugins.json"),
-            json!({"plugins":{"example@market":[{"installPath":plugin,"scope":"user"}]}})
-                .to_string(),
-        )
-        .unwrap();
-        assert!(claude_plugin_skills(&home, &[]).is_empty());
-        std::fs::write(
-            home.join(".claude/settings.json"),
-            r#"{"enabledPlugins":{"example@market":true}}"#,
-        )
-        .unwrap();
-        let roots = claude_plugin_skills(&home, &[]);
-        assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].skills[0].name, "example");
-        assert!(!roots[0].writable);
-        std::fs::remove_dir_all(home).unwrap();
     }
 }

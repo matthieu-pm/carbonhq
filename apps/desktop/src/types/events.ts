@@ -2091,7 +2091,7 @@ linked: boolean, };
 
 export type SkillRoot = { id: string, path: string, project: string | null, readers: Array<Harness>, 
 /**
- * What to call a plugin's or a built-in group, which has no folder of the
+ * What to call a built-in or package group, which has no folder of the
  * reader's to name.
  */
 label: string | null, skills: Array<SkillEntry>, error: string | null, 

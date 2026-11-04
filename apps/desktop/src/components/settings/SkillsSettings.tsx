@@ -75,7 +75,7 @@ export default function SkillsSettings() {
   const groups = useMemo(
     () =>
       [...(listing?.roots ?? [])].sort((a, b) => {
-        // Global, then projects, then what plugins and agents ship.
+        // Global, then projects, then built-in and package skills.
         const rank = (r: SkillRoot) => (!r.writable ? 2 : r.project ? 1 : 0);
         return rank(a) - rank(b) || (a.project ?? "").localeCompare(b.project ?? "");
       }),
