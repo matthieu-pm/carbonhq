@@ -28,6 +28,15 @@ on:
       - ".github/workflows/warm-cache.yml"
       - ".github/actions/desktop-setup/**"
   workflow_dispatch:
+    inputs:
+      runner:
+        description: Build runner (Intel is a fallback when ARM capacity is unavailable)
+        type: choice
+        required: true
+        default: macos-latest
+        options:
+          - macos-latest
+          - macos-15-intel
 
 # Superseded runs are left to finish. Cancelling saved runner minutes back when
 # the cache was all this produced, but the build is also the compile signal for
@@ -45,7 +54,7 @@ env:
 
 jobs:
   warm:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.runner || 'macos-latest' }}
     steps:
       - uses: actions/checkout@v4
 
