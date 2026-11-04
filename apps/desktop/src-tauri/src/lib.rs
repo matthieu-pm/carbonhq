@@ -51,6 +51,8 @@ pub mod download;
 #[path = "events/events.rs"]
 pub mod events;
 pub mod files;
+#[cfg(feature = "desktop")]
+pub mod fonts;
 pub mod git;
 pub mod github;
 #[path = "harness/harness.rs"]
@@ -902,6 +904,7 @@ pub fn run() {
             quit::confirm_quit,
             quit::dismiss_quit,
             apps::list_open_apps,
+            fonts::list_font_families,
             apps::open_in_app,
             apps::configure_island,
             apps::island_running,
