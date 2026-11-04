@@ -1670,12 +1670,12 @@ mod tests {
     #[test]
     fn one_repository_has_one_key_however_it_was_cloned() {
         for url in [
-            "git@github.com:matthieu-pm/carbonhq.git",
-            "https://github.com/matthieu-pm/carbonhq",
-            "https://user@github.com/Matthieu-PM/CarbonHQ.git/",
-            "ssh://git@github.com/matthieu-pm/carbonhq.git",
+            "git@github.com:monorepo-labs/carbon.git",
+            "https://github.com/monorepo-labs/carbon",
+            "https://user@github.com/Monorepo-Labs/carbon.git/",
+            "ssh://git@github.com/monorepo-labs/carbon.git",
         ] {
-            assert_eq!(repo_key(url), "github.com/matthieu-pm/carbonhq", "{url}");
+            assert_eq!(repo_key(url), "github.com/monorepo-labs/carbon", "{url}");
         }
     }
 
