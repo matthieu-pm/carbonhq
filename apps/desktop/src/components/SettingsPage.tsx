@@ -18,7 +18,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 import AppIcon from "@/components/AppIcon";
 import LinearIcon from "@/components/LinearIcon";
-import rauchgAvatar from "@/assets/avatars/rauchg.jpg";
 import type { PanelSide } from "@/components/RightPanel";
 import ShortcutKeys from "@/components/ShortcutKeys";
 import TabButton from "@/components/TabButton";
@@ -85,13 +84,6 @@ const REPO_URL = "https://github.com/matthieu-pm/carbonhq";
 const ISSUES_URL = `${REPO_URL}/issues/new`;
 // The landing page's own link, so both ask through one door.
 const SPONSOR_URL = "https://www.carbonhq.com/support";
-
-/// People who sponsor Carbon, drawn in About — the landing page's "Supported by"
-/// list, kept in step by hand. Avatars are bundled rather than fetched, so the
-/// row is whole offline; without one it carries an initial.
-const SUPPORTERS: { name: string; note: string; url: string; avatar?: string }[] = [
-  { name: "Guillermo Rauch", note: "Vercel CEO · OSS Grants", url: "https://x.com/rauchg", avatar: rauchgAvatar },
-];
 
 /// The app's preferences, such as they are.
 ///
@@ -951,10 +943,7 @@ function ContactBlock() {
   );
 }
 
-/// Sponsoring, starring, and who already did the first.
-///
-/// The list is written here and ships with a release — no fetch, so it cannot
-/// fail, and a name added is a line in this file.
+/// Links to support Carbon or star the repo.
 function SupportBlock() {
   return (
     <div className="flex flex-col gap-2.5">
@@ -971,29 +960,6 @@ function SupportBlock() {
           Star on GitHub
         </Button>
       </div>
-      <ul className="flex flex-col gap-1 pt-1">
-        {SUPPORTERS.map((s) => (
-          <li key={s.name}>
-            <button
-              type="button"
-              onClick={() => void openUrl(s.url)}
-              className="-mx-2 flex w-[calc(100%+1rem)] cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
-            >
-              {s.avatar ? (
-                <img src={s.avatar} alt="" className="size-7 shrink-0 rounded-full object-cover" />
-              ) : (
-                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-xs text-muted-foreground">
-                  {s.name[0]}
-                </span>
-              )}
-              <span className="flex min-w-0 flex-col">
-                <span className="text-ui font-medium">{s.name}</span>
-                <span className="text-ui text-muted-foreground">{s.note}</span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
