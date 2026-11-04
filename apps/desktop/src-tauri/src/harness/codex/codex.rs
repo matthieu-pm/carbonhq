@@ -587,11 +587,7 @@ async fn read_stdout(
             // silence is not neutral: it stalls the session until Codex's own
             // deadline, exactly as an unanswered `can_use_tool` does.
             Incoming::Request { id, method, params } => {
-                let kind = match method.as_str() {
-                    "item/commandExecution/requestApproval" => Some(ApprovalKind::COMMAND),
-                    "item/fileChange/requestApproval" => Some(ApprovalKind::FILE_CHANGE),
-                    _ => None,
-                };
+                let kind = ApprovalKind::for_method(&method);
 
                 match kind {
                     Some(kind) => {
@@ -610,7 +606,12 @@ async fn read_stdout(
                                 &line,
                             )
                             .await;
-                            let _ = handles.client.respond(id, json!({"decision": "decline"}));
+                            let refusal = if kind == ApprovalKind::MCP {
+                                json!({"action": "decline"})
+                            } else {
+                                json!({"decision": "decline"})
+                            };
+                            let _ = handles.client.respond(id, refusal);
                         }
                     }
                     None => {
@@ -858,6 +859,17 @@ async fn raise_permission(
     kind: ApprovalKind,
     params: Value,
 ) -> Result<()> {
+    if kind == ApprovalKind::MCP {
+        let request_id = rpc_request_id();
+        let (pending, payload) = permissions::pending_for_mcp(params, rpc_id, &request_id)?;
+        handles
+            .pending
+            .lock()
+            .expect("pending permissions mutex poisoned")
+            .insert(request_id, pending);
+        handles.app.emit("agent_event", mapper.synthesize(payload))?;
+        return Ok(());
+    }
     let request: parser::ApprovalRequest = serde_json::from_value(params)?;
     let (pending, options) = permissions::pending_for(&request, kind, rpc_id);
 
@@ -908,6 +920,114 @@ async fn raise_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn mcp_tool_approval_raises_a_card_instead_of_rejecting_the_write() {
+        let (tx, mut replies) = tokio::sync::mpsc::unbounded_channel();
+        let (events_tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+        let handles = ReaderHandles {
+            client: RpcClient::over(tx),
+            session_id: "mcp-approval-test".to_string(),
+            session_cwd: "/tmp".to_string(),
+            pending: Default::default(),
+            app: Sink::new(move |_, event| {
+                events_tx.send(event).unwrap();
+            }),
+        };
+        let seq = Arc::new(AtomicU64::new(0));
+        let mut mapper = mapper::Mapper::new(handles.session_id.clone(), seq.clone());
+        let request: Value =
+            serde_json::from_str(include_str!("fixtures/mcp_approval.json")).unwrap();
+        let kind = ApprovalKind::for_method(request["method"].as_str().unwrap()).unwrap();
+        let model = crate::models::find_model(&crate::models::ModelId::new("gpt-6.1-sol")).unwrap();
+        let mut session = Session {
+            id: handles.session_id.clone(),
+            child: Command::new("true").spawn().unwrap(),
+            stdin: Transport::Rpc(Thread {
+                client: handles.client.clone(),
+                id: "thread-1".to_string(),
+                settings: Arc::new(std::sync::Mutex::new(TurnSettings::new(
+                    &model,
+                    None,
+                    ApprovalPolicy::Auto,
+                    false,
+                ))),
+                turn_id: Arc::new(Mutex::new(None)),
+            }),
+            harness: Codex,
+            model: model.id,
+            effort: None,
+            permission_mode: ApprovalPolicy::Auto,
+            fast: false,
+            seq,
+            status: Default::default(),
+            pending_permissions: handles.pending.clone(),
+            queued: Default::default(),
+        };
+        let mut previous_request_id = None;
+
+        for (behavior, expected) in [
+            ("allow", json!({"action": "accept", "content": {}})),
+            ("deny", json!({"action": "decline"})),
+        ] {
+            raise_permission(&handles, &mut mapper, 0, kind, request["params"].clone())
+                .await
+                .unwrap();
+
+            let event = events
+                .try_recv()
+                .expect("the write must wait on a visible card")["payload"]
+                .clone();
+            let request_id = event["requestId"].as_str().unwrap();
+            assert_ne!(previous_request_id.as_deref(), Some(request_id));
+            assert!(handles.pending.lock().unwrap().contains_key(request_id));
+            assert_eq!(event["type"], "permission_requested");
+            assert_eq!(event["displayName"], "Linear");
+            assert_eq!(event["description"], request["params"]["message"]);
+            assert!(event["input"]["command"]
+                .as_str()
+                .unwrap()
+                .contains("ATM-342"));
+            assert!(replies.try_recv().is_err(), "the user has not answered yet");
+
+            assert!(session
+                .respond_permission(request_id, "unknown", &handles.app)
+                .await
+                .is_err());
+            assert!(handles.pending.lock().unwrap().contains_key(request_id));
+            let option_id = event["options"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|o| o["behavior"] == behavior)
+                .unwrap()["id"]
+                .as_str()
+                .unwrap();
+            session
+                .respond_permission(request_id, option_id, &handles.app)
+                .await
+                .unwrap();
+            let crate::harness::rpc::Outbound::Line(reply) = replies.try_recv().unwrap() else {
+                panic!("expected an RPC reply");
+            };
+            assert_eq!(
+                serde_json::from_str::<Value>(&reply).unwrap(),
+                json!({"jsonrpc": "2.0", "id": 0, "result": expected})
+            );
+            assert!(handles.pending.lock().unwrap().is_empty());
+            let decided = events.try_recv().unwrap();
+            assert_eq!(decided["payload"]["type"], "permission_decided");
+            assert_eq!(decided["payload"]["requestId"], request_id);
+            assert_eq!(decided["payload"]["behavior"], behavior);
+            assert!(session
+                .respond_permission(request_id, option_id, &handles.app)
+                .await
+                .is_err());
+            assert!(replies.try_recv().is_err());
+            previous_request_id = Some(request_id.to_string());
+        }
+        session.child.wait().await.unwrap();
+    }
 
     /// Both values are kebab-case, and a camelCase one is refused outright —
     /// verified live, against a README that documents the opposite. Getting

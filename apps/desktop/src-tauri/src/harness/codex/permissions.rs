@@ -8,16 +8,18 @@
 //!
 //! What differs is the reply. Claude answers a `control_request` with a
 //! double-wrapped verdict; Codex answers a JSON-RPC request with
-//! `{"decision": …}` against the id it asked on.
+//! `{"decision": …}` against the id it asked on. MCP consent uses an
+//! elicitation result with `action` and `content` instead.
 
-use crate::events::{PermissionBehavior, PermissionOption, PermissionOptionKind};
+use crate::events::{AgentEventPayload, PermissionBehavior, PermissionOption, PermissionOptionKind};
 use crate::harness::claude_code::permissions::{PendingRequest, Reply, ResolvedOption};
-use serde_json::Value;
+use anyhow::{ensure, Result};
+use serde::Deserialize;
+use serde_json::{json, Value};
 
 use super::parser::ApprovalRequest;
 
-/// Which of the two approval requests this is, which is all the card needs to
-/// name the call in a sentence.
+/// The request's protocol and the tool name used on its permission card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApprovalKind {
     /// The tool name the transcript already drew this call under, so the card
@@ -29,6 +31,122 @@ pub struct ApprovalKind {
 impl ApprovalKind {
     pub const COMMAND: Self = Self { tool_name: "shell", display_name: "Shell" };
     pub const FILE_CHANGE: Self = Self { tool_name: "apply_patch", display_name: "Edit" };
+    pub const MCP: Self = Self { tool_name: "mcp", display_name: "MCP" };
+
+    /// Keeps MCP consent on the approval path rather than the unknown-request path.
+    pub fn for_method(method: &str) -> Option<Self> {
+        match method {
+            "item/commandExecution/requestApproval" => Some(Self::COMMAND),
+            "item/fileChange/requestApproval" => Some(Self::FILE_CHANGE),
+            "mcpServer/elicitation/request" => Some(Self::MCP),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpApproval {
+    server_name: String,
+    mode: String,
+    message: String,
+    #[serde(rename = "_meta")]
+    meta: McpApprovalMeta,
+    requested_schema: ConsentSchema,
+}
+
+#[derive(Deserialize)]
+struct McpApprovalMeta {
+    codex_approval_kind: String,
+    tool_params: Value,
+    tool_title: Option<String>,
+    connector_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConsentSchema {
+    #[serde(rename = "type")]
+    kind: String,
+    properties: serde_json::Map<String, Value>,
+    #[serde(default, deserialize_with = "crate::harness::null_as_default")]
+    required: Vec<String>,
+    #[serde(rename = "$schema")]
+    _schema: Option<String>,
+}
+
+/// Keeps tool consent distinct from MCP forms that require user-supplied data.
+pub fn pending_for_mcp(
+    params: Value,
+    rpc_id: i64,
+    request_id: &str,
+) -> Result<(PendingRequest, AgentEventPayload)> {
+    let request: McpApproval = serde_json::from_value(params)?;
+    ensure!(
+        request.mode == "form"
+            && request.meta.codex_approval_kind == "mcp_tool_call"
+            && request.requested_schema.kind == "object"
+            && request.requested_schema.properties.is_empty()
+            && request.requested_schema.required.is_empty()
+            && request.meta.tool_params.is_object(),
+        "unsupported MCP elicitation: expected tool consent with an empty form"
+    );
+
+    let options = [
+        (
+            "mcp-allow",
+            "Allow once",
+            PermissionOptionKind::Once,
+            PermissionBehavior::Allow,
+            json!({"action": "accept", "content": {}}),
+        ),
+        (
+            "mcp-deny",
+            "Deny",
+            PermissionOptionKind::Deny,
+            PermissionBehavior::Deny,
+            json!({"action": "decline"}),
+        ),
+    ]
+    .into_iter()
+    .map(|(id, label, kind, behavior, decision)| ResolvedOption {
+        option: PermissionOption {
+            id: id.to_string(),
+            label: label.to_string(),
+            kind,
+            behavior,
+        },
+        updates: Vec::new(),
+        decision: Some(decision),
+    })
+    .collect::<Vec<_>>();
+    let offered = options.iter().map(|r| r.option.clone()).collect();
+    let input = json!({"command": serde_json::to_string_pretty(&request.meta.tool_params)?});
+    let pending = PendingRequest {
+        tool_use_id: request_id.to_string(),
+        tool_name: ApprovalKind::MCP.tool_name.to_string(),
+        input: Value::Null,
+        options: options
+            .into_iter()
+            .map(|r| (r.option.id.clone(), r))
+            .collect(),
+        reply: Reply::McpElicitation(rpc_id),
+    };
+    let event = AgentEventPayload::PermissionRequested {
+        request_id: request_id.to_string(),
+        tool_use_id: pending.tool_use_id.clone(),
+        tool_name: pending.tool_name.clone(),
+        display_name: Some(request.meta.connector_name.unwrap_or(request.server_name)),
+        title: request.meta.tool_title,
+        description: Some(request.message),
+        input,
+        blocked_path: None,
+        decision_reason: None,
+        decision_reason_type: None,
+        agent_id: None,
+        options: offered,
+    };
+    Ok((pending, event))
 }
 
 /// Builds the held request and the buttons for it in one pass, so what the user
@@ -186,6 +304,41 @@ fn first_line(command: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn mcp_forms_needing_input_never_become_allow_buttons() {
+        let captured: Value =
+            serde_json::from_str(include_str!("fixtures/mcp_approval.json")).unwrap();
+        for (field, value) in [
+            ("/mode", json!("url")),
+            ("/_meta/codex_approval_kind", json!("unknown")),
+            ("/_meta/tool_params", Value::Null),
+            ("/requestedSchema/type", json!("string")),
+            (
+                "/requestedSchema/properties",
+                json!({"email": {"type": "string"}}),
+            ),
+            (
+                "/requestedSchema",
+                json!({"type": "object", "properties": {}, "required": ["email"]}),
+            ),
+            (
+                "/requestedSchema",
+                json!({"type": "object", "properties": {}, "allOf": []}),
+            ),
+            ("/requestedSchema", Value::Null),
+        ] {
+            let mut params = captured["params"].clone();
+            *params.pointer_mut(field).unwrap() = value;
+            assert!(
+                pending_for_mcp(params, 0, "request-1").is_err(),
+                "accepted unsupported {field}"
+            );
+        }
+        let mut params = captured["params"].clone();
+        params.as_object_mut().unwrap().remove("_meta");
+        assert!(pending_for_mcp(params, 0, "request-1").is_err());
+    }
 
     fn request_offering(decisions: Value) -> ApprovalRequest {
         ApprovalRequest {
