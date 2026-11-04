@@ -1299,6 +1299,8 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
             worktree_name.as_deref(), base_ref.as_deref(), is_new_session, sink,
         ).await;
         interrupt_session(session_id: String) => crate::interrupt_session(&session_id, sink).await;
+        message_edit_eligibility(session_id: String, event_id: String) => ok(crate::message_edit::message_edit_eligibility(session_id, event_id).await);
+        edit_sent_message(session_id: String, event_id: String, prompt: String) => crate::session::manager().edit_sent_message(&session_id, &event_id, &prompt, &sink).await.map_err(crate::Fail::from);
         stop_task(session_id: String, task_id: String) => crate::stop_task(&session_id, &task_id).await;
         cancel_queued(session_id: String) => crate::cancel_queued(&session_id, sink).await;
         respond_permission(session_id: String, request_id: String, option_id: String) =>

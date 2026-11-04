@@ -1,6 +1,7 @@
 import { invoke, listen, LOCAL, noteSession, qualify, serverOfPath, serverOfSession, type ServerId } from "@/lib/transport";
 import { mergeFrom, remoteServers, serverConnected, serverName, subscribeServers } from "@/lib/servers";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { activeMessageEvents } from "@/lib/messageEdit";
 import { flushSync } from "react-dom";
 import { restoreAttachments } from "@/hooks/useAttachments";
 import { appendStreamingText, peekStreamingBlock, retireStreamingBlock, startStreamingBlock, type StreamingBlock } from "@/hooks/useStreamingBlock";
@@ -3222,7 +3223,7 @@ const contextUsage: { used: number; max: number } | null = (() => {
   let used: number | null = null;
   let usedSettled = false;
   let max: number | null = null;
-  const events = selectedSession.events;
+  const events = activeMessageEvents(selectedSession.events);
 
   for (let i = events.length - 1; i >= 0 && !(usedSettled && max !== null); i--) {
     const p = events[i].payload;

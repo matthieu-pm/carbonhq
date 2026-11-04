@@ -19,6 +19,7 @@ macro_rules! fail {
 }
 
 pub mod accounts;
+pub mod message_edit;
 pub mod subscription_usage;
 pub mod agent_updates;
 pub mod analytics;

@@ -427,7 +427,8 @@ async fn handshake(client: &RpcClient) -> Result<()> {
             "name": CLIENT_NAME,
             "title": "Carbon",
             "version": env!("CARGO_PKG_VERSION"),
-        }
+        },
+        "capabilities": { "experimentalApi": true }
     });
 
     client.request("initialize", params).await?;
@@ -587,6 +588,7 @@ async fn read_stdout(
             // silence is not neutral: it stalls the session until Codex's own
             // deadline, exactly as an unanswered `can_use_tool` does.
             Incoming::Request { id, method, params } => {
+                block_replay(&handles, &mapper, &status, "The turn requested a tool or unverified action.").await?;
                 let kind = ApprovalKind::for_method(&method);
 
                 match kind {
@@ -641,14 +643,19 @@ async fn read_stdout(
             Incoming::Response { .. } | Incoming::Foreign => continue,
 
             Incoming::Malformed => {
+                block_replay(&handles, &mapper, &status, "A protocol message could not be read.").await?;
                 record_failure(Codex, &handles.session_id, "parse", "not a JSON-RPC message", &line).await;
                 continue;
             }
         };
 
+        if method == "hook/started" {
+            block_replay(&handles, &mapper, &status, "A hook ran during this turn.").await?;
+        }
         let event = match parser::parse_notification(&method, params) {
             Ok(event) => event,
             Err(err) => {
+                block_replay(&handles, &mapper, &status, "An agent event could not be read.").await?;
                 record_failure(Codex, &handles.session_id, "map", &err.to_string(), &line).await;
                 continue;
             }
@@ -659,6 +666,7 @@ async fn read_stdout(
         // are — it is a coverage gap, and the catch-all only stops it costing
         // the line.
         if matches!(event, parser::CodexEvent::Unknown) {
+            block_replay(&handles, &mapper, &status, "The agent reported an unknown event.").await?;
             record_failure(Codex, &handles.session_id, "unknown_method", &method, &line).await;
             continue;
         }
@@ -702,6 +710,16 @@ async fn read_stdout(
         }
     }
 
+    Ok(())
+}
+
+/// A protocol gap cannot make an effectful turn look like a text-only one.
+async fn block_replay(handles: &ReaderHandles, mapper: &mapper::Mapper, status: &Arc<Mutex<StatusTracker>>, reason: &str) -> Result<()> {
+    if status.lock().await.turn_in_flight() {
+        let event = mapper.synthesize(AgentEventPayload::ReplayUnsafe { reason: reason.into() });
+        store::append_session_event(&handles.session_id, event.clone()).await?;
+        handles.app.emit("agent_event", &event)?;
+    }
     Ok(())
 }
 

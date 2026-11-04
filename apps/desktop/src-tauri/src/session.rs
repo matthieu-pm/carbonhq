@@ -1617,6 +1617,124 @@ impl SessionManager {
         })
     }
 
+    /// Rewinds only a verified effect-free turn, under the same lock that serializes sends.
+    pub async fn edit_sent_message(
+        &self,
+        session_id: &str,
+        event_id: &str,
+        prompt: &str,
+        app: &Sink,
+    ) -> Result<()> {
+        let _sending = Sending::enter().await;
+        if prompt.trim().is_empty() {
+            bail!("The revised message cannot be empty.");
+        }
+        let slot = self.slot(session_id).await;
+        let mut guard = slot.lock().await;
+        let item = get_session_index_item(session_id)
+            .await?
+            .context("This chat no longer exists.")?;
+        let events = crate::message_edit::active_events(&list_session_events(session_id).await?);
+        let initial = crate::message_edit::plan(&events, event_id, item.harness)?;
+        crate::message_edit::unchanged_checkout(&item.cwd, &initial.baseline).await?;
+        if guard
+            .as_mut()
+            .is_some_and(|s| matches!(s.child.try_wait(), Ok(Some(_))))
+        {
+            guard.take();
+        }
+        if guard.is_none() {
+            let model = crate::harness::codex::models::find(&item.model)
+                .await
+                .context("This chat's model is unavailable. Your edit has not been applied.")?;
+            *guard = Some(
+                Session::init(
+                    session_id,
+                    item.harness,
+                    Some(&model),
+                    item.effort,
+                    item.permission_mode,
+                    item.fast,
+                    &item.cwd,
+                    &item.cwd,
+                    None,
+                    false,
+                    None,
+                    app,
+                )
+                .await?,
+            );
+        }
+        let session = live(&mut guard, session_id)?;
+        if !session.queued.lock().await.is_empty() {
+            bail!("Remove queued messages before editing this turn.");
+        }
+        if !session.status.lock().await.background_task_ids().is_empty() {
+            bail!("Background work is still running. Carbon cannot guarantee a full undo.");
+        }
+        if session.status.lock().await.turn_in_flight() {
+            session.interrupt().await?;
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+            while session.status.lock().await.turn_in_flight() {
+                if tokio::time::Instant::now() >= deadline {
+                    bail!("The agent has not stopped yet. Your edit is preserved; try again after it stops.");
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        }
+        // The child could have begun a tool between the first check and the interrupt.
+        let events = crate::message_edit::active_events(&list_session_events(session_id).await?);
+        let plan = crate::message_edit::plan(&events, event_id, item.harness).map_err(|error| {
+            anyhow::anyhow!("The turn stopped, but replay was blocked: {error}")
+        })?;
+        crate::message_edit::unchanged_checkout(&item.cwd, &plan.baseline).await?;
+        let native_turn = plan
+            .turn_id
+            .context("This turn has no native rewind point. Your original message is unchanged.")?;
+        let Transport::Rpc(thread) = &session.stdin else {
+            bail!("This agent cannot replace a turn yet.");
+        };
+        let native_history = thread
+            .client
+            .request(
+                "thread/turns/list",
+                json!({"threadId":thread.id,"sortDirection":"desc","limit":1,"itemsView":"full"}),
+            )
+            .await
+            .context("Codex could not verify the turn's effects. Your edit is preserved")?;
+        crate::message_edit::validate_native_history(&native_history, &native_turn)?;
+        thread.client.request("thread/revert", json!({"threadId":thread.id,"beforeTurnId":native_turn})).await
+            .context("Codex could not replace this turn; it may use an older history format. Your edit is preserved")?;
+        let AgentEventPayload::UserMessage { issues, .. } = &plan.prompt.payload else {
+            unreachable!()
+        };
+        session.send_msg(prompt, &[], issues, Some(plan.baseline), None, app).await
+            .context("The old turn was rewound, but the revised prompt could not be sent. Your edit is preserved")?;
+        let replacement = list_session_events(session_id)
+            .await?
+            .into_iter()
+            .rev()
+            .find(|e| {
+                e.subagent.is_none() && matches!(e.payload, AgentEventPayload::UserMessage { .. })
+            })
+            .context("The revised prompt was sent but could not be found in the transcript.")?;
+        let marker = AgentEvent::mint(
+            session_id.to_string(),
+            item.harness,
+            session.seq.fetch_add(1, Relaxed),
+            None,
+            None,
+            AgentEventPayload::TurnReplayed {
+                prompt_event_id: event_id.to_string(),
+                replacement_event_id: replacement.id,
+            },
+        );
+        append_session_event(session_id, marker.clone()).await
+            .context("The revised prompt was sent, but its replacement marker could not be saved. Do not submit it again")?;
+        app.emit("agent_event", &marker)?;
+        Ok(())
+    }
+
     /// Stops the turn in flight and nothing else. Errors when no live child
     /// holds the id — nothing is running, so there is nothing to stop.
     ///

@@ -469,6 +469,14 @@ pub enum AgentEventPayload {
         fatal: bool,
     },
 
+    /// Retains the original turn in the audit log while readers show its replacement.
+    TurnReplayed {
+        prompt_event_id: String,
+        replacement_event_id: String,
+    },
+    /// A protocol gap or hook makes the turn's side effects unverifiable.
+    ReplayUnsafe { reason: String },
+
     /// A payload `kind` this build doesn't know — a log written by a newer
     /// version. Produced by the deserializer, never a mapper; the envelope
     /// survives so the event keeps its place.

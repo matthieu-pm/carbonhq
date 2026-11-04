@@ -7,6 +7,7 @@ import FileLink from "@/components/chat/FileLink";
 import ImageRow from "@/components/chat/ImageRow";
 import { inlineMark } from "@/components/chat/InlineMark";
 import MessageActions from "@/components/chat/MessageActions";
+import SentMessageEditAction, { SentMessageInlineEditor, useSentMessageEditing } from "@/components/chat/SentMessageEditor";
 import { useChatSession } from "@/hooks/useChatSession";
 import { absolutePath } from "@/lib/filePath";
 import { basename } from "@/lib/format";
@@ -120,6 +121,9 @@ export default function UserMessage({
   const missing = images.filter((image) => !image.path && !image.url);
   // Dimmed the way a queued prompt is: the same message a moment early.
   const uploading = useSendProgress(eventId ?? "");
+  const editing = useSentMessageEditing(eventId);
+
+  if (editing) return <SentMessageInlineEditor />;
 
   return (
     <div
@@ -352,7 +356,10 @@ export default function UserMessage({
       ) : (
         // Markdown and sigils copied raw — what was typed, not what was drawn.
         // The relay's sender line stays off, since the row above says it.
-        body && <MessageActions text={body} ts={ts} />
+        body && <div className="flex items-center gap-1">
+          <MessageActions text={body} ts={ts} />
+          <SentMessageEditAction eventId={eventId} own={!from} />
+        </div>
       )}
     </div>
   );

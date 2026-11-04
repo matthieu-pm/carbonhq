@@ -12,6 +12,7 @@ import Reasoning from "@/components/chat/Reasoning";
 import WorkingIndicator, { OrbLine } from "@/components/chat/WorkingIndicator";
 import StreamingToolCall from "@/components/chat/StreamingToolCall";
 import TurnBlock from "@/components/chat/TurnBlock";
+import { SentMessageEditorProvider } from "@/components/chat/SentMessageEditor";
 import { Button } from "@/components/ui/button";
 import ShortcutKeys from "@/components/ShortcutKeys";
 import {
@@ -662,6 +663,7 @@ export default function Chat({
     // The session rides a context because the things that read it are leaves — a
     // `@mention` and a file link, several components down. See `useChatSession`.
     <ChatSessionContext value={chatSession}>
+    <SentMessageEditorProvider session={session} busy={busy}>
       <div className="relative h-full">
         <div
           ref={scrollRef}
@@ -830,6 +832,7 @@ export default function Chat({
           />
         )}
       </div>
+    </SentMessageEditorProvider>
     </ChatSessionContext>
   );
 }

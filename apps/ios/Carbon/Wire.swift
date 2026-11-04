@@ -284,6 +284,7 @@ struct ToolResult: Decodable {
 }
 
 enum Payload: Decodable {
+    case turnReplayed(promptEventId: String, replacementEventId: String)
     case turnCompleted(failed: Bool, finalText: String?)
     /// `queued` is a prompt typed into a running turn, which answers it inside that turn.
     case userMessage(text: String, fromTitle: String?, fromId: String?, queued: Bool, images: [ImageRef])
@@ -304,6 +305,9 @@ enum Payload: Decodable {
         let type = (try? c.decode(String.self, forKey: "type")) ?? "unknown"
         do {
             switch type {
+            case "turn_replayed":
+                self = .turnReplayed(promptEventId: try c.decode(String.self, forKey: "promptEventId"),
+                                     replacementEventId: try c.decode(String.self, forKey: "replacementEventId"))
             case "turn_completed":
                 // A user's Stop ends a turn as `error` too; the desktop's `drawsFailure` rule.
                 let stop = try c.decodeIfPresent(String.self, forKey: "stopReason") ?? ""

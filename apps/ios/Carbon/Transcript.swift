@@ -133,7 +133,15 @@ func plural(_ n: Int, _ word: String) -> String { "\(n) \(word)\(n == 1 ? "" : "
 /// subagents' own events are skipped, a call joins its result on `callId` and
 /// is pending only while the session is busy, and runs of one tool group.
 func buildTurns(_ events: [AgentEvent], busy: Bool) -> [Turn] {
-    let main = events.filter { $0.subagent == nil }
+    var removed = Set<String>()
+    for event in events {
+        if case .turnReplayed(let prompt, let replacement) = event.payload,
+           let start = events.firstIndex(where: { $0.id == prompt }),
+           let end = events.firstIndex(where: { $0.id == replacement }), start < end {
+            removed.formUnion(events[start..<end].map(\.id))
+        }
+    }
+    let main = events.filter { $0.subagent == nil && !removed.contains($0.id) }
     var results: [String: ToolResult] = [:]
     for e in main {
         if case .toolCompleted(let id, let r) = e.payload { results[id] = r }

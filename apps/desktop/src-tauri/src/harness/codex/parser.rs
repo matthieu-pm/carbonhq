@@ -466,6 +466,7 @@ pub fn parse_notification(method: &str, params: Value) -> Result<CodexEvent, ser
         | "thread/archived"
         | "thread/unarchived"
         | "thread/reverted"
+        | "thread/readState/changed"
         | "thread/name/updated"
         | "thread/queue/changed"
         | "thread/goal/updated"

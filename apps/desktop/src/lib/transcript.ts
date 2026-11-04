@@ -1,4 +1,5 @@
 import { toolSummary } from "@/lib/tools";
+import { activeMessageEvents } from "@/lib/messageEdit";
 import type { AgentEvent, FileEdit, ImageRef, ToolResult, Usage } from "@/types/events";
 
 export type SubagentRun = {
@@ -722,7 +723,7 @@ export function buildTranscript(
   );
   if (hit) return hit.result;
 
-  const result = build(source, live, liveTaskIds);
+  const result = build(activeMessageEvents(source), live, liveTaskIds);
   built.set(source, [{ length: source.length, live, liveTaskIds, result }, ...cached].slice(0, 4));
   return result;
 }

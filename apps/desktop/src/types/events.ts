@@ -363,7 +363,7 @@ reason: string | null, } | { "type": "context_compacted",
 /**
  * `manual` or `auto`.
  */
-trigger: string | null, preTokens: number | null, postTokens: number | null, durationMs: number | null, } | { "type": "error", source: ErrorSource, message: string, fatal: boolean, } | { "type": "unrecognized" };
+trigger: string | null, preTokens: number | null, postTokens: number | null, durationMs: number | null, } | { "type": "error", source: ErrorSource, message: string, fatal: boolean, } | { "type": "turn_replayed", promptEventId: string, replacementEventId: string, } | { "type": "replay_unsafe", reason: string, } | { "type": "unrecognized" };
 
 export type AgentUpdate = { harness: Harness, label: string, current: string, latest: string, };
 
@@ -1206,6 +1206,8 @@ export type McpTransport = "stdio" | "http" | "sse";
  * How to land it. The three GitHub offers; the flag each maps to is `gh`'s.
  */
 export type MergeMethod = "merge" | "squash" | "rebase";
+
+export type MessageEditEligibility = { allowed: boolean, reason: string | null, };
 
 /**
  * Who relayed a prompt into this session, for a `user_message` the user did
