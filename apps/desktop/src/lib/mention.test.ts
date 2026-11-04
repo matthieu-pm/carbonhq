@@ -174,9 +174,9 @@ describe("highlightSegments", () => {
   /// likely to break it. The run has to stop at the number's end like a
   /// Linear one, or the sentence after a tag is painted as an address.
   it("marks a github tag, slug and all", () => {
-    expect(highlightSegments("start on #monorepo-labs/dray#121 today")).toEqual([
+    expect(highlightSegments("start on #matthieu-pm/carbonhq#121 today")).toEqual([
       { kind: "text", text: "start on " },
-      { kind: "issue", text: "#monorepo-labs/dray#121" },
+      { kind: "issue", text: "#matthieu-pm/carbonhq#121" },
       { kind: "text", text: " today" },
     ]);
 
@@ -188,7 +188,7 @@ describe("highlightSegments", () => {
   /// read the joined run, and a segmentation that loses a character shows up as
   /// ghosting in the overlay.
   it("round-trips a github tag carrying a title", () => {
-    roundTrips("#monorepo-labs/dray#12 Some title");
+    roundTrips("#matthieu-pm/carbonhq#12 Some title");
   });
 
   /// All three can share one sentence, which is why the three colours are

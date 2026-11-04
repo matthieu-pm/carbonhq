@@ -832,27 +832,27 @@ function Connect({
           </p>
         )}
 
-        {/* The other half of the setup, and this is the place to say it. This
-            key is what fills *these* screens; it gives the agent nothing. An
-            agent that is to read an issue in full, or move one, needs Linear's
-            MCP server — and someone finding that out later, from a model
-            working off a one-line title, finds it out the expensive way. Said
-            here, while they are already setting this up, and said once.
+        {/* The key fills these screens and is what `carbon issue comment` and
+            `carbon issue status` write with. It never leaves Carbon. Anything
+            more — a description, an assignee, a label — is still Linear's MCP
+            server, and this is the place to say that, while they are setting
+            the key up.
 
             Linear's alone: GitHub's half of it is the `gh` CLI the agent
             already has, and there is nothing to add. */}
         {tracker === "linear" && (
           <p className="border-t border-border pt-3 text-ui text-muted-foreground">
-            Carbon reads your issues with this key, and writes only the status or priority you pick.
-            To let the agent read and manage issues in chat, add{" "}
+            This key is what Carbon reads issues with, and what <code>carbon issue comment</code> and{" "}
+            <code>carbon issue status</code> write with. The key stays in Carbon. To let the agent
+            do anything more, add{" "}
             <button
               type="button"
               className="text-foreground underline underline-offset-2 hover:text-foreground/80"
               onClick={() => void openUrl(LINEAR_MCP_URL)}
             >
               Linear's MCP server
-            </button>{" "}
-            to your CLI.
+            </button>
+            .
           </p>
         )}
       </div>
@@ -919,7 +919,7 @@ function Group({
 /// The rows are the repositories of attached projects with a `github.com`
 /// remote, which is the list this app can name without a network call.
 ///
-/// **The repository, not the whole slug.** `monorepo-labs/dray` is most of this
+/// **The repository, not the whole slug.** `matthieu-pm/carbonhq` is most of this
 /// row's width spent on a word that is the same for most of the list, and the
 /// owner is only ever needed to tell two same-named repositories apart — which
 /// is a question asked where the pick is made. So the menu rows carry the slug

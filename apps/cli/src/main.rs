@@ -13,12 +13,12 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 mod draft;
 mod machine;
 mod setup;
-use draft::DraftCommand;
 use carbon_proto::{
     encode_line, BrowserAction, BrowserRequest, CreateSession, Envelope, Get, Is, IssueInput,
-    LinkIssues, ListSessions, Locator, OnMachine, RenameSession, Request, Response, SendMessage, SessionRef,
-    SessionSummary, SetAside, SettleSession, ShareAction, ShareRequest,
+    LinkIssues, ListSessions, Locator, OnMachine, RenameSession, Request, Response, SendMessage,
+    SessionRef, SessionSummary, SetAside, SettleSession, ShareAction, ShareRequest, WriteIssue,
 };
+use draft::DraftCommand;
 use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -59,7 +59,7 @@ enum Command {
     /// Start, list and message sessions, and settle or rename them.
     #[command(subcommand, arg_required_else_help = true)]
     Session(SessionCommand),
-    /// Tag a session with the issue its work is against.
+    /// Tag a session with an issue, or comment on a Linear issue and change its status.
     #[command(subcommand, arg_required_else_help = true)]
     Issue(IssueCommand),
     /// Save tasks for later, list them, and start or remove them.
@@ -246,6 +246,30 @@ enum IssueCommand {
     Link(IssueLinkArgs),
     /// Remove issues from a session. The issues themselves are untouched.
     Unlink(IssueLinkArgs),
+    /// Post a comment on a Linear issue. The key stays in Carbon.
+    Comment(IssueCommentArgs),
+    /// Move a Linear issue to a status, by name.
+    Status(IssueStatusArgs),
+}
+
+#[derive(Args)]
+struct IssueCommentArgs {
+    /// The issue, like FOR-140.
+    identifier: String,
+
+    /// The comment, as one string.
+    #[arg(allow_hyphen_values = true)]
+    body: String,
+}
+
+#[derive(Args)]
+struct IssueStatusArgs {
+    /// The issue, like FOR-140.
+    identifier: String,
+
+    /// The status, by name, like Done or "In Progress".
+    #[arg(allow_hyphen_values = true)]
+    status: String,
 }
 
 #[derive(Args)]
@@ -341,7 +365,9 @@ struct BrowserCommand {
 }
 
 #[derive(Args)]
-#[command(after_help = "Anyone with a link can open it. Only the session's own dev servers can be shared.")]
+#[command(
+    after_help = "Anyone with a link can open it. Only the session's own dev servers can be shared."
+)]
 struct ShareArgs {
     #[command(subcommand)]
     command: Option<ShareCommand>,
@@ -406,6 +432,20 @@ fn run() -> Result<(), String> {
         Command::Session(command) => session(command),
         Command::Issue(IssueCommand::Link(args)) => link_issues(args, false),
         Command::Issue(IssueCommand::Unlink(args)) => link_issues(args, true),
+        Command::Issue(IssueCommand::Comment(args)) => {
+            write_issue(Request::WriteIssue(WriteIssue {
+                identifier: args.identifier,
+                comment: Some(args.body),
+                status: None,
+            }))
+        }
+        Command::Issue(IssueCommand::Status(args)) => {
+            write_issue(Request::WriteIssue(WriteIssue {
+                identifier: args.identifier,
+                comment: None,
+                status: Some(args.status),
+            }))
+        }
         Command::Draft(command) => draft::run(command),
         Command::Browser(args) => browser(args),
         Command::Share(args) => share(args),
@@ -433,28 +473,52 @@ fn session(command: SessionCommand) -> Result<(), String> {
         SessionCommand::Ls(args) => return ls(args),
         SessionCommand::Send(args) => return send_message(args),
         SessionCommand::Rename(args) => (
-            Request::RenameSession(RenameSession { session_id: args.session_id, title: args.title }),
+            Request::RenameSession(RenameSession {
+                session_id: args.session_id,
+                title: args.title,
+            }),
             "Renamed it",
         ),
-        SessionCommand::Stop(args) => (Request::StopSession(SessionRef { session_id: args.session_id }), "Stopped"),
+        SessionCommand::Stop(args) => (
+            Request::StopSession(SessionRef {
+                session_id: args.session_id,
+            }),
+            "Stopped",
+        ),
         SessionCommand::Settle(args) => (
             Request::SettleSession(SettleSession {
                 session_id: args.session_id,
                 settled: true,
                 delete_worktree: args.delete_worktree,
             }),
-            if args.delete_worktree { "Settled, worktree deleted:" } else { "Settled" },
+            if args.delete_worktree {
+                "Settled, worktree deleted:"
+            } else {
+                "Settled"
+            },
         ),
         SessionCommand::Unsettle(args) => (
-            Request::SettleSession(SettleSession { session_id: args.session_id, settled: false, delete_worktree: false }),
+            Request::SettleSession(SettleSession {
+                session_id: args.session_id,
+                settled: false,
+                delete_worktree: false,
+            }),
             "Unsettled",
         ),
-        SessionCommand::SetAside(args) => {
-            (Request::SetAside(SetAside { session_id: args.session_id, aside: true }), "Set aside")
-        }
-        SessionCommand::UnsetAside(args) => {
-            (Request::SetAside(SetAside { session_id: args.session_id, aside: false }), "Brought back")
-        }
+        SessionCommand::SetAside(args) => (
+            Request::SetAside(SetAside {
+                session_id: args.session_id,
+                aside: true,
+            }),
+            "Set aside",
+        ),
+        SessionCommand::UnsetAside(args) => (
+            Request::SetAside(SetAside {
+                session_id: args.session_id,
+                aside: false,
+            }),
+            "Brought back",
+        ),
     };
     match send(request)? {
         Response::Session { session } => {
@@ -528,7 +592,12 @@ fn new(args: New) -> Result<(), String> {
 fn link_issues(args: IssueLinkArgs, unlink: bool) -> Result<(), String> {
     // Named twice is named ambiguously, and either reading is a wrong link
     // that looks right.
-    if args.session.is_some() && args.session_and_issues.first().is_some_and(|f| is_session_id(f)) {
+    if args.session.is_some()
+        && args
+            .session_and_issues
+            .first()
+            .is_some_and(|f| is_session_id(f))
+    {
         return Err("name the session once: --session, or before the issues".into());
     }
     let (session_id, identifiers) = split_session_and_issues(
@@ -576,6 +645,29 @@ fn link_issues(args: IssueLinkArgs, unlink: bool) -> Result<(), String> {
     }
 }
 
+/// Prints the issue as it stands after the comment or the status change.
+fn write_issue(request: Request) -> Result<(), String> {
+    match send(request)? {
+        Response::Issue {
+            identifier,
+            title,
+            url,
+            state,
+            commented,
+        } => {
+            println!("{identifier}: {title}");
+            println!("{url}");
+            println!("Status: {state}");
+            if commented {
+                println!("Commented.");
+            }
+            Ok(())
+        }
+        Response::Error { message } => Err(message),
+        other => Err(unexpected(other)),
+    }
+}
+
 fn send_message(args: Send) -> Result<(), String> {
     let request = Request::SendMessage(SendMessage {
         session_id: args.session_id,
@@ -611,7 +703,10 @@ fn browser(args: BrowserCommand) -> Result<(), String> {
     match send(Request::Browser(BrowserRequest { session_id, action }))? {
         Response::Browser { output, data } => {
             if args.json {
-                println!("{}", serde_json::to_string_pretty(&data).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&data).unwrap_or_default()
+                );
             } else {
                 println!("{output}");
             }
@@ -640,7 +735,10 @@ fn share(args: ShareArgs) -> Result<(), String> {
     match send(Request::Share(ShareRequest { session_id, action }))? {
         Response::Shared { shares } => {
             if let Some(port) = started {
-                let link = shares.iter().find(|s| s.port == port).ok_or("the app shared nothing")?;
+                let link = shares
+                    .iter()
+                    .find(|s| s.port == port)
+                    .ok_or("the app shared nothing")?;
                 println!("{}", link.url);
             }
             Ok(())
@@ -662,7 +760,10 @@ fn list_shares(args: Ls) -> Result<(), String> {
     match send(request)? {
         Response::Shared { shares } => {
             if args.json {
-                println!("{}", serde_json::to_string_pretty(&shares).map_err(|e| e.to_string())?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&shares).map_err(|e| e.to_string())?
+                );
             } else if shares.is_empty() {
                 eprintln!("Nothing shared.");
             } else {
@@ -680,7 +781,9 @@ fn list_shares(args: Ls) -> Result<(), String> {
 /// A line the caller wrote wrong, as clap reports its own: usage beneath it
 /// and exit 2, so a script can tell a bad command from a failed one.
 fn usage(message: &str) -> ! {
-    Cli::command().error(clap::error::ErrorKind::InvalidValue, message).exit()
+    Cli::command()
+        .error(clap::error::ErrorKind::InvalidValue, message)
+        .exit()
 }
 
 fn target(t: String) -> Locator {
@@ -714,7 +817,10 @@ fn browser_action(f: &BrowserCommand) -> Result<BrowserAction, String> {
         "screenshot" => &["--full"],
         _ => &[],
     };
-    if let Some((_, flag)) = given.iter().find(|(set, flag)| *set && !allowed.contains(flag)) {
+    if let Some((_, flag)) = given
+        .iter()
+        .find(|(set, flag)| *set && !allowed.contains(flag))
+    {
         return Err(format!("browser {verb} takes no {flag}"));
     }
 
@@ -722,23 +828,48 @@ fn browser_action(f: &BrowserCommand) -> Result<BrowserAction, String> {
         return act(&verb, None, words, f);
     }
 
-    let usage = "find <role|text|label|placeholder|alt|title|testid|first|last|nth> <value> <verb> [arg]";
+    let usage =
+        "find <role|text|label|placeholder|alt|title|testid|first|last|nth> <value> <verb> [arg]";
     let by = words.next().ok_or(usage)?;
     let value = words.next().ok_or(usage)?;
     let (name, exact) = (f.name.clone(), f.exact);
     let at = match by.as_str() {
-        "role" => Locator::Role { role: value, name, exact },
+        "role" => Locator::Role {
+            role: value,
+            name,
+            exact,
+        },
         "text" => Locator::Text { text: value, exact },
-        "label" => Locator::Label { label: value, exact },
-        "placeholder" => Locator::Placeholder { placeholder: value, exact },
+        "label" => Locator::Label {
+            label: value,
+            exact,
+        },
+        "placeholder" => Locator::Placeholder {
+            placeholder: value,
+            exact,
+        },
         "alt" => Locator::Alt { alt: value, exact },
-        "title" => Locator::Title { title: value, exact },
+        "title" => Locator::Title {
+            title: value,
+            exact,
+        },
         "testid" => Locator::TestId { id: value },
-        "first" => Locator::Nth { selector: value, index: 0 },
-        "last" => Locator::Nth { selector: value, index: -1 },
+        "first" => Locator::Nth {
+            selector: value,
+            index: 0,
+        },
+        "last" => Locator::Nth {
+            selector: value,
+            index: -1,
+        },
         "nth" => {
-            let index = value.parse().map_err(|_| "find nth <index> <selector> <verb>")?;
-            Locator::Nth { selector: words.next().ok_or(usage)?, index }
+            let index = value
+                .parse()
+                .map_err(|_| "find nth <index> <selector> <verb>")?;
+            Locator::Nth {
+                selector: words.next().ok_or(usage)?,
+                index,
+            }
         }
         other => return Err(format!("find {other}? {usage}")),
     };
@@ -758,7 +889,9 @@ fn act(
     use BrowserAction as A;
     let mut word = |usage: &str| words.next().ok_or_else(|| usage.to_string());
     let action = match verb {
-        "open" => A::Open { url: word("open <url>")? },
+        "open" => A::Open {
+            url: word("open <url>")?,
+        },
         "back" => A::Back,
         "forward" => A::Forward,
         "reload" => A::Reload,
@@ -766,7 +899,9 @@ fn act(
         "tab" => match word("").ok().as_deref() {
             None => A::Tabs,
             Some("new") => A::TabNew { url: word("").ok() },
-            Some("close") => A::TabClose { id: word("").ok().map(|s| parse_id(&s)).transpose()? },
+            Some("close") => A::TabClose {
+                id: word("").ok().map(|s| parse_id(&s)).transpose()?,
+            },
             Some(id) => A::TabSwitch { id: parse_id(id)? },
         },
         "snapshot" => A::Snapshot {
@@ -774,7 +909,9 @@ fn act(
             compact: f.compact,
             selector: f.selector.clone(),
         },
-        "press" => A::Press { key: word("press <key>")? },
+        "press" => A::Press {
+            key: word("press <key>")?,
+        },
         "scroll" => A::Scroll {
             direction: word("scroll <up|down|left|right> [pixels]")?,
             amount: match word("").ok() {
@@ -796,12 +933,30 @@ fn act(
                 "check" => A::Check { at },
                 "uncheck" => A::Uncheck { at },
                 "scrollintoview" => A::ScrollIntoView { at },
-                "type" => A::Type { at, text: word("type <target> <text>")? },
-                "fill" => A::Fill { at, text: word("fill <target> <text>")? },
-                "select" => A::Select { at, value: word("select <target> <value>")? },
-                "text" => A::Get { what: Get::Text, at: Some(at) },
-                "count" => A::Get { what: Get::Count, at: Some(at) },
-                _ => A::Is { what: Is::Visible, at },
+                "type" => A::Type {
+                    at,
+                    text: word("type <target> <text>")?,
+                },
+                "fill" => A::Fill {
+                    at,
+                    text: word("fill <target> <text>")?,
+                },
+                "select" => A::Select {
+                    at,
+                    value: word("select <target> <value>")?,
+                },
+                "text" => A::Get {
+                    what: Get::Text,
+                    at: Some(at),
+                },
+                "count" => A::Get {
+                    what: Get::Count,
+                    at: Some(at),
+                },
+                _ => A::Is {
+                    what: Is::Visible,
+                    at,
+                },
             }
         }
         "get" => {
@@ -813,7 +968,10 @@ fn act(
                         None => target(word("get attr <target> <name>")?),
                     };
                     let name = word("get attr <target> <name>")?;
-                    A::Get { what: Get::Attr { name }, at: Some(at) }
+                    A::Get {
+                        what: Get::Attr { name },
+                        at: Some(at),
+                    }
                 }
                 other => {
                     let what = match other {
@@ -826,7 +984,10 @@ fn act(
                         "box" => Get::Box,
                         _ => return Err(format!("get {other}? {usage}")),
                     };
-                    A::Get { what, at: found.or_else(|| word("").ok().map(target)) }
+                    A::Get {
+                        what,
+                        at: found.or_else(|| word("").ok().map(target)),
+                    }
                 }
             }
         }
@@ -854,29 +1015,47 @@ fn act(
                 load: f.load.clone(),
             }
         }
-        "screenshot" => A::Screenshot { path: word("").ok(), full: f.full },
-        "eval" => A::Eval { js: word("eval <js>")? },
+        "screenshot" => A::Screenshot {
+            path: word("").ok(),
+            full: f.full,
+        },
+        "eval" => A::Eval {
+            js: word("eval <js>")?,
+        },
         "console" => A::Console,
         "errors" => A::Errors,
         "record" => match word("record <start|stop [name]>")?.as_str() {
             "start" => A::RecordStart,
-            "stop" => A::RecordStop { name: word("").ok() },
+            "stop" => A::RecordStop {
+                name: word("").ok(),
+            },
             other => return Err(format!("record {other}? start or stop")),
         },
         "set" => match word("set viewport <w> <h>, or set device <name>")?.as_str() {
             "viewport" => {
                 let mut dim = || -> Result<u32, String> {
-                    word("")?.parse().map_err(|_| "set viewport <width> <height>".to_string())
+                    word("")?
+                        .parse()
+                        .map_err(|_| "set viewport <width> <height>".to_string())
                 };
-                A::SetViewport { width: dim()?, height: dim()? }
+                A::SetViewport {
+                    width: dim()?,
+                    height: dim()?,
+                }
             }
-            "device" => A::SetDevice { name: word("set device <name>")? },
+            "device" => A::SetDevice {
+                name: word("set device <name>")?,
+            },
             _ => return Err("set viewport <w> <h>, or set device <name>".into()),
         },
         "zoom" => A::Zoom {
             percent: match word("zoom <percent|reset>")?.as_str() {
                 "reset" => 100,
-                p => p.strip_suffix('%').unwrap_or(p).parse().map_err(|_| "zoom <percent|reset>")?,
+                p => p
+                    .strip_suffix('%')
+                    .unwrap_or(p)
+                    .parse()
+                    .map_err(|_| "zoom <percent|reset>")?,
             },
         },
         other => return Err(format!("browser {other}? {BROWSER_VERBS}")),
@@ -890,7 +1069,8 @@ fn act(
 }
 
 fn parse_id(s: &str) -> Result<i32, String> {
-    s.parse().map_err(|_| format!("{s} is not a tab id; `carbon browser tab` lists them"))
+    s.parse()
+        .map_err(|_| format!("{s} is not a tab id; `carbon browser tab` lists them"))
 }
 
 /// The app answered something this command never asks for: the two sides
@@ -988,7 +1168,11 @@ fn update(args: Update) -> Result<(), String> {
     .env("CARBON_UPDATING", "1")
     .env("CARBON_CHANNEL", args.channel.as_deref().unwrap_or(own_channel()));
 
-    let current = if setup::app_on_this_mac() { serve_tag_beside(dir) } else { Some(current_tag()) };
+    let current = if setup::app_on_this_mac() {
+        serve_tag_beside(dir)
+    } else {
+        Some(current_tag())
+    };
     match current.filter(|_| !args.force) {
         Some(tag) => {
             sh.env("CARBON_CURRENT_VERSION", tag);
@@ -1047,7 +1231,11 @@ fn current_tag() -> String {
 /// Read off the version rather than stored, so there is no setting to drift
 /// from the binary: a prerelease version is a beta build.
 fn own_channel() -> &'static str {
-    if env!("CARGO_PKG_VERSION").contains('-') { "beta" } else { "stable" }
+    if env!("CARGO_PKG_VERSION").contains('-') {
+        "beta"
+    } else {
+        "stable"
+    }
 }
 
 /// Every agent reads the same SKILL.md format from its own home dir, so one
@@ -1120,15 +1308,23 @@ fn connect_failure(error: &std::io::Error, endpoint: &str) -> String {
 
 /// `" on <machine>"` for a session another machine runs, else nothing.
 fn on_machine(session: &SessionSummary) -> String {
-    session.machine.as_deref().map(|m| format!(" on {m}")).unwrap_or_default()
+    session
+        .machine
+        .as_deref()
+        .map(|m| format!(" on {m}"))
+        .unwrap_or_default()
 }
 
 /// One request, one response, connection closed. With `--machine` the request
 /// rides inside `on_machine`, and this machine's server carries it there.
 fn send(request: Request) -> Result<Response, String> {
-    let endpoint = carbon_proto::endpoint().ok_or("could not work out where Carbon is listening")?;
+    let endpoint =
+        carbon_proto::endpoint().ok_or("could not work out where Carbon is listening")?;
     let request = match MACHINE.get() {
-        Some(machine) => Request::OnMachine(OnMachine { machine: machine.clone(), request: Box::new(request) }),
+        Some(machine) => Request::OnMachine(OnMachine {
+            machine: machine.clone(),
+            request: Box::new(request),
+        }),
         None => request,
     };
     send_to(&endpoint, request)
@@ -1136,8 +1332,7 @@ fn send(request: Request) -> Result<Response, String> {
 
 /// [`send`] to a socket the caller names.
 fn send_to(endpoint: &str, request: Request) -> Result<Response, String> {
-    let mut stream =
-        UnixStream::connect(&endpoint).map_err(|e| connect_failure(&e, &endpoint))?;
+    let mut stream = UnixStream::connect(&endpoint).map_err(|e| connect_failure(&e, &endpoint))?;
 
     let line = encode_line(&Envelope::new(request)).map_err(|e| e.to_string())?;
     stream
@@ -1284,7 +1479,11 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("carbon-serve-tag-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        assert_eq!(serve_tag_beside(&dir), Some(current_tag()), "no server: no pair");
+        assert_eq!(
+            serve_tag_beside(&dir),
+            Some(current_tag()),
+            "no server: no pair"
+        );
 
         let serve = dir.join("carbon-serve");
         let answer = |script: &str| {
@@ -1292,8 +1491,15 @@ mod tests {
             std::fs::set_permissions(&serve, std::fs::Permissions::from_mode(0o755)).unwrap();
             serve_tag_beside(&dir)
         };
-        assert_eq!(answer("echo 'carbon-serve 0.14.0-beta.1'").as_deref(), Some("cli-v0.14.0-beta.1"));
-        assert_eq!(answer("echo 'carbon-serve dev'"), None, "a local build says nothing");
+        assert_eq!(
+            answer("echo 'carbon-serve 0.14.0-beta.1'").as_deref(),
+            Some("cli-v0.14.0-beta.1")
+        );
+        assert_eq!(
+            answer("echo 'carbon-serve dev'"),
+            None,
+            "a local build says nothing"
+        );
         assert_eq!(answer("echo usage >&2; exit 2"), None, "too old to answer");
 
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1374,17 +1580,23 @@ mod tests {
     fn a_verb_reads_the_same_bare_or_after_find() {
         let action = |line: &[&str]| {
             let cli = Cli::parse_from([&["carbon", "browser"][..], line].concat());
-            let Command::Browser(args) = cli.command else { panic!("wrong subcommand") };
+            let Command::Browser(args) = cli.command else {
+                panic!("wrong subcommand")
+            };
             browser_action(&args)
         };
 
         assert!(matches!(
             action(&["click", "@e1"]),
-            Ok(BrowserAction::Click { at: Locator::Target { .. } })
+            Ok(BrowserAction::Click {
+                at: Locator::Target { .. }
+            })
         ));
         assert!(matches!(
             action(&["find", "text", "Submit", "click", "--exact"]),
-            Ok(BrowserAction::Click { at: Locator::Text { exact: true, .. } })
+            Ok(BrowserAction::Click {
+                at: Locator::Text { exact: true, .. }
+            })
         ));
         assert!(matches!(
             action(&["find", "role", "button", "type", "hi", "--name", "Search"]),
@@ -1392,14 +1604,23 @@ mod tests {
         ));
         assert!(matches!(
             action(&["get", "attr", "@e1", "href"]),
-            Ok(BrowserAction::Get { what: Get::Attr { .. }, at: Some(_) })
+            Ok(BrowserAction::Get {
+                what: Get::Attr { .. },
+                at: Some(_)
+            })
         ));
         assert!(matches!(
             action(&["scroll", "down", "-100"]),
             Ok(BrowserAction::Scroll { amount, .. }) if amount == -100.0
         ));
-        assert!(matches!(action(&["zoom", "150%"]), Ok(BrowserAction::Zoom { percent: 150 })));
-        assert!(matches!(action(&["zoom", "reset"]), Ok(BrowserAction::Zoom { percent: 100 })));
+        assert!(matches!(
+            action(&["zoom", "150%"]),
+            Ok(BrowserAction::Zoom { percent: 150 })
+        ));
+        assert!(matches!(
+            action(&["zoom", "reset"]),
+            Ok(BrowserAction::Zoom { percent: 100 })
+        ));
         assert!(action(&["zoom", "big"]).is_err());
         assert!(action(&["zoom", "150%%"]).is_err());
         assert!(action(&["find", "text", "Submit"]).is_err());
@@ -1504,6 +1725,33 @@ mod tests {
         assert!(Cli::try_parse_from(["carbon", "issue", "link"]).is_err());
     }
 
+    /// The body and the status are each one argument. A name with a space
+    /// arrives as one word because the caller quoted it.
+    #[test]
+    fn comment_and_status_parse() {
+        let comment = Cli::try_parse_from([
+            "carbon",
+            "issue",
+            "comment",
+            "FOR-140",
+            "Merged in https://github.com/acme/app/pull/64",
+        ])
+        .unwrap();
+        let Command::Issue(IssueCommand::Comment(args)) = comment.command else {
+            panic!("expected a comment");
+        };
+        assert_eq!(args.identifier, "FOR-140");
+        assert_eq!(args.body, "Merged in https://github.com/acme/app/pull/64");
+
+        let status =
+            Cli::try_parse_from(["carbon", "issue", "status", "FOR-140", "In Progress"]).unwrap();
+        let Command::Issue(IssueCommand::Status(args)) = status.command else {
+            panic!("expected a status");
+        };
+        assert_eq!(args.identifier, "FOR-140");
+        assert_eq!(args.status, "In Progress");
+    }
+
     #[test]
     fn there_is_no_way_to_opt_out_of_the_worktree() {
         // Sessions created here run at the same time by design, so sharing a
@@ -1519,7 +1767,9 @@ mod tests {
     fn new_tree_and_old_spellings_parse() {
         let parses = |argv: &[&str]| Cli::try_parse_from(argv).map(|_| ()).map_err(|e| e.kind());
         for argv in [
-            &["carbon", "session", "new", "x", "--base", "main", "--title", "T"][..],
+            &[
+                "carbon", "session", "new", "x", "--base", "main", "--title", "T",
+            ][..],
             &["carbon", "session", "settle", SESSION, "--delete-worktree"],
             &["carbon", "session", "set-aside", SESSION],
             &["carbon", "session", "rename", SESSION, "New name"],
@@ -1544,8 +1794,10 @@ mod tests {
         for group in ["session", "server", "machine", "share", "draft"] {
             assert_eq!(parses(&["carbon", group]), help, "{group}");
         }
-        let Ok(Cli { command: Command::Session(SessionCommand::New(new)), .. }) =
-            Cli::try_parse_from(["carbon", "session", "new", "x", "--from", "main"])
+        let Ok(Cli {
+            command: Command::Session(SessionCommand::New(new)),
+            ..
+        }) = Cli::try_parse_from(["carbon", "session", "new", "x", "--from", "main"])
         else {
             panic!("not a create");
         };

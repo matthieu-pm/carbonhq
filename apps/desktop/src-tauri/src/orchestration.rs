@@ -14,18 +14,19 @@
 //! [`serve`](serve) for why the socket's own mode cannot be the boundary.
 
 use crate::{
+    drafts::{self, StoredDraft, DRAFTS_CHANGED},
     events::{ApprovalPolicy, MessageSender},
     issues::{self, IssueRef, IssueTracker},
     models::{default_model_for, id_for_arg, models_for, runs_on, Effort, ModelId},
     session::{manager, Harness},
     sink::Sink,
-    drafts::{self, StoredDraft, DRAFTS_CHANGED},
     store::{self, SessionIndexItem},
 };
 use anyhow::{bail, Context, Result};
 use carbon_proto::{
-    encode_line, CreateDraft, CreateSession, DraftSummary, Envelope, StartDraft, IssueInput, IssueLink, LinkIssues, ListSessions, Request,
-    Response, SendMessage, SessionSummary, MAX_LINE, OLDEST_SPOKEN, PROTOCOL_VERSION,
+    encode_line, CreateDraft, CreateSession, DraftSummary, Envelope, IssueInput, IssueLink,
+    LinkIssues, ListSessions, Request, Response, SendMessage, SessionSummary, StartDraft,
+    WriteIssue, MAX_LINE, OLDEST_SPOKEN, PROTOCOL_VERSION,
 };
 use std::path::Path;
 use tokio::{
@@ -60,6 +61,13 @@ pub const SESSION_CHANGED: &str = "session_changed";
 /// than a delta, which is the rule that answer already follows: re-tagging
 /// replaces an entry rather than appending one.
 pub const ISSUES_CHANGED: &str = "issues_changed";
+
+/// A comment or a status write from `carbon issue`. No session rides it — the
+/// write is about the issue, not a tag — so the panel drops its cache and
+/// re-reads. The panel's own `update_issue` does not emit this: that path
+/// paints the new status before the re-read, and forgetting the cache there
+/// would wipe the paint.
+pub const ISSUES_STALE: &str = "issues_stale";
 
 /// The payload of [`ISSUES_CHANGED`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
@@ -150,8 +158,8 @@ pub async fn serve(app: Sink) -> Result<()> {
     // running beside.
     tokio::fs::remove_file(&path).await.ok();
 
-    let listener = UnixListener::bind(&path)
-        .with_context(|| format!("could not bind {}", path.display()))?;
+    let listener =
+        UnixListener::bind(&path).with_context(|| format!("could not bind {}", path.display()))?;
 
     restrict(&path)?;
 
@@ -205,7 +213,9 @@ fn mismatch(theirs: u32) -> String {
         "update the Carbon app"
     };
 
-    format!("this carbon CLI speaks protocol v{theirs}, the app speaks v{PROTOCOL_VERSION} — {cure}")
+    format!(
+        "this carbon CLI speaks protocol v{theirs}, the app speaks v{PROTOCOL_VERSION} — {cure}"
+    )
 }
 
 /// Answered before the request is even looked at: a CLI older than
@@ -239,9 +249,9 @@ async fn handle(stream: UnixStream, app: &Sink) -> Result<()> {
         Some(error) => Response::error(error),
         None => match serde_json::from_str::<Envelope>(&line) {
             Ok(envelope) => match route(envelope.request, app).await {
-            Ok(response) => response,
-            // Reported rather than logged: the caller is an agent, and this
-            // string is what it reads back as tool output.
+                Ok(response) => response,
+                // Reported rather than logged: the caller is an agent, and this
+                // string is what it reads back as tool output.
                 Err(e) => Response::error(format!("{e:#}")),
             },
             Err(e) => Response::error(format!("could not parse the request: {e}")),
@@ -360,7 +370,8 @@ pub async fn answer_forward(forward: Forward, app: Sink) -> Response {
         if let Some(error) = refusal(&forward.line) {
             bail!(error);
         }
-        let envelope: Envelope = serde_json::from_str(&forward.line).context("could not parse the request")?;
+        let envelope: Envelope =
+            serde_json::from_str(&forward.line).context("could not parse the request")?;
         let mut request = envelope.request;
         if this_machine_only(&request) {
             bail!("that acts on the machine it runs on, so run it there");
@@ -370,10 +381,16 @@ pub async fn answer_forward(forward: Forward, app: Sink) -> Response {
         // checkout may hold only as the copy pushed to `origin`. A session id
         // this index holds is left for `resolve_base`.
         match &mut request {
-            Request::CreateSession(CreateSession { base: Some(base), project_path: Some(project), .. })
-            | Request::CreateDraft(CreateDraft { base: Some(base), project_path: Some(project), .. })
-                if store::get_session_index_item(base).await?.is_none() =>
-            {
+            Request::CreateSession(CreateSession {
+                base: Some(base),
+                project_path: Some(project),
+                ..
+            })
+            | Request::CreateDraft(CreateDraft {
+                base: Some(base),
+                project_path: Some(project),
+                ..
+            }) if store::get_session_index_item(base).await?.is_none() => {
                 *base = crate::git::pushed_branch(project, base).await?;
             }
             _ => {}
@@ -387,7 +404,9 @@ pub async fn answer_forward(forward: Forward, app: Sink) -> Response {
             other => dispatch(other, &app).await,
         }
     };
-    answered.await.unwrap_or_else(|e| Response::error(format!("{e:#}")))
+    answered
+        .await
+        .unwrap_or_else(|e| Response::error(format!("{e:#}")))
 }
 
 /// Points a project path from the forwarding Mac at this machine's checkout of
@@ -398,14 +417,22 @@ async fn localize(request: &mut Request, origin: Option<&str>) -> Result<()> {
         Request::CreateSession(create) => &mut create.project_path,
         Request::CreateDraft(create) => &mut create.project_path,
         // `--all` names no project, whatever path rode along.
-        Request::ListSessions(list) | Request::ListDrafts(list) | Request::ListShares(list) if list.all => {
+        Request::ListSessions(list) | Request::ListDrafts(list) | Request::ListShares(list)
+            if list.all =>
+        {
             return Ok(());
         }
-        Request::ListSessions(list) | Request::ListDrafts(list) | Request::ListShares(list) => &mut list.project_path,
+        Request::ListSessions(list) | Request::ListDrafts(list) | Request::ListShares(list) => {
+            &mut list.project_path
+        }
         _ => return Ok(()),
     };
-    let Some(path) = slot.clone() else { return Ok(()) };
-    let projects = crate::projects::list_projects().await.map_err(anyhow::Error::from)?;
+    let Some(path) = slot.clone() else {
+        return Ok(());
+    };
+    let projects = crate::projects::list_projects()
+        .await
+        .map_err(anyhow::Error::from)?;
     if let Some(origin) = origin {
         for project in &projects {
             if crate::git::origin(&project.path).await.as_deref() == Some(origin) {
@@ -438,26 +465,39 @@ mod elsewhere {
     /// The machine holding session `id`, where one does. Every machine is
     /// asked at once, each given [`machines::SWEEP`].
     pub async fn locate(id: &str) -> Option<String> {
-        let list: Vec<_> = machines::load().await.into_iter().filter(|m| !m.off).collect();
+        let list: Vec<_> = machines::load()
+            .await
+            .into_iter()
+            .filter(|m| !m.off)
+            .collect();
         let asks = list.iter().map(|m| async move {
-            let row =
-                tokio::time::timeout(machines::SWEEP, machines::call(m, "session_index_item", json!({ "sessionId": id })))
-                    .await;
+            let row = tokio::time::timeout(
+                machines::SWEEP,
+                machines::call(m, "session_index_item", json!({ "sessionId": id })),
+            )
+            .await;
             matches!(row, Ok(Ok(ref row)) if !row.is_null()).then(|| m.id.clone())
         });
-        futures_util::future::join_all(asks).await.into_iter().flatten().next()
+        futures_util::future::join_all(asks)
+            .await
+            .into_iter()
+            .flatten()
+            .next()
     }
 
     /// Runs a prepared request on `machine`, a name or an id, and marks every
     /// session it answers with as that machine's.
     pub async fn forward(machine: &str, forward: &Forward) -> Result<Response> {
         let saved = machines::on(machine).await.map_err(anyhow::Error::msg)?;
-        let answer = machines::call(&saved, "orchestrate", serde_json::to_value(forward)?).await.map_err(|e| {
-            match e.starts_with("unknown command") {
-                true => anyhow!("{}'s Carbon server is too old to take carbon requests — update it", saved.name),
+        let answer = machines::call(&saved, "orchestrate", serde_json::to_value(forward)?)
+            .await
+            .map_err(|e| match e.starts_with("unknown command") {
+                true => anyhow!(
+                    "{}'s Carbon server is too old to take carbon requests — update it",
+                    saved.name
+                ),
                 false => anyhow!(e),
-            }
-        })?;
+            })?;
         let mut response: Response = serde_json::from_value(answer)?;
         let rows: Vec<&mut SessionSummary> = match &mut response {
             Response::Created { session, .. } | Response::Session { session } => vec![session],
@@ -492,11 +532,19 @@ mod elsewhere {
                 create.base = branch_of(create.base.take(), project.as_deref()).await?;
             }
             Request::StartDraft(start) => {
-                forward.caller = caller(parent_of(start.parent_session_id.as_deref()).await?.as_ref()).await?;
+                forward.caller = caller(
+                    parent_of(start.parent_session_id.as_deref())
+                        .await?
+                        .as_ref(),
+                )
+                .await?;
             }
             Request::SendMessage(send) => {
                 if let Some(from) = sender(send).await {
-                    forward.sender = Some(MessageSender { machine: Some(this_machine().await), ..from });
+                    forward.sender = Some(MessageSender {
+                        machine: Some(this_machine().await),
+                        ..from
+                    });
                 }
             }
             Request::ListSessions(list) | Request::ListDrafts(list) | Request::ListShares(list) => {
@@ -517,15 +565,22 @@ mod elsewhere {
     }
 
     async fn caller(parent: Option<&SessionIndexItem>) -> Result<Option<Caller>> {
-        let Some(parent) = parent else { return Ok(None) };
-        Ok(Some(Caller { session: parent.clone(), depth: depth_of(parent).await? }))
+        let Some(parent) = parent else {
+            return Ok(None);
+        };
+        Ok(Some(Caller {
+            session: parent.clone(),
+            depth: depth_of(parent).await?,
+        }))
     }
 
     /// A `--base` naming a session here means its branch there, which the far
     /// side can only find if that branch was pushed. A ref passes as written.
     async fn branch_of(base: Option<String>, project: Option<&str>) -> Result<Option<String>> {
         match (base, project) {
-            (Some(base), Some(project)) if store::get_session_index_item(&base).await?.is_some() => {
+            (Some(base), Some(project))
+                if store::get_session_index_item(&base).await?.is_some() =>
+            {
                 Ok(Some(resolve_base(&base, project).await?))
             }
             (base, _) => Ok(base),
@@ -535,7 +590,9 @@ mod elsewhere {
     /// The name a relayed sender gives this machine, which the far side may
     /// hold under a name of its own.
     async fn this_machine() -> String {
-        tokio::task::spawn_blocking(carbon_proto::machine_name).await.unwrap_or_else(|_| "another machine".into())
+        tokio::task::spawn_blocking(carbon_proto::machine_name)
+            .await
+            .unwrap_or_else(|_| "another machine".into())
     }
 
     /// `session ls --machine all`: this machine's sessions, then each
@@ -545,8 +602,14 @@ mod elsewhere {
         let Response::Listed { mut sessions } = list_sessions(list).await? else {
             bail!("listing this machine's sessions answered something else");
         };
-        let list: Vec<_> = machines::load().await.into_iter().filter(|m| !m.off).collect();
-        let asks = list.iter().map(|m| tokio::time::timeout(machines::SWEEP, self::forward(&m.id, &forward)));
+        let list: Vec<_> = machines::load()
+            .await
+            .into_iter()
+            .filter(|m| !m.off)
+            .collect();
+        let asks = list
+            .iter()
+            .map(|m| tokio::time::timeout(machines::SWEEP, self::forward(&m.id, &forward)));
         // ponytail: a machine that fails to answer is skipped unsaid; give
         // `Listed` a warnings field if agents start missing rows.
         for answer in futures_util::future::join_all(asks).await {
@@ -564,6 +627,7 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
         Request::ListSessions(list) => list_sessions(list).await,
         Request::SendMessage(send) => send_message(send, None, app).await,
         Request::LinkIssues(link) => link_issues(link, app).await,
+        Request::WriteIssue(write) => write_issue(write, app).await,
         Request::CreateDraft(create) => create_draft(create, None, app).await,
         Request::ListDrafts(list) => list_drafts(list).await,
         Request::RemoveDraft(draft) => remove_draft(&draft.id, app).await,
@@ -581,11 +645,14 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
         Request::SettleSession(settle) => settle_session(settle, app).await,
         #[cfg(any(feature = "serve", feature = "desktop"))]
         Request::SetRemoteAccess(set) => {
-            let now = crate::remote_access::set_remote_access(app.clone(), set.on).await.map_err(anyhow::Error::msg)?;
+            let now = crate::remote_access::set_remote_access(app.clone(), set.on)
+                .await
+                .map_err(anyhow::Error::msg)?;
             Ok(Response::RemoteAccess { on: now.on })
         }
         Request::SetAside(aside) => {
-            crate::set_session_flags(&aside.session_id, None, None, None, Some(aside.aside)).await?;
+            crate::set_session_flags(&aside.session_id, None, None, None, Some(aside.aside))
+                .await?;
             announce_change(&[aside.session_id.clone()], app).await;
             answer_session(&aside.session_id).await
         }
@@ -614,7 +681,11 @@ async fn ask_app(request: Request) -> Result<Response> {
     }
     match crate::serve::host_call("request", serde_json::to_value(&request)?).await {
         Some(Ok(answer)) => Ok(serde_json::from_value(answer)?),
-        Some(Err(err)) => Ok(Response::error(err.as_str().map(str::to_string).unwrap_or_else(|| err.to_string()))),
+        Some(Err(err)) => Ok(Response::error(
+            err.as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| err.to_string()),
+        )),
         // No app, or it left between the two questions: the file is this
         // server's alone until the app opens again and reads it.
         None => answer_on_screen(request).await,
@@ -630,7 +701,9 @@ pub async fn answer_host(cmd: &str, args: serde_json::Value) -> Result<serde_jso
     match cmd {
         "request" => {
             let request: Request = serde_json::from_value(args).map_err(|e| e.to_string())?;
-            let response = answer_on_screen(request).await.unwrap_or_else(|e| Response::error(format!("{e:#}")));
+            let response = answer_on_screen(request)
+                .await
+                .unwrap_or_else(|e| Response::error(format!("{e:#}")));
             serde_json::to_value(response).map_err(|e| e.to_string())
         }
         "reload_servers" => {
@@ -638,7 +711,9 @@ pub async fn answer_host(cmd: &str, args: serde_json::Value) -> Result<serde_jso
             Ok(serde_json::Value::Null)
         }
         "show_session" => {
-            let id = args["sessionId"].as_str().ok_or("show_session wants a sessionId")?;
+            let id = args["sessionId"]
+                .as_str()
+                .ok_or("show_session wants a sessionId")?;
             let app = crate::transcription::app().ok_or("Carbon is not ready yet.")?;
             crate::notifications::activate(app, id);
             Ok(serde_json::Value::Null)
@@ -649,8 +724,13 @@ pub async fn answer_host(cmd: &str, args: serde_json::Value) -> Result<serde_jso
         "selected_session" => {
             use tauri::Manager;
             let app = crate::transcription::app().ok_or("Carbon is not ready yet.")?;
-            let focused = app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
-            Ok(serde_json::json!(focused.then(crate::apps::app_selection).flatten()))
+            let focused = app
+                .get_webview_window("main")
+                .and_then(|w| w.is_focused().ok())
+                .unwrap_or(false);
+            Ok(serde_json::json!(focused
+                .then(crate::apps::app_selection)
+                .flatten()))
         }
         "close_session" => {
             #[cfg(all(feature = "cef", target_os = "macos"))]
@@ -691,7 +771,9 @@ async fn machine_list(request: Request) -> Result<Response> {
     };
     let row = match request {
         Request::ListServers => {
-            return Ok(Response::Servers { servers: machines::list().await.into_iter().map(summarize).collect() });
+            return Ok(Response::Servers {
+                servers: machines::list().await.into_iter().map(summarize).collect(),
+            });
         }
         Request::AddServer(add) => machines::add(add.name, add.address, add.token).await,
         Request::RemoveServer(server) => machines::remove(&server.name).await,
@@ -699,7 +781,9 @@ async fn machine_list(request: Request) -> Result<Response> {
         Request::SetServerOn(set) => machines::set_on(&set.name, set.on).await,
         other => bail!("{other:?} is not answered here"),
     };
-    Ok(Response::Server { server: summarize(row.map_err(anyhow::Error::msg)?) })
+    Ok(Response::Server {
+        server: summarize(row.map_err(anyhow::Error::msg)?),
+    })
 }
 
 /// `carbon machine`, through Settings → Servers' own commands, so the CLI is
@@ -714,7 +798,9 @@ mod server_list {
     pub async fn answer(request: Request) -> Result<Response> {
         match request {
             Request::AddServer(add) => self::add(add).await,
-            Request::ListServers => Ok(Response::Servers { servers: servers::list_servers().into_iter().map(summarize).collect() }),
+            Request::ListServers => Ok(Response::Servers {
+                servers: servers::list_servers().into_iter().map(summarize).collect(),
+            }),
             Request::RemoveServer(server) => remove(&server.name).await,
             Request::RenameServer(rename) => self::rename(rename).await,
             Request::SetServerOn(set) => set_on(set).await,
@@ -725,17 +811,23 @@ mod server_list {
     async fn add(add: AddServer) -> Result<Response> {
         let name = Some(add.name);
         let added = match add.token {
-            Some(token) => servers::add_server(add.address, token, name).await.map_err(anyhow::Error::msg)?,
+            Some(token) => servers::add_server(add.address, token, name)
+                .await
+                .map_err(anyhow::Error::msg)?,
             None => {
                 // The whole login, port and user included: `[box]:2222` is the
                 // key the add needs trusted, not `box`'s.
-                let login = crate::ssh::parse(&add.address).map(|t| t.line()).unwrap_or_else(|_| add.address.clone());
+                let login = crate::ssh::parse(&add.address)
+                    .map(|t| t.line())
+                    .unwrap_or_else(|_| add.address.clone());
                 servers::add_ssh_server(add.address, name)
                     .await
                     .map_err(|f| anyhow::anyhow!(crate::machines::explain(f, &login)))?
             }
         };
-        Ok(Response::Server { server: summarize(added) })
+        Ok(Response::Server {
+            server: summarize(added),
+        })
     }
 
     /// By name, or by id where two servers share one. An id wins outright, or
@@ -751,26 +843,41 @@ mod server_list {
             1 => Ok(matches.remove(0)),
             n => bail!(
                 "{n} servers are named {name} — name one by id: {}",
-                matches.iter().map(|s| s.id.as_str()).collect::<Vec<_>>().join(", ")
+                matches
+                    .iter()
+                    .map(|s| s.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         }
     }
 
     fn current(id: &str) -> Result<ServerInfo> {
-        servers::list_servers().into_iter().find(|s| s.id == id).context("the server was removed meanwhile")
+        servers::list_servers()
+            .into_iter()
+            .find(|s| s.id == id)
+            .context("the server was removed meanwhile")
     }
 
     /// Takes the token with it.
     async fn remove(name: &str) -> Result<Response> {
         let server = find(name)?;
-        servers::remove_server(server.id.clone()).await.map_err(anyhow::Error::msg)?;
-        Ok(Response::Server { server: summarize(server) })
+        servers::remove_server(server.id.clone())
+            .await
+            .map_err(anyhow::Error::msg)?;
+        Ok(Response::Server {
+            server: summarize(server),
+        })
     }
 
     async fn rename(rename: carbon_proto::RenameServer) -> Result<Response> {
         let id = find(&rename.name)?.id;
-        servers::rename_server(id.clone(), rename.new_name).await.map_err(anyhow::Error::msg)?;
-        Ok(Response::Server { server: summarize(current(&id)?) })
+        servers::rename_server(id.clone(), rename.new_name)
+            .await
+            .map_err(anyhow::Error::msg)?;
+        Ok(Response::Server {
+            server: summarize(current(&id)?),
+        })
     }
 
     /// On waits for the attempt to settle, so `carbon machine connect` answers
@@ -778,20 +885,36 @@ mod server_list {
     /// capped at 45s; past that the answer is the row as it stands.
     async fn set_on(set: carbon_proto::SetServerOn) -> Result<Response> {
         let id = find(&set.name)?.id;
-        servers::set_server_on(id.clone(), set.on).await.map_err(anyhow::Error::msg)?;
+        servers::set_server_on(id.clone(), set.on)
+            .await
+            .map_err(anyhow::Error::msg)?;
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(50);
-        while set.on && current(&id)?.status == ServerStatus::Connecting && tokio::time::Instant::now() < deadline {
+        while set.on
+            && current(&id)?.status == ServerStatus::Connecting
+            && tokio::time::Instant::now() < deadline
+        {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
-        Ok(Response::Server { server: summarize(current(&id)?) })
+        Ok(Response::Server {
+            server: summarize(current(&id)?),
+        })
     }
 
     fn summarize(server: ServerInfo) -> ServerSummary {
         let status = match server.on {
-            true => serde_json::to_value(server.status).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default(),
+            true => serde_json::to_value(server.status)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_default(),
             false => "off".to_string(),
         };
-        ServerSummary { id: server.id, name: server.name, address: server.ssh.unwrap_or(server.url), status, error: server.error }
+        ServerSummary {
+            id: server.id,
+            name: server.name,
+            address: server.ssh.unwrap_or(server.url),
+            status,
+            error: server.error,
+        }
     }
 }
 
@@ -806,7 +929,9 @@ async fn share_port(request: carbon_proto::ShareRequest) -> Result<Response> {
         ShareAction::List => Ok(()),
     };
     Ok(match done {
-        Ok(()) => Response::Shared { shares: crate::share::list(Some(&session)) },
+        Ok(()) => Response::Shared {
+            shares: crate::share::list(Some(&session)),
+        },
         Err(message) => Response::error(message),
     })
 }
@@ -819,7 +944,9 @@ async fn list_shares(list: ListSessions) -> Result<Response> {
         .into_iter()
         .filter(|s| {
             scope.as_deref().is_none_or(|p| {
-                items.iter().any(|i| i.session_id == s.session_id && i.project_path == p)
+                items
+                    .iter()
+                    .any(|i| i.session_id == s.session_id && i.project_path == p)
             })
         })
         .collect();
@@ -830,7 +957,9 @@ async fn list_shares(list: ListSessions) -> Result<Response> {
 /// a settled session's processes and carries its hidden children along.
 async fn settle_session(settle: carbon_proto::SettleSession, app: &Sink) -> Result<Response> {
     let id = settle.session_id.as_str();
-    let item = store::get_session_index_item(id).await?.with_context(|| format!("no session {id}"))?;
+    let item = store::get_session_index_item(id)
+        .await?
+        .with_context(|| format!("no session {id}"))?;
     if settle.settled && manager().turn_in_flight(id).await {
         bail!("session {id} is mid-turn — settle it once the turn finishes, or stop it first");
     }
@@ -862,8 +991,12 @@ async fn announce_change(ids: &[String], app: &Sink) {
 }
 
 async fn answer_session(id: &str) -> Result<Response> {
-    let item = store::get_session_index_item(id).await?.with_context(|| format!("no session {id}"))?;
-    Ok(Response::Session { session: summarize(item) })
+    let item = store::get_session_index_item(id)
+        .await?
+        .with_context(|| format!("no session {id}"))?;
+    Ok(Response::Session {
+        session: summarize(item),
+    })
 }
 
 /// One `carbon browser` step: CEF's tabs in the Mac app, a headless Chromium
@@ -875,9 +1008,30 @@ async fn browse(request: carbon_proto::BrowserRequest) -> Result<Response> {
     };
     #[cfg(all(feature = "cef", target_os = "macos"))]
     if !crate::is_server() {
-        return Ok(answered(crate::cef::automation::run(&request.session_id, request.action).await));
+        return Ok(answered(
+            crate::cef::automation::run(&request.session_id, request.action).await,
+        ));
     }
-    Ok(answered(crate::headless::automation::run(&request.session_id, request.action).await))
+    Ok(answered(
+        crate::headless::automation::run(&request.session_id, request.action).await,
+    ))
+}
+
+/// A comment or a status change, with the key Carbon already holds.
+///
+/// The key is not in the request and not in the answer. The cache drop waits
+/// until the write has landed: a refusal leaves the panel's copy, which is
+/// still true.
+async fn write_issue(write: WriteIssue, app: &Sink) -> Result<Response> {
+    let written = issues::write_issue(write.identifier, write.comment, write.status).await?;
+    app.emit(ISSUES_STALE, &()).ok();
+    Ok(Response::Issue {
+        identifier: written.identifier,
+        title: written.title,
+        url: written.url,
+        state: written.status,
+        commented: written.commented,
+    })
 }
 
 /// Tags a session that already exists, or untags it.
@@ -931,7 +1085,10 @@ async fn link_issues(link: LinkIssues, app: &Sink) -> Result<Response> {
     if applied > 0 {
         app.emit(
             ISSUES_CHANGED,
-            &IssuesChangedEvent { session_id: link.session_id.clone(), issues: linked.clone() },
+            &IssuesChangedEvent {
+                session_id: link.session_id.clone(),
+                issues: linked.clone(),
+            },
         )
         .ok();
     }
@@ -984,7 +1141,11 @@ async fn apply_issue(link: &LinkIssues, input: &IssueInput) -> Result<Vec<IssueR
     }
 }
 
-async fn create_session(create: CreateSession, caller: Option<&Caller>, app: &Sink) -> Result<Response> {
+async fn create_session(
+    create: CreateSession,
+    caller: Option<&Caller>,
+    app: &Sink,
+) -> Result<Response> {
     if create.prompt.trim().is_empty() {
         bail!("a session needs a prompt");
     }
@@ -1079,11 +1240,17 @@ async fn create_session(create: CreateSession, caller: Option<&Caller>, app: &Si
 /// Saves a task for later with the picks `carbon new` would have given it, and
 /// always with a worktree: an agent that leaves work for the reader has no
 /// standing to put it in the reader's own checkout.
-async fn create_draft(create: CreateDraft, caller: Option<&Caller>, app: &Sink) -> Result<Response> {
+async fn create_draft(
+    create: CreateDraft,
+    caller: Option<&Caller>,
+    app: &Sink,
+) -> Result<Response> {
     if create.prompt.trim().is_empty() {
         bail!("a draft needs a prompt");
     }
-    let parent = calling(create.parent_session_id.as_deref(), caller).await?.map(|c| c.0);
+    let parent = calling(create.parent_session_id.as_deref(), caller)
+        .await?
+        .map(|c| c.0);
     let project_path = project_from(create.project_path.as_deref(), parent.as_ref())
         .context("no project — run this inside a git repo or pass --project")?;
     let harness = resolve_harness(create.harness.as_deref(), parent.as_ref())?;
@@ -1099,7 +1266,10 @@ async fn create_draft(create: CreateDraft, caller: Option<&Caller>, app: &Sink) 
         harness,
         model: resolve_model(create.model.as_deref(), parent.as_ref(), harness).await?,
         effort: resolve_effort(create.effort.as_deref(), parent.as_ref(), harness)?,
-        permission_mode: parent.as_ref().map(|p| p.permission_mode).unwrap_or_default(),
+        permission_mode: parent
+            .as_ref()
+            .map(|p| p.permission_mode)
+            .unwrap_or_default(),
         fast: resolve_fast(create.fast, parent.as_ref(), harness),
         use_worktree: true,
         base: create.base,
@@ -1107,7 +1277,9 @@ async fn create_draft(create: CreateDraft, caller: Option<&Caller>, app: &Sink) 
     };
     drafts::save_draft(serde_json::to_value(&draft)?).await?;
     app.emit(DRAFTS_CHANGED, ()).ok();
-    Ok(Response::Draft { draft: summarize_draft(draft) })
+    Ok(Response::Draft {
+        draft: summarize_draft(draft),
+    })
 }
 
 /// Drafts in the caller's project, or every one with `--all`, newest first.
@@ -1119,7 +1291,9 @@ async fn list_drafts(list: ListSessions) -> Result<Response> {
         .filter(|d| scope.as_deref().is_none_or(|p| d.project_path == p))
         .collect();
     drafts.sort_by(|a, b| b.created.cmp(&a.created));
-    Ok(Response::Drafts { drafts: drafts.into_iter().map(summarize_draft).collect() })
+    Ok(Response::Drafts {
+        drafts: drafts.into_iter().map(summarize_draft).collect(),
+    })
 }
 
 /// The project a listing is narrowed to, or `None` for `--all`.
@@ -1135,9 +1309,13 @@ async fn scope_of(list: &ListSessions) -> Result<Option<String>> {
 /// rather than deleted unseen.
 async fn remove_draft(id: &str, app: &Sink) -> Result<Response> {
     let draft = find_draft(id).await?;
-    drafts::take(id).await?.with_context(|| format!("no draft {id}"))?;
+    drafts::take(id)
+        .await?
+        .with_context(|| format!("no draft {id}"))?;
     app.emit(DRAFTS_CHANGED, ()).ok();
-    Ok(Response::Draft { draft: summarize_draft(draft) })
+    Ok(Response::Draft {
+        draft: summarize_draft(draft),
+    })
 }
 
 async fn find_draft(id: &str) -> Result<StoredDraft> {
@@ -1156,7 +1334,11 @@ async fn find_draft(id: &str) -> Result<StoredDraft> {
 /// the app, which is the one way an agent can start work in the main checkout.
 async fn start_draft(start: StartDraft, caller: Option<&Caller>, app: &Sink) -> Result<Response> {
     let draft = find_draft(&start.id).await?;
-    check_depth(calling(start.parent_session_id.as_deref(), caller).await?.map(|c| c.1))?;
+    check_depth(
+        calling(start.parent_session_id.as_deref(), caller)
+            .await?
+            .map(|c| c.1),
+    )?;
     let held = drafts::take(&draft.id)
         .await?
         .with_context(|| format!("no draft {}", draft.id))?;
@@ -1175,11 +1357,7 @@ async fn start_draft(start: StartDraft, caller: Option<&Caller>, app: &Sink) -> 
     Err(error)
 }
 
-async fn start_session(
-    draft: &StoredDraft,
-    parent: Option<&str>,
-    app: &Sink,
-) -> Result<Response> {
+async fn start_session(draft: &StoredDraft, parent: Option<&str>, app: &Sink) -> Result<Response> {
     // Read again at the start rather than trusted from the save: the branch a
     // session id names, or the ref itself, may have moved or gone since.
     let base_ref = match draft.base.as_deref() {
@@ -1218,7 +1396,10 @@ async fn start_session(
         .context("the session was created but returned no index entry")?;
 
     app.emit(SESSION_CREATED, &item).ok();
-    Ok(Response::Created { session: summarize(item), base_ref })
+    Ok(Response::Created {
+        session: summarize(item),
+        base_ref,
+    })
 }
 
 /// What `--from` starts the new worktree at: a session id, a branch, or any
@@ -1256,7 +1437,10 @@ pub(crate) async fn resolve_base(from: &str, project_path: &str) -> Result<Strin
         // deleted — names a branch this one has never heard of. Said here
         // rather than left to git, whose error names the branch without saying
         // that a session was what asked for it.
-        if crate::git::resolve_commit(project_path, &branch).await.is_none() {
+        if crate::git::resolve_commit(project_path, &branch)
+            .await
+            .is_none()
+        {
             bail!(
                 "session {from} is on branch {branch}, which {project_path} does not have — \
                  check the two are the same repository, and that the branch still exists"
@@ -1266,7 +1450,10 @@ pub(crate) async fn resolve_base(from: &str, project_path: &str) -> Result<Strin
         return Ok(branch);
     }
 
-    if crate::git::resolve_commit(project_path, from).await.is_some() {
+    if crate::git::resolve_commit(project_path, from)
+        .await
+        .is_some()
+    {
         return Ok(from.to_string());
     }
 
@@ -1362,7 +1549,10 @@ async fn resolve_model(
         });
     }
 
-    if let Some(inherited) = parent.map(|p| p.model.clone()).filter(|id| runs_on(id, harness)) {
+    if let Some(inherited) = parent
+        .map(|p| p.model.clone())
+        .filter(|id| runs_on(id, harness))
+    {
         return Ok(inherited);
     }
 
@@ -1397,7 +1587,9 @@ fn resolve_effort(
         })?));
     }
 
-    Ok(parent.filter(|p| p.harness == harness).and_then(|p| p.effort))
+    Ok(parent
+        .filter(|p| p.harness == harness)
+        .and_then(|p| p.effort))
 }
 
 /// The new session's fast mode: the flag if given, else the parent's, else off.
@@ -1407,7 +1599,11 @@ fn resolve_effort(
 /// meaning different things; this one's is plainer — a `true` carried from a
 /// Claude parent onto a Codex child turns on a paid tier on another vendor's
 /// account, which is more than "run this one like me" can be read to ask for.
-fn resolve_fast(requested: Option<bool>, parent: Option<&SessionIndexItem>, harness: Harness) -> bool {
+fn resolve_fast(
+    requested: Option<bool>,
+    parent: Option<&SessionIndexItem>,
+    harness: Harness,
+) -> bool {
     requested.unwrap_or_else(|| parent.is_some_and(|p| p.harness == harness && p.fast))
 }
 
@@ -1424,7 +1620,11 @@ fn resolve_fast(requested: Option<bool>, parent: Option<&SessionIndexItem>, harn
 /// same operation, and naming the relationship would only add a rule to get
 /// wrong — the id is the address.
 /// `carried` is the sender a forwarding Mac looked up, which this index cannot.
-async fn send_message(send: SendMessage, carried: Option<MessageSender>, app: &Sink) -> Result<Response> {
+async fn send_message(
+    send: SendMessage,
+    carried: Option<MessageSender>,
+    app: &Sink,
+) -> Result<Response> {
     if send.prompt.trim().is_empty() {
         bail!("a message needs some text");
     }
@@ -1506,10 +1706,18 @@ async fn send_message(send: SendMessage, carried: Option<MessageSender>, app: &S
 /// finds that machine where this one holds a token for it.
 fn attribute(prompt: &str, from: Option<&MessageSender>) -> String {
     match from {
-        Some(MessageSender { session_id, title, machine: None }) => {
+        Some(MessageSender {
+            session_id,
+            title,
+            machine: None,
+        }) => {
             format!("[message from the Carbon session \"{title}\" ({session_id})]\n\n{prompt}")
         }
-        Some(MessageSender { session_id, title, machine: Some(machine) }) => {
+        Some(MessageSender {
+            session_id,
+            title,
+            machine: Some(machine),
+        }) => {
             format!("[message from the Carbon session \"{title}\" ({session_id}) on {machine}]\n\n{prompt}")
         }
         None => prompt.to_string(),
@@ -1579,11 +1787,16 @@ fn project_from(requested: Option<&str>, parent: Option<&SessionIndexItem>) -> O
 /// index, or carried by the Mac that forwarded the call, whose index holds it.
 // ponytail: a child made on another machine walks only edges this index holds,
 // so its own children see depth 1 there; carry depth on the row if that matters.
-async fn calling(id: Option<&str>, caller: Option<&Caller>) -> Result<Option<(SessionIndexItem, usize)>> {
+async fn calling(
+    id: Option<&str>,
+    caller: Option<&Caller>,
+) -> Result<Option<(SessionIndexItem, usize)>> {
     if let Some(caller) = caller {
         return Ok(Some((caller.session.clone(), caller.depth)));
     }
-    let Some(parent) = parent_of(id).await? else { return Ok(None) };
+    let Some(parent) = parent_of(id).await? else {
+        return Ok(None);
+    };
     let depth = depth_of(&parent).await?;
     Ok(Some((parent, depth)))
 }
@@ -1591,7 +1804,9 @@ async fn calling(id: Option<&str>, caller: Option<&Caller>) -> Result<Option<(Se
 async fn parent_of(id: Option<&str>) -> Result<Option<SessionIndexItem>> {
     match id {
         Some(id) => Ok(Some(
-            store::get_session_index_item(id).await?.with_context(|| format!("no session {id}"))?,
+            store::get_session_index_item(id)
+                .await?
+                .with_context(|| format!("no session {id}"))?,
         )),
         None => Ok(None),
     }
@@ -1665,7 +1880,10 @@ mod tests {
             resolve_effort(None, Some(&parent), Harness::ClaudeCode).unwrap(),
             Some(Effort::High)
         );
-        assert_eq!(resolve_effort(None, Some(&parent), Harness::Codex).unwrap(), None);
+        assert_eq!(
+            resolve_effort(None, Some(&parent), Harness::Codex).unwrap(),
+            None
+        );
         // A level the caller named stands whatever the parent ran.
         assert_eq!(
             resolve_effort(Some("max"), Some(&parent), Harness::Codex).unwrap(),
@@ -1687,7 +1905,11 @@ mod tests {
         assert!(!resolve_fast(None, Some(&parent), Harness::Codex));
         // Named outright, it stands whatever the parent ran — both ways.
         assert!(resolve_fast(Some(true), Some(&parent), Harness::Codex));
-        assert!(!resolve_fast(Some(false), Some(&parent), Harness::ClaudeCode));
+        assert!(!resolve_fast(
+            Some(false),
+            Some(&parent),
+            Harness::ClaudeCode
+        ));
         // No parent at all is the ordinary terminal call: off.
         assert!(!resolve_fast(None, None, Harness::ClaudeCode));
     }
@@ -1769,7 +1991,9 @@ mod tests {
 
         assert_eq!(refusal(&line(OLDEST_SPOKEN)), None);
         assert_eq!(refusal(&line(PROTOCOL_VERSION)), None);
-        assert!(refusal(&line(OLDEST_SPOKEN - 1)).unwrap().contains("carbon update"));
+        assert!(refusal(&line(OLDEST_SPOKEN - 1))
+            .unwrap()
+            .contains("carbon update"));
         assert!(refusal(&line(PROTOCOL_VERSION + 1))
             .unwrap()
             .contains("update the Carbon app"));

@@ -19,9 +19,9 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
 
 use super::{
-    Issue, IssueAsset, IssueComment, IssueDetail, IssueFilters, IssueGroup, IssueLabel, IssuePerson,
-    IssuePriority, IssueQuery, IssueScope, IssueState, IssueStateKind, IssueTracker,
-    IssueUnavailable, TrackerAccount, optional, pr_numbers, text,
+    optional, pr_numbers, text, Issue, IssueAsset, IssueComment, IssueDetail, IssueFilters,
+    IssueGroup, IssueLabel, IssuePerson, IssuePriority, IssueQuery, IssueScope, IssueState,
+    IssueStateKind, IssueTracker, IssueUnavailable, TrackerAccount,
 };
 
 const API: &str = "https://api.linear.app/graphql";
@@ -441,9 +441,39 @@ pub async fn update_issue(
     // belonging to another team, most likely. It comes back at 200 with no
     // `errors`, so without this the panel re-reads, finds nothing moved, and
     // silently redraws what the reader was already looking at.
-    match data.pointer("/issueUpdate/success").and_then(Value::as_bool) {
+    match data
+        .pointer("/issueUpdate/success")
+        .and_then(Value::as_bool)
+    {
         Some(true) => Ok(()),
         _ => Err(IssueUnavailable::Other("Linear refused the change".into())),
+    }
+}
+
+/// Posts a comment on an issue.
+///
+/// `success: false` comes back at 200 with no `errors`, the same shape as
+/// `issueUpdate`, so a write that Linear refused has to be read off that flag
+/// or the caller reports a comment that was never posted.
+pub async fn create_comment(key: &str, id: &str, body: &str) -> Result<(), IssueUnavailable> {
+    const COMMENT: &str = r#"
+mutation($input:CommentCreateInput!){
+ commentCreate(input:$input){success comment{id}}}
+"#;
+
+    let data = query(
+        key,
+        COMMENT,
+        json!({ "input": { "issueId": id, "body": body } }),
+    )
+    .await?;
+
+    match data
+        .pointer("/commentCreate/success")
+        .and_then(Value::as_bool)
+    {
+        Some(true) => Ok(()),
+        _ => Err(IssueUnavailable::Other("Linear refused the comment".into())),
     }
 }
 
@@ -777,9 +807,9 @@ mod tests {
             "assignee": { "name": "Yogesh Dhakal", "avatarUrl": "https://x/y.png" },
             "labels": { "nodes": [{ "name": "Feature", "color": "#bb87fc" }] },
             "attachments": { "nodes": [
-                { "url": "https://github.com/monorepo-labs/dray/pull/143" },
+                { "url": "https://github.com/matthieu-pm/carbonhq/pull/143" },
                 { "url": "https://linear.app/carbonhq/document/whatever" },
-                { "url": "https://github.com/monorepo-labs/dray/pull/12#discussion_r1" }
+                { "url": "https://github.com/matthieu-pm/carbonhq/pull/12#discussion_r1" }
             ]},
             "team": { "key": "DRA" },
             "project": { "name": "Integrations" },
@@ -798,14 +828,17 @@ mod tests {
     #[test]
     fn a_pull_request_is_told_from_every_other_attachment() {
         assert_eq!(
-            pull_request_number("https://github.com/monorepo-labs/dray/pull/143"),
+            pull_request_number("https://github.com/matthieu-pm/carbonhq/pull/143"),
             Some(143)
         );
         assert_eq!(
             pull_request_number("https://github.com/o/r/pull/7#discussion_r1"),
             Some(7)
         );
-        assert_eq!(pull_request_number("https://github.com/o/r/pull/7?w=1"), Some(7));
+        assert_eq!(
+            pull_request_number("https://github.com/o/r/pull/7?w=1"),
+            Some(7)
+        );
 
         // An issue, a commit and a repository are all attachments too.
         assert_eq!(pull_request_number("https://github.com/o/r/issues/7"), None);
@@ -814,9 +847,15 @@ mod tests {
         assert_eq!(pull_request_number("https://github.com/o//pull/7"), None);
         assert_eq!(pull_request_number("https://github.com/o/r"), None);
         // Not GitHub at all, and the prefix test is what says so.
-        assert_eq!(pull_request_number("https://github.com.evil.test/o/r/pull/7"), None);
+        assert_eq!(
+            pull_request_number("https://github.com.evil.test/o/r/pull/7"),
+            None
+        );
         assert_eq!(pull_request_number("http://github.com/o/r/pull/7"), None);
-        assert_eq!(pull_request_number("https://slack.com/archives/C1/p1"), None);
+        assert_eq!(
+            pull_request_number("https://slack.com/archives/C1/p1"),
+            None
+        );
     }
 
     #[test]

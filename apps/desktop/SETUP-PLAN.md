@@ -1,6 +1,6 @@
 # Stage 2: installing Carbon on a VPS
 
-monorepo-labs/dray#415, flow A. The user SSHes into a fresh Linux box and pastes
+Flow A. The user SSHes into a fresh Linux box and pastes
 the line that already installs the CLI:
 
 ```bash

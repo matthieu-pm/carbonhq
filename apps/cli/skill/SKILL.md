@@ -1,6 +1,6 @@
 ---
 name: carbon
-description: Create, list and message Carbon sessions, and drive this session's browser, from the command line. Use when the user asks to work on several things at once — a batch of issues, tickets, or tasks — and each deserves its own agent, its own branch, and its own place in the sidebar; for checking on sessions you started and messaging between them; and whenever a page needs looking at or acting on — a dev server, a deployed site, docs — through `carbon browser`, never a headless browser or a browser MCP.
+description: Create, list and message Carbon sessions, drive this session's browser, and comment on or move a Linear issue, from the command line. Use when the user asks to work on several things at once — a batch of issues, tickets, or tasks — and each deserves its own agent, its own branch, and its own place in the sidebar; for checking on sessions you started and messaging between them; whenever a page needs looking at or acting on — a dev server, a deployed site, docs — through `carbon browser`, never a headless browser or a browser MCP; and when a Linear issue needs a comment or a status change, including when Linear's MCP server is not signed in.
 ---
 
 # Carbon sessions
@@ -148,9 +148,10 @@ the comments, the links and the current status live. For GitHub the `gh` CLI is
 the same answer: `gh issue view owner/repo#12`. The line in the prompt is an
 address, not a briefing.
 
-If that MCP server is not connected, say so rather than guessing: you have the
-title and the identifier and nothing behind them. `claude mcp list` says which
-servers are reachable.
+If that MCP server is not connected, say so rather than guessing at the
+description: you have the title and the identifier and nothing behind them.
+`claude mcp list` says which servers are reachable. A comment or a status
+change does not need it — see *Updating a Linear issue*.
 
 `--issue`, and a `#DRA-53` written into a prompt, are the other half and they
 *do* need the user to have connected a tracker in Carbon — that is where the title
@@ -160,6 +161,30 @@ and nothing fails. Report it rather than working around it.
 You can also write `#DRA-53` straight into a prompt — `carbon session new`, `carbon session send`, or
 the user's own composer. Carbon resolves the tag and links it exactly as `--issue`
 does.
+
+### Updating a Linear issue
+
+```bash
+carbon issue comment FOR-140 "Merged in https://github.com/…/pull/64"
+carbon issue status FOR-140 Done
+carbon issue status FOR-140 "In Progress"
+```
+
+Posts a comment, or moves the issue to a status its team already has. Carbon
+uses the Linear key connected in its settings. The key stays there. It is not
+in the environment, the command, or the transcript, and you must not ask the
+user to paste one.
+
+The comment is one argument, so quote it. The status is one name, so quote a
+name with a space. Do not write a `$` variable into the command — a worktree
+refuses that command before it runs.
+
+When Linear's MCP server has no login, these commands are how a comment or a
+status change gets posted. Reading the description and the existing comments
+is still that MCP server when it is signed in. A GitHub issue is `gh issue
+comment` and `gh issue close`.
+
+Nothing here sets an assignee, a label, or an attachment.
 
 ### Each session gets its own worktree
 
@@ -513,11 +538,10 @@ the cure is safe.
 
 ## Limits
 
-- **`carbon` does not write to the tracker.** Tagging records the link on the
-  session and nothing else: no status change, no comment, no attachment. If the
-  user wants the issue moved or commented on, do it through the tracker's own
-  MCP server. (The app's own issue panel has status and priority menus, but they
-  are the user's to click — nothing here reaches them.)
+- **A comment or a status change is `carbon issue`, for Linear only.** See
+  *Updating a Linear issue*. Tagging still writes nothing on the tracker.
+  GitHub goes through `gh`. Assignee, labels and attachments are not written
+  from here.
 - **The browser is the session's own.** `carbon browser` reaches the tabs of the
   session running it and nothing else; downloads, file pickers and native
   dialogs are out of reach.

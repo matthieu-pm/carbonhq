@@ -69,13 +69,13 @@ page works, and two menus do not.
 
 **Note under it**, above a rule — the other half of the setup
 
-> Carbon reads your issues with this key, and writes only the status or priority you pick. To let the agent read and manage issues in chat, add [Linear's MCP server](https://linear.app/docs/mcp) to your CLI.
+> This key is what Carbon reads issues with, and what `carbon issue comment` and `carbon issue status` write with. The key stays in Carbon. To let the agent do anything more, add [Linear's MCP server](https://linear.app/docs/mcp).
 
-Said here and only here. The key fills Carbon's own screens and gives the agent
-nothing; someone who finds that out later finds it out from a model working off
-a one-line title, which is the expensive way. No check behind it — a live health
-check was built and removed, since this is setup advice rather than a fault to
-report.
+Said here and only here. The key fills Carbon's own screens and is what those
+two commands write with, and it never leaves Carbon. Reading a description, or
+changing anything besides a comment and a status, is still Linear's MCP server.
+No check behind it — a live health check was built and removed, since this is
+setup advice rather than a fault to report.
 
 Opens `https://linear.app/settings/account/security`. A link rather than
 instructions: the path through Linear's settings is theirs to change, and a
@@ -459,7 +459,7 @@ same word the control at the top of it did. Closing an issue moves to the
 Details pane, which carries the same menu.
 
 **Rows name the number alone under GitHub** — `#121`, not
-`monorepo-labs/dray#121`. Every row is in the one repository, so the slug would
+`matthieu-pm/carbonhq#121`. Every row is in the one repository, so the slug would
 spend the narrowest column saying the same thing over and over. The *tag* that
 lands in the text keeps it whole, since a prompt has no such context and the
 identifier there is an address.
@@ -521,7 +521,7 @@ The first names neither tracker, because this row can be either: a session
 carries both kinds of link, and the page is where both are connected.
 
 **A panel row names the number alone too**, `#108` rather than
-`monorepo-labs/dray#108`: the slug is most of a narrow panel's width spent on
+`matthieu-pm/carbonhq#108`: the slug is most of a narrow panel's width spent on
 the half that is the same for every issue in the repository, and the panel draws
 one issue at a time.
 
@@ -603,7 +603,7 @@ here, so taking it back means a trip to Linear for a new one.
 
 **`carbon issue`**
 
-> Tag a session with the issue its work is against.
+> Tag a session with an issue, or comment on a Linear issue and change its status.
 
 **`carbon issue link` / `carbon issue unlink`**
 
@@ -649,6 +649,33 @@ belongs to, since `carbon issue link` asks the tracker nothing.
 
 > No issues on this session.
 
+**`carbon issue comment` / `carbon issue status`** — Linear only, with the key
+already connected. The key stays in Carbon.
+
+> Post a comment on a Linear issue. The key stays in Carbon.
+> Move a Linear issue to a status, by name.
+
+> The issue, like FOR-140.
+> The comment, as one string.
+> The status, by name, like Done or "In Progress".
+
+**After either**, the issue as it stands:
+
+> FOR-140: Ship the export
+> https://linear.app/acme/issue/FOR-140
+> Status: Done
+> Commented.
+
+`Commented.` only when a comment was posted.
+
+**A GitHub identifier is refused**, and the sentence names `gh`:
+
+> owner/repo#12 is a GitHub issue. Use `gh issue comment` and `gh issue close`. `carbon issue comment` and `carbon issue status` write to Linear with the key connected in Carbon.
+
+**Linear not connected**
+
+> Linear is not connected. Connect it in Carbon's settings — this command uses that key, and the key stays there.
+
 ---
 
 ## What a tag looks like, everywhere
@@ -657,7 +684,7 @@ One shape, whoever wrote it — picked from the composer's `#` menu, typed by
 hand, or appended by the CLI's `--issue`:
 
 > #DRA-53 Add issue tracker integration
-> #monorepo-labs/dray#121 Add oh-my-pi as a fourth harness
+> #matthieu-pm/carbonhq#121 Add oh-my-pi as a fourth harness
 
 The title is in the text rather than drawn beside it. That is what lets the
 model read it, the transcript paint it, and the composer's overlay stay in
