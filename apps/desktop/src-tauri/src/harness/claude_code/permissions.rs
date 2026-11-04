@@ -55,6 +55,8 @@ pub enum Reply {
     Control,
     /// Codex asked as a JSON-RPC peer, so the answer names the id it asked with.
     Rpc(i64),
+    /// MCP consent answers with an elicitation result, without a decision wrapper.
+    McpElicitation(i64),
     /// A pi *extension* dialog (`select`, `confirm`, `input`), answered in its
     /// method's own shape: pi has no one verdict envelope, and `confirm` reads
     /// a different field from the other two. A pi permission gate — should one
@@ -91,7 +93,7 @@ impl Reply {
 pub struct ResolvedOption {
     pub option: PermissionOption,
     pub updates: Vec<PermissionUpdate>,
-    /// Codex's own decision value, echoed back untouched.
+    /// The JSON-RPC decision or result carried by this button.
     pub decision: Option<Value>,
 }
 

@@ -2743,6 +2743,13 @@ impl Session {
         // the server and sends it back whole; Claude's verdict is composed here
         // out of the rule the button carried.
         match (&self.stdin, &pending.reply) {
+            (Transport::Rpc(thread), Reply::McpElicitation(rpc_id)) => {
+                let result = chosen
+                    .decision
+                    .clone()
+                    .context("this option carries no elicitation result to send")?;
+                thread.client.respond(*rpc_id, result)?;
+            }
             (Transport::Rpc(thread), Reply::Rpc(rpc_id)) => {
                 let decision = chosen
                     .decision
