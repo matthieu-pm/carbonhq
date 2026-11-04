@@ -18,7 +18,7 @@ const AMOUNTS = [5, 10, 25, 50];
 /// Dodo raises anything lower to this at checkout, so the page says so first.
 const MIN = 5;
 
-/// The one ask the site makes: what it pays for and who backs it, then a one-time
+/// The one ask the site makes: who maintains it, then a one-time
 /// amount or a monthly plan, each a Dodo checkout in a new tab.
 export function Support({ from, stars = 0 }: { from: "download" | "support"; stars?: number }) {
   const [monthly, setMonthly] = useState(false);
@@ -48,26 +48,6 @@ export function Support({ from, stars = 0 }: { from: "download" | "support"; sta
               >
                 Yogesh
               </a>
-              .
-            </span>
-          </p>
-          <p className={`mt-3 ${CREDIT}`}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/avatars/rauchg.jpg" alt="" width={28} height={28} className="size-7 shrink-0 rounded-full object-cover" />
-            <span>
-              Sponsored by{" "}
-              <SponsorLink href="https://x.com/rauchg" sponsor="guillermo_rauch" destination="support" className={NAME}>
-                Guillermo Rauch
-              </SponsorLink>, Vercel CEO,{" "}
-              through{" "}
-              <SponsorLink
-                href="https://rauchg-oss-grants.vercel.app/"
-                sponsor="guillermo_rauch"
-                destination="oss_grants"
-                className={NAME}
-              >
-                OSS Grants
-              </SponsorLink>
               .
             </span>
           </p>

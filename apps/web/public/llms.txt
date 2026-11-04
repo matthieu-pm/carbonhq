@@ -19,10 +19,6 @@
 - Is Carbon safe to use with a Claude subscription? Yes. Carbon runs Anthropic's own Claude Code CLI, so it works within Anthropic's terms.
 - Does Carbon run on Linux? Yes, as a server, driven from the Mac app.
 
-## Sponsored by
-
-- Guillermo Rauch, CEO of Vercel, through his [OSS Grants](https://rauchg-oss-grants.vercel.app/).
-
 ## Links
 
 - [Download for Mac](https://downloads.carbonhq.com/Carbon_universal.dmg)
