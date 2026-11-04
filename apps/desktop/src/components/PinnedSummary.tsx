@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { Popover } from "radix-ui";
-import { ChevronDown, ChevronUp, FileDiff, GitBranch, ListTodo, Monitor, MoreHorizontal, Plus, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, FileDiff, GitBranch, Monitor, MoreHorizontal, Plus, SlidersHorizontal } from "lucide-react";
 
 import AgentIcon from "@/components/AgentIcon";
 import OpenInButton from "@/components/OpenInButton";
 import PrStateIcon from "@/components/PrStateIcon";
 import McpLogo from "@/components/settings/McpLogo";
+import { UnorderedList3Outline18 } from "@/components/icons/nucleo/UnorderedList3Outline18";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -30,7 +31,7 @@ export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange }: {
       aria-label="Toggle pinned summary" aria-pressed={open} aria-controls="pinned-summary"
       onClick={popover ? undefined : onToggle}
       className={cn("shrink-0 text-muted-foreground", open && "bg-accent text-foreground")}>
-      <ListTodo className="size-4.5" />
+      <UnorderedList3Outline18 className="size-4.5" aria-hidden />
     </Button>
   );
   return (
@@ -114,7 +115,7 @@ export default function PinnedSummary({
   };
   return (
     <section id="pinned-summary" aria-label="Pinned summary"
-      className="min-h-0 overflow-y-auto rounded-2xl bg-background shadow-(--shadow-card) ring-1 ring-inset ring-border"
+      className="min-h-0 overflow-y-auto rounded-2xl bg-background shadow-(--shadow-ring)"
       onContextMenu={(event) => {
         if (!event.currentTarget.contains(event.target as Node) || window.getSelection()?.toString()) return;
         event.preventDefault();

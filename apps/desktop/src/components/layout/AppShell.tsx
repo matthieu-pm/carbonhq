@@ -42,6 +42,8 @@ type AppShellProps = {
   /// where the pointer is.
   overlay?: ReactNode;
   summary?: ReactNode;
+  summaryOpen?: boolean;
+  summaryKey?: string;
   summaryLayoutRef?: Ref<HTMLDivElement>;
   children: ReactNode;
 };
@@ -63,6 +65,8 @@ export default function AppShell({
   centered = false,
   overlay,
   summary,
+  summaryOpen = true,
+  summaryKey,
   summaryLayoutRef,
   children,
 }: AppShellProps) {
@@ -152,7 +156,8 @@ export default function AppShell({
                 <div ref={summaryLayoutRef} className="conversation-layout relative min-h-0 flex-1 overflow-hidden">
                   <div className="conversation-content">
                     <div className="conversation-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
-                    {summary && <aside className="conversation-summary" aria-label="Conversation summary">{summary}</aside>}
+                    {summary && <aside key={summaryKey} className="conversation-summary" data-state={summaryOpen ? "open" : "closed"}
+                      aria-label="Conversation summary" aria-hidden={!summaryOpen} inert={!summaryOpen}>{summary}</aside>}
                   </div>
                 </div>
                 {crewStacked && crew}

@@ -2822,7 +2822,9 @@ function App() {
       panelLeft={panelSide === "left"}
       panelOpen={issuesOpen ? !!pickedIssue : !!shownSession && panelShown}
       summaryLayoutRef={summary.ref}
-      summary={summary.mode === "pinned" && summaryShown ? summaryCard : null}
+      summary={summary.mode === "pinned" && !issuesOpen && viewTab === "chat" ? summaryCard : null}
+      summaryOpen={summaryShown}
+      summaryKey={selectedSessionId ?? undefined}
       overlay={singleDrop && <DropZone region={singleDrop.region} label={singleDrop.label} />}
       // Chat's alone, and not a `TabBody` — the other views answer questions
       // about a repository rather than about a conversation, and a split is
