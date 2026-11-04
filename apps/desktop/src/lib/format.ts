@@ -46,6 +46,25 @@ export function resetTime(iso: string): string {
   return `${time} on ${date}`;
 }
 
+/// When a message was sent: the clock time today, with the date in front on
+/// any other day, since "7:51 PM" under last week's prompt reads as tonight.
+export function messageTime(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return "";
+
+  const date = new Date(at);
+  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (daysApart(date, new Date()) === 0) return time;
+
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  const day = date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+  });
+  return `${day}, ${time}`;
+}
+
 /// Calendar days for a list you read down rather than watch — "Today",
 /// "Yesterday", then "Aug 23".
 ///
