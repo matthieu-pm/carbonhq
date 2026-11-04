@@ -894,7 +894,7 @@
 }
 
 @theme inline {
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-sans: var(--app-font, 'Geist Variable', sans-serif);
   --font-heading: var(--font-sans);
   --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
 

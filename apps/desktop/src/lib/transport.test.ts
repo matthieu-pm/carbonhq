@@ -44,6 +44,8 @@ describe("invoke", () => {
     ]);
     await invoke("check_update", {});
     expect(calls[1]).toEqual({ cmd: "check_update", args: {} });
+    await invoke("list_font_families");
+    expect(calls[2]).toEqual({ cmd: "list_font_families", args: {} });
   });
 
   it("lists exactly the commands the app registers", () => {
