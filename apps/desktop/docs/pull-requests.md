@@ -19,6 +19,7 @@ Without `gh` **every** directory answers `NoCli`, since the first call fails bef
 - **Every connection's `nodes` is nullable.** `Option` is load-bearing: a PR with no comments otherwise fails the whole response.
 - **One branch can carry several PRs, so the backend answers with a list**, open-first then newest.
 - **Inline comments live in `reviewThreads` alone** and join to reviews on `pullRequestReview{id}`. A review's `body` is top-level text only, so an empty envelope holding threads is **kept** — it is the only row naming who left them — while an empty one holding nothing is dropped unless it approves.
+- **A `PENDING` review has null `submittedAt`** — the viewer's own unsubmitted draft. Read as a plain `String` it failed the whole answer and hid the PR (#3). It is read with `null_as_default` and dropped, and its comments go **per comment** on their own `state`, never by review id: a pending reply can sit inside a thread a submitted review opened.
 
 **Readiness is three overlapping fields read in one fixed order** ([pr.ts](../src/lib/pr.ts)): `state`, `mergeable`, `mergeStateStatus`. The order is the whole logic — a closed PR's merge state is stale, conflict outranks failing checks, and `UNKNOWN` means GitHub hasn't worked it out rather than no. A pure function with its own tests, not JSX conditionals.
 
