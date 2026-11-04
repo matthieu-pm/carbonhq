@@ -139,7 +139,7 @@ export default function SentMessageEditAction({ eventId, own }: { eventId?: stri
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon-xs" aria-label="Edit message" onClick={() => context.open(eventId)}
-              className="text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 focus:opacity-100">
+              className="text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 focus-visible:opacity-100">
               <Pencil className="size-3.5" />
             </Button>
           </TooltipTrigger>

@@ -904,7 +904,7 @@
      Everything in the transcript is one size — headings, prose, tool rows, list
      items alike. Weight and color carry hierarchy instead, so a heading is bold
      rather than bigger. Only code and tool output scale separately. */
-  --text-chat: 0.9375rem;
+  --text-chat: 0.8125rem;
   --text-chat--line-height: 1.65;
   --text-code: 0.875rem;
   --text-code--line-height: 1.6;
@@ -926,7 +926,7 @@
      The default matches `--text-chat`: what the reader types and what comes
      back are one conversation, so a composer a step down read as small rather
      than as chrome. */
-  --text-prompt: 0.9375rem;
+  --text-prompt: 0.8125rem;
   --text-prompt--line-height: 1.5;
 
   --color-surface-raised: var(--surface-raised);
@@ -1432,17 +1432,17 @@ body.session-drag,
 body.session-drag * {
   cursor: grabbing !important;
 }
-/* The measured canvas chooses pinning; only a pinned card reserves a chat lane. */
+/* Reserve a chat lane only while the pinned summary is open. */
 .conversation-column { --pinned-summary-lane: 364px; }
 .conversation-content { display: flex; height: 100%; min-height: 0; }
 .conversation-summary {
-  position: absolute; inset: 12px 12px 12px auto; display: flex; flex-direction: column; width: 320px; pointer-events: none;
-  opacity: 0; transform: translateY(-6px) scale(0.985); transform-origin: top right; visibility: hidden;
-  transition: opacity 120ms ease-out, transform 120ms ease-out, visibility 0s 120ms;
+  position: absolute; z-index: 20; inset: 12px 12px 12px auto; display: flex; flex-direction: column; width: 320px; pointer-events: none;
+  opacity: 0; transform: translateX(calc(100% + 12px)); visibility: hidden;
+  transition: opacity 160ms ease-out, transform 160ms ease-out, visibility 0s 160ms;
 }
 .conversation-summary[data-state="open"] {
   opacity: 1; transform: none; visibility: visible;
-  transition-duration: 180ms, 180ms, 0s; transition-delay: 0s;
+  transition-duration: 220ms, 220ms, 0s; transition-delay: 0s;
 }
 .conversation-summary > * { pointer-events: auto; }
 .conversation-summary[data-state="closed"] > * { pointer-events: none; }
@@ -1454,16 +1454,16 @@ body.session-drag * {
   width: min(320px, calc(100vw - 24px)); max-height: min(var(--radix-popover-content-available-height), calc(100dvh - 72px));
   transform-origin: var(--radix-popover-content-transform-origin);
 }
-.summary-popover[data-state="open"] { animation: summary-enter 180ms ease-out; }
-.summary-popover[data-state="closed"] { animation: summary-exit 120ms ease-out; pointer-events: none; }
+.summary-popover[data-state="open"] { animation: summary-enter 220ms ease-out; }
+.summary-popover[data-state="closed"] { animation: summary-exit 160ms ease-out; pointer-events: none; }
 .summary-popover > * { max-height: inherit; }
 @keyframes summary-enter {
-  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  from { opacity: 0; transform: translateX(calc(100% + 12px)); }
   to { opacity: 1; transform: none; }
 }
 @keyframes summary-exit {
   from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to { opacity: 0; transform: translateX(calc(100% + 12px)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .conversation-summary { transform: none; transition: opacity 80ms ease-out, visibility 0s 80ms; }
