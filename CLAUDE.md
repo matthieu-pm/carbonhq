@@ -44,6 +44,8 @@ File give Claude Code (claude.ai/code) guidance for work with code in this repo.
 
 `Carbon` = Tauri 2 desktop app wrapping coding-agent CLIs in chat UI. Spawn `claude` binary as child process, speak stream-json over its stdin/stdout, parse each output line into typed Rust enum, forward to React frontend as Tauri event.
 
+**Reference repo:** `../t3code-clone` is a checkout of [T3 Code](https://github.com/pingdotgg/t3code) to consult when working on Carbon. Treat it as read-only reference, not a project to develop.
+
 ## Repo layout
 
 pnpm workspace, three apps, no shared package yet — plus a native iOS app outside the workspace.
