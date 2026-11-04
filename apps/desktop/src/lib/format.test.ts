@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { calendarDay } from "@/lib/format";
+import { calendarDay, messageTime } from "@/lib/format";
 
 /// Fixed so "today" is a known afternoon rather than whenever the suite runs —
 /// every case here is about which side of a midnight a timestamp falls on, and
@@ -51,5 +51,27 @@ describe("calendarDay", () => {
   /// — reads as today rather than as a negative day count.
   it("reads a future stamp as today", () => {
     expect(calendarDay(new Date(2026, 7, 28, 9, 0).toISOString())).toBe("Today");
+  });
+});
+
+describe("messageTime", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it("gives the clock time alone today", () => {
+    expect(messageTime(new Date(2026, 7, 27, 7, 51).toISOString())).toBe("7:51 AM");
+  });
+
+  it("puts the date in front on any other day", () => {
+    expect(messageTime(new Date(2026, 7, 26, 19, 51).toISOString())).toBe("Aug 26, 7:51 PM");
+    expect(messageTime(new Date(2025, 7, 26, 19, 51).toISOString())).toBe("Aug 26, 2025, 7:51 PM");
+  });
+
+  it("draws nothing for a stamp it cannot read", () => {
+    expect(messageTime("")).toBe("");
   });
 });

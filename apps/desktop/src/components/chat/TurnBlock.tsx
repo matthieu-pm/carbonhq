@@ -327,6 +327,7 @@ function userProps(turn: Turn) {
         issues: payload.issues,
         from: payload.from,
         cwd: payload.cwd,
+        ts: turn.prompt?.ts,
       }
     : { text: "" };
 }

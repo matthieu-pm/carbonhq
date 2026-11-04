@@ -72,6 +72,7 @@ export default function EventRow({
           issues={payload.issues}
           from={payload.from}
           cwd={payload.cwd}
+          ts={event.ts}
           onOpenSession={onOpenSession}
         />
       );

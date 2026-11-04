@@ -6,6 +6,7 @@ import ClampedBody from "@/components/chat/ClampedBody";
 import FileLink from "@/components/chat/FileLink";
 import ImageRow from "@/components/chat/ImageRow";
 import { inlineMark } from "@/components/chat/InlineMark";
+import MessageActions from "@/components/chat/MessageActions";
 import { useChatSession } from "@/hooks/useChatSession";
 import { absolutePath } from "@/lib/filePath";
 import { basename } from "@/lib/format";
@@ -67,6 +68,7 @@ export default function UserMessage({
   issues = [],
   from = null,
   cwd: writtenIn = null,
+  ts,
   onOpenSession,
 }: {
   /// The event drawn, which is how a send still waiting on its uploads finds
@@ -85,6 +87,8 @@ export default function UserMessage({
   /// `@mention` naming the tree it was typed in rather than the fork's own copy
   /// of the same file.
   cwd?: string | null;
+  /// When the prompt was sent, drawn beside its copy button.
+  ts?: string;
   /// Opens the sending session. Absent where nothing can navigate, which draws
   /// the attribution as a plain line rather than hiding it.
   onOpenSession?: (sessionId: string) => void;
@@ -118,7 +122,12 @@ export default function UserMessage({
   const uploading = useSendProgress(eventId ?? "");
 
   return (
-    <div className={cn("flex flex-col items-end gap-1.5", uploading !== null && "opacity-55")}>
+    <div
+      className={cn(
+        "group/message flex flex-col items-end gap-1.5",
+        uploading !== null && "opacity-55",
+      )}
+    >
       {/* Topmost, above even the attachments: who is talking is read before
           anything they sent. The mark is generated from the session's id rather
           than fetched — a session is not an account and has no picture — so it
@@ -336,10 +345,14 @@ export default function UserMessage({
         </span>
       ))}
 
-      {uploading !== null && (
+      {uploading !== null ? (
         <span className="pr-1 text-ui text-muted-foreground tabular-nums">
           Uploading {Math.floor(uploading * 100)}%
         </span>
+      ) : (
+        // Markdown and sigils copied raw — what was typed, not what was drawn.
+        // The relay's sender line stays off, since the row above says it.
+        body && <MessageActions text={body} ts={ts} />
       )}
     </div>
   );
