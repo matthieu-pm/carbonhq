@@ -58,6 +58,7 @@ import { SettingsHeaderSlot } from "@/components/settings/headerAction";
 import ServersSettings from "@/components/settings/ServersSettings";
 import HandoffSettings from "@/components/settings/HandoffSettings";
 import SettingRow from "@/components/settings/SettingRow";
+import MainFontRow from "@/components/settings/MainFontRow";
 import ShortcutsSettings from "@/components/settings/ShortcutsSettings";
 import SpacesSettings from "@/components/settings/SpacesSettings";
 import TranscriptionSettings from "@/components/settings/TranscriptionSettings";
@@ -182,6 +183,7 @@ export default function SettingsPage({
               <ModeRow />
             </Section>
             <Section>
+              <MainFontRow />
               <ZoomRow />
             </Section>
             <Section>

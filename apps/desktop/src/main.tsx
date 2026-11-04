@@ -9,13 +9,17 @@ import { applyIsland } from "@/lib/island";
 import { startSurveys } from "@/lib/surveys";
 import { startAgentUpdateChecks } from "@/hooks/useAgentUpdates";
 import { applyZoom } from "@/lib/zoom";
+import { applyStoredFont, refreshFonts } from "@/lib/fonts";
 
 // Coming back to check on a session an agent is running sends no prompt and
 // starts nothing, so it is the one kind of use the backend's own call sites
 // cannot see. Subscribed here rather than from an effect: it lives for the
 // process, and StrictMode double-invokes a mount.
 onFocusChange((focused) => {
-  if (focused) trackActiveDay();
+  if (focused) {
+    trackActiveDay();
+    void refreshFonts();
+  }
 });
 
 // Here for the same reason, and not in an effect for the same reason: the SDK
@@ -26,6 +30,8 @@ startAgentUpdateChecks();
 void applyIsland();
 // The webview opens at 100% whatever the reader left it at.
 applyZoom();
+applyStoredFont();
+void refreshFonts();
 // An Escape nothing handled is passed on to the window, which macOS reads as
 // "leave fullscreen". On `window` in bubble phase, so every handler on the
 // document has already had the key and still sees `defaultPrevented` unset.

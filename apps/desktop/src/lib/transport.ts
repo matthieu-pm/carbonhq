@@ -141,6 +141,7 @@ const onThisMac = (cmd: string): boolean =>
 /// `generate_handler!` is the same list, and a test holds the two together —
 /// a name missing here is sent to a server that answers `unknown command`.
 export const APP_COMMANDS = new Set([
+  "list_font_families",
   "list_servers",
   "local_server",
   "add_server",

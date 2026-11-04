@@ -232,6 +232,8 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 
 **A demo is its own page, never a flag on the real one.** An HTML page in `apps/desktop/demo/` (`demo/<question>.html`) loading its own entry from `src/demo/`, and opened at `/demo/<question>.html`. Vite's dev server serves any HTML under the package root, so it is reachable under `pnpm dev`; `vite.config.ts` names no extra `rollupOptions.input`, so `pnpm build` emits `index.html` alone. Gating on a query flag was the rejected alternative: it puts demo-only branches inside production code paths. A demo mounts the **real** components with faked inputs, and needs no test seam in `src/`: stub the Tauri bridge in the demo itself.
 
+[main-font.html](apps/desktop/demo/main-font.html) mounts the real font picker beside interface, chat and code samples. Its **Run keyboard checks** button verifies IME confirmation, WebKit's composition Enter, unmatched searches and keyboard selection.
+
 **Every demo's `<html>` carries `data-demo`**, or it cannot scroll: the app pins `html`, `body` and `#root` to the window with overflow hidden, since it owns every scroll container, and [App.css](apps/desktop/src/App.css) gives page scroll back only to that attribute.
 
 **A new demo mounts `<DemoThemeBar />`** ([ThemeBar.tsx](apps/desktop/src/demo/ThemeBar.tsx)): Settings' own theme swatches ([ThemeSwatches](apps/desktop/src/components/ThemeSwatches.tsx), arrow keys included) and Light/Dark on the app's theme store, since a surface is judged across every palette and both modes. No hand-rolled mode toggle, and no theme attributes hardcoded on the page's `<html>`. The recording demo has it; the three older demos predate it and are left as they were, on purpose.
