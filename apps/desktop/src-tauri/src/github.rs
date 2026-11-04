@@ -9,12 +9,7 @@
 use anyhow::Result;
 use serde::de::{DeserializeOwned, IgnoredAny};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-    process::Stdio,
-    sync::LazyLock,
-};
+use std::{collections::HashMap, path::Path, process::Stdio, sync::LazyLock};
 use tokio::{process::Command, sync::Mutex};
 use ts_rs::TS;
 
@@ -202,7 +197,7 @@ fragment pr on PullRequest{
  author{login avatarUrl}
  comments(first:50){nodes{author{login avatarUrl} body createdAt url}}
  reviews(first:50){nodes{id author{login avatarUrl} body submittedAt state}}
- reviewThreads(first:30){nodes{isResolved path line comments(first:50){nodes{author{login avatarUrl} body createdAt url pullRequestReview{id}}}}}
+ reviewThreads(first:30){nodes{isResolved path line comments(first:50){nodes{author{login avatarUrl} body createdAt url state pullRequestReview{id}}}}}
  commits(last:1){nodes{commit{statusCheckRollup{contexts(first:50){nodes{
    __typename
    ... on StatusContext{context state targetUrl avatarUrl}
@@ -384,6 +379,9 @@ struct RawComment {
     created_at: String,
     #[serde(default)]
     url: String,
+    /// `PENDING` on a comment in the viewer's unsubmitted review. Asked of
+    /// thread comments alone: a conversation comment has no such field.
+    state: Option<String>,
     /// The review this was left under. Absent on a conversation comment, which
     /// belongs to no review at all.
     pull_request_review: Option<RawNodeId>,
@@ -522,7 +520,11 @@ impl RawThread {
     /// `None` for a thread whose comments have all been deleted: there is
     /// nothing left to draw, and the file it hung on is not a comment.
     fn map(self) -> Option<(Option<String>, PrComment)> {
-        let mut comments = Nodes::take(self.comments).into_iter();
+        // Filtered per comment, not per review: a reply in the viewer's pending
+        // review can sit inside a thread a submitted review opened.
+        let mut comments = Nodes::take(self.comments)
+            .into_iter()
+            .filter(|c| c.state.as_deref() != Some("PENDING"));
         let opener = comments.next()?;
 
         let review = opener
@@ -646,25 +648,20 @@ impl RawPr {
         let mut threads: HashMap<String, Vec<PrComment>> = HashMap::new();
         let mut loose: Vec<PrComment> = Vec::new();
 
-        // A pending review is the viewer's own unsubmitted draft, visible to
-        // nobody else. Neither it nor the threads under it have been posted.
-        let (pending, reviews): (Vec<_>, Vec<_>) = Nodes::take(self.reviews)
-            .into_iter()
-            .partition(|r| r.state == "PENDING");
-        let pending: HashSet<String> = pending.into_iter().map(|r| r.id).collect();
-
         for raw in Nodes::take(self.review_threads) {
             let Some((review, thread)) = raw.map() else { continue };
-            if review.as_ref().is_some_and(|id| pending.contains(id)) {
-                continue;
-            }
             match review {
                 Some(id) => threads.entry(id).or_default().push(thread),
                 None => loose.push(thread),
             }
         }
 
-        comments.extend(reviews.into_iter().filter_map(|r| {
+        // A pending review is the viewer's own unsubmitted draft, visible to
+        // nobody else; its comments were already dropped per thread.
+        let reviews = Nodes::take(self.reviews)
+            .into_iter()
+            .filter(|r| r.state != "PENDING");
+        comments.extend(reviews.filter_map(|r| {
             let mut replies = threads.remove(&r.id).unwrap_or_default();
             replies.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
@@ -1376,12 +1373,39 @@ mod tests {
             "reviewThreads":{"nodes":[
             {"isResolved":false,"path":"src/main.rs","line":4,"comments":{"nodes":[
               {"author":{"login":"me"},"body":"draft note","createdAt":"2026-01-01T00:05:00Z",
-               "pullRequestReview":{"id":"R2"}}]}}]}}]}}}}"#;
+               "state":"PENDING","pullRequestReview":{"id":"R2"}}]}}]}}]}}}}"#;
         let prs = read_prs(out).expect("a null submittedAt parses");
 
         assert_eq!(prs[0].comments.len(), 1);
         assert_eq!(prs[0].comments[0].author, "bot");
         assert!(prs[0].comments[0].replies.is_empty());
+    }
+
+    /// A reply in the viewer's pending review can sit inside a thread a
+    /// submitted review opened. That reply goes; the posted ones stay.
+    #[test]
+    fn a_pending_reply_in_a_submitted_thread_is_dropped() {
+        let out = r#"{"data":{"repository":{"open":{"nodes":[{"number":2,
+            "reviews":{"nodes":[
+              {"id":"R1","author":{"login":"bot"},"body":"",
+               "state":"COMMENTED","submittedAt":"2026-01-01T00:00:00Z"},
+              {"id":"R2","author":{"login":"me"},"body":"",
+               "state":"PENDING","submittedAt":null}]},
+            "reviewThreads":{"nodes":[
+            {"isResolved":false,"path":"src/main.rs","line":4,"comments":{"nodes":[
+              {"author":{"login":"bot"},"body":"this leaks","createdAt":"2026-01-01T00:00:00Z",
+               "state":"SUBMITTED","pullRequestReview":{"id":"R1"}},
+              {"author":{"login":"other"},"body":"agreed","createdAt":"2026-01-01T00:02:00Z",
+               "state":"SUBMITTED","pullRequestReview":{"id":"R3"}},
+              {"author":{"login":"me"},"body":"draft reply","createdAt":"2026-01-01T00:05:00Z",
+               "state":"PENDING","pullRequestReview":{"id":"R2"}}]}}]}}]}}}}"#;
+        let prs = read_prs(out).expect("thread parses");
+
+        assert_eq!(prs[0].comments.len(), 1);
+        let thread = &prs[0].comments[0].replies[0];
+        assert_eq!(thread.body, "this leaks");
+        let replies: Vec<_> = thread.replies.iter().map(|r| r.body.as_str()).collect();
+        assert_eq!(replies, ["agreed"]);
     }
 
     /// A thread whose review is out of reach still belongs on the timeline —
