@@ -9,12 +9,18 @@
 use anyhow::Result;
 use serde::de::{DeserializeOwned, IgnoredAny};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::Path, process::Stdio, sync::LazyLock};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    process::Stdio,
+    sync::LazyLock,
+};
 use tokio::{process::Command, sync::Mutex};
 use ts_rs::TS;
 
 use crate::binpath;
 use crate::git;
+use crate::harness::null_as_default;
 
 /// Where a check ended up, flattened from the two different shapes GitHub
 /// reports one in. Callers branch on this and never on the wire's own strings.
@@ -399,7 +405,8 @@ struct RawReview {
     author: Option<RawAuthor>,
     #[serde(default)]
     body: String,
-    #[serde(default)]
+    /// Null on a `PENDING` review, which has not been submitted yet.
+    #[serde(default, deserialize_with = "null_as_default")]
     submitted_at: String,
     #[serde(default)]
     state: String,
@@ -639,15 +646,25 @@ impl RawPr {
         let mut threads: HashMap<String, Vec<PrComment>> = HashMap::new();
         let mut loose: Vec<PrComment> = Vec::new();
 
+        // A pending review is the viewer's own unsubmitted draft, visible to
+        // nobody else. Neither it nor the threads under it have been posted.
+        let (pending, reviews): (Vec<_>, Vec<_>) = Nodes::take(self.reviews)
+            .into_iter()
+            .partition(|r| r.state == "PENDING");
+        let pending: HashSet<String> = pending.into_iter().map(|r| r.id).collect();
+
         for raw in Nodes::take(self.review_threads) {
             let Some((review, thread)) = raw.map() else { continue };
+            if review.as_ref().is_some_and(|id| pending.contains(id)) {
+                continue;
+            }
             match review {
                 Some(id) => threads.entry(id).or_default().push(thread),
                 None => loose.push(thread),
             }
         }
 
-        comments.extend(Nodes::take(self.reviews).into_iter().filter_map(|r| {
+        comments.extend(reviews.into_iter().filter_map(|r| {
             let mut replies = threads.remove(&r.id).unwrap_or_default();
             replies.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
@@ -1343,6 +1360,28 @@ mod tests {
         assert_eq!(thread.replies[0].author, "me");
         // The row sorts by what opened the thread, not by its last reply.
         assert_eq!(thread.created_at, "2026-01-01T00:00:00Z");
+    }
+
+    /// A pending review sends `submittedAt` as null, which once failed the
+    /// whole answer. It is the viewer's unposted draft, so it and its threads
+    /// stay off the timeline while the submitted review beside it stays on.
+    #[test]
+    fn a_pending_review_reads_and_stays_off_the_timeline() {
+        let out = r#"{"data":{"repository":{"open":{"nodes":[{"number":2,
+            "reviews":{"nodes":[
+              {"id":"R1","author":{"login":"bot"},"body":"looks fine",
+               "state":"COMMENTED","submittedAt":"2026-01-01T00:00:00Z"},
+              {"id":"R2","author":{"login":"me"},"body":"",
+               "state":"PENDING","submittedAt":null}]},
+            "reviewThreads":{"nodes":[
+            {"isResolved":false,"path":"src/main.rs","line":4,"comments":{"nodes":[
+              {"author":{"login":"me"},"body":"draft note","createdAt":"2026-01-01T00:05:00Z",
+               "pullRequestReview":{"id":"R2"}}]}}]}}]}}}}"#;
+        let prs = read_prs(out).expect("a null submittedAt parses");
+
+        assert_eq!(prs[0].comments.len(), 1);
+        assert_eq!(prs[0].comments[0].author, "bot");
+        assert!(prs[0].comments[0].replies.is_empty());
     }
 
     /// A thread whose review is out of reach still belongs on the timeline —
