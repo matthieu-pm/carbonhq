@@ -670,7 +670,7 @@ export default function Chat({
           onScroll={onScroll}
           onWheel={onWheel}
           onDoubleClick={selectInlineCode}
-          className="h-full overflow-y-auto"
+          className="chat-scroll h-full overflow-y-auto"
         >
           <div
             ref={contentRef}

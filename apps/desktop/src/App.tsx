@@ -19,6 +19,9 @@ import type { SettingsTab } from "@/components/SettingsPage";
 import WorktreeDialog, { type WorktreePrompt } from "@/components/WorktreeDialog";
 import { useInstallWithServers } from "@/components/ServerUpdateDialog";
 import MorePanel from "@/components/MorePanel";
+import PinnedSummary, { PinnedSummaryToggle } from "@/components/PinnedSummary";
+import { summarySources } from "@/lib/pinnedSummary";
+import { usePinnedSummary } from "@/hooks/usePinnedSummary";
 import PlanPanel from "@/components/PlanPanel";
 
 // Nothing here is on first paint, so each is its own chunk, fetched the first
@@ -150,7 +153,7 @@ import { useAgentAvailability, useMissingAgent } from "@/hooks/useAgentAvailabil
 import AgentMissingNotice from "@/components/composer/AgentMissingNotice";
 import ServerOfflineNotice from "@/components/composer/ServerOfflineNotice";
 import TranscriptSkeleton from "@/components/chat/TranscriptSkeleton";
-import { useServers } from "@/lib/servers";
+import { serverName, useServers } from "@/lib/servers";
 import AgentUpdateLine from "@/components/composer/AgentUpdateLine";
 import { useAgentUpdates } from "@/hooks/useAgentUpdates";
 import LoginExpiredNotice from "@/components/composer/LoginExpiredNotice";
@@ -1335,10 +1338,16 @@ function App() {
   // are merged: the pick is unset, the default resolves to Changes, and this
   // reads true — harmless, because a merged PR never settles and the poll is
   // gated on that too.
+  const summary = usePinnedSummary(
+    selectedSessionId,
+    !issuesOpen && viewTab === "chat" && selectedSession !== null,
+    !mainGroup && !crewDrawn,
+  );
+  const summaryShown = summary.open;
   const pullRequests = usePullRequest(
     selectedSession?.cwd ?? "",
     prBranch,
-    panelShown && (panelTab === "pr" || panelTab === null),
+    summaryShown || (panelShown && (panelTab === "pr" || panelTab === null)),
     // A pull request appearing is the moment the session stops being about the
     // turn and starts being about landing, so the pane opens onto it rather
     // than waiting to be asked. Fires at most once per PR — see `onOpened`.
@@ -1684,7 +1693,7 @@ function App() {
     baseline,
     head,
     writeRevision,
-    panelShown && activeTab === "changes",
+    summaryShown || (panelShown && activeTab === "changes"),
     busy,
   );
   // A turn that has written nothing yet shows the last turn that did, so
@@ -1701,7 +1710,7 @@ function App() {
     previous?.baseline ?? null,
     previous?.head ?? null,
     turnRevision,
-    panelShown && activeTab === "changes" && currentEmpty,
+    (summaryShown || (panelShown && activeTab === "changes")) && currentEmpty,
     false,
   );
   // A failed read keeps its own range, so its error isn't hidden.
@@ -2771,6 +2780,31 @@ function App() {
 
   // Pages with no tabs for the strip: the sheet reaches up behind the header.
   const tallSheet = issuesOpen || !shownSession;
+  const summaryCard = selectedSession && (
+    <PinnedSummary
+      key={selectedSession.sessionId}
+      project={basename(selectedSession.projectPath)}
+      cwd={selectedSession.cwd}
+      environment={serverName(serverOfPath(selectedSession.cwd))}
+      branch={prBranch || null}
+      worktree={selectedSession.worktreeName}
+      harness={selectedSession.harness}
+      changes={shownChanges.changes}
+      changesLoading={shownChanges.loading}
+      changesError={shownChanges.error}
+      prs={pullRequests.prs}
+      prsLoading={pullRequests.loading}
+      prsError={pullRequests.error}
+      subagents={subagents}
+      busy={busy}
+      liveTaskIds={liveTaskIds}
+      sources={summarySources(selectedSession.events)}
+      context={contextUsage}
+      onOpen={(tab) => { summary.closePopover(); showPanel(tab); }}
+      onManageSources={serverOfPath(selectedSession.cwd) === LOCAL ? () => { summary.closePopover(); setSettingsTab("mcp"); setSettingsOpen(true); } : undefined}
+      onHide={() => summary.setOpen(false)}
+    />
+  );
 
   return (
     <TooltipProvider>
@@ -2787,6 +2821,8 @@ function App() {
       centered={!shownSession && !issuesOpen}
       panelLeft={panelSide === "left"}
       panelOpen={issuesOpen ? !!pickedIssue : !!shownSession && panelShown}
+      summaryLayoutRef={summary.ref}
+      summary={summary.mode === "pinned" && summaryShown ? summaryCard : null}
       overlay={singleDrop && <DropZone region={singleDrop.region} label={singleDrop.label} />}
       // Chat's alone, and not a `TabBody` — the other views answer questions
       // about a repository rather than about a conversation, and a split is
@@ -3010,6 +3046,12 @@ function App() {
                     cwd={viewTab === "files" ? shownSession.cwd : null}
                     file={fileShown ? openFiles.find((f) => f.path === activeFile) : undefined}
                   />
+                  {viewTab === "chat" && <PinnedSummaryToggle
+                    open={summaryShown}
+                    onToggle={summary.toggle}
+                    popover={summary.mode === "popover" ? summaryCard : undefined}
+                    onOpenChange={summary.setOpen}
+                  />}
                   {/* A pull request, open or merged, stands in for the toggle and opens
                       the pane on itself; the pane's own tabs are inside it. */}
                   {prFace ? (

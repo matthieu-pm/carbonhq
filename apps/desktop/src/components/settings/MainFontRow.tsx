@@ -46,14 +46,13 @@ export default function MainFontRow() {
   return (
     <SettingRow
       id={id}
-      stacked
       label="Main font"
       description={
         !IS_MAC
           ? "Installed fonts are available in the macOS app."
           : error ?? (unavailable
               ? `${selected} is unavailable. Carbon is using Geist.`
-              : "For interface and chat text. Code, diffs and terminals keep Geist Mono.")
+              : undefined)
       }
     >
       <Popover.Root
@@ -68,7 +67,7 @@ export default function MainFontRow() {
         }}
       >
         <Popover.Trigger asChild>
-          <Button id={id} variant="outline" size="sm" disabled={!IS_MAC} className="w-full justify-between font-normal">
+          <Button id={id} variant="outline" size="sm" disabled={!IS_MAC} className="w-56 justify-between font-normal">
             <span className="truncate">{selected && !unavailable && !error ? selected : DEFAULT_FONT_LABEL}</span>
             <ChevronDown className="size-3 shrink-0 opacity-60" />
           </Button>

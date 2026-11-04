@@ -117,6 +117,8 @@ Black card was tried first, on reasoning that white veil over light page is invi
 
 ## PR panel
 
+**Pinned summary follows T3 Code's Thread details card.** It floats at the conversation's upper right only when the measured canvas leaves a readable chat lane; otherwise its toolbar button opens a popover. Split views and crews use the popover too, so one conversation's details cannot sit over another. The transcript keeps its own full-width scroll viewport, with padding reserving the card's space and its scrollbar at the outside edge. The composer follows the same lane. Pin visibility belongs to each conversation; section choices belong to the reader. Empty sections disappear, and the options menu can restore every section even after all are hidden. The card keeps the theme's darker background, 320px width and compact 32px rows.
+
 **Tab called `PR`, and it lead when PR is open.** Short form what anyone working on one call it. `tabOrder` put it first when session have **open** PR (draft count, being `OPEN` with `isDraft` set) — at that point session's work about landing, not about this turn. Merged or closed PR don't promote: it record, not something to act on.
 
 Last turn changing tree **don't** enter into it. Changes describe one turn and superseded by next; PR = state of work. Toggle's own click still set tab to match glyph it drew, and that now only thing `handleTogglePanel` do.

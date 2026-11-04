@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { DROP_ATTR } from "@/lib/dragSession";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,8 @@ type AppShellProps = {
   /// go on the empty state opens the session whole and the zone has to say so
   /// where the pointer is.
   overlay?: ReactNode;
+  summary?: ReactNode;
+  summaryLayoutRef?: Ref<HTMLDivElement>;
   children: ReactNode;
 };
 
@@ -60,6 +62,8 @@ export default function AppShell({
   crewStacked = false,
   centered = false,
   overlay,
+  summary,
+  summaryLayoutRef,
   children,
 }: AppShellProps) {
   // A card of its own beside the sheet, with the frame showing between. Kept
@@ -141,15 +145,18 @@ export default function AppShell({
             // composer's band too rather than stopping short of it at a line
             // nothing else on screen is drawn to.
             <div className="flex min-h-0 flex-1">
-              <div className="flex min-w-0 flex-1 flex-col">
+              <div className="conversation-column flex min-w-0 flex-1 flex-col">
                 {/* `flex flex-col` so the view tabs' bodies, which size themselves
                   with `flex-1` the way the right panel's do, have a column to
                   grow in. */}
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  {children}
+                <div ref={summaryLayoutRef} className="conversation-layout relative min-h-0 flex-1 overflow-hidden">
+                  <div className="conversation-content">
+                    <div className="conversation-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
+                    {summary && <aside className="conversation-summary" aria-label="Conversation summary">{summary}</aside>}
+                  </div>
                 </div>
                 {crewStacked && crew}
-                <div className="shrink-0">{footer}</div>
+                <div className="conversation-footer shrink-0">{footer}</div>
               </div>
               {!crewStacked && crew}
             </div>

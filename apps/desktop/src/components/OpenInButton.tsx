@@ -47,6 +47,7 @@ function LocalOpenInButton({
   opener = DIR_OPENER,
   line,
   className,
+  variant = "toolbar",
 }: {
   path: string;
   /// Which control this is: a session's working directory, or one file. The
@@ -57,6 +58,7 @@ function LocalOpenInButton({
   /// reference that named one. Ignored by a directory and by a reveal.
   line?: number;
   className?: string;
+  variant?: "toolbar" | "details";
 }) {
   const { apps, pick, select, open, refresh } = useOpenApps(opener);
 
@@ -89,6 +91,7 @@ function LocalOpenInButton({
     <div
       className={cn(
         "flex shrink-0 items-center rounded-md border border-border dark:border-input",
+        variant === "details" && "w-full border-transparent dark:border-transparent",
         className,
       )}
     >
@@ -113,6 +116,7 @@ function LocalOpenInButton({
             // rather than against air.
             className={cn(
               "flex h-6 cursor-pointer items-center gap-1.5 rounded-l-md pr-1.5 pl-1 text-ui transition-colors outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+              variant === "details" && "h-8 min-w-0 flex-1 gap-2.5 pl-2.5 text-xs",
               error ? "text-destructive" : "text-muted-foreground",
             )}
           >
@@ -126,7 +130,7 @@ function LocalOpenInButton({
               // row is 24px, so 16 leaves 4px of air above and below.
               <AppIcon app={pick} className="size-4" />
             )}
-            {opener.label?.(pick) ?? "Open"}
+            <span className="truncate">{variant === "details" ? `Open in ${pick.name}` : opener.label?.(pick) ?? "Open"}</span>
           </button>
         </TooltipTrigger>
         {/* The app's name, which the button itself does not carry — the icon
@@ -149,7 +153,7 @@ function LocalOpenInButton({
           <button
             type="button"
             aria-label="Choose which app to open in"
-            className="flex h-6 cursor-pointer items-center rounded-r-md border-l border-border px-1 text-muted-foreground transition-colors outline-none dark:border-input hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            className={cn("flex h-6 cursor-pointer items-center rounded-r-md border-l border-border px-1 text-muted-foreground transition-colors outline-none dark:border-input hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50", variant === "details" && "h-8 w-8 justify-center border-transparent dark:border-transparent")}
           >
             <ChevronDown className="size-3" />
           </button>

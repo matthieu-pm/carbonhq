@@ -1432,3 +1432,14 @@ body.session-drag,
 body.session-drag * {
   cursor: grabbing !important;
 }
+/* The measured canvas chooses pinning; only a pinned card reserves a chat lane. */
+.conversation-column { --pinned-summary-lane: 364px; }
+.conversation-content { display: flex; height: 100%; min-height: 0; }
+.conversation-summary { position: absolute; inset: 12px 12px 12px auto; display: flex; flex-direction: column; width: 320px; pointer-events: none; }
+.conversation-summary > * { pointer-events: auto; }
+.conversation-content:has(.conversation-summary) .chat-scroll { padding-right: var(--pinned-summary-lane); }
+.conversation-column:has(.conversation-summary) > .conversation-footer { padding-right: var(--pinned-summary-lane); }
+.chat-scroll::-webkit-scrollbar,
+#pinned-summary::-webkit-scrollbar { width: 5px; }
+.summary-popover { width: min(320px, calc(100vw - 24px)); max-height: min(var(--radix-popover-content-available-height), calc(100dvh - 72px)); }
+.summary-popover > * { max-height: inherit; }
