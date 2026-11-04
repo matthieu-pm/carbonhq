@@ -312,6 +312,9 @@ export function useSessions() {
     // and never persisted.
     const [branches, setBranches] = useState<BranchList | null>(null);
     const [branch, setBranch] = useState<string | null>(null);
+    // Bumped by every write to `branches`, so a fetch from GitHub landing after
+    // a checkout or a project switch cannot put its older answer back.
+    const branchWrites = useRef(0);
     // The branch a switch is waiting on the user to confirm, because the tree
     // has uncommitted changes. Null when nothing is pending.
     const [pendingBranch, setPendingBranch] = useState<string | null>(null);
@@ -629,6 +632,7 @@ const runCheckout = async (target: string, stash: boolean) => {
       branch: target,
       stash,
     });
+    branchWrites.current++;
     setBranches(list);
     setBranch(list.current);
   } catch (e) {
@@ -652,6 +656,7 @@ const handleSelectBranch = async (target: string) => {
   let list: BranchList;
   try {
     list = await invoke<BranchList>("list_branches", { cwd: projectPath });
+    branchWrites.current++;
     setBranches(list);
   } catch (e) {
     setError(String(e));
@@ -664,6 +669,21 @@ const handleSelectBranch = async (target: string) => {
   }
 
   void runCheckout(target, false);
+};
+
+// Fetches from GitHub and redraws the picker, so it lists what `origin` has now
+// rather than what this checkout last heard. Called as the picker opens.
+const refreshBranches = () => {
+  if (!projectPath) return;
+  const at = ++branchWrites.current;
+  invoke<BranchList>("fetch_branches", { cwd: projectPath })
+    .then((list) => {
+      if (branchWrites.current !== at) return;
+      setBranches(list);
+      setBranch(list.current);
+    })
+    // Offline or no remote: the local list already on screen stands.
+    .catch(() => {});
 };
 
 const selectedSession = selectedSessionId ? sessions.find((s) => s.sessionId === selectedSessionId) ?? null : null;
@@ -1943,12 +1963,15 @@ useEffect(() => {
   }
 
   let cancelled = false;
+  const at = ++branchWrites.current;
 
+  // Local first, since it answers at once; the fetch redraws when GitHub does.
   invoke<BranchList>("list_branches", { cwd: projectPath })
     .then((list) => {
-      if (cancelled) return;
+      if (cancelled || branchWrites.current !== at) return;
       setBranches(list);
       setBranch(list.current);
+      refreshBranches();
     })
     .catch((e) => {
       if (cancelled) return;
@@ -3225,6 +3248,6 @@ const contextUsage: { used: number; max: number } | null = (() => {
   return used !== null && max !== null ? { used, max } : null;
 })();
 
-return {harness, setHarness, sessions, selectedSessionId, selectedSession, sessionIndexItems, statusBySession, askingSessions, archivedShown, archivedRequested: showArchived, setShowArchived, models, refreshModels, reloadModels, seedFxModels, loadingModels, modelId, effort, fast, setFast, fastNote, permissionMode, projects: orderedProjects, projectPath, branches, branch, useWorktree, busy, working, backgroundTasks, liveTaskIds, tasksBySession, compacting, apiRetry, contextUsage, error, setError, handleModelChange, setPermissionMode, handleAttachProject, handleSelectProject, handleRemoveProject, setProjectSpace, moveProject, retagSpace, canAnnounce, handleSelectBranch, pendingBranch, setPendingBranch, runCheckout, setUseWorktree, handleSendMsg, handleInterrupt, handleStopTask, queuedMessages, handleCancelQueued, handleRespondPermission, handleAnswerQuestions, handleSelectSessionIndexItem, handleNewSession, restoreDraftControls, markSessionUnread, setSessionFlags, forkSession, unlinkIssue, detachSession, deleteSession, removeWorktree, ensureLoaded, setNeighbours, dropNeighbours, setOnScreen, setCrewSeen, paneState, indexSide, navGen, activeServer};
+return {harness, setHarness, sessions, selectedSessionId, selectedSession, sessionIndexItems, statusBySession, askingSessions, archivedShown, archivedRequested: showArchived, setShowArchived, models, refreshModels, reloadModels, seedFxModels, loadingModels, modelId, effort, fast, setFast, fastNote, permissionMode, projects: orderedProjects, projectPath, branches, branch, useWorktree, busy, working, backgroundTasks, liveTaskIds, tasksBySession, compacting, apiRetry, contextUsage, error, setError, handleModelChange, setPermissionMode, handleAttachProject, handleSelectProject, handleRemoveProject, setProjectSpace, moveProject, retagSpace, canAnnounce, handleSelectBranch, refreshBranches, pendingBranch, setPendingBranch, runCheckout, setUseWorktree, handleSendMsg, handleInterrupt, handleStopTask, queuedMessages, handleCancelQueued, handleRespondPermission, handleAnswerQuestions, handleSelectSessionIndexItem, handleNewSession, restoreDraftControls, markSessionUnread, setSessionFlags, forkSession, unlinkIssue, detachSession, deleteSession, removeWorktree, ensureLoaded, setNeighbours, dropNeighbours, setOnScreen, setCrewSeen, paneState, indexSide, navGen, activeServer};
 
 }

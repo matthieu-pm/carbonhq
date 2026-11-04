@@ -1379,6 +1379,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
 
         // Git and files.
         list_branches(cwd: String) => git::list_branches(&cwd).await;
+        fetch_branches(cwd: String) => git::fetch_branches(&cwd).await;
         checkout_branch(cwd: String, branch: String, stash: bool) => git::checkout_branch(&cwd, &branch, stash).await;
         changes_since(cwd: String, baseline: String, head: Option<String>) =>
             git::changes_since(&cwd, &baseline, head.as_deref()).await;

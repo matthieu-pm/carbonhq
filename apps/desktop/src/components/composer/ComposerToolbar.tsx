@@ -58,6 +58,8 @@ type ComposerToolbarProps = {
   branches: BranchList | null;
   branch: string | null;
   onSelectBranch: (branch: string) => void;
+  /// The picker opening, which fetches so the list matches GitHub.
+  onOpenBranches: () => void;
 
   /// Set while a switch waits on the uncommitted-changes prompt.
   pendingBranch: string | null;
@@ -116,6 +118,7 @@ export default function ComposerToolbar({
   branches,
   branch,
   onSelectBranch,
+  onOpenBranches,
   pendingBranch,
   onConfirmBranchSwitch,
   onCancelBranchSwitch,
@@ -200,6 +203,7 @@ export default function ComposerToolbar({
                     branches={branches}
                     value={branch}
                     onSelect={onSelectBranch}
+                    onOpen={onOpenBranches}
                     disabled={pendingBranch !== null}
                   />
                   <BranchSwitchDialog

@@ -244,6 +244,7 @@ function App() {
     retagSpace,
     canAnnounce,
     handleSelectBranch,
+    refreshBranches,
     pendingBranch,
     setPendingBranch,
     runCheckout,
@@ -3329,6 +3330,7 @@ function App() {
               branches={branches}
               branch={branch}
               onSelectBranch={handleSelectBranch}
+              onOpenBranches={refreshBranches}
               pendingBranch={pendingBranch}
               onConfirmBranchSwitch={(stash) =>
                 pendingBranch && runCheckout(pendingBranch, stash)
