@@ -7,13 +7,13 @@ const visit = (url: string, title = "", visits = 1): BrowserVisit => ({ url, tit
 describe("matchHistory", () => {
   const list = [
     visit("https://docs.example.com/guide", "Example guide"),
-    visit("https://www.github.com/monorepo-labs/dray", "carbon", 3),
+    visit("https://www.github.com/matthieu-pm/carbonhq", "carbon", 3),
     visit("https://news.ycombinator.com/", "Hacker News"),
     visit("http://localhost:5173/", "Vite app", 9),
   ];
 
   it("ranks an address starting with the text first, ignoring scheme and www", () => {
-    expect(matchHistory(list, "git").map((v) => v.url)).toEqual(["https://www.github.com/monorepo-labs/dray"]);
+    expect(matchHistory(list, "git").map((v) => v.url)).toEqual(["https://www.github.com/matthieu-pm/carbonhq"]);
     expect(matchHistory(list, "local")[0].url).toBe("http://localhost:5173/");
   });
 

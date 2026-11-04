@@ -541,7 +541,10 @@ async fn delete_key() -> Result<(), String> {
 /// key and each remote server's token (`servers.rs`) share this one file.
 #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 pub(crate) async fn credential(name: &str) -> Option<String> {
-    read_credentials().await.remove(name).filter(|v| !v.trim().is_empty())
+    read_credentials()
+        .await
+        .remove(name)
+        .filter(|v| !v.trim().is_empty())
 }
 
 /// Stores `value` under `name`, or removes the entry for `None`.
@@ -871,11 +874,7 @@ fn wanted_tags(prompt: &str, named: &[String]) -> Vec<WantedTag> {
 /// Split from the read above so the rule is testable without a key and without
 /// a network: what happens when nothing resolves is exactly the case worth
 /// pinning, and it is the one a test process cannot reach by asking Linear.
-fn apply_tags(
-    prompt: &str,
-    wanted: &[WantedTag],
-    resolved: Vec<Option<IssueRef>>,
-) -> ExpandedTags {
+fn apply_tags(prompt: &str, wanted: &[WantedTag], resolved: Vec<Option<IssueRef>>) -> ExpandedTags {
     let mut mentioned = Vec::new();
     let mut linked = Vec::new();
     let mut appended = Vec::new();
@@ -1068,11 +1067,10 @@ pub async fn get_issue(
 /// Moves an issue's status or priority, and answers with the issue as it now
 /// stands.
 ///
-/// **The only write this app makes to a tracker.** Everything else here reads:
-/// a link is a fact about the session, and status and priority are the two
-/// things a reader otherwise leaves the app to change. Assignee, labels and
-/// comments stay out — the agent has the tracker's own MCP server for those,
-/// and each is a picker over a workspace-wide list this panel has no room for.
+/// The panel's write, from the opened issue's header. Assignee, labels and
+/// attachments stay out — each is a picker over a workspace-wide list this
+/// panel has no room for. A comment is [`write_issue`], which `carbon issue
+/// comment` reaches; the panel has no comment box.
 ///
 /// Both fields are optional and `None` means *leave it*, which is why priority
 /// arrives as an `Option<IssuePriority>` rather than as a number: "no priority"
@@ -1112,6 +1110,280 @@ pub async fn update_issue(
     linear::update_issue(&key, &id, state_id.as_deref(), priority).await?;
 
     linear::get_issue(&key, &identifier, Some(&id)).await
+}
+
+/// What [`write_issue`] tells the caller. The status is the name, which is
+/// what a person asked for; the id it resolved to never leaves this module.
+pub struct WrittenIssue {
+    pub identifier: String,
+    pub title: String,
+    pub url: String,
+    pub status: String,
+    pub commented: bool,
+}
+
+/// Why [`write_issue`] failed, and whether the issue changed anyway.
+#[derive(Debug)]
+pub struct WriteFailed {
+    pub error: IssueUnavailable,
+    /// Part of the write landed before the rest failed, so every cached copy
+    /// of the issue is already out of date.
+    pub landed: bool,
+}
+
+impl From<IssueUnavailable> for WriteFailed {
+    fn from(error: IssueUnavailable) -> Self {
+        Self {
+            error,
+            landed: false,
+        }
+    }
+}
+
+impl std::fmt::Display for WriteFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+impl std::error::Error for WriteFailed {}
+
+/// A write that has already been refused or reduced to the words Linear gets.
+#[derive(Debug)]
+struct CheckedWrite {
+    identifier: String,
+    comment: Option<String>,
+    status: Option<String>,
+}
+
+/// Past this, the comment is a document, not a note on an issue.
+const COMMENT_MAX: usize = 50_000;
+
+/// A workflow name. Longer than this is not one.
+const STATUS_MAX: usize = 80;
+
+/// Refuses a write before any key is read.
+///
+/// GitHub has no key stored here, and `gh` already writes, so a GitHub
+/// identifier stops here rather than being tried against Linear. An empty
+/// comment and an absent one are different mistakes: the first was attempted.
+fn check_write(
+    raw: &str,
+    comment: Option<&str>,
+    status: Option<&str>,
+) -> Result<CheckedWrite, IssueUnavailable> {
+    if comment.is_none() && status.is_none() {
+        return Err(IssueUnavailable::Other("name a comment or a status".into()));
+    }
+
+    let raw = raw.trim();
+    // One leading `#`, the way a tag is written. A `#` further in is GitHub's
+    // own spelling and must survive.
+    let stripped = raw.strip_prefix('#').unwrap_or(raw);
+    let Some(identifier) = parse_identifier(stripped) else {
+        return Err(IssueUnavailable::Other(format!(
+            "{raw} is not an issue identifier"
+        )));
+    };
+    if let IssueTracker::Github = IssueTracker::of(&identifier) {
+        return Err(IssueUnavailable::Other(format!(
+            "{identifier} is a GitHub issue. Use `gh issue comment` and `gh issue close`. \
+             `carbon issue comment` and `carbon issue status` write to Linear with the key connected in Carbon."
+        )));
+    }
+
+    let comment = match comment {
+        None => None,
+        Some(body) => {
+            let body = body.trim();
+            if body.is_empty() {
+                return Err(IssueUnavailable::Other("a comment needs text".into()));
+            }
+            if body.chars().count() > COMMENT_MAX {
+                return Err(IssueUnavailable::Other(
+                    "that comment is too long to post".into(),
+                ));
+            }
+            Some(body.to_string())
+        }
+    };
+
+    let status = match status {
+        None => None,
+        Some(name) => {
+            let name = name.trim();
+            if name.is_empty() {
+                return Err(IssueUnavailable::Other("name a status, like Done".into()));
+            }
+            if name.chars().count() > STATUS_MAX {
+                return Err(IssueUnavailable::Other(
+                    "a status is a short name, like Done or \"In Progress\"".into(),
+                ));
+            }
+            Some(name.to_string())
+        }
+    };
+
+    Ok(CheckedWrite {
+        identifier,
+        comment,
+        status,
+    })
+}
+
+/// The name an agent gave, turned into one state on this issue's team.
+///
+/// A state is written by id, never by name, because two teams can share one.
+/// The name is matched here, against the states this issue already reported,
+/// so the id that goes out is one Linear will accept for it.
+fn resolve_state(states: &[IssueState], asked: &str) -> Result<IssueState, IssueUnavailable> {
+    let normalized = asked.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return Err(IssueUnavailable::Other("name a status, like Done".into()));
+    }
+    let folded = fold(asked);
+
+    // Both sides through one fold. `eq_ignore_ascii_case` against a
+    // Unicode-lowercased query missed "À faire" typed exactly.
+    let by_name: Vec<&IssueState> = states
+        .iter()
+        .filter(|state| fold(&state.name) == folded)
+        .collect();
+    match by_name.as_slice() {
+        [one] => return Ok((*one).clone()),
+        [_, ..] => {
+            return Err(IssueUnavailable::Other(format!(
+                "\"{normalized}\" matches more than one status: {}",
+                join_state_names(&by_name)
+            )));
+        }
+        [] => {}
+    }
+
+    if let Some(kind) = kind_word(&folded) {
+        let of_kind: Vec<&IssueState> = states.iter().filter(|state| state.kind == kind).collect();
+        match of_kind.as_slice() {
+            [one] => return Ok((*one).clone()),
+            [_, ..] => {
+                return Err(IssueUnavailable::Other(format!(
+                    "\"{normalized}\" is a kind of status, and this issue has more than one: {}",
+                    join_state_names(&of_kind)
+                )));
+            }
+            [] => {}
+        }
+    }
+
+    if states.is_empty() {
+        return Err(IssueUnavailable::Other(format!(
+            "\"{normalized}\" is not a status on this issue. It has none."
+        )));
+    }
+    Err(IssueUnavailable::Other(format!(
+        "\"{normalized}\" is not a status on this issue. It has: {}",
+        states
+            .iter()
+            .map(|state| state.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )))
+}
+
+fn fold(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn join_state_names(states: &[&IssueState]) -> String {
+    states
+        .iter()
+        .map(|state| state.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// A kind word, and only a kind word. `done` and `todo` are names — matching
+/// them here would pick a state the team calls something else.
+fn kind_word(folded: &str) -> Option<IssueStateKind> {
+    match folded {
+        "triage" => Some(IssueStateKind::Triage),
+        "backlog" => Some(IssueStateKind::Backlog),
+        "unstarted" => Some(IssueStateKind::Unstarted),
+        "started" => Some(IssueStateKind::Started),
+        "completed" => Some(IssueStateKind::Completed),
+        "canceled" | "cancelled" => Some(IssueStateKind::Canceled),
+        _ => None,
+    }
+}
+
+/// Posts a comment, moves the status, or both, on a Linear issue.
+///
+/// The key is read here and never returned. A failed confirmation read is not
+/// a failed write: Linear's own success flag already said the mutation landed,
+/// and reporting that as a failure is what makes the caller post it twice.
+/// The same goes for a status that moved before the comment failed: the error
+/// says it moved, and `landed` tells the caller to drop cached copies.
+pub async fn write_issue(
+    identifier: String,
+    comment: Option<String>,
+    status: Option<String>,
+) -> Result<WrittenIssue, WriteFailed> {
+    let checked = check_write(&identifier, comment.as_deref(), status.as_deref())?;
+    let key = match linear_key().await {
+        Ok(key) => key,
+        // The generic sentence names GitHub too. This command cannot use `gh`.
+        Err(IssueUnavailable::NotConnected) => {
+            return Err(IssueUnavailable::Other(
+                "Linear is not connected. Connect it in Carbon's settings — this command uses that key, and the key stays there.".into(),
+            )
+            .into());
+        }
+        Err(other) => return Err(other.into()),
+    };
+
+    let mut detail = linear::get_issue(&key, &checked.identifier, None).await?;
+    let mut moved = false;
+    if let Some(name) = &checked.status {
+        let state = resolve_state(&detail.states, name)?;
+        linear::update_issue(&key, &detail.issue.id, Some(&state.id), None).await?;
+        detail.issue.state = state;
+        moved = true;
+    }
+    if let Some(body) = &checked.comment {
+        if let Err(error) = linear::create_comment(&key, &detail.issue.id, body).await {
+            return Err(if moved {
+                partly_written(&detail.issue.identifier, &detail.issue.state.name, error)
+            } else {
+                error.into()
+            });
+        }
+    }
+
+    let issue = match linear::get_issue(&key, &checked.identifier, Some(&detail.issue.id)).await {
+        Ok(fresh) => fresh.issue,
+        Err(_) => detail.issue,
+    };
+
+    Ok(WrittenIssue {
+        identifier: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+        status: issue.state.name,
+        commented: checked.comment.is_some(),
+    })
+}
+
+/// The status moved and the comment did not post. Said whole, so a retry
+/// sends the comment alone rather than a status Linear already took.
+fn partly_written(identifier: &str, status: &str, error: IssueUnavailable) -> WriteFailed {
+    WriteFailed {
+        error: IssueUnavailable::Other(format!(
+            "{identifier} moved to {status}, but the comment was not posted: {error}"
+        )),
+        landed: true,
+    }
 }
 
 /// A file uploaded to an issue, fetched with the stored key.
@@ -1167,8 +1439,8 @@ pub async fn list_issue_filters(
 }
 
 /// Untags a session. The issue itself is untouched: a link is a fact about the
-/// session, and the only write this app makes to a tracker is [`update_issue`],
-/// which a reader has to ask for by name.
+/// session. The tracker writes are [`update_issue`], which a reader asks for
+/// from the header, and [`write_issue`], which `carbon issue` asks for.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn unlink_issue(
     session_id: String,
@@ -1338,8 +1610,8 @@ mod tests {
     #[test]
     fn a_github_tag_is_a_repository_and_a_number() {
         assert_eq!(
-            issue_tags("see #monorepo-labs/dray#121 please"),
-            vec!["monorepo-labs/dray#121"]
+            issue_tags("see #matthieu-pm/carbonhq#121 please"),
+            vec!["matthieu-pm/carbonhq#121"]
         );
         assert_eq!(issue_tags("#Owner/Repo.js#7"), vec!["Owner/Repo.js#7"]);
         // The same punctuation rules the Linear shape takes.
@@ -1416,5 +1688,151 @@ mod tests {
                 IssuePriority::None
             ]
         );
+    }
+
+    fn workflow_state(id: &str, name: &str, kind: IssueStateKind) -> IssueState {
+        IssueState {
+            id: id.into(),
+            name: name.into(),
+            kind,
+            color: String::new(),
+        }
+    }
+
+    fn workflow() -> Vec<IssueState> {
+        vec![
+            workflow_state("t", "Triage", IssueStateKind::Triage),
+            workflow_state("b", "Backlog", IssueStateKind::Backlog),
+            workflow_state("u", "Todo", IssueStateKind::Unstarted),
+            workflow_state("s", "In Progress", IssueStateKind::Started),
+            workflow_state("d", "Done", IssueStateKind::Completed),
+            workflow_state("c", "Canceled", IssueStateKind::Canceled),
+        ]
+    }
+
+    #[test]
+    fn a_status_name_matches_ignoring_case_and_spacing() {
+        assert_eq!(resolve_state(&workflow(), "done").unwrap().id, "d");
+        assert_eq!(
+            resolve_state(&workflow(), "in   progress").unwrap().name,
+            "In Progress"
+        );
+    }
+
+    /// A non-ASCII name typed exactly, or in another case, still matches.
+    #[test]
+    fn a_status_name_folds_beyond_ascii() {
+        let states = vec![
+            workflow_state("a", "À faire", IssueStateKind::Unstarted),
+            workflow_state("e", "ÉCHÉANCE", IssueStateKind::Started),
+        ];
+        assert_eq!(resolve_state(&states, "À faire").unwrap().id, "a");
+        assert_eq!(resolve_state(&states, "à  FAIRE").unwrap().id, "a");
+        assert_eq!(resolve_state(&states, "échéance").unwrap().id, "e");
+    }
+
+    #[test]
+    fn a_comment_failing_after_the_status_moved_says_it_moved() {
+        let failed = partly_written("FOR-1", "Done", IssueUnavailable::Offline("timed out".into()));
+        assert!(failed.landed);
+        assert_eq!(
+            failed.to_string(),
+            "FOR-1 moved to Done, but the comment was not posted: Could not reach Linear: timed out"
+        );
+    }
+
+    /// `completed` is a kind, not a name this team uses. It has to land on the
+    /// one Completed state, which is called Done.
+    #[test]
+    fn a_kind_word_matches_the_only_state_of_that_kind() {
+        assert_eq!(
+            resolve_state(&workflow(), "completed").unwrap().name,
+            "Done"
+        );
+        // British spelling. The row is named the American way, so the name
+        // match cannot be what finds it.
+        assert_eq!(resolve_state(&workflow(), "cancelled").unwrap().id, "c");
+    }
+
+    #[test]
+    fn two_states_of_one_kind_are_named_rather_than_picked() {
+        let mut states = workflow();
+        states.push(workflow_state("r", "Released", IssueStateKind::Completed));
+
+        assert_eq!(
+            resolve_state(&states, "completed").unwrap_err().to_string(),
+            "\"completed\" is a kind of status, and this issue has more than one: Done, Released"
+        );
+    }
+
+    #[test]
+    fn an_unknown_status_lists_the_ones_this_issue_has() {
+        assert_eq!(
+            resolve_state(&workflow(), "nope").unwrap_err().to_string(),
+            "\"nope\" is not a status on this issue. It has: Triage, Backlog, Todo, In Progress, Done, Canceled"
+        );
+        assert_eq!(
+            resolve_state(&[], "Done").unwrap_err().to_string(),
+            "\"Done\" is not a status on this issue. It has none."
+        );
+        assert_eq!(
+            resolve_state(&workflow(), "   ").unwrap_err().to_string(),
+            "name a status, like Done"
+        );
+    }
+
+    #[test]
+    fn a_write_is_refused_before_any_key_is_read() {
+        assert_eq!(
+            check_write("FOR-140", None, None).unwrap_err().to_string(),
+            "name a comment or a status"
+        );
+        assert_eq!(
+            check_write("FOR-140", Some("   "), None)
+                .unwrap_err()
+                .to_string(),
+            "a comment needs text"
+        );
+        assert_eq!(
+            check_write("FOR-140", None, Some("  "))
+                .unwrap_err()
+                .to_string(),
+            "name a status, like Done"
+        );
+        assert_eq!(
+            check_write("nope", Some("hi"), None)
+                .unwrap_err()
+                .to_string(),
+            "nope is not an issue identifier"
+        );
+        assert_eq!(
+            check_write("owner/repo#12", Some("hi"), None).unwrap_err().to_string(),
+            "owner/repo#12 is a GitHub issue. Use `gh issue comment` and `gh issue close`. \
+             `carbon issue comment` and `carbon issue status` write to Linear with the key connected in Carbon."
+        );
+        let long = "x".repeat(COMMENT_MAX + 1);
+        assert_eq!(
+            check_write("FOR-140", Some(&long), None)
+                .unwrap_err()
+                .to_string(),
+            "that comment is too long to post"
+        );
+        let wide = "n".repeat(STATUS_MAX + 1);
+        assert_eq!(
+            check_write("FOR-140", None, Some(&wide))
+                .unwrap_err()
+                .to_string(),
+            "a status is a short name, like Done or \"In Progress\""
+        );
+    }
+
+    /// A leading `#` is how a tag is written. One in the middle is GitHub.
+    #[test]
+    fn a_leading_hash_is_a_linear_identifier() {
+        let checked = check_write("#FOR-140", Some("  hello\nthere  "), None).unwrap();
+
+        assert_eq!(checked.identifier, "FOR-140");
+        assert_eq!(checked.comment.as_deref(), Some("hello\nthere"));
+        assert!(checked.status.is_none());
     }
 }

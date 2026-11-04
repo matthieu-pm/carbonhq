@@ -242,7 +242,7 @@ function IssueRow({
             <IssuePriorityIcon priority="none" />
           ))}
 
-        {/* The number alone. `monorepo-labs/dray#108` is most of a narrow
+        {/* The number alone. `matthieu-pm/carbonhq#108` is most of a narrow
             panel's width spent on the half that is the same for every issue in
             the repository — the slug is said once, in the meta line under the
             title, where it does not push the status and the title off the row.

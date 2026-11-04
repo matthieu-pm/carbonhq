@@ -1,6 +1,6 @@
 # Attaching a project from GitHub
 
-monorepo-labs/dray#422, stage 5 of "Carbon anywhere". On a remote server the
+Stage 5 of "Carbon anywhere". On a remote server the
 Mac's folder dialog cannot see the machine, so attaching needs a way in that
 runs there. The design is settled in the issue; this is how it is built.
 

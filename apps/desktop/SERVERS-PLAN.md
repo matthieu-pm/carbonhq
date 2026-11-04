@@ -1,6 +1,6 @@
 # Several servers at once
 
-monorepo-labs/dray#414, stage 3 of "Carbon anywhere". Stage 1 (#413,
+Stage 3 of "Carbon anywhere". Stage 1 (#413,
 [SERVE-PLAN.md](SERVE-PLAN.md)) made the core a `carbon-serve` and put one
 transport in front of it. This makes the desktop app hold the in-process core
 **and** any number of remote `carbon-serve`s, with one merged sidebar.

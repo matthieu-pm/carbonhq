@@ -42,8 +42,10 @@ use std::path::PathBuf;
 /// the server runs the tunnel itself. v12 added `on_machine`: an older app
 /// cannot parse it, and one that could ignore the machine would run the
 /// request here, a create meant for a VPS starting on the Mac as if it had
-/// gone where it was sent.
-pub const PROTOCOL_VERSION: u32 = 12;
+/// gone where it was sent. v13 added `write_issue`: an older app cannot parse
+/// it, and a failed parse answers "could not parse the request" where the
+/// reader needs "update the Carbon app".
+pub const PROTOCOL_VERSION: u32 = 13;
 
 /// The oldest envelope the app still answers. Rises only when a shape is
 /// *renamed*, never for an addition: v4 renamed `LinkIssues.identifiers` to
@@ -119,7 +121,11 @@ impl Request {
             | Request::SetAside(_)
             | Request::ListShares(_) => 10,
             Request::SetRemoteAccess(_) => 11,
-            Request::OnMachine(_) => 12,
+            Request::WriteIssue(_) => 13,
+            // v12 is when the wrapper itself arrived. A newer request inside it
+            // has to stamp its own version, or a v12 app parses the wrapper and
+            // then says it could not parse the line instead of naming the update.
+            Request::OnMachine(on) => on.request.version().max(12),
         }
     }
 }
@@ -148,6 +154,7 @@ pub enum Request {
     SetAside(SetAside),
     ListShares(ListSessions),
     SetRemoteAccess(SetRemoteAccess),
+    WriteIssue(WriteIssue),
     OnMachine(OnMachine),
 }
 
@@ -372,7 +379,9 @@ pub struct BrowserRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "by", rename_all = "snake_case")]
 pub enum Locator {
-    Target { target: String },
+    Target {
+        target: String,
+    },
     Role {
         role: String,
         #[serde(default)]
@@ -405,9 +414,14 @@ pub enum Locator {
         #[serde(default)]
         exact: bool,
     },
-    TestId { id: String },
+    TestId {
+        id: String,
+    },
     /// One of a selector's matches; `-1` is the last.
-    Nth { selector: String, index: i64 },
+    Nth {
+        selector: String,
+        index: i64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -416,7 +430,9 @@ pub enum Get {
     Text,
     Html,
     Value,
-    Attr { name: String },
+    Attr {
+        name: String,
+    },
     Title,
     Url,
     Count,
@@ -435,7 +451,9 @@ pub enum Is {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum BrowserAction {
-    Open { url: String },
+    Open {
+        url: String,
+    },
     Back,
     Forward,
     Reload,
@@ -446,7 +464,9 @@ pub enum BrowserAction {
         #[serde(default)]
         url: Option<String>,
     },
-    TabSwitch { id: i32 },
+    TabSwitch {
+        id: i32,
+    },
     TabClose {
         #[serde(default)]
         id: Option<i32>,
@@ -460,31 +480,62 @@ pub enum BrowserAction {
         #[serde(default)]
         selector: Option<String>,
     },
-    Click { at: Locator },
-    DblClick { at: Locator },
-    Focus { at: Locator },
-    Hover { at: Locator },
+    Click {
+        at: Locator,
+    },
+    DblClick {
+        at: Locator,
+    },
+    Focus {
+        at: Locator,
+    },
+    Hover {
+        at: Locator,
+    },
     /// Keystrokes into an element, after whatever it holds.
-    Type { at: Locator, text: String },
+    Type {
+        at: Locator,
+        text: String,
+    },
     /// Replace what an element holds.
-    Fill { at: Locator, text: String },
+    Fill {
+        at: Locator,
+        text: String,
+    },
     /// A key name (`Enter`, `Tab`, `Escape`, `ArrowDown`, `a`), with
     /// `Meta+`/`Ctrl+`/`Shift+`/`Alt+` prefixes.
-    Press { key: String },
-    Check { at: Locator },
-    Uncheck { at: Locator },
+    Press {
+        key: String,
+    },
+    Check {
+        at: Locator,
+    },
+    Uncheck {
+        at: Locator,
+    },
     /// Pick an option by value or label.
-    Select { at: Locator, value: String },
+    Select {
+        at: Locator,
+        value: String,
+    },
     /// `up`, `down`, `left`, `right` by `amount` pixels.
-    Scroll { direction: String, amount: f64 },
-    ScrollIntoView { at: Locator },
+    Scroll {
+        direction: String,
+        amount: f64,
+    },
+    ScrollIntoView {
+        at: Locator,
+    },
     Get {
         #[serde(flatten)]
         what: Get,
         #[serde(default)]
         at: Option<Locator>,
     },
-    Is { what: Is, at: Locator },
+    Is {
+        what: Is,
+        at: Locator,
+    },
     /// Whichever is set: a selector to appear, milliseconds, a URL fragment,
     /// visible text, or `load` for the page to finish loading.
     Wait {
@@ -509,17 +560,26 @@ pub enum BrowserAction {
         full: bool,
     },
     /// Evaluate JavaScript in the page and answer its JSON value.
-    Eval { js: String },
+    Eval {
+        js: String,
+    },
     /// What the page logged since last asked.
     Console,
     /// Errors alone, since last asked.
     Errors,
-    SetViewport { width: u32, height: u32 },
+    SetViewport {
+        width: u32,
+        height: u32,
+    },
     /// A device preset by name, as the pane's device bar lists them.
-    SetDevice { name: String },
+    SetDevice {
+        name: String,
+    },
     /// Page zoom in percent, 100 being the page's own size. The same zoom
     /// the pane's ⌘= sets, so the reader sees it and captures carry it.
-    Zoom { percent: u32 },
+    Zoom {
+        percent: u32,
+    },
     /// Start recording the active tab, at the size `screenshot` uses.
     RecordStart,
     /// Stop recording and answer the MP4's path, named after `name` where
@@ -578,8 +638,9 @@ pub struct CreateSession {
     ///
     /// Resolved by the app, not here: the CLI holds no key and has no business
     /// learning what a tracker is. Each one becomes a link on the session and a
-    /// line in the prompt — identifier and title, nothing more, since the agent
-    /// has the tracker's own MCP server for the rest.
+    /// line in the prompt — identifier and title, nothing more. Reading the
+    /// description is the tracker's MCP server; a comment or a status change
+    /// is [`WriteIssue`], and the key stays in the app.
     #[serde(default)]
     pub issues: Vec<String>,
     /// Whether the session runs at its harness's faster, dearer tier.
@@ -619,6 +680,25 @@ pub struct LinkIssues {
     /// Remove these links instead of adding them. Only `identifier` is read.
     #[serde(default)]
     pub unlink: bool,
+}
+
+/// A comment, a status change, or both, on one Linear issue.
+///
+/// One request for the two verbs: the CLI sends exactly one of the fields,
+/// and the server allows both. An absent field means do not do that, which
+/// is a different instruction from an empty string — an empty one is refused.
+/// The key is not a field. It stays in the app that already holds it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteIssue {
+    pub identifier: String,
+    /// Posted as written. Absent means post nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    /// A status name, resolved against the issue's own team. Absent means
+    /// leave the status where it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// One issue to tag a session with, as the caller already knows it.
@@ -696,33 +776,69 @@ pub enum Response {
         #[serde(default)]
         base_ref: Option<String>,
     },
-    Listed { sessions: Vec<SessionSummary> },
+    Listed {
+        sessions: Vec<SessionSummary>,
+    },
     /// A draft written, or one taken off the list — the answer to
     /// `CreateDraft` and `RemoveDraft` alike.
-    Draft { draft: DraftSummary },
-    Drafts { drafts: Vec<DraftSummary> },
+    Draft {
+        draft: DraftSummary,
+    },
+    Drafts {
+        drafts: Vec<DraftSummary>,
+    },
     /// Every issue the session carries *after* the change, so the caller sees
     /// the result rather than a diff it has to apply to what it believed.
-    Linked { issues: Vec<IssueLink> },
+    Linked {
+        issues: Vec<IssueLink>,
+    },
     /// `queued` when the target had a turn in flight, so the prompt is held
     /// until it reaches a boundary rather than being dropped or interrupting.
-    Sent { queued: bool },
+    Sent {
+        queued: bool,
+    },
     /// What a browser action answers: `output` as text for the agent to
     /// read, `data` the same answer for `--json`.
-    Browser { output: String, data: serde_json::Value },
+    Browser {
+        output: String,
+        data: serde_json::Value,
+    },
     /// The session's live links after the change, whichever verb asked.
-    Shared { shares: Vec<SharedPort> },
+    Shared {
+        shares: Vec<SharedPort>,
+    },
     /// The session a verb acted on, as it stands after.
-    Session { session: SessionSummary },
+    Session {
+        session: SessionSummary,
+    },
     /// The server a verb acted on, as it stands after — or as it stood, for
     /// one taken off the list.
-    Server { server: ServerSummary },
-    Servers { servers: Vec<ServerSummary> },
+    Server {
+        server: ServerSummary,
+    },
+    Servers {
+        servers: Vec<ServerSummary>,
+    },
     /// Remote access as it stands after the switch. The address arrives in
     /// [`TUNNEL_URL_FILE`] once the relay has it, which a first start can
     /// take a minute over.
-    RemoteAccess { on: bool },
-    Error { message: String },
+    RemoteAccess {
+        on: bool,
+    },
+    /// A Linear issue after a comment or a status change.
+    ///
+    /// `state` is the workflow status. This enum's tag is already `status`,
+    /// so the field cannot take that name — serde would refuse the line.
+    Issue {
+        identifier: String,
+        title: String,
+        url: String,
+        state: String,
+        commented: bool,
+    },
+    Error {
+        message: String,
+    },
 }
 
 impl Response {
@@ -878,14 +994,22 @@ pub const TUNNEL_URL_FILE: &str = "tunnel-url";
 /// registers the scheme, so the system Camera opens it too.
 pub fn pair_link(url: &str, token: &str, name: &str) -> String {
     let url = url.replacen("https://", "wss://", 1);
-    format!("carbon://connect?url={}&token={}&name={}", encode(&url), encode(token), encode(name))
+    format!(
+        "carbon://connect?url={}&token={}&name={}",
+        encode(&url),
+        encode(token),
+        encode(name)
+    )
 }
 
 /// The name a pairing link offers the phone: a Mac's own name from Sharing,
 /// else the host name. Spawns, so keep it off an async runtime's threads.
 pub fn machine_name() -> String {
-    let (cmd, args): (&str, &[&str]) =
-        if cfg!(target_os = "macos") { ("scutil", &["--get", "ComputerName"]) } else { ("hostname", &[]) };
+    let (cmd, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
+        ("scutil", &["--get", "ComputerName"])
+    } else {
+        ("hostname", &[])
+    };
     std::process::Command::new(cmd)
         .args(args)
         .output()
@@ -900,7 +1024,9 @@ pub fn machine_name() -> String {
 fn encode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()
@@ -957,8 +1083,11 @@ mod tests {
     #[test]
     fn from_still_reads_as_base() {
         let envelope: Envelope =
-            serde_json::from_str(r#"{"v":6,"cmd":"create_session","prompt":"hi","from":"main"}"#).unwrap();
-        let Request::CreateSession(create) = envelope.request else { panic!("wrong variant") };
+            serde_json::from_str(r#"{"v":6,"cmd":"create_session","prompt":"hi","from":"main"}"#)
+                .unwrap();
+        let Request::CreateSession(create) = envelope.request else {
+            panic!("wrong variant")
+        };
         assert_eq!(create.base.as_deref(), Some("main"));
     }
 
@@ -992,7 +1121,10 @@ mod tests {
         for request in &drafts {
             assert_eq!(Envelope::new(request.clone()).v, 7, "{request:?}");
         }
-        let share = Request::Share(ShareRequest { session_id: "s".into(), action: ShareAction::List });
+        let share = Request::Share(ShareRequest {
+            session_id: "s".into(),
+            action: ShareAction::List,
+        });
         assert_eq!(Envelope::new(share.clone()).v, 8);
         let servers = [
             Request::AddServer(Default::default()),
@@ -1005,8 +1137,14 @@ mod tests {
             assert_eq!(Envelope::new(request.clone()).v, 9, "{request:?}");
         }
         let based = [
-            Request::CreateSession(CreateSession { base: Some("main".into()), ..Default::default() }),
-            Request::CreateDraft(CreateDraft { base: Some("main".into()), ..Default::default() }),
+            Request::CreateSession(CreateSession {
+                base: Some("main".into()),
+                ..Default::default()
+            }),
+            Request::CreateDraft(CreateDraft {
+                base: Some("main".into()),
+                ..Default::default()
+            }),
         ];
         let sessions = [
             Request::RenameSession(Default::default()),
@@ -1025,13 +1163,27 @@ mod tests {
             request: Box::new(Request::ListSessions(Default::default())),
         });
         assert_eq!(Envelope::new(elsewhere.clone()).v, 12);
+        let write = Request::WriteIssue(WriteIssue {
+            identifier: "FOR-140".into(),
+            comment: Some("Merged".into()),
+            ..Default::default()
+        });
+        assert_eq!(Envelope::new(write.clone()).v, 13);
+        // A listing wrapped for another machine is still v12. A write wrapped
+        // the same way has to say 13, or the far app parses the wrapper and
+        // then reports that the line could not be parsed.
+        let written_there = Request::OnMachine(OnMachine {
+            machine: "vps".into(),
+            request: Box::new(write.clone()),
+        });
+        assert_eq!(Envelope::new(written_there).v, 13);
         let newest = old
             .iter()
             .chain(&drafts)
             .chain([&share])
             .chain(&servers)
             .chain(&sessions)
-            .chain([&remote, &elsewhere])
+            .chain([&remote, &elsewhere, &write])
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));
@@ -1048,13 +1200,45 @@ mod tests {
         assert!(matches!(back.request, Request::ListServers));
     }
 
+    /// Absent `status` is "leave it", so the field has to be missing rather
+    /// than present as null — a null would be a different instruction.
+    #[test]
+    fn an_issue_write_omits_an_absent_status() {
+        let line = encode_line(&Envelope::new(Request::WriteIssue(WriteIssue {
+            identifier: "FOR-140".into(),
+            comment: Some("Merged".into()),
+            status: None,
+        })))
+        .unwrap();
+        assert_eq!(
+            line.trim(),
+            r#"{"v":13,"cmd":"write_issue","identifier":"FOR-140","comment":"Merged"}"#
+        );
+        let back: Envelope = serde_json::from_str(&line).unwrap();
+        let Request::WriteIssue(write) = back.request else {
+            panic!("wrong variant")
+        };
+        assert_eq!(write.comment.as_deref(), Some("Merged"));
+        assert!(write.status.is_none());
+    }
+
     /// The wrapped request nests whole, its own tag and all.
     #[test]
     fn a_request_on_another_machine_round_trips() {
-        let send = Request::SendMessage(SendMessage { session_id: "s".into(), prompt: "hi".into(), from_session_id: None });
-        let line = encode_line(&Envelope::new(Request::OnMachine(OnMachine { machine: "vps".into(), request: Box::new(send) }))).unwrap();
+        let send = Request::SendMessage(SendMessage {
+            session_id: "s".into(),
+            prompt: "hi".into(),
+            from_session_id: None,
+        });
+        let line = encode_line(&Envelope::new(Request::OnMachine(OnMachine {
+            machine: "vps".into(),
+            request: Box::new(send),
+        })))
+        .unwrap();
         let back: Envelope = serde_json::from_str(&line).unwrap();
-        let Request::OnMachine(on) = back.request else { panic!("wrong variant") };
+        let Request::OnMachine(on) = back.request else {
+            panic!("wrong variant")
+        };
         assert_eq!(on.machine, "vps");
         assert!(matches!(*on.request, Request::SendMessage(ref s) if s.prompt == "hi"));
     }

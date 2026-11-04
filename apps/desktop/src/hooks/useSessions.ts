@@ -6,6 +6,7 @@ import { restoreAttachments } from "@/hooks/useAttachments";
 import { appendStreamingText, peekStreamingBlock, retireStreamingBlock, startStreamingBlock, type StreamingBlock } from "@/hooks/useStreamingBlock";
 import { useComposerPrefs, type EffortByModel } from "@/hooks/useComposerPrefs";
 import { forgetDocs } from "@/hooks/useDocs";
+import { forgetIssues } from "@/hooks/useIssues";
 import { useDockBadge } from "@/hooks/useDockBadge";
 import { readLocalStorage, useLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 import { forgetOpenFiles } from "@/hooks/useOpenFiles";
@@ -3036,6 +3037,20 @@ useEffect(() => {
 useEffect(() => {
   const listenerPromise = listen<IssuesChangedEvent>("issues_changed", (event) => {
     applyIssues(event.payload.sessionId, event.payload.issues);
+  });
+
+  return () => {
+    listenerPromise.then((unlisten) => unlisten());
+  };
+}, []);
+
+// `carbon issue comment` and `carbon issue status`. The payload is empty: the
+// write is not tied to a session, so the panels drop what they cached and
+// read it again. `issues_changed` is the wrong event — that one is a session's
+// links, and these writes have no session.
+useEffect(() => {
+  const listenerPromise = listen<null>("issues_stale", () => {
+    forgetIssues();
   });
 
   return () => {

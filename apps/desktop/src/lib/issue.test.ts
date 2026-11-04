@@ -115,7 +115,7 @@ describe("parseIdentifier", () => {
   /// reach the same issue and leave the reader's own sentence disagreeing with
   /// the repository they typed.
   it("takes a repository and a number, as written", () => {
-    expect(parseIdentifier("monorepo-labs/dray#121")).toBe("monorepo-labs/dray#121");
+    expect(parseIdentifier("matthieu-pm/carbonhq#121")).toBe("matthieu-pm/carbonhq#121");
     expect(parseIdentifier("Owner/Repo.js#7")).toBe("Owner/Repo.js#7");
     expect(parseIdentifier("a/b#1),")).toBe("a/b#1");
   });
@@ -136,7 +136,7 @@ describe("parseIdentifier", () => {
 /// *opens*, that one what is *read*.
 describe("trackerOf", () => {
   it("reads the tracker off the spelling alone", () => {
-    expect(trackerOf("monorepo-labs/dray#121")).toBe("github");
+    expect(trackerOf("matthieu-pm/carbonhq#121")).toBe("github");
     expect(trackerOf("DRA-53")).toBe("linear");
   });
 });
@@ -145,7 +145,7 @@ describe("shortIdentifier", () => {
   /// Both surfaces that draw rows read one repository at a time, so the slug is
   /// on every row saying the same thing in the column with the least room.
   it("drops the repository, which every row beside it shares", () => {
-    expect(shortIdentifier("monorepo-labs/dray#121")).toBe("#121");
+    expect(shortIdentifier("matthieu-pm/carbonhq#121")).toBe("#121");
     // A Linear identifier has no slug to drop and is left exactly as it is.
     expect(shortIdentifier("DRA-53")).toBe("DRA-53");
   });

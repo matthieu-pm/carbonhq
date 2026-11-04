@@ -1670,12 +1670,12 @@ mod tests {
     #[test]
     fn one_repository_has_one_key_however_it_was_cloned() {
         for url in [
-            "git@github.com:monorepo-labs/dray.git",
-            "https://github.com/monorepo-labs/dray",
-            "https://user@github.com/Monorepo-Labs/carbon.git/",
-            "ssh://git@github.com/monorepo-labs/dray.git",
+            "git@github.com:matthieu-pm/carbonhq.git",
+            "https://github.com/matthieu-pm/carbonhq",
+            "https://user@github.com/Matthieu-PM/CarbonHQ.git/",
+            "ssh://git@github.com/matthieu-pm/carbonhq.git",
         ] {
-            assert_eq!(repo_key(url), "github.com/monorepo-labs/dray", "{url}");
+            assert_eq!(repo_key(url), "github.com/matthieu-pm/carbonhq", "{url}");
         }
     }
 
@@ -1955,14 +1955,14 @@ mod tests {
     #[test]
     fn a_remote_url_answers_with_its_owner_and_repo() {
         for url in [
-            "https://github.com/monorepo-labs/dray.git",
-            "https://github.com/monorepo-labs/dray",
-            "git@github.com:monorepo-labs/dray.git",
-            "ssh://git@github.com/monorepo-labs/dray.git",
-            "https://token@github.com/monorepo-labs/dray.git",
-            "https://github.com/monorepo-labs/dray/",
+            "https://github.com/matthieu-pm/carbonhq.git",
+            "https://github.com/matthieu-pm/carbonhq",
+            "git@github.com:matthieu-pm/carbonhq.git",
+            "ssh://git@github.com/matthieu-pm/carbonhq.git",
+            "https://token@github.com/matthieu-pm/carbonhq.git",
+            "https://github.com/matthieu-pm/carbonhq/",
         ] {
-            assert_eq!(remote_path(url), Some("monorepo-labs/dray"), "{url}");
+            assert_eq!(remote_path(url), Some("matthieu-pm/carbonhq"), "{url}");
         }
 
         for url in [

@@ -707,9 +707,9 @@ mod tests {
         assert!(!names_own_sort("\"sort: by size\" in the picker"));
     }
 
-    /// A real `gh issue list -R monorepo-labs/dray --state all --json …`
-    /// capture, **with one row added by hand**: that repository has no
-    /// not-planned issue and none assigned or labelled, so the third row
+    /// A real `gh issue list --state all --json …` capture, **with one row
+    /// added by hand**: that repository has no not-planned issue and none
+    /// assigned or labelled, so the third row
     /// carries all three. Its fields are copied verbatim off real captures of
     /// `cli/cli#14490` and `cli/cli#14449` rather than invented.
     const LIST: &str = include_str!("../fixtures/gh_issue_list.json");
@@ -724,7 +724,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .filter_map(|node| map_issue(node, "monorepo-labs/dray"))
+            .filter_map(|node| map_issue(node, "matthieu-pm/carbonhq"))
             .collect()
     }
 
@@ -734,12 +734,12 @@ mod tests {
         assert_eq!(issues.len(), 3);
 
         let open = issues.iter().find(|i| i.identifier.ends_with("#108")).unwrap();
-        assert_eq!(open.identifier, "monorepo-labs/dray#108");
+        assert_eq!(open.identifier, "matthieu-pm/carbonhq#108");
         assert_eq!(open.state.kind, IssueStateKind::Unstarted);
         assert_eq!(open.state.name, "Open");
         // The repository, which is what the page joins a row to its status menu
         // on — the same slot a Linear row puts its team key in.
-        assert_eq!(open.team.as_deref(), Some("monorepo-labs/dray"));
+        assert_eq!(open.team.as_deref(), Some("matthieu-pm/carbonhq"));
         // GitHub has no priority, and this is the level rather than a failure.
         assert_eq!(open.priority, IssuePriority::None);
     }
@@ -815,8 +815,8 @@ mod tests {
     #[test]
     fn an_identifier_is_a_repository_and_a_number() {
         assert_eq!(
-            split_identifier("monorepo-labs/dray#121"),
-            Some(("monorepo-labs/dray".to_string(), 121))
+            split_identifier("matthieu-pm/carbonhq#121"),
+            Some(("matthieu-pm/carbonhq".to_string(), 121))
         );
         // Case is kept: GitHub is case-insensitive on a slug, and uppercasing
         // one would make the tag in the prompt disagree with the repository.
@@ -851,7 +851,7 @@ mod tests {
         assert_eq!(map_state(&open).id, OPEN_ID);
     }
 
-    /// Shapes measured against `monorepo-labs/dray` and a personal repository,
+    /// Shapes measured against a repository with types enabled and a personal one,
     /// which answers `issueTypes: null` rather than an error.
     #[test]
     fn issue_types_are_the_enabled_ones_in_hex() {
