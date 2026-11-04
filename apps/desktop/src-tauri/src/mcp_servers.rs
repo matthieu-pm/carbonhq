@@ -15,7 +15,7 @@
 //! are written here, under a process lock and a rename; their CLIs write them
 //! rarely, and `toml_edit` keeps the reader's comments and order.
 //!
-//! pi has no MCP support at all, by design, so it has no file here.
+//! Pi uses its own user and project `mcp.json` files; project config requires trust.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -73,10 +73,12 @@ pub enum McpFile {
     GrokProject,
     /// `~/.fx/mcp.json`, the only list Carbon hands fx over ACP.
     Fx,
+    PiUser,
+    PiProject,
 }
 
 impl McpFile {
-    const ALL: [McpFile; 8] = [
+    const ALL: [McpFile; 10] = [
         McpFile::ClaudeUser,
         McpFile::ClaudeLocal,
         McpFile::ClaudeProject,
@@ -85,6 +87,8 @@ impl McpFile {
         McpFile::GrokUser,
         McpFile::GrokProject,
         McpFile::Fx,
+        McpFile::PiUser,
+        McpFile::PiProject,
     ];
 
     fn owner(self) -> Harness {
@@ -95,6 +99,7 @@ impl McpFile {
             McpFile::Codex | McpFile::CodexProject => Harness::Codex,
             McpFile::GrokUser | McpFile::GrokProject => Harness::Grok,
             McpFile::Fx => Harness::Fx,
+            McpFile::PiUser | McpFile::PiProject => Harness::Pi,
         }
     }
 
@@ -117,6 +122,7 @@ impl McpFile {
                 | McpFile::ClaudeProject
                 | McpFile::CodexProject
                 | McpFile::GrokProject
+                | McpFile::PiProject
         )
     }
 
@@ -124,7 +130,12 @@ impl McpFile {
     /// endpoint itself, so neither has an SSE spelling to write.
     fn transports(self) -> Vec<McpTransport> {
         match self {
-            McpFile::Codex | McpFile::CodexProject | McpFile::GrokUser | McpFile::GrokProject => {
+            McpFile::Codex
+            | McpFile::CodexProject
+            | McpFile::GrokUser
+            | McpFile::GrokProject
+            | McpFile::PiUser
+            | McpFile::PiProject => {
                 vec![McpTransport::Stdio, McpTransport::Http]
             }
             _ => vec![McpTransport::Stdio, McpTransport::Http, McpTransport::Sse],
@@ -149,6 +160,8 @@ impl McpFile {
             McpFile::GrokUser => home.join(".grok/config.toml"),
             McpFile::GrokProject => project?.join(".grok/config.toml"),
             McpFile::Fx => home.join(".fx/mcp.json"),
+            McpFile::PiUser => home.join(".pi/agent/mcp.json"),
+            McpFile::PiProject => project?.join(".pi/mcp.json"),
         })
     }
 }
@@ -183,6 +196,9 @@ pub struct McpServerEntry {
     /// it there.
     #[serde(default = "yes")]
     pub enabled: bool,
+    /// A Pi project override changes state while its definition stays in the user file.
+    #[serde(default)]
+    pub inherited: bool,
 }
 
 fn yes() -> bool {
@@ -371,7 +387,12 @@ async fn read_servers(
         return Ok(None);
     }
     let servers = match file {
-        McpFile::ClaudeUser | McpFile::ClaudeLocal | McpFile::ClaudeProject | McpFile::Fx => {
+        McpFile::ClaudeUser
+        | McpFile::ClaudeLocal
+        | McpFile::ClaudeProject
+        | McpFile::Fx
+        | McpFile::PiUser
+        | McpFile::PiProject => {
             let root: Value = serde_json::from_str(&text)
                 .with_context(|| format!("couldn't parse {}", path.display()))?;
             if !root.is_object() {
@@ -392,7 +413,19 @@ async fn read_servers(
             }) {
                 bail!("{} has an invalid MCP server table", path.display());
             }
-            json_servers(file, &root, project)
+            let mut servers = json_servers(file, &root, project);
+            if file == McpFile::PiProject && servers.iter().any(|s| s.inherited) {
+                let global_path = home()?.join(".pi/agent/mcp.json");
+                let global = match tokio::fs::read_to_string(&global_path).await {
+                    Ok(text) => {
+                        serde_json::from_str(&text).context("couldn't parse pi's user config")?
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => json!({}),
+                    Err(err) => return Err(err).context("couldn't read pi's user config"),
+                };
+                pi_override_transports(&mut servers, &global);
+            }
+            servers
         }
         McpFile::Codex | McpFile::CodexProject | McpFile::GrokUser | McpFile::GrokProject => {
             let doc: toml_edit::DocumentMut = text
@@ -422,7 +455,9 @@ fn json_table<'a>(
     project: Option<&Path>,
 ) -> Option<&'a Map<String, Value>> {
     match file {
-        McpFile::ClaudeUser | McpFile::ClaudeProject => root.get("mcpServers")?.as_object(),
+        McpFile::ClaudeUser | McpFile::ClaudeProject | McpFile::PiUser | McpFile::PiProject => {
+            root.get("mcpServers")?.as_object()
+        }
         McpFile::ClaudeLocal => root
             .get("projects")?
             .get(project?.to_string_lossy().as_ref())?
@@ -439,10 +474,30 @@ fn json_servers(file: McpFile, root: &Value, project: Option<&Path>) -> Vec<McpS
     };
     let mut servers: Vec<McpServerEntry> = table
         .iter()
-        .filter_map(|(name, entry)| json_entry(name, entry))
+        .filter_map(|(name, entry)| {
+            let mut server = json_entry(name, entry)?;
+            server.inherited = file == McpFile::PiProject
+                && ["command", "url", "type"]
+                    .iter()
+                    .all(|key| entry.get(key).is_none());
+            Some(server)
+        })
         .collect();
     servers.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     servers
+}
+
+/// Inherit only transport metadata; returning user credentials here could copy them into a shared project file.
+fn pi_override_transports(servers: &mut [McpServerEntry], global: &Value) {
+    for server in servers.iter_mut().filter(|s| s.inherited) {
+        if let Some(definition) = global
+            .get("mcpServers")
+            .and_then(|t| t.get(&server.name))
+            .and_then(|entry| json_entry(&server.name, entry))
+        {
+            server.transport = definition.transport;
+        }
+    }
 }
 
 /// One entry, read leniently: a field the agent added that this build does not
@@ -468,6 +523,7 @@ fn json_entry(name: &str, entry: &Value) -> Option<McpServerEntry> {
         env: string_map(entry.get("env")),
         url,
         headers: string_map(entry.get("headers")),
+        inherited: false,
         enabled: entry
             .get("enabled")
             .and_then(Value::as_bool)
@@ -544,6 +600,7 @@ fn toml_servers(file: McpFile, doc: &toml_edit::DocumentMut) -> Vec<McpServerEnt
                 env: toml_map(entry.get("env")),
                 url,
                 headers: toml_map(entry.get(headers_key(file))),
+                inherited: false,
                 enabled: entry
                     .get("enabled")
                     .and_then(|v| v.as_bool())
@@ -576,6 +633,9 @@ fn toml_map(item: Option<&toml_edit::Item>) -> Vec<KeyValue> {
 /// can be copied to another unchanged; an existing name kept as it was is let
 /// through whatever it holds.
 fn validate(target: &McpTarget, original: Option<&str>, server: &McpServerEntry) -> Result<()> {
+    if server.inherited {
+        bail!("edit the global definition instead of this project override");
+    }
     let name = server.name.trim();
     if name.is_empty() {
         bail!("a server needs a name");
@@ -635,6 +695,9 @@ async fn checked_project(target: &McpTarget) -> Result<Option<PathBuf>> {
     if !project_paths().await.contains(&path) {
         bail!("{project} isn't an attached project");
     }
+    if !path.is_dir() {
+        bail!("{project} is no longer a project directory; attach it again before changing its config");
+    }
     Ok(Some(path))
 }
 
@@ -672,6 +735,12 @@ pub async fn save_mcp_server(
         .ok_or_else(|| anyhow!("no file to write"))?;
     match target.file {
         McpFile::Fx => edit_json(&path, |root| fx_save(root, original.as_deref(), &server)).await?,
+        McpFile::PiUser | McpFile::PiProject => {
+            edit_json(&path, |root| {
+                json_save(root, "mcpServers", original.as_deref(), &server)
+            })
+            .await?
+        }
         _ => {
             edit_toml(&path, |doc| {
                 toml_save(target.file, doc, original.as_deref(), &server)
@@ -706,10 +775,15 @@ pub async fn remove_mcp_server(target: McpTarget, name: String) -> Result<(), Fa
         .path(&home, project.as_deref())
         .ok_or_else(|| anyhow!("no file to write"))?;
     match target.file {
-        McpFile::Fx => {
+        McpFile::Fx | McpFile::PiUser | McpFile::PiProject => {
+            let key = if target.file == McpFile::Fx {
+                "mcp"
+            } else {
+                "mcpServers"
+            };
             edit_json(&path, |root| {
                 let removed = root
-                    .get_mut("mcp")
+                    .get_mut(key)
                     .and_then(Value::as_object_mut)
                     .and_then(|t| t.remove(&name));
                 removed
@@ -847,11 +921,19 @@ async fn claude_save(
 }
 
 fn fx_save(root: &mut Value, original: Option<&str>, server: &McpServerEntry) -> Result<()> {
-    if !root.is_object() {
-        bail!("fx's config isn't a JSON object");
-    }
-    let object = root.as_object_mut().expect("just made an object");
-    let table = object.entry("mcp").or_insert_with(|| json!({}));
+    json_save(root, "mcp", original, server)
+}
+
+fn json_save(
+    root: &mut Value,
+    key: &str,
+    original: Option<&str>,
+    server: &McpServerEntry,
+) -> Result<()> {
+    let object = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("the config isn't a JSON object"))?;
+    let table = object.entry(key).or_insert_with(|| json!({}));
     let table = table
         .as_object_mut()
         .ok_or_else(|| anyhow!("`mcp` in fx's config isn't an object"))?;
@@ -881,6 +963,25 @@ fn toml_save(
         let mut table = Table::new();
         // No bare `[mcp_servers]` header over the entries below it.
         table.set_implicit(true);
+        doc.insert("mcp_servers", Item::Table(table));
+    }
+    if doc.get("mcp_servers").is_some_and(|t| t.is_inline_table()) {
+        let prefix = doc
+            .key("mcp_servers")
+            .and_then(|key| key.leaf_decor().prefix())
+            .cloned();
+        let suffix = doc
+            .get("mcp_servers")
+            .and_then(|item| item.as_value())
+            .and_then(|value| value.decor().suffix())
+            .cloned();
+        let mut table = doc.remove("mcp_servers").unwrap().into_table().unwrap();
+        if let Some(prefix) = prefix {
+            table.decor_mut().set_prefix(prefix);
+        }
+        if let Some(suffix) = suffix {
+            table.decor_mut().set_suffix(suffix);
+        }
         doc.insert("mcp_servers", Item::Table(table));
     }
     let servers = doc
@@ -1018,6 +1119,22 @@ async fn replace(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Keep command setup shared by probes and mutation safety checks.
+fn cli_command(bin: &Path, args: &[&str], cwd: &Path) -> Command {
+    let mut command = Command::new(bin);
+    command
+        .args(args)
+        .env("PATH", agent_path(bin))
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    command
+        .current_dir(cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0);
+    command
+}
+
 async fn run_cli(
     harness: Harness,
     args: &[&str],
@@ -1028,24 +1145,39 @@ async fn run_cli(
     if !bin.is_absolute() {
         bail!("{} isn't installed", harness.label());
     }
-    let mut command = Command::new(&bin);
-    command
-        .args(args)
-        .env("PATH", agent_path(&bin))
-        .stdin(Stdio::null())
-        .kill_on_drop(true);
-    if cwd.is_dir() {
-        command.current_dir(cwd);
-    }
-    let output = tokio::time::timeout(timeout, command.output())
+    let mut command = cli_command(&bin, args, cwd);
+    let output = cli_output(&mut command, timeout)
         .await
-        .map_err(|_| anyhow!("{} took too long to answer", harness.label()))?
         .with_context(|| format!("couldn't run {}", harness.label()))?;
     Ok((
         output.status.success(),
         String::from_utf8_lossy(&output.stdout).into_owned(),
         String::from_utf8_lossy(&output.stderr).into_owned(),
     ))
+}
+
+/// A probe owns a process group so a timed-out CLI cannot leave MCP servers behind.
+struct ProbeGroup(u32);
+
+impl Drop for ProbeGroup {
+    fn drop(&mut self) {
+        unsafe {
+            libc::kill(-(self.0 as libc::pid_t), libc::SIGKILL);
+        }
+    }
+}
+
+async fn cli_output(command: &mut Command, timeout: Duration) -> Result<std::process::Output> {
+    let child = command.spawn()?;
+    let _group = ProbeGroup(
+        child
+            .id()
+            .ok_or_else(|| anyhow!("the agent process has already exited"))?,
+    );
+    tokio::time::timeout(timeout, child.wait_with_output())
+        .await
+        .map_err(|_| anyhow!("the agent took too long to answer"))?
+        .context("couldn't read the agent's answer")
 }
 
 /// `claude <args>`, failing with the CLI's own sentence.
@@ -1096,22 +1228,35 @@ pub async fn mcp_server_status() -> McpStatusReport {
             )
             .map(|(cwd, project)| codex_status(cwd, project, &sources)),
     );
-    let (claude_home, claude_projects, codex, grok, fx) = tokio::join!(
+    let pi_projects: Vec<PathBuf> = sources
+        .iter()
+        .filter(|s| s.file == Some(McpFile::PiProject))
+        .filter_map(|s| s.project.as_ref().map(PathBuf::from))
+        .collect();
+    let pi_reads = futures_util::future::join_all(
+        std::iter::once((home.as_path(), None))
+            .chain(pi_projects.iter().map(|p| (p.as_path(), Some(p.as_path()))))
+            .map(|(cwd, project)| pi_status(cwd, project)),
+    );
+    let (claude_home, claude_projects, codex, grok, fx, pi) = tokio::join!(
         claude_home,
         claude_projects,
         codex_reads,
         grok_status(&home),
         fx_status(&sources),
+        pi_reads,
     );
     for part in std::iter::once(claude_home)
         .chain(claude_projects)
         .chain(codex)
+        .chain(pi)
         .chain([grok, fx])
     {
         match part {
             Ok(part) => {
                 report.statuses.extend(part.statuses);
                 report.extras.extend(part.extras);
+                report.errors.extend(part.errors);
             }
             Err((harness, err)) => {
                 if !report.errors.iter().any(|e| e.harness == harness) {
@@ -1242,6 +1387,7 @@ fn claude_extra(name: String, target: &str) -> McpServerEntry {
         url: (transport != McpTransport::Stdio).then(|| target.to_string()),
         headers: Vec::new(),
         enabled: true,
+        inherited: false,
     }
 }
 
@@ -1356,6 +1502,7 @@ async fn codex_status(cwd: &Path, project: Option<&Path>, sources: &[McpSource])
                 url,
                 headers: Vec::new(),
                 enabled: server.enabled,
+                inherited: false,
             });
         }
     }
@@ -1399,6 +1546,76 @@ async fn grok_status(home: &Path) -> Part {
         .collect();
     Ok(McpStatusReport {
         statuses,
+        ..Default::default()
+    })
+}
+
+/// Pi exits 1 for failed connections, so its structured answer wins over the exit code.
+async fn pi_status(cwd: &Path, project: Option<&Path>) -> Part {
+    if !crate::binpath::agent_installed(Harness::Pi).await {
+        return Ok(McpStatusReport::default());
+    }
+    let (_, out, err) = run_cli(Harness::Pi, &["mcp", "list", "--json"], cwd, STATUS_TIMEOUT)
+        .await
+        .map_err(|e| (Harness::Pi, format!("{e:#}")))?;
+    parse_pi_status(&out, project).map_err(|e| {
+        (
+            Harness::Pi,
+            if out.trim().is_empty() {
+                err
+            } else {
+                format!("{e:#}")
+            },
+        )
+    })
+}
+
+fn parse_pi_status(out: &str, project: Option<&Path>) -> Result<McpStatusReport> {
+    let value: Value = serde_json::from_str(out).context("couldn't read pi's MCP list")?;
+    let servers = value
+        .get("servers")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("pi's MCP list has no servers array"))?;
+    let statuses = servers
+        .iter()
+        .filter_map(|server| {
+            let scoped = server.get("scope").and_then(Value::as_str) == Some("project")
+                || server.get("override").is_some_and(Value::is_string);
+            if project.is_some() && !scoped {
+                return None;
+            }
+            let status = match server.get("state").and_then(Value::as_str)? {
+                "connected" => McpStatus::Connected,
+                "needs-auth" => McpStatus::NeedsAuth,
+                "failed" => McpStatus::Failed,
+                "disabled" => McpStatus::Disabled,
+                _ => return None,
+            };
+            Some(McpStatusRow {
+                owner: Harness::Pi,
+                project: project.map(|p| p.to_string_lossy().into_owned()),
+                name: server.get("name")?.as_str()?.to_string(),
+                status,
+            })
+        })
+        .collect();
+    let errors: Vec<&str> = value
+        .get("errors")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    Ok(McpStatusReport {
+        statuses,
+        errors: if errors.is_empty() {
+            Vec::new()
+        } else {
+            vec![McpStatusError {
+                harness: Harness::Pi,
+                error: errors.join("; "),
+            }]
+        },
         ..Default::default()
     })
 }
@@ -1447,6 +1664,7 @@ mod tests {
             url: None,
             headers: Vec::new(),
             enabled: true,
+            inherited: false,
         }
     }
 
@@ -1680,5 +1898,115 @@ mod tests {
         let mut invalid = json!([]);
         assert!(fx_save(&mut invalid, None, &stdio("new")).is_err());
         assert_eq!(invalid, json!([]));
+    }
+
+    #[test]
+    fn review_inline_toml_root_can_be_edited_without_losing_siblings() {
+        let mut doc: toml_edit::DocumentMut = "# keep\nmcp_servers = { first = { command = \"node\" }, sibling = { url = \"https://sibling\" } }\n".parse().unwrap();
+        toml_save(McpFile::Codex, &mut doc, Some("first"), &stdio("changed")).unwrap();
+        assert!(doc.to_string().contains("# keep"));
+        let rows = toml_servers(McpFile::Codex, &doc);
+        assert!(rows.iter().any(|r| r.name == "sibling"));
+        assert!(rows.iter().any(|r| r.name == "changed"));
+    }
+
+    #[tokio::test]
+    async fn review_missing_cli_directory_never_falls_back_to_the_server_directory() {
+        let missing = std::env::temp_dir().join(format!("carbon-missing-{}", uuid::Uuid::now_v7()));
+        let mut command = cli_command(Path::new("/bin/pwd"), &[], &missing);
+        assert!(command.output().await.is_err());
+    }
+
+    #[test]
+    fn review_pi_configs_keep_metadata_and_parse_reported_statuses() {
+        let mut root = json!({"autoEnableCodemode": false, "mcpServers": {"old": {"url": "https://old", "exposure": "deferred"}}});
+        let mut server = stdio("new");
+        server.transport = McpTransport::Http;
+        server.url = Some("https://new".into());
+        json_save(&mut root, "mcpServers", Some("old"), &server).unwrap();
+        assert_eq!(root["mcpServers"]["new"]["exposure"], "deferred");
+        assert_eq!(root["autoEnableCodemode"], false);
+        assert_eq!(
+            json_servers(McpFile::PiUser, &root, None)[0].transport,
+            McpTransport::Http
+        );
+        assert!(!McpFile::PiProject.transports().contains(&McpTransport::Sse));
+        let report = parse_pi_status(r#"{"servers":[{"name":"global","scope":"global","state":"connected"},{"name":"local","scope":"project","state":"needs-auth"}],"errors":["invalid entry"]}"#, Some(Path::new("/project"))).unwrap();
+        assert_eq!(report.statuses.len(), 1);
+        assert_eq!(report.statuses[0].name, "local");
+        assert_eq!(report.statuses[0].status, McpStatus::NeedsAuth);
+        assert_eq!(report.statuses[0].project.as_deref(), Some("/project"));
+        assert_eq!(report.errors.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn review_timed_out_cli_cannot_leave_a_running_child() {
+        let root = std::env::temp_dir().join(format!("carbon-probe-{}", uuid::Uuid::now_v7()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let pid_file = root.join("child-pid");
+        let mut command = cli_command(
+            Path::new("/bin/sh"),
+            &[
+                "-c",
+                "sleep 30 & echo $! > \"$1\"; wait",
+                "sh",
+                pid_file.to_str().unwrap(),
+            ],
+            &root,
+        );
+        assert!(cli_output(&mut command, Duration::from_millis(300))
+            .await
+            .is_err());
+        let pid: i32 = tokio::fs::read_to_string(&pid_file)
+            .await
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let mut alive = true;
+        for _ in 0..40 {
+            let state = std::process::Command::new("ps")
+                .args(["-o", "stat=", "-p", &pid.to_string()])
+                .output()
+                .unwrap();
+            alive = state.status.success()
+                && !String::from_utf8_lossy(&state.stdout)
+                    .trim()
+                    .starts_with('Z');
+            if !alive {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        if alive {
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+            }
+        }
+        tokio::fs::remove_dir_all(root).await.unwrap();
+        assert!(!alive, "the probe left child {pid} running");
+    }
+
+    #[test]
+    fn review_pi_overrides_expose_transport_without_copying_global_secrets() {
+        let project = json!({"mcpServers":{"docs":{"enabled":false}}});
+        let global = json!({"mcpServers":{"docs":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer private"}}}});
+        let mut rows = json_servers(McpFile::PiProject, &project, Some(Path::new("/project")));
+        pi_override_transports(&mut rows, &global);
+        assert_eq!(rows[0].transport, McpTransport::Http);
+        assert!(rows[0].inherited);
+        assert!(rows[0].headers.is_empty());
+        assert!(rows[0].env.is_empty());
+        assert!(rows[0].url.is_none());
+        assert!(validate(
+            &McpTarget {
+                file: McpFile::PiProject,
+                project: Some("/project".into())
+            },
+            Some("docs"),
+            &rows[0]
+        )
+        .is_err());
+        assert_eq!(project, json!({"mcpServers":{"docs":{"enabled":false}}}));
     }
 }

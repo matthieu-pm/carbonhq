@@ -1125,7 +1125,7 @@ export type KeyValue = { name: string, value: string, };
 /**
  * Where a server is written, which is also what decides who reads it.
  */
-export type McpFile = "claude_user" | "claude_local" | "claude_project" | "codex" | "codex_project" | "grok_user" | "grok_project" | "fx";
+export type McpFile = "claude_user" | "claude_local" | "claude_project" | "codex" | "codex_project" | "grok_user" | "grok_project" | "fx" | "pi_user" | "pi_project";
 
 /**
  * Shared with the harness parsers rather than duplicated — the wire shape
@@ -1143,7 +1143,11 @@ export type McpServerEntry = { name: string, transport: McpTransport, command: s
  * CLI has its own `enable`/`disable`, and a reader who turned one off did
  * it there.
  */
-enabled: boolean, };
+enabled: boolean, 
+/**
+ * A Pi project override changes state while its definition stays in the user file.
+ */
+inherited: boolean, };
 
 /**
  * One file's servers, or the reason it could not be read.
@@ -2068,11 +2072,11 @@ export type SkillDocument = { name: string, description: string, body: string, }
 
 export type SkillEntry = { 
 /**
- * The folder's name, which is what the agents invoke it by.
+ * The declared name, falling back to the folder where metadata omits it.
  */
 name: string, description: string, 
 /**
- * The folder, which is what every write takes.
+ * The skill folder, or a directly configured Markdown file.
  */
 path: string, 
 /**

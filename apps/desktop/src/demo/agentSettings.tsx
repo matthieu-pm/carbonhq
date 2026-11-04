@@ -14,7 +14,7 @@ const project = "/Users/demo/Projects/carbon";
 const root = "/Users/demo/.agents/skills";
 const server: McpServerEntry = {
   name: "linear", transport: "http", url: "https://mcp.linear.app/mcp", command: null,
-  args: [], env: [], headers: [{ name: "Authorization", value: "Bearer fixture-token" }], enabled: true,
+  args: [], env: [], headers: [{ name: "Authorization", value: "Bearer fixture-token" }], enabled: true, inherited: false,
 };
 const sources: McpSource[] = [
   { id: "claude", file: "claude_user", owner: "claude_code", readers: ["claude_code", "grok"], project: null,
@@ -25,6 +25,10 @@ const sources: McpSource[] = [
     path: `${project}/.codex/config.toml`, label: null, servers: [{ ...server, name: "docs", headers: [] }], error: null, transports: ["stdio", "http"] },
   { id: "grok", file: "grok_user", owner: "grok", readers: ["grok"], project: null,
     path: "/Users/demo/.grok/config.toml", label: null, servers: [], error: "Invalid TOML at line 4", transports: ["stdio", "http"] },
+  { id: "pi", file: "pi_user", owner: "pi", readers: ["pi"], project: null,
+    path: "/Users/demo/.pi/agent/mcp.json", label: null, servers: [{ ...server, name: "pi-docs", headers: [] }], error: null, transports: ["stdio", "http"] },
+  { id: "pi-project", file: "pi_project", owner: "pi", readers: ["pi"], project,
+    path: `${project}/.pi/mcp.json`, label: null, servers: [{ ...server, name: "pi-docs", url: null, headers: [], enabled: false, inherited: true }], error: null, transports: ["stdio", "http"] },
   { id: "fx", file: "fx", owner: "fx", readers: ["fx"], project: null,
     path: "/Users/demo/.fx/mcp.json", label: null, servers: [{ ...server, name: "filesystem", transport: "stdio", command: "npx", args: ["-y", "server-filesystem"], url: null, headers: [], env: [{ name: "API_KEY", value: "fixture-key" }] }], error: null, transports: ["stdio", "http", "sse"] },
 ];
@@ -78,7 +82,7 @@ mockIPC(async (command, payload) => {
     case "save_skill": {
       const old = String(args.path);
       const doc = args.skill as SkillDocument;
-      const next = `${old.slice(0, old.lastIndexOf("/"))}/${doc.name}`;
+      const next = documents.get(old)?.name === doc.name ? old : `${old.slice(0, old.lastIndexOf("/"))}/${doc.name}`;
       if (next !== old && documents.has(next)) throw "A skill with that name already exists.";
       Object.assign(listing.roots.flatMap((r) => r.skills).find((s) => s.path === old)!, doc, { path: next });
       documents.delete(old);
@@ -110,7 +114,7 @@ function Demo() {
         <header className="flex items-center gap-2"><h1 className="text-lg font-medium">{tab === "mcp" ? "MCP" : "Skills"}</h1><div ref={setSlot} className="contents" /></header>
         <p className="text-ui text-muted-foreground">Fixture data. Changes stay in this demo.</p>
         <SettingsHeaderSlot.Provider value={slot}>
-          {tab === "mcp" ? <McpSettings projects={[{ path: project, name: "Carbon", space: null, lastSelected: "2026-11-04T15:00:00Z" }]} /> : <SkillsSettings />}
+          {tab === "mcp" ? <McpSettings projects={[{ path: project, name: "Carbon", space: null, lastSelected: "2026-11-04T15:00:00Z" }, { path: "carbon://vps/root/remote-only", name: "Remote only", space: null, lastSelected: "" }]} /> : <SkillsSettings />}
         </SettingsHeaderSlot.Provider>
       </main>
     </TooltipProvider>

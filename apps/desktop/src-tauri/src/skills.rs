@@ -67,10 +67,10 @@ static WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 #[ts(export, export_to = "events.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SkillEntry {
-    /// The folder's name, which is what the agents invoke it by.
+    /// The declared name, falling back to the folder where metadata omits it.
     pub name: String,
     pub description: String,
-    /// The folder, which is what every write takes.
+    /// The skill folder, or a directly configured Markdown file.
     pub path: String,
     /// Why this one cannot be edited, where it cannot.
     pub locked: Option<String>,
@@ -115,12 +115,15 @@ pub struct SkillDocument {
     pub body: String,
 }
 
+#[derive(Clone)]
 struct Known {
     path: PathBuf,
     project: Option<PathBuf>,
     readers: Vec<Harness>,
     creatable: bool,
 }
+
+static PI_ROOTS: std::sync::Mutex<Vec<Known>> = std::sync::Mutex::new(Vec::new());
 
 fn home() -> Result<PathBuf> {
     std::env::home_dir().ok_or_else(|| anyhow!("couldn't find your home directory"))
@@ -146,7 +149,7 @@ async fn known_roots() -> Result<Vec<Known>> {
             creatable: *creatable,
         })
         .collect();
-    for project in projects {
+    for project in &projects {
         for (rel, readers, creatable) in PROJECT_ROOTS {
             known.push(Known {
                 path: project.join(rel),
@@ -156,6 +159,14 @@ async fn known_roots() -> Result<Vec<Known>> {
             });
         }
     }
+    known.extend(
+        PI_ROOTS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|root| root.project.as_ref().is_none_or(|p| projects.contains(p)))
+            .cloned(),
+    );
     Ok(known)
 }
 
@@ -183,17 +194,34 @@ fn root_of(known: &Known, skills: Vec<SkillEntry>, error: Option<String>) -> Ski
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_skills() -> Result<SkillsListing, Fail> {
     let home = home()?;
-    let known = known_roots().await?;
+    let mut known = known_roots().await?;
+    let projects: Vec<PathBuf> = known
+        .iter()
+        .filter_map(|k| k.project.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let pi_installed = crate::binpath::agent_installed(Pi).await;
+    if pi_installed {
+        known.retain(|root| root.readers != [Pi] || root.creatable);
+        for root in &mut known {
+            root.readers.retain(|h| *h != Pi);
+        }
+    }
     let codex_extra = codex_plugin_skills(&home);
 
     let walked = tokio::task::spawn_blocking({
         let home = home.clone();
+        let projects = projects.clone();
         move || {
             let mut roots = Vec::new();
             let mut targets = Vec::new();
             for k in &known {
                 if k.creatable {
                     targets.push(root_of(k, Vec::new(), None));
+                }
+                if k.readers.is_empty() {
+                    continue;
                 }
                 let carbon_home =
                     k.project.is_none() && CARBON_HOMES.iter().any(|rel| home.join(rel) == k.path);
@@ -220,14 +248,51 @@ pub async fn list_skills() -> Result<SkillsListing, Fail> {
                     ));
                 }
             }
-            roots.extend(claude_plugin_skills(&home));
+            roots.extend(claude_plugin_skills(&home, &projects));
             (roots, targets)
         }
     })
     .await
     .map_err(|e| anyhow!("couldn't read the skill folders: {e}"))?;
 
-    let (mut roots, targets) = walked;
+    let (mut roots, mut targets) = walked;
+    let mut pi_roots = Vec::new();
+    if pi_installed {
+        for cwd in std::iter::once(&home).chain(projects.iter()) {
+            match crate::harness::pi::commands::skill_sources(&cwd.to_string_lossy()).await {
+                Ok(answer) => merge_pi_roots(
+                    &mut pi_roots,
+                    pi_roots_from_commands(&answer, (cwd != &home).then_some(cwd.as_path())),
+                ),
+                Err(err) => pi_roots.push(discovery_error("pi", cwd, vec![Pi], format!("{err:#}"))),
+            }
+        }
+        let writable: Vec<Known> = pi_roots
+            .iter()
+            .filter(|r| r.writable)
+            .map(|r| Known {
+                path: PathBuf::from(&r.path),
+                project: r.project.as_ref().map(PathBuf::from),
+                readers: vec![Pi],
+                creatable: false,
+            })
+            .collect();
+        *PI_ROOTS.lock().unwrap_or_else(|e| e.into_inner()) = writable;
+        for target in &mut targets {
+            if GLOBAL_ROOTS
+                .iter()
+                .chain(PROJECT_ROOTS)
+                .any(|(rel, readers, _)| {
+                    readers.contains(&Pi) && Path::new(&target.path).ends_with(rel)
+                })
+            {
+                target.readers.push(Pi);
+            }
+        }
+        for root in pi_roots {
+            merge_pi_roots(&mut roots, vec![root]);
+        }
+    }
     let walked_paths: Vec<String> = roots.iter().map(|r| r.path.clone()).collect();
     for root in codex_extra.await {
         if !walked_paths.contains(&root.path) {
@@ -235,6 +300,120 @@ pub async fn list_skills() -> Result<SkillsListing, Fail> {
         }
     }
     Ok(SkillsListing { roots, targets })
+}
+
+fn discovery_error(label: &str, path: &Path, readers: Vec<Harness>, error: String) -> SkillRoot {
+    SkillRoot {
+        id: format!("{label}:{}", path.display()),
+        path: path.to_string_lossy().into_owned(),
+        project: None,
+        readers,
+        label: Some(label.to_string()),
+        skills: Vec::new(),
+        error: Some(error),
+        writable: false,
+    }
+}
+
+/// Agent-reported paths cover nested, configured and package skills without guessing their layout.
+fn pi_roots_from_commands(answer: &Value, project: Option<&Path>) -> Vec<SkillRoot> {
+    let mut roots: Vec<SkillRoot> = Vec::new();
+    for row in answer
+        .get("commands")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if row.get("source").and_then(Value::as_str) != Some("skill") {
+            continue;
+        }
+        let Some(info) = row.get("sourceInfo") else {
+            continue;
+        };
+        let Some(file) = info.get("path").and_then(Value::as_str).map(Path::new) else {
+            continue;
+        };
+        let Some(folder) = file.parent() else {
+            continue;
+        };
+        let path = if file.file_name().is_some_and(|n| n == "SKILL.md") {
+            folder
+        } else {
+            file
+        };
+        let root = path.parent().unwrap_or(folder);
+        let scoped = info.get("scope").and_then(Value::as_str) == Some("project");
+        if scoped && project.is_none() {
+            continue;
+        }
+        let package = info.get("origin").and_then(Value::as_str) == Some("package");
+        let project = scoped
+            .then(|| project.map(|p| p.to_string_lossy().into_owned()))
+            .flatten();
+        let id = format!("pi:{}:{}", root.display(), project.as_deref().unwrap_or(""));
+        let entry = SkillEntry {
+            name: row
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .strip_prefix("skill:")
+                .unwrap_or("")
+                .to_string(),
+            description: row
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            path: path.to_string_lossy().into_owned(),
+            locked: package
+                .then(|| "From a pi package".to_string())
+                .or_else(|| {
+                    home()
+                        .ok()
+                        .filter(|home| managed_skill(home, path))
+                        .map(|_| "Managed by Carbon or an agent".to_string())
+                }),
+            linked: std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()),
+        };
+        if let Some(group) = roots.iter_mut().find(|r| r.id == id) {
+            group.skills.push(entry);
+        } else {
+            roots.push(SkillRoot {
+                id,
+                path: root.to_string_lossy().into_owned(),
+                project,
+                readers: vec![Pi],
+                label: package.then(|| "pi package".to_string()),
+                skills: vec![entry],
+                error: None,
+                writable: !package,
+            });
+        }
+    }
+    roots
+}
+
+fn merge_pi_roots(roots: &mut Vec<SkillRoot>, incoming: Vec<SkillRoot>) {
+    for mut root in incoming {
+        if let Some(existing) = roots.iter_mut().find(|r| {
+            r.path == root.path
+                && r.project == root.project
+                && r.writable == root.writable
+                && r.skills.len() == root.skills.len()
+                && r.skills
+                    .iter()
+                    .all(|s| root.skills.iter().any(|n| n.path == s.path))
+        }) {
+            for reader in root.readers {
+                if !existing.readers.contains(&reader) {
+                    existing.readers.push(reader);
+                }
+            }
+        } else {
+            root.skills.sort_by(|a, b| a.name.cmp(&b.name));
+            roots.push(root);
+        }
+    }
 }
 
 fn locked_root(
@@ -292,12 +471,23 @@ fn walk(root: &Path, carbon_home: bool) -> Result<Vec<SkillEntry>> {
                 }
             };
             let (frontmatter, _) = split_frontmatter(&head);
-            let description = frontmatter
-                .and_then(|f| field(f, "description"))
-                .unwrap_or_default();
+            let parsed = metadata(frontmatter);
+            let error = parsed
+                .as_ref()
+                .err()
+                .map(|err| format!("Couldn't read SKILL.md: {err:#}"));
+            let description = error.clone().unwrap_or_else(|| {
+                frontmatter
+                    .and_then(|f| field(f, "description"))
+                    .unwrap_or_default()
+            });
+            let name = frontmatter.and_then(|f| field(f, "name")).unwrap_or(name);
             let linked = entry.file_type().map(|t| t.is_symlink()).unwrap_or(false);
-            let locked = (carbon_home && name == "carbon")
-                .then(|| "Managed by Carbon. Every launch rewrites it.".to_string())
+            let locked = error
+                .or_else(|| {
+                    (carbon_home && path.file_name().is_some_and(|n| n == "carbon"))
+                        .then(|| "Managed by Carbon. Every launch rewrites it.".to_string())
+                })
                 .or_else(|| {
                     std::env::home_dir()
                         .filter(|home| managed_skill(home, &path))
@@ -325,40 +515,212 @@ fn read_head(path: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// Claude Code's plugins, from the file it keeps their install paths in.
-fn claude_plugin_skills(home: &Path) -> Vec<SkillRoot> {
-    let Ok(text) = std::fs::read_to_string(home.join(".claude/plugins/installed_plugins.json"))
-    else {
-        return Vec::new();
-    };
-    let Ok(installed) = serde_json::from_str::<Value>(&text) else {
-        return Vec::new();
-    };
-    let Some(plugins) = installed.get("plugins").and_then(Value::as_object) else {
-        return Vec::new();
-    };
-    let mut roots = Vec::new();
-    for (id, installs) in plugins {
-        let name = id.split('@').next().unwrap_or(id);
-        for install in installs.as_array().into_iter().flatten() {
-            let Some(path) = install.get("installPath").and_then(Value::as_str) else {
-                continue;
-            };
-            let dir = Path::new(path).join("skills");
-            if let Ok(skills) = walk(&dir, false) {
-                if !skills.is_empty() {
-                    let why = format!("From the {name} plugin");
-                    roots.push(locked_root(
-                        &dir,
-                        &format!("Plugin: {name}"),
-                        vec![Claude],
-                        skills,
-                        &why,
-                    ));
+fn plugin_skills(path: &Path) -> Result<Vec<SkillEntry>> {
+    if !path.join("SKILL.md").is_file() {
+        return walk(path, false);
+    }
+    let text = std::fs::read_to_string(path.join("SKILL.md"))?;
+    let (frontmatter, _) = split_frontmatter(&text);
+    metadata(frontmatter)?;
+    Ok(vec![SkillEntry {
+        name: frontmatter
+            .and_then(|f| field(f, "name"))
+            .unwrap_or_else(|| {
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            }),
+        description: frontmatter
+            .and_then(|f| field(f, "description"))
+            .unwrap_or_default(),
+        path: path.to_string_lossy().into_owned(),
+        locked: None,
+        linked: std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()),
+    }])
+}
+
+/// Plugin enablement follows the same user, project, local and managed precedence as Claude.
+fn plugin_settings(home: &Path, project: Option<&Path>) -> Result<serde_json::Map<String, Value>> {
+    let mut paths = vec![home.join(".claude/settings.json")];
+    if let Some(project) = project {
+        paths.extend([
+            project.join(".claude/settings.json"),
+            project.join(".claude/settings.local.json"),
+        ]);
+    }
+    paths.push(if cfg!(target_os = "macos") {
+        PathBuf::from("/Library/Application Support/ClaudeCode/managed-settings.json")
+    } else {
+        PathBuf::from("/etc/claude-code/managed-settings.json")
+    });
+    let mut enabled = serde_json::Map::new();
+    for path in paths {
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => {
+                return Err(err).with_context(|| format!("couldn't read {}", path.display()))
+            }
+        };
+        let settings: Value = serde_json::from_str(&text)
+            .with_context(|| format!("couldn't parse {}", path.display()))?;
+        if let Some(value) = settings.get("enabledPlugins") {
+            enabled.extend(
+                value
+                    .as_object()
+                    .ok_or_else(|| anyhow!("enabledPlugins in {} isn't an object", path.display()))?
+                    .clone(),
+            );
+        }
+    }
+    Ok(enabled)
+}
+
+fn claude_plugin_skills(home: &Path, projects: &[PathBuf]) -> Vec<SkillRoot> {
+    let registry = home.join(".claude/plugins/installed_plugins.json");
+    let read = || -> Result<Vec<SkillRoot>> {
+        let text = match std::fs::read_to_string(&registry) {
+            Ok(text) => text,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(err) => return Err(err).context("couldn't read Claude Code's plugin registry"),
+        };
+        let installed: Value =
+            serde_json::from_str(&text).context("couldn't parse Claude Code's plugin registry")?;
+        let plugins = installed
+            .get("plugins")
+            .and_then(Value::as_object)
+            .ok_or_else(|| anyhow!("Claude Code's plugin registry has no plugins object"))?;
+        let global = plugin_settings(home, None)?;
+        let mut roots = Vec::new();
+        for (id, installs) in plugins {
+            let name = id.split('@').next().unwrap_or(id);
+            for install in installs.as_array().into_iter().flatten() {
+                let Some(path) = install
+                    .get("installPath")
+                    .and_then(Value::as_str)
+                    .map(Path::new)
+                else {
+                    continue;
+                };
+                let installed_project = install
+                    .get("projectPath")
+                    .and_then(Value::as_str)
+                    .map(Path::new);
+                let scopes: Vec<Option<&Path>> = match installed_project {
+                    Some(project) if projects.iter().any(|p| p == project) => vec![Some(project)],
+                    Some(_) => continue,
+                    None => std::iter::once(None)
+                        .chain(projects.iter().map(|p| Some(p.as_path())))
+                        .collect(),
+                };
+                let mut default_enabled = true;
+                let mut directories = vec![path.join("skills")];
+                let manifest = path.join(".claude-plugin/plugin.json");
+                match std::fs::read_to_string(&manifest) {
+                    Ok(text) => {
+                        let value: Value = serde_json::from_str(&text)
+                            .with_context(|| format!("couldn't parse {}", manifest.display()))?;
+                        default_enabled = value
+                            .get("defaultEnabled")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(true);
+                        if let Some(skills) = value.get("skills") {
+                            for extra in skills.as_str().into_iter().chain(
+                                skills
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .filter_map(Value::as_str),
+                            ) {
+                                let dir = path.join(extra);
+                                if !directories.contains(&dir) {
+                                    directories.push(dir);
+                                }
+                            }
+                        }
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => {
+                        return Err(err)
+                            .with_context(|| format!("couldn't read {}", manifest.display()))
+                    }
+                }
+                for project in scopes {
+                    let enabled = match plugin_settings(home, project) {
+                        Ok(enabled) => enabled,
+                        Err(err) => {
+                            roots.push(discovery_error(
+                                "Claude Code plugins",
+                                project.unwrap_or(home),
+                                vec![Claude],
+                                format!("{err:#}"),
+                            ));
+                            continue;
+                        }
+                    };
+                    if !enabled
+                        .get(id)
+                        .and_then(Value::as_bool)
+                        .unwrap_or(default_enabled)
+                    {
+                        continue;
+                    }
+                    if installed_project.is_none()
+                        && project.is_some()
+                        && global
+                            .get(id)
+                            .and_then(Value::as_bool)
+                            .unwrap_or(default_enabled)
+                    {
+                        continue;
+                    }
+                    for dir in &directories {
+                        match plugin_skills(dir) {
+                            Ok(skills) if !skills.is_empty() => {
+                                let mut root = locked_root(
+                                    &dir,
+                                    &format!("Plugin: {name}"),
+                                    vec![Claude],
+                                    skills,
+                                    &format!("From the {name} plugin"),
+                                );
+                                root.project = project.map(|p| p.to_string_lossy().into_owned());
+                                root.id = format!(
+                                    "{}:{}",
+                                    root.id,
+                                    root.project.as_deref().unwrap_or("")
+                                );
+                                roots.push(root);
+                            }
+                            Ok(_) => {}
+                            Err(err)
+                                if err
+                                    .downcast_ref::<std::io::Error>()
+                                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {}
+                            Err(err) => roots.push(discovery_error(
+                                &format!("Plugin: {name}"),
+                                &dir,
+                                vec![Claude],
+                                format!("{err:#}"),
+                            )),
+                        }
+                    }
                 }
             }
         }
-    }
+        Ok(roots)
+    };
+    let mut roots = read().unwrap_or_else(|err| {
+        vec![discovery_error(
+            "Claude Code plugins",
+            &registry,
+            vec![Claude],
+            format!("{err:#}"),
+        )]
+    });
+    let mut ids = std::collections::HashSet::new();
+    roots.retain(|root| ids.insert(root.id.clone()));
     roots
 }
 
@@ -477,105 +839,66 @@ fn split_frontmatter(text: &str) -> (Option<&str>, &str) {
     (None, text)
 }
 
-/// One top-level scalar out of YAML frontmatter, the handful of shapes skills
-/// are written in: plain, quoted, folded (`>`) and literal (`|`), and a plain
-/// value continued on indented lines. Not a YAML parser; a shape it misreads
-/// costs a description line, and the file is never rewritten from it alone.
-fn field(frontmatter: &str, key: &str) -> Option<String> {
-    let lines: Vec<&str> = frontmatter.lines().collect();
-    let start = lines.iter().position(|l| {
-        l.strip_prefix(key)
-            .is_some_and(|rest| rest.starts_with(':'))
-    })?;
-    let first = lines[start][key.len() + 1..].trim();
-    let continued: Vec<&str> = lines[start + 1..]
-        .iter()
-        .take_while(|l| l.is_empty() || l.starts_with(' ') || l.starts_with('\t'))
-        .map(|l| l.trim())
-        .collect();
-    let value = match first.chars().next() {
-        Some('|') => continued.join("\n").trim_end().to_string(),
-        Some('>') => continued.join(" ").trim().to_string(),
-        Some('"') => {
-            let joined = std::iter::once(first)
-                .chain(continued.iter().copied())
-                .collect::<Vec<_>>()
-                .join(" ");
-            serde_json::from_str::<String>(joined.trim())
-                .unwrap_or_else(|_| joined.trim_matches('"').to_string())
+/// Parse metadata before editing so unsupported or malformed YAML never becomes guessed text.
+fn metadata(frontmatter: Option<&str>) -> Result<serde_yaml_ng::Mapping> {
+    let fields: serde_yaml_ng::Mapping = match frontmatter {
+        Some(text) => {
+            serde_yaml_ng::from_str(text).context("couldn't parse the skill's YAML frontmatter")?
         }
-        Some('\'') => {
-            let joined = std::iter::once(first)
-                .chain(continued.iter().copied())
-                .collect::<Vec<_>>()
-                .join(" ");
-            let inner = joined.trim();
-            inner
-                .strip_prefix('\'')
-                .and_then(|s| s.strip_suffix('\''))
-                .unwrap_or(inner)
-                .replace("''", "'")
-        }
-        _ => std::iter::once(first)
-            .chain(continued.iter().copied())
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(" "),
+        None => Default::default(),
     };
-    Some(value)
+    for key in ["name", "description"] {
+        if fields.get(key).is_some_and(|value| !value.is_string()) {
+            bail!("the skill's {key} must be text");
+        }
+    }
+    Ok(fields)
 }
 
-/// A YAML scalar for `value`, quoted only where plain would misparse. JSON's
-/// string syntax is valid YAML double-quoted.
+fn field(frontmatter: &str, key: &str) -> Option<String> {
+    metadata(Some(frontmatter))
+        .ok()?
+        .get(key)?
+        .as_str()
+        .map(|value| value.trim_end_matches('\n').to_string())
+}
+
+/// JSON-quoted strings are valid YAML without ambiguous numeric or tag spellings.
 fn yaml_scalar(value: &str) -> String {
-    let plain = !value.is_empty()
-        && !matches!(
-            value.to_ascii_lowercase().as_str(),
-            "true" | "false" | "null" | "~" | "yes" | "no" | "on" | "off"
-        )
-        && value.parse::<f64>().is_err()
-        && value.trim() == value
-        && !value.contains(": ")
-        && !value.contains(" #")
-        && !value.contains('\n')
-        && !value.ends_with(':')
-        && !value.starts_with(|c: char| "-?:,[]{}#&*!|>'\"%@`".contains(c));
-    if plain {
-        value.to_string()
-    } else {
-        serde_json::to_string(value).unwrap_or_default()
-    }
+    serde_json::to_string(value).expect("a string always serializes")
 }
 
 /// The frontmatter with `name` and `description` set and every other key —
-/// `allowed-tools`, `metadata`, whatever an agent added — kept as written.
-fn with_fields(frontmatter: Option<&str>, name: &str, description: &str) -> String {
-    let mut kept = Vec::new();
-    let mut skipping = false;
-    for line in frontmatter.unwrap_or("").lines() {
-        let top_level = !line.starts_with(' ') && !line.starts_with('\t') && !line.is_empty();
-        if top_level {
-            skipping = line.starts_with("name:") || line.starts_with("description:");
-        }
-        if !skipping {
-            kept.push(line);
-        }
+/// `allowed-tools`, `metadata`, whatever an agent added — preserved as values.
+fn with_fields(frontmatter: Option<&str>, name: &str, description: &str) -> Result<String> {
+    let mut fields = metadata(frontmatter)?;
+    if frontmatter.is_some()
+        && fields.get("name").and_then(|v| v.as_str()) == Some(name)
+        && fields
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            == Some(description)
+    {
+        return Ok(format!("---\n{}---\n", frontmatter.unwrap()));
     }
-    let mut out = format!(
-        "---\nname: {}\ndescription: {}\n",
+    fields.shift_remove("name");
+    fields.shift_remove("description");
+    let kept = if fields.is_empty() {
+        String::new()
+    } else {
+        serde_yaml_ng::to_string(&fields)?
+    };
+    Ok(format!(
+        "---\nname: {}\ndescription: {}\n{}---\n",
         yaml_scalar(name),
-        yaml_scalar(description)
-    );
-    for line in kept {
-        out.push_str(line);
-        out.push('\n');
-    }
-    out.push_str("---\n");
-    out
+        yaml_scalar(description),
+        kept
+    ))
 }
 
-fn compose(frontmatter: Option<&str>, doc: &SkillDocument) -> String {
-    let mut out = with_fields(frontmatter, doc.name.trim(), doc.description.trim());
+fn compose(frontmatter: Option<&str>, doc: &SkillDocument) -> Result<String> {
+    let mut out = with_fields(frontmatter, doc.name.trim(), doc.description.trim())?;
     let body = doc.body.trim_start_matches('\n');
     if !body.is_empty() {
         out.push('\n');
@@ -584,7 +907,7 @@ fn compose(frontmatter: Option<&str>, doc: &SkillDocument) -> String {
             out.push('\n');
         }
     }
-    out
+    Ok(out)
 }
 
 /// Claude Code's rule for a skill's name, the strictest here: lowercase
@@ -617,6 +940,14 @@ async fn writable_root(root: &str) -> Result<PathBuf> {
     Ok(root)
 }
 
+fn skill_file(path: &Path) -> PathBuf {
+    if path.is_file() {
+        path.to_path_buf()
+    } else {
+        path.join("SKILL.md")
+    }
+}
+
 /// The skill folder `path` names, refusing one Carbon or a plugin owns.
 async fn editable_skill(path: &str) -> Result<PathBuf> {
     let path = PathBuf::from(path);
@@ -628,7 +959,7 @@ async fn editable_skill(path: &str) -> Result<PathBuf> {
     if has_parent_refs(&path) || managed_skill(&home, &path) {
         bail!("this skill is managed by Carbon or an agent and can't be edited here");
     }
-    if !path.join("SKILL.md").is_file() {
+    if !skill_file(&path).is_file() {
         bail!("{} has no SKILL.md", path.display());
     }
     Ok(path)
@@ -656,15 +987,19 @@ pub async fn read_skill(path: String) -> Result<SkillDocument, Fail> {
     if has_parent_refs(&dir) {
         return Err(anyhow!("{path} isn't a skill").into());
     }
-    let text = tokio::fs::read_to_string(dir.join("SKILL.md"))
+    let text = tokio::fs::read_to_string(skill_file(&dir))
         .await
         .with_context(|| format!("couldn't read {}/SKILL.md", dir.display()))?;
     let (frontmatter, body) = split_frontmatter(&text);
-    let folder = dir
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
+    metadata(frontmatter)?;
+    let folder = (if dir.is_file() {
+        dir.file_stem()
+    } else {
+        dir.file_name()
+    })
+    .unwrap_or_default()
+    .to_string_lossy()
+    .into_owned();
     Ok(SkillDocument {
         name: frontmatter.and_then(|f| field(f, "name")).unwrap_or(folder),
         description: frontmatter
@@ -682,6 +1017,7 @@ pub async fn create_skill(root: String, skill: SkillDocument) -> Result<String, 
     let root = writable_root(&root).await?;
     let name = skill.name.trim().to_string();
     check_name(&name)?;
+    let contents = compose(None, &skill)?;
     let dir = root.join(&name);
     if managed_skill(&home()?, &dir) {
         return Err(anyhow!("this name is managed by Carbon").into());
@@ -695,7 +1031,7 @@ pub async fn create_skill(root: String, skill: SkillDocument) -> Result<String, 
     tokio::fs::create_dir(&dir)
         .await
         .with_context(|| format!("couldn't create {}", dir.display()))?;
-    if let Err(err) = tokio::fs::write(dir.join("SKILL.md"), compose(None, &skill)).await {
+    if let Err(err) = tokio::fs::write(dir.join("SKILL.md"), contents).await {
         let _ = tokio::fs::remove_dir(&dir).await;
         return Err(anyhow::Error::from(err)
             .context("couldn't write SKILL.md")
@@ -704,8 +1040,7 @@ pub async fn create_skill(root: String, skill: SkillDocument) -> Result<String, 
     Ok(dir.to_string_lossy().into_owned())
 }
 
-/// Rewrites a skill's frontmatter and body, renaming its folder when the name
-/// moved — the folder's name is what the agents invoke it by.
+/// Rename the folder only when the declared name changes; agents may accept different names.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn save_skill(path: String, skill: SkillDocument) -> Result<String, Fail> {
     let _guard = WRITE_LOCK.lock().await;
@@ -716,8 +1051,16 @@ pub async fn save_skill(path: String, skill: SkillDocument) -> Result<String, Fa
 
 /// Check the destination before writing, and restore the folder on a failed edit.
 async fn save_at(dir: &Path, skill: &SkillDocument) -> Result<String> {
+    let text = tokio::fs::read_to_string(skill_file(&dir)).await?;
+    let (frontmatter, _) = split_frontmatter(&text);
+    let fields = metadata(frontmatter)?;
+    let folder_name = dir.file_name().unwrap_or_default().to_string_lossy();
+    let original_name = fields
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&folder_name);
     let name = skill.name.trim();
-    let renamed = dir.file_name().is_some_and(|n| n.to_string_lossy() != name);
+    let renamed = !dir.is_file() && name != original_name && name != folder_name;
     let to = if renamed {
         dir.with_file_name(name)
     } else {
@@ -732,16 +1075,14 @@ async fn save_at(dir: &Path, skill: &SkillDocument) -> Result<String> {
             bail!("there's already a skill called {name} there");
         }
     }
-    let text = tokio::fs::read_to_string(dir.join("SKILL.md")).await?;
-    let (frontmatter, _) = split_frontmatter(&text);
-    let contents = compose(frontmatter, skill);
+    let contents = compose(frontmatter, skill)?;
     if renamed {
         tokio::fs::rename(dir, &to)
             .await
             .context("couldn't rename the skill")?;
     }
     let written: Result<()> = async {
-        let file = tokio::fs::canonicalize(to.join("SKILL.md")).await?;
+        let file = tokio::fs::canonicalize(skill_file(&to)).await?;
         tokio::task::spawn_blocking(move || {
             crate::store::write_private_atomic(&file, contents.as_bytes())
         })
@@ -795,6 +1136,12 @@ pub async fn remove_skill(path: String) -> Result<(), Fail> {
     }
     if cfg!(target_os = "macos") {
         return Err(anyhow!("couldn't find the Trash folder; the skill was kept").into());
+    }
+    if dir.is_file() {
+        tokio::fs::remove_file(&dir)
+            .await
+            .context("couldn't remove the skill file")?;
+        return Ok(());
     }
     tokio::fs::remove_dir_all(&dir)
         .await
@@ -915,7 +1262,7 @@ mod tests {
             description: "Use when: x".into(),
             body: "Hi".into(),
         };
-        let out = compose(Some(old), &doc);
+        let out = compose(Some(old), &doc).unwrap();
         let (fm, body) = split_frontmatter(&out);
         let fm = fm.unwrap();
         assert_eq!(field(fm, "name").unwrap(), "b");
@@ -1044,7 +1391,7 @@ mod tests {
     fn scalar_values_stay_strings_in_yaml() {
         assert_eq!(yaml_scalar("123"), "\"123\"");
         assert_eq!(yaml_scalar("true"), "\"true\"");
-        assert_eq!(yaml_scalar("ordinary words"), "ordinary words");
+        assert_eq!(yaml_scalar("ordinary words"), "\"ordinary words\"");
     }
 
     #[cfg(unix)]
@@ -1060,5 +1407,198 @@ mod tests {
         assert!(copy_dir(&from, &to).is_err());
         assert!(!to.exists());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn review_quoted_yaml_comments_do_not_become_description_text() {
+        assert_eq!(
+            field(
+                "description: \"Review changes\" # explanation\n",
+                "description"
+            )
+            .unwrap(),
+            "Review changes"
+        );
+        assert_eq!(
+            field(
+                "description: 'Review changes' # explanation\n",
+                "description"
+            )
+            .unwrap(),
+            "Review changes"
+        );
+    }
+
+    #[tokio::test]
+    async fn review_body_only_edit_keeps_a_different_folder_name() {
+        let root = test_dir();
+        let folder = root.join("folder-name");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(
+            folder.join("SKILL.md"),
+            "---\nname: declared-name\ndescription: Review changes\n---\nbody",
+        )
+        .unwrap();
+        let doc = SkillDocument {
+            name: "declared-name".into(),
+            description: "Review changes".into(),
+            body: "updated".into(),
+        };
+        let saved = save_at(&folder, &doc).await.unwrap();
+        let kept = folder.exists();
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(kept, "body-only edit moved the folder to {saved}");
+    }
+
+    #[test]
+    fn review_pi_discovery_keeps_nested_custom_and_package_provenance() {
+        let answer = json!({"commands": [
+            {"source":"extension", "name":"ignore"},
+            {"source":"skill", "name":"skill:nested", "description":"Nested", "sourceInfo":{"path":"/project/.pi/skills/group/nested/SKILL.md","scope":"project","origin":"top-level"}},
+            {"source":"skill", "name":"skill:custom", "description":"Custom", "sourceInfo":{"path":"/custom/path/custom.md","scope":"user","origin":"top-level"}},
+            {"source":"skill", "name":"skill:package", "description":"Package", "sourceInfo":{"path":"/packages/example/skills/tool/SKILL.md","scope":"user","origin":"package"}}
+        ]});
+        let roots = pi_roots_from_commands(&answer, Some(Path::new("/project")));
+        assert_eq!(roots.len(), 3);
+        assert_eq!(roots[0].project.as_deref(), Some("/project"));
+        assert_eq!(roots[0].skills[0].path, "/project/.pi/skills/group/nested");
+        assert_eq!(roots[1].skills[0].path, "/custom/path/custom.md");
+        assert!(!roots[2].writable);
+        assert!(roots[2].skills[0].locked.is_some());
+        let mut merged = roots.clone();
+        merge_pi_roots(&mut merged, roots);
+        assert_eq!(merged.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn review_body_only_edits_preserve_yaml_comments_and_direct_files() {
+        let root = test_dir();
+        let file = root.join("custom.md");
+        let frontmatter = "name: declared-name\ndescription: \"Review changes\" # explanation\nmetadata:\n  flag: true\n";
+        std::fs::write(&file, format!("---\n{frontmatter}---\nold")).unwrap();
+        let doc = SkillDocument {
+            name: "declared-name".into(),
+            description: "Review changes".into(),
+            body: "updated".into(),
+        };
+        save_at(&file, &doc).await.unwrap();
+        let saved = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(split_frontmatter(&saved).0, Some(frontmatter));
+        assert!(saved.ends_with("updated\n"));
+        std::fs::write(&file, "---\ndescription: [broken\n---\nkeep").unwrap();
+        assert!(save_at(&file, &doc).await.is_err());
+        assert!(std::fs::read_to_string(&file).unwrap().ends_with("keep"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn review_claude_plugins_honor_enabled_scope_extra_paths_and_errors() {
+        let home = test_dir();
+        let project = home.join("project");
+        let plugin = home.join("plugin");
+        std::fs::create_dir_all(home.join(".claude/plugins")).unwrap();
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::create_dir_all(plugin.join(".claude-plugin")).unwrap();
+        std::fs::create_dir_all(plugin.join("extra-skills/example")).unwrap();
+        std::fs::write(
+            plugin.join("extra-skills/example/SKILL.md"),
+            "---\nname: example\ndescription: Extra\n---\nbody",
+        )
+        .unwrap();
+        std::fs::write(
+            plugin.join(".claude-plugin/plugin.json"),
+            r#"{"skills":["./extra-skills"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            home.join(".claude/plugins/installed_plugins.json"),
+            json!({"plugins":{"example@market":[{"installPath":plugin,"scope":"user"}]}})
+                .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            home.join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"example@market":false}}"#,
+        )
+        .unwrap();
+        assert!(claude_plugin_skills(&home, &[project.clone()]).is_empty());
+        std::fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"example@market":true}}"#,
+        )
+        .unwrap();
+        let roots = claude_plugin_skills(&home, &[project.clone()]);
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].project.as_deref(), project.to_str());
+        assert_eq!(roots[0].skills[0].name, "example");
+        assert!(roots[0].skills[0].locked.is_some());
+        std::fs::write(
+            home.join(".claude/plugins/installed_plugins.json"),
+            "invalid",
+        )
+        .unwrap();
+        assert!(claude_plugin_skills(&home, &[project])[0].error.is_some());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn review_numeric_looking_metadata_round_trips_as_text() {
+        for value in ["0xff", "0o777", ".inf", "1_000", "true", "ordinary words"] {
+            let doc = SkillDocument {
+                name: "0xff".into(),
+                description: value.into(),
+                body: String::new(),
+            };
+            let text = compose(None, &doc).unwrap();
+            let fields = metadata(split_frontmatter(&text).0).unwrap();
+            assert_eq!(fields.get("name").and_then(|v| v.as_str()), Some("0xff"));
+            assert_eq!(
+                fields.get("description").and_then(|v| v.as_str()),
+                Some(value)
+            );
+        }
+    }
+
+    #[test]
+    fn review_pi_managed_skills_stay_read_only_in_separate_groups() {
+        let path = home().unwrap().join(".agents/skills/carbon/SKILL.md");
+        let answer = json!({"commands":[{"source":"skill","name":"skill:carbon","sourceInfo":{"path":path,"scope":"user","origin":"top-level"}}]});
+        let roots = pi_roots_from_commands(&answer, None);
+        assert!(roots[0].skills[0].locked.is_some());
+    }
+
+    #[test]
+    fn review_direct_plugin_skills_and_default_enablement_are_respected() {
+        let home = test_dir();
+        let plugin = home.join("plugin");
+        std::fs::create_dir_all(home.join(".claude/plugins")).unwrap();
+        std::fs::create_dir_all(plugin.join(".claude-plugin")).unwrap();
+        std::fs::write(
+            plugin.join("SKILL.md"),
+            "---\nname: example\ndescription: Direct skill\n---\nbody",
+        )
+        .unwrap();
+        std::fs::write(
+            plugin.join(".claude-plugin/plugin.json"),
+            r#"{"skills":".","defaultEnabled":false}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            home.join(".claude/plugins/installed_plugins.json"),
+            json!({"plugins":{"example@market":[{"installPath":plugin,"scope":"user"}]}})
+                .to_string(),
+        )
+        .unwrap();
+        assert!(claude_plugin_skills(&home, &[]).is_empty());
+        std::fs::write(
+            home.join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"example@market":true}}"#,
+        )
+        .unwrap();
+        let roots = claude_plugin_skills(&home, &[]);
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].skills[0].name, "example");
+        assert!(!roots[0].writable);
+        std::fs::remove_dir_all(home).unwrap();
     }
 }

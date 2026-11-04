@@ -39,9 +39,9 @@ import {
 import { inputClassName } from "@/components/ui/input";
 import Spinner from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useAgentAvailability } from "@/hooks/useAgentAvailability";
 import { useMcpServers } from "@/hooks/useMcpServers";
 import { cn } from "@/lib/utils";
+import { MCP_FILE_OWNERS as FILE_OWNER, MCP_PROJECT_FILES as PER_PROJECT, mcpTargets, mcpEditTarget } from "@/lib/mcpTargets";
 import type {
   Harness,
   KeyValue,
@@ -66,24 +66,13 @@ const FILE_SCOPE: Record<McpFile, string> = {
   grok_user: "Global",
   grok_project: "Project",
   fx: "Global",
+  pi_user: "Global",
+  pi_project: "Project",
 };
-
-const FILE_OWNER: Record<McpFile, Harness> = {
-  claude_user: "claude_code",
-  claude_local: "claude_code",
-  claude_project: "claude_code",
-  codex: "codex",
-  codex_project: "codex",
-  grok_user: "grok",
-  grok_project: "grok",
-  fx: "fx",
-};
-
-const PER_PROJECT: McpFile[] = ["claude_local", "claude_project", "codex_project", "grok_project"];
 
 /// Mirrors `McpFile::transports`: Codex and grok have no SSE spelling.
 function transportsOf(file: McpFile): McpTransport[] {
-  return file === "codex" || file === "codex_project" || file === "grok_user" || file === "grok_project"
+  return file === "codex" || file === "codex_project" || file === "grok_user" || file === "grok_project" || file === "pi_user" || file === "pi_project"
     ? ["stdio", "http"]
     : ["stdio", "http", "sse"];
 }
@@ -119,7 +108,7 @@ function describe(source: McpSource): { title: string; detail: string } {
   if (source.project) {
     return {
       title,
-      detail: `${baseName(source.project)} · ${scope.toLowerCase()} · ${projectPath(source.path, source.project)}`,
+      detail: `${tildePath(source.project)} · ${scope.toLowerCase()} · ${projectPath(source.path, source.project)}`,
     };
   }
   return { title, detail: `${scope} · ${tildePath(source.path)}` };
@@ -131,7 +120,7 @@ function targetKey(target: McpTarget) {
 }
 
 function blankServer(transport: McpTransport): McpServerEntry {
-  return { name: "", transport, command: "", args: [], env: [], url: "", headers: [], enabled: true };
+  return { name: "", transport, command: "", args: [], env: [], url: "", headers: [], enabled: true, inherited: false };
 }
 
 /// Settings → MCP: every server each agent loads, grouped by the file it is
@@ -142,7 +131,6 @@ function blankServer(transport: McpTransport): McpServerEntry {
 /// say which work, which takes seconds, so the dots fill in after it.
 export default function McpSettings({ projects }: { projects: Project[] }) {
   const { sources, status, busy, checking, error, refresh, save, remove } = useMcpServers();
-  const availability = useAgentAvailability();
   const [editing, setEditing] = useState<{ target: McpTarget; server: McpServerEntry | null } | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
@@ -166,20 +154,8 @@ export default function McpSettings({ projects }: { projects: Project[] }) {
 
   /// Every file the form can write to: each global file listed, and every
   /// project-scoped kind for every attached project whose agent is here.
-  const targets = useMemo(() => {
-    const owners = new Set((sources ?? []).map((s) => s.owner));
-    const out: McpTarget[] = [];
-    for (const source of sources ?? []) {
-      if (source.file && !PER_PROJECT.includes(source.file)) out.push({ file: source.file, project: null });
-    }
-    for (const file of PER_PROJECT) {
-      if (!owners.has(FILE_OWNER[file])) continue;
-      for (const project of projects) out.push({ file, project: project.path });
-    }
-    return out;
-  }, [sources, projects]);
+  const targets = useMemo(() => mcpTargets(sources ?? [], projects), [sources, projects]);
 
-  const piInstalled = availability?.some((a) => a.harness === "pi" && a.available) ?? false;
   const statusError = (owner: Harness) => status?.errors.find((e) => e.harness === owner)?.error;
 
   return (
@@ -281,6 +257,7 @@ export default function McpSettings({ projects }: { projects: Project[] }) {
                 ) : (
                   source.servers.map((server) => {
                     const id = `${source.id}\n${server.name}`;
+                    const edit = mcpEditTarget(source, server, sources);
                     const projectKey = source.file && PER_PROJECT.includes(source.file) ? source.project : null;
                     const state = statuses.get(statusKey(source.owner, projectKey, server.name))
                       ?? (server.enabled ? undefined : "disabled");
@@ -293,7 +270,8 @@ export default function McpSettings({ projects }: { projects: Project[] }) {
                         readOnly={readOnly}
                         confirming={confirming === id}
                         error={rowError?.id === id ? rowError.message : null}
-                        onEdit={() => target && setEditing({ target, server })}
+                        editable={edit !== null}
+                        onEdit={() => edit && setEditing(edit)}
                         onAskRemove={() => {
                           setRowError(null);
                           setConfirming(id);
@@ -315,14 +293,6 @@ export default function McpSettings({ projects }: { projects: Project[] }) {
             );
           })}
 
-          {/* Disabled rather than missing, the settings page's rule: a reader
-              who runs pi should learn here why it has no group. */}
-          {piInstalled && (
-            <section className="flex flex-col gap-1">
-              <GroupHeader icon={<AgentIcon harness="pi" className="size-4" />} title="pi" />
-              <Quiet>pi doesn't support MCP servers. It uses extensions instead.</Quiet>
-            </section>
-          )}
         </>
       )}
     </div>
@@ -335,6 +305,7 @@ function ServerRow({
   status,
   checking,
   readOnly,
+  editable,
   confirming,
   error,
   onEdit,
@@ -346,6 +317,7 @@ function ServerRow({
   status: McpStatus | undefined;
   checking: boolean;
   readOnly: boolean;
+  editable: boolean;
   confirming: boolean;
   error: string | null;
   onEdit: () => void;
@@ -384,7 +356,7 @@ function ServerRow({
           </p>
           <p className="truncate text-ui text-muted-foreground">
             {TRANSPORT_LABEL[server.transport]}
-            {target && ` · ${tildePath(target)}`}
+            {server.inherited ? " · Uses global definition" : target && ` · ${tildePath(target)}`}
           </p>
         </div>
 
@@ -401,9 +373,9 @@ function ServerRow({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-36">
-                <DropdownMenuItem onSelect={onEdit}>
+                <DropdownMenuItem onSelect={onEdit} disabled={!editable}>
                   <PenOutline12 className="size-3" />
-                  Edit
+                  {server.inherited ? "Edit global definition" : "Edit"}
                 </DropdownMenuItem>
                 <DropdownMenuItem variant="destructive" onSelect={onAskRemove}>
                   <TrashOutline12 className="size-3" />
@@ -627,6 +599,10 @@ function whereItGoes(target: McpTarget): string {
       return "Written to the project's .grok/config.toml.";
     case "fx":
       return "Written to ~/.fx/mcp.json, the list Carbon hands fx.";
+    case "pi_user":
+      return "Written to ~/.pi/agent/mcp.json.";
+    case "pi_project":
+      return "Written to the project's .pi/mcp.json. Pi loads it when the project is trusted.";
   }
 }
 

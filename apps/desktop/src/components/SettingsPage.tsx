@@ -1376,8 +1376,8 @@ const SETTINGS_TABS = ALL_TABS.filter((t) => IS_MAC || t.id !== "island");
 /// which nothing on the page itself would show.
 const TAB_SUBTITLES: Partial<Record<SettingsTab, string>> = {
   accounts: "Manage each harness's sign-in. Switch one off to hide it from the model picker.",
-  mcp: "The MCP servers each agent loads, read from its own config. New sessions pick up changes.",
-  skills: "The skills each agent loads from its skill folders. New sessions pick up changes.",
+  mcp: "MCP servers on This Mac, read from each agent’s config. New sessions pick up changes.",
+  skills: "Skills on This Mac, read from each agent’s resources. New sessions pick up changes.",
   composer:
     "The buttons that rise out of the composer's top edge on hover. Each sends its prompt as if you had typed it.",
   // Nothing on the island says it has a menu.

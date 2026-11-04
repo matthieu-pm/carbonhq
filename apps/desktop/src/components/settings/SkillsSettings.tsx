@@ -24,7 +24,6 @@ import {
   GroupHeader,
   listNames,
   Picker,
-  projectPath,
   Quiet,
   tildePath,
 } from "@/components/settings/agentConfig";
@@ -52,8 +51,8 @@ type Mode =
 
 /// A folder's name in a picker: where it is and who reads it.
 function rootTitle(root: SkillRoot): { title: string; detail: string } {
-  if (root.label) return { title: root.label, detail: tildePath(root.path) };
-  if (root.project) return { title: baseName(root.project), detail: projectPath(root.path, root.project) };
+  if (root.label) return { title: root.label, detail: root.project ? `${tildePath(root.project)} · ${tildePath(root.path)}` : tildePath(root.path) };
+  if (root.project) return { title: baseName(root.project), detail: tildePath(root.path) };
   return { title: "Global", detail: tildePath(root.path) };
 }
 
@@ -261,7 +260,7 @@ function SkillRow({
                 <PenOutline12 className="size-3" />
                 {locked ? "View" : "Edit"}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void revealItemInDir(`${skill.path}/SKILL.md`)}>
+              <DropdownMenuItem onSelect={() => void revealItemInDir(skill.path)}>
                 <FolderOpenOutline12 className="size-3" />
                 Show in Finder
               </DropdownMenuItem>
