@@ -1122,6 +1122,32 @@ pub struct WrittenIssue {
     pub commented: bool,
 }
 
+/// Why [`write_issue`] failed, and whether the issue changed anyway.
+#[derive(Debug)]
+pub struct WriteFailed {
+    pub error: IssueUnavailable,
+    /// Part of the write landed before the rest failed, so every cached copy
+    /// of the issue is already out of date.
+    pub landed: bool,
+}
+
+impl From<IssueUnavailable> for WriteFailed {
+    fn from(error: IssueUnavailable) -> Self {
+        Self {
+            error,
+            landed: false,
+        }
+    }
+}
+
+impl std::fmt::Display for WriteFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+impl std::error::Error for WriteFailed {}
+
 /// A write that has already been refused or reduced to the words Linear gets.
 #[derive(Debug)]
 struct CheckedWrite {
@@ -1215,18 +1241,13 @@ fn resolve_state(states: &[IssueState], asked: &str) -> Result<IssueState, Issue
     if normalized.is_empty() {
         return Err(IssueUnavailable::Other("name a status, like Done".into()));
     }
-    let folded = normalized.to_lowercase();
+    let folded = fold(asked);
 
+    // Both sides through one fold. `eq_ignore_ascii_case` against a
+    // Unicode-lowercased query missed "À faire" typed exactly.
     let by_name: Vec<&IssueState> = states
         .iter()
-        .filter(|state| {
-            state
-                .name
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .eq_ignore_ascii_case(&folded)
-        })
+        .filter(|state| fold(&state.name) == folded)
         .collect();
     match by_name.as_slice() {
         [one] => return Ok((*one).clone()),
@@ -1268,6 +1289,13 @@ fn resolve_state(states: &[IssueState], asked: &str) -> Result<IssueState, Issue
     )))
 }
 
+fn fold(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 fn join_state_names(states: &[&IssueState]) -> String {
     states
         .iter()
@@ -1295,11 +1323,13 @@ fn kind_word(folded: &str) -> Option<IssueStateKind> {
 /// The key is read here and never returned. A failed confirmation read is not
 /// a failed write: Linear's own success flag already said the mutation landed,
 /// and reporting that as a failure is what makes the caller post it twice.
+/// The same goes for a status that moved before the comment failed: the error
+/// says it moved, and `landed` tells the caller to drop cached copies.
 pub async fn write_issue(
     identifier: String,
     comment: Option<String>,
     status: Option<String>,
-) -> Result<WrittenIssue, IssueUnavailable> {
+) -> Result<WrittenIssue, WriteFailed> {
     let checked = check_write(&identifier, comment.as_deref(), status.as_deref())?;
     let key = match linear_key().await {
         Ok(key) => key,
@@ -1307,19 +1337,28 @@ pub async fn write_issue(
         Err(IssueUnavailable::NotConnected) => {
             return Err(IssueUnavailable::Other(
                 "Linear is not connected. Connect it in Carbon's settings — this command uses that key, and the key stays there.".into(),
-            ));
+            )
+            .into());
         }
-        Err(other) => return Err(other),
+        Err(other) => return Err(other.into()),
     };
 
     let mut detail = linear::get_issue(&key, &checked.identifier, None).await?;
+    let mut moved = false;
     if let Some(name) = &checked.status {
         let state = resolve_state(&detail.states, name)?;
         linear::update_issue(&key, &detail.issue.id, Some(&state.id), None).await?;
         detail.issue.state = state;
+        moved = true;
     }
     if let Some(body) = &checked.comment {
-        linear::create_comment(&key, &detail.issue.id, body).await?;
+        if let Err(error) = linear::create_comment(&key, &detail.issue.id, body).await {
+            return Err(if moved {
+                partly_written(&detail.issue.identifier, &detail.issue.state.name, error)
+            } else {
+                error.into()
+            });
+        }
     }
 
     let issue = match linear::get_issue(&key, &checked.identifier, Some(&detail.issue.id)).await {
@@ -1334,6 +1373,17 @@ pub async fn write_issue(
         status: issue.state.name,
         commented: checked.comment.is_some(),
     })
+}
+
+/// The status moved and the comment did not post. Said whole, so a retry
+/// sends the comment alone rather than a status Linear already took.
+fn partly_written(identifier: &str, status: &str, error: IssueUnavailable) -> WriteFailed {
+    WriteFailed {
+        error: IssueUnavailable::Other(format!(
+            "{identifier} moved to {status}, but the comment was not posted: {error}"
+        )),
+        landed: true,
+    }
 }
 
 /// A file uploaded to an issue, fetched with the stored key.
@@ -1666,6 +1716,28 @@ mod tests {
         assert_eq!(
             resolve_state(&workflow(), "in   progress").unwrap().name,
             "In Progress"
+        );
+    }
+
+    /// A non-ASCII name typed exactly, or in another case, still matches.
+    #[test]
+    fn a_status_name_folds_beyond_ascii() {
+        let states = vec![
+            workflow_state("a", "À faire", IssueStateKind::Unstarted),
+            workflow_state("e", "ÉCHÉANCE", IssueStateKind::Started),
+        ];
+        assert_eq!(resolve_state(&states, "À faire").unwrap().id, "a");
+        assert_eq!(resolve_state(&states, "à  FAIRE").unwrap().id, "a");
+        assert_eq!(resolve_state(&states, "échéance").unwrap().id, "e");
+    }
+
+    #[test]
+    fn a_comment_failing_after_the_status_moved_says_it_moved() {
+        let failed = partly_written("FOR-1", "Done", IssueUnavailable::Offline("timed out".into()));
+        assert!(failed.landed);
+        assert_eq!(
+            failed.to_string(),
+            "FOR-1 moved to Done, but the comment was not posted: Could not reach Linear: timed out"
         );
     }
 

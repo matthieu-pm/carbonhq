@@ -1020,10 +1020,18 @@ async fn browse(request: carbon_proto::BrowserRequest) -> Result<Response> {
 /// A comment or a status change, with the key Carbon already holds.
 ///
 /// The key is not in the request and not in the answer. The cache drop waits
-/// until the write has landed: a refusal leaves the panel's copy, which is
-/// still true.
+/// until something has landed: a refusal leaves the panel's copy, which is
+/// still true, and a half-landed write does not.
 async fn write_issue(write: WriteIssue, app: &Sink) -> Result<Response> {
-    let written = issues::write_issue(write.identifier, write.comment, write.status).await?;
+    let written = match issues::write_issue(write.identifier, write.comment, write.status).await {
+        Ok(written) => written,
+        Err(failed) => {
+            if failed.landed {
+                app.emit(ISSUES_STALE, &()).ok();
+            }
+            return Err(failed.into());
+        }
+    };
     app.emit(ISSUES_STALE, &()).ok();
     Ok(Response::Issue {
         identifier: written.identifier,
