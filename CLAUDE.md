@@ -4,7 +4,7 @@ File give Claude Code (claude.ai/code) guidance for work with code in this repo.
 
 ## Working practices
 
-**Product work = GitHub issue, before first edit.** Feature, bug fix, UX change, refactor. Plan freely without one; `gh issue create` before code land. Existing issue = use that one.
+**Product work = Linear issue, before first edit.** Feature, bug fix, UX change, refactor. Plan freely without one; create the issue in Linear before editing code. Existing issue = use that one.
 
 **Housekeeping take no issue.** CLAUDE.md, plan note, tooling config — thing changing how we work, not what ship. Issue there = noise.
 
@@ -12,18 +12,18 @@ File give Claude Code (claude.ai/code) guidance for work with code in this repo.
 
 **Description over ~1000 character open with `## TLDR for human`, closed by `---`.** One line per thing worked on, even when only one. Shorter description need none.
 
-**Status = open or closed, and the PR is what close it.** `Fixes #123` in the PR body, which GitHub read on merge. Body = the only slot: worktree branch is `worktree-<name>` minted by the CLI and carry no id, unlike the tracker this replaced. **Exception: work pushed straight to `main`.** No PR = nothing to read, so `gh issue close` yourself.
+**Keep the Linear issue's status current.** Use the team's workflow for work in progress, review and completion. Put the Linear identifier and URL in the PR body, since the worktree branch is `worktree-<name>` minted by the CLI and carries no issue id. Mark the issue complete after the PR merges. **Exception: work pushed straight to `main`.** Mark the issue complete after the push.
 
 **Default road = work → test → ready PR.**
 
 1. Do the work, then test it for real — run it, not just compile it.
 2. Commit, push, open the PR **ready**.
 
-**One repo, `matthieu-pm/carbonhq`. Assign every issue to `matthieu-pm`.** `gh issue create --repo matthieu-pm/carbonhq --assignee matthieu-pm`.
+**Create issues in Carbon's Linear team and project. Assign every issue to Matthieu.** GitHub repository `matthieu-pm/carbonhq` still holds the code and PRs.
 
-**A session working an issue link it**: `carbon issue link matthieu-pm/carbonhq#255 --title "<title>" --url "<url>"`. Identifier is always `owner/repo#123` — a bare `#123` is refused on purpose, a number alone naming no repository. That is the app's own rule about its GitHub tracker and it applies to this repo's own work too.
+**A session working a Linear issue links it**: `carbon issue link TEAM-123 --title "<title>" --url "<linear-issue-url>"`. Use the issue's actual Linear identifier.
 
-`gh` missing or logged out → say so, then carry on with the work. Tell reader at the end which issue still want creating.
+Linear unavailable or not connected → say so, then carry on with the work. Tell the reader at the end which issue still needs creating.
 
 **Don't commit unprompted.** Stage + describe change, then wait — even when finished and passing. Asked = approval for that commit only, not ones after. Same for `git push`, branches, anything rewriting history.
 

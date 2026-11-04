@@ -2144,6 +2144,10 @@ export type Subagent = { id: string,
  */
 label: string | null, };
 
+export type SubscriptionUsage = { harness: Harness, plan: string | null, windows: Array<SubscriptionWindow>, checkedAt: string, unavailableReason: string | null, };
+
+export type SubscriptionWindow = { label: string, remainingPercent: number, resetsAt: string | null, };
+
 /**
  * What a server has before Carbon is installed on it.
  */

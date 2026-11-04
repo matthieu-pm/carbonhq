@@ -60,6 +60,9 @@ pub async fn ask(cwd: Option<&str>, method: &str, params: Value) -> Result<Value
 
     // However the ask went. A probe that timed out is exactly the child least
     // likely to notice its stdin has gone, so it is the one that most needs it.
+    if let Some(root) = child.id() {
+        crate::local_servers::kill_descendants(root).await;
+    }
     let _ = child.kill().await;
 
     answer.with_context(|| format!("timed out asking codex {method}"))?

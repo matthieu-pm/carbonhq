@@ -1336,6 +1336,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         set_fx_provider(provider: String) => crate::set_fx_provider(provider).await;
         list_slash_commands(cwd: String, harness: Harness) => crate::list_slash_commands(&cwd, harness).await;
         agent_accounts(cwd: String) => ok(crate::accounts::agent_accounts(cwd).await);
+        subscription_usage(refresh: Option<bool>) => ok(crate::subscription_usage::subscription_usage(refresh).await);
         agent_auth_options(harness: Harness, provider: Option<String>) =>
             ok(crate::accounts::agent_auth_options(harness, provider));
         add_agent_account(harness: Harness, provider: Option<String>, auth: String, key: Option<String>) =>

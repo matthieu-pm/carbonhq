@@ -6,6 +6,7 @@ import { CircleDashed, Plus } from "lucide-react";
 import PrStateIcon from "@/components/PrStateIcon";
 
 import { Button } from "@/components/ui/button";
+import SubscriptionUsageButton from "@/components/SubscriptionUsageButton";
 
 import "./App.css";
 import Chat from "@/components/Chat";
@@ -2936,6 +2937,7 @@ function App() {
                 onNew={openNewSpace}
               />
             )}
+            <SubscriptionUsageButton onAccounts={() => { setSettingsTab("accounts"); setSettingsOpen(true); }} />
             <SettingsButton onOpen={() => setSettingsOpen(true)} />
           </div>
           )}
