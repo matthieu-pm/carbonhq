@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "great-ui": {
+      "source": "matthieu-pm/great-ui",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "df11ed31b981493dee6fdf8dc7f2e4c72e7ff9b78bfaacaa1d637b4143d91e88"
+    },
     "reverse-engineer-anything": {
       "source": "morluto/rea",
       "sourceType": "github",
