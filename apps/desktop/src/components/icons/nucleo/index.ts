@@ -5,6 +5,7 @@ export { ArrowLeftOutline12 } from "./ArrowLeftOutline12";
 export { CheckOutline12 } from "./CheckOutline12";
 export { ChevronDownOutline12 } from "./ChevronDownOutline12";
 export { CircleWarningOutline12 } from "./CircleWarningOutline12";
+export { CubesGlyph18 } from "./CubesGlyph18";
 export { DotsOutline12 } from "./DotsOutline12";
 export { EyeOutline18 } from "./EyeOutline18";
 export { EyeSlashOutline18 } from "./EyeSlashOutline18";

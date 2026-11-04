@@ -55,7 +55,7 @@ import {
 import AccountsSettings from "@/components/settings/AccountsSettings";
 import McpSettings from "@/components/settings/McpSettings";
 import SkillsSettings from "@/components/settings/SkillsSettings";
-import { MagicWandSparkleGlyph18, Plug2Glyph18 } from "@/components/icons/nucleo";
+import { CubesGlyph18, Plug2Glyph18 } from "@/components/icons/nucleo";
 import AppShell from "@/components/layout/AppShell";
 import { SettingsHeaderSlot } from "@/components/settings/headerAction";
 import ServersSettings from "@/components/settings/ServersSettings";
@@ -1324,7 +1324,7 @@ const ALL_TABS = [
   { id: "servers", label: "Servers", Icon: ServerStackIcon },
   { id: "accounts", label: "Accounts", Icon: KeyIcon },
   { id: "mcp", label: "MCP", Icon: Plug2Glyph18 },
-  { id: "skills", label: "Skills", Icon: MagicWandSparkleGlyph18 },
+  { id: "skills", label: "Skills", Icon: CubesGlyph18 },
   { id: "transcription", label: "Transcription", Icon: MicrophoneIcon },
   { id: "integrations", label: "Integrations", Icon: PuzzlePieceIcon },
   { id: "shortcuts", label: "Shortcuts", Icon: BoltIcon },
