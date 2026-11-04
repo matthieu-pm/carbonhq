@@ -54,6 +54,9 @@ import {
   pickFileOpener,
 } from "@/lib/openWith";
 import AccountsSettings from "@/components/settings/AccountsSettings";
+import McpSettings from "@/components/settings/McpSettings";
+import SkillsSettings from "@/components/settings/SkillsSettings";
+import { MagicWandSparkleGlyph18, Plug2Glyph18 } from "@/components/icons/nucleo";
 import AppShell from "@/components/layout/AppShell";
 import { SettingsHeaderSlot } from "@/components/settings/headerAction";
 import ServersSettings from "@/components/settings/ServersSettings";
@@ -221,6 +224,8 @@ export default function SettingsPage({
         ),
         servers: <ServersSettings />,
         accounts: <AccountsSettings cwd={cwd} />,
+        mcp: <McpSettings projects={projects} />,
+        skills: <SkillsSettings />,
         transcription: (
           <TranscriptionSettings
             status={transcription.status}
@@ -1343,12 +1348,15 @@ function Section({ title, children }: { title?: string; children: ReactNode }) {
 
 /// Set *and* order, so a group added later is one entry plus one body. Icons
 /// are Heroicons' filled 16px set, drawn for small sizes, at the sidebar rows'
-/// own 14px. No keyboard in heroicons, so Shortcuts takes the bolt.
+/// own 14px. No keyboard in heroicons, so Shortcuts takes the bolt. MCP and
+/// Skills take Nucleo's filled UI glyphs, which sit at the same weight.
 const ALL_TABS = [
   { id: "appearance", label: "Appearance", Icon: PaintBrushIcon },
   { id: "spaces", label: "Spaces", Icon: Square3Stack3DIcon },
   { id: "servers", label: "Servers", Icon: ServerStackIcon },
   { id: "accounts", label: "Accounts", Icon: KeyIcon },
+  { id: "mcp", label: "MCP", Icon: Plug2Glyph18 },
+  { id: "skills", label: "Skills", Icon: MagicWandSparkleGlyph18 },
   { id: "transcription", label: "Transcription", Icon: MicrophoneIcon },
   { id: "integrations", label: "Integrations", Icon: PuzzlePieceIcon },
   { id: "shortcuts", label: "Shortcuts", Icon: BoltIcon },
@@ -1368,6 +1376,8 @@ const SETTINGS_TABS = ALL_TABS.filter((t) => IS_MAC || t.id !== "island");
 /// which nothing on the page itself would show.
 const TAB_SUBTITLES: Partial<Record<SettingsTab, string>> = {
   accounts: "Manage each harness's sign-in. Switch one off to hide it from the model picker.",
+  mcp: "The MCP servers each agent loads, read from its own config. New sessions pick up changes.",
+  skills: "The skills each agent loads from its skill folders. New sessions pick up changes.",
   composer:
     "The buttons that rise out of the composer's top edge on hover. Each sends its prompt as if you had typed it.",
   // Nothing on the island says it has a menu.

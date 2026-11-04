@@ -70,6 +70,9 @@ importers:
       shadcn:
         specifier: ^4.22.1
         version: 4.22.1
+      simple-icons:
+        specifier: ^16.36.0
+        version: 16.36.0
       streamdown:
         specifier: ^2.7.1
         version: 2.7.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -5580,6 +5583,10 @@ packages:
 
   simple-icons@16.34.0:
     resolution: {integrity: sha512-UTxKn0PVspk84B2hHF3Dqiqht1yDjJmDc/t4cO7PyCQxCMk6OjEu95pnpGjhLaGeQ4qBrGASbefTIe/+czrX7g==}
+    engines: {node: '>=0.12.18'}
+
+  simple-icons@16.36.0:
+    resolution: {integrity: sha512-+VNPPkqSOLidFeSgBKUWX4n50WPpDC09hav+BgS26anIF1oQOlGBb8LvwGR+6fYRjo+B6CiKzNBceMPkSVXANQ==}
     engines: {node: '>=0.12.18'}
 
   sisteransi@1.0.5:
@@ -12027,6 +12034,8 @@ snapshots:
   signal-exit@4.1.0: {}
 
   simple-icons@16.34.0: {}
+
+  simple-icons@16.36.0: {}
 
   sisteransi@1.0.5: {}
 

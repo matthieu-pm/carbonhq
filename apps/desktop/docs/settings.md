@@ -57,6 +57,16 @@ The cost, stated: a `.command` handed to `open` is run by **Terminal.app alone**
 
 **The last answer is drawn while a fresh one is read, and nothing polls.** Every open still reads, since the reader is on this page to change a login and a cached answer would otherwise be stale exactly where it is read — but the previous read per directory (`lastRead`, in memory) stands in meanwhile, so only the first visit waits on a spinner. A failed read writes nothing there. Mounting is the gate — the page switches tab bodies rather than hiding them, so `useAgentAccounts` takes no `enabled` flag. A terminal sign-in sends nothing back, so the page re-reads on the form's back arrow and on the window coming back to front, with Refresh beside them; four children on a timer to catch a browser round trip would be worse than either. `what_the_installed_agents_answer` is the `#[ignore]`d live test every parser here was written against — run it when a CLI changes what it says.
 
+## MCP and Skills
+
+**Both tabs read the agents' own files on every visit.** MCP groups servers by config file and project; Skills groups them by folder. Each group names the agents that load it. Changes go back to those files, so new sessions use them without a Carbon copy. Read failures stay on the affected group.
+
+**MCP status is a separate read**, so connecting to a slow server never holds up the config list. Status comes from the agents where they report it; an absent dot makes no claim. Sign-in stays with the agent. Env values and headers are masked in the editor until Show is pressed. Local arguments take one per line. Codex project config lives in `.codex/config.toml` and is loaded only for trusted projects; pi has no MCP support and says so in its group.
+
+**Skills can be created, imported as a folder, edited, renamed and removed.** Imports keep support files and leave `.git` behind; circular links fail without leaving a partial copy. Rename collisions leave both originals intact. Removing a linked skill takes the link alone. Carbon-managed, built-in and plugin skills open read-only. A normal skill removal moves it to Trash on macOS and removes the folder on other systems, after an in-row confirmation.
+
+[The agent settings demo](../demo/agent-settings.html) mounts both real tabs with a stateful fake bridge. It covers editable and read-only rows, a project source, an unreadable config, masked headers, and a change made outside the tab. Production commands have filesystem regression tests in `mcp_servers.rs` and `skills.rs`.
+
 ## Closing with ⌘W
 
 **The macOS Window menu ships no Close Window item, and that absence is the whole feature** ([quit.rs](../src-tauri/src/quit.rs)). The predefined one carries ⌘W built in, and a menu key equivalent is matched before the responder chain — so the key never reached the webview and closed the app's only window instead, which arrives as `CloseRequested` and raises the quit dialog. There is one window and quitting is already confirmed, so the item buys nothing the red traffic light does not; dropping it hands ⌘W to the app. `RESERVED` in [shortcuts.ts](../src/lib/shortcuts.ts) no longer holds it, and a test refuses any default that list would make unrebindable.

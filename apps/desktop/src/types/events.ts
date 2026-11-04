@@ -1117,6 +1117,17 @@ export type IssueUnavailable = { "kind": "not_connected" } | { "kind": "unauthor
 export type IssuesChangedEvent = { sessionId: string, issues: Array<IssueRef>, };
 
 /**
+ * A name and a value, for env vars and headers. A list rather than a map so
+ * the form keeps the order the reader typed.
+ */
+export type KeyValue = { name: string, value: string, };
+
+/**
+ * Where a server is written, which is also what decides who reads it.
+ */
+export type McpFile = "claude_user" | "claude_local" | "claude_project" | "codex" | "codex_project" | "grok_user" | "grok_project" | "fx";
+
+/**
  * Shared with the harness parsers rather than duplicated — the wire shape
  * matches, so they deserialize straight into this.
  */
@@ -1125,6 +1136,67 @@ export type McpServer = { name: string,
  * Free-form: `connected`, `pending`, `needs-auth` observed, set undocumented.
  */
 status: string, };
+
+export type McpServerEntry = { name: string, transport: McpTransport, command: string | null, args: Array<string>, env: Array<KeyValue>, url: string | null, headers: Array<KeyValue>, 
+/**
+ * Off where the file says `enabled = false`. Carbon never flips it: each
+ * CLI has its own `enable`/`disable`, and a reader who turned one off did
+ * it there.
+ */
+enabled: boolean, };
+
+/**
+ * One file's servers, or the reason it could not be read.
+ */
+export type McpSource = { 
+/**
+ * Stable across reads, so the frontend can key rows and remember which
+ * one is open: the file kind and the project, or the extra's label.
+ */
+id: string, 
+/**
+ * `None` for servers an agent reports that no file here holds — Claude
+ * Code's plugins and claude.ai connectors, Codex's plugins. Those are
+ * read-only, since the plugin owns them.
+ */
+file: McpFile | null, owner: Harness, readers: Array<Harness>, project: string | null, 
+/**
+ * The file, for the header line. Empty for an extra.
+ */
+path: string, 
+/**
+ * What to call an extra's group, since it has no file to name.
+ */
+label: string | null, servers: Array<McpServerEntry>, error: string | null, transports: Array<McpTransport>, };
+
+export type McpStatus = "connected" | "needs_auth" | "failed" | "disabled";
+
+export type McpStatusError = { harness: Harness, error: string, };
+
+export type McpStatusReport = { statuses: Array<McpStatusRow>, 
+/**
+ * Servers an agent loads that no file here holds. They only show up in
+ * the agents' own `list`, which is why they ride the slow read.
+ */
+extras: Array<McpSource>, 
+/**
+ * Agents whose status read failed, with why, so a row with no dot reads
+ * as "not asked" rather than "fine".
+ */
+errors: Array<McpStatusError>, };
+
+/**
+ * What an agent said about one server. Keyed the way a row is: the file's
+ * owner, the project it was asked in, the name.
+ */
+export type McpStatusRow = { owner: Harness, project: string | null, name: string, status: McpStatus, };
+
+/**
+ * Where a write lands: a file, and the project for one that has one.
+ */
+export type McpTarget = { file: McpFile, project: string | null, };
+
+export type McpTransport = "stdio" | "http" | "sse";
 
 /**
  * How to land it. The three GitHub offers; the flag each maps to is `gh`'s.
@@ -1991,6 +2063,45 @@ export type Settings = { model: string | null,
  * onto these, gaining variants if it turns out to need them.
  */
 approvalPolicy: PermissionMode | null, sandbox: string | null, writableRoots: Array<string>, networkAccess: boolean | null, fastMode: string | null, };
+
+export type SkillDocument = { name: string, description: string, body: string, };
+
+export type SkillEntry = { 
+/**
+ * The folder's name, which is what the agents invoke it by.
+ */
+name: string, description: string, 
+/**
+ * The folder, which is what every write takes.
+ */
+path: string, 
+/**
+ * Why this one cannot be edited, where it cannot.
+ */
+locked: string | null, 
+/**
+ * A link to a folder elsewhere. Editing writes through to it; removing
+ * takes the link alone.
+ */
+linked: boolean, };
+
+export type SkillRoot = { id: string, path: string, project: string | null, readers: Array<Harness>, 
+/**
+ * What to call a plugin's or a built-in group, which has no folder of the
+ * reader's to name.
+ */
+label: string | null, skills: Array<SkillEntry>, error: string | null, 
+/**
+ * Whether new skills can be made or imported here.
+ */
+writable: boolean, };
+
+export type SkillsListing = { roots: Array<SkillRoot>, 
+/**
+ * Every folder a new skill can go in, existing or not, so the form can
+ * offer `~/.claude/skills` to a reader who has never made one.
+ */
+targets: Array<SkillRoot>, };
 
 /**
  * One command the user may type. `name` carries no leading slash — the picker

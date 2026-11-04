@@ -64,6 +64,7 @@ pub mod notifications;
 pub mod orchestration;
 pub mod drafts;
 pub mod projects;
+pub mod mcp_servers;
 #[cfg(feature = "desktop")]
 pub mod quit;
 #[cfg(feature = "desktop")]
@@ -85,6 +86,7 @@ pub mod tunnel;
 pub mod ssh;
 pub mod settings;
 pub mod sink;
+pub mod skills;
 pub mod store;
 pub mod title;
 #[cfg(feature = "desktop")]

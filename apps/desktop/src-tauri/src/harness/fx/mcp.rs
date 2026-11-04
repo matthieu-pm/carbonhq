@@ -195,10 +195,10 @@ fn is_env_name(key: &str) -> bool {
 /// session's cwd so a project-scoped `.mcp.json` cannot answer for a profile
 /// server of the same name. A failed probe answers empty, which every caller
 /// reads as "skip" — the safe direction.
-async fn auth_states() -> BTreeMap<String, String> {
+pub(crate) async fn auth_states() -> BTreeMap<String, String> {
     let bin = crate::binpath::fx().await;
     let mut command = Command::new(&bin);
-    command.args(["mcp", "list"]);
+    command.args(["mcp", "list"]).kill_on_drop(true);
     if let Some(home) = std::env::home_dir() {
         command.current_dir(home);
     }
