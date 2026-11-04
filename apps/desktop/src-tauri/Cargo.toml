@@ -35,7 +35,8 @@ tokio = { version = "1", features = ["full"] }
 # minted. See analytics.rs.
 uuid = { version = "1.16", features = ["v4", "v7"] }
 # Generates the TS mirror of the event model; `cargo test` writes ../src/types/.
-ts-rs = { version = "12", features = ["serde-json-impl"] }
+# Serde aliases, catch-alls and custom conversions are handled by Rust, not ts-rs.
+ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 # `kill(pid, 0)`: whether the process named in a worktree lock is still alive,
 # which is what separates a lock Carbon may clear from one it must not.
 libc = "0.2"
