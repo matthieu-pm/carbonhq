@@ -115,7 +115,7 @@ export default function PinnedSummary({
   };
   return (
     <section id="pinned-summary" aria-label="Pinned summary"
-      className="min-h-0 overflow-y-auto rounded-2xl bg-background shadow-(--shadow-ring)"
+      className="min-h-0 overflow-y-auto rounded-2xl bg-background"
       onContextMenu={(event) => {
         if (!event.currentTarget.contains(event.target as Node) || window.getSelection()?.toString()) return;
         event.preventDefault();
