@@ -1,0 +1,4 @@
+interface:
+  display_name: "Great UI"
+  short_description: "Complete Better UI and Emil design guidance"
+  default_prompt: "Use $great-ui to build or polish this interface with the complete merged guidance."
