@@ -53,8 +53,8 @@ import {
   applyCommand,
   filterCommands,
   groupCommands,
-  parseSlashCommand,
   slashSpan,
+  usedCommands,
 } from "@/lib/slash";
 import { cn } from "@/lib/utils";
 import type {
@@ -351,13 +351,14 @@ export default function ChatInput({
   // ranked list is drawn flat.
   const slash = slashSpan(message, caret);
   const query = slash?.query ?? null;
+  const slashStart = slash?.start ?? null;
   const groups = useMemo(() => {
     if (query === null) return [];
     if (query === "") return groupCommands(commands, recent);
 
-    const matches = filterCommands(commands, query);
+    const matches = filterCommands(commands, query, { byDescription: slashStart === 0 });
     return matches.length ? [{ label: null, items: matches }] : [];
-  }, [commands, query, recent]);
+  }, [commands, query, slashStart, recent]);
 
   // The two pickers are mutually exclusive without needing to be arbitrated:
   // the caret sits in exactly one token, and a token opening with `/` is not
@@ -783,8 +784,7 @@ export default function ChatInput({
     // Recorded on send rather than on pick: choosing a command from the list
     // and then deleting it is not using it. Taken from the text, so a command
     // typed by hand counts the same as one picked.
-    const command = parseSlashCommand(trimmed);
-    if (command) recordCommand(command.name);
+    for (const name of usedCommands(trimmed, commands)) recordCommand(name);
 
     onSend(trimmed, attachments);
     setMessage("");

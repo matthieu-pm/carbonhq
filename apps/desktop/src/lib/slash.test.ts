@@ -7,6 +7,7 @@ import {
   groupCommands,
   parseSlashCommand,
   slashSpan,
+  usedCommands,
 } from "./slash";
 import type { SlashCommand } from "@/types/events";
 
@@ -212,6 +213,12 @@ describe("applyCommand", () => {
     expect(apply("/", 1, "usage")).toEqual({ text: "/usage ", caret: 7 });
   });
 
+  /// A newline behind the token is not a space to reuse: the caret would land on
+  /// the next line.
+  it("adds a space before a newline rather than reusing it", () => {
+    expect(apply("/rev\nmore", 4, "review")).toEqual({ text: "/review \nmore", caret: 8 });
+  });
+
   /// Mid-prompt, only the token is replaced: the words either side stay put.
   it("replaces just the token mid-prompt", () => {
     expect(apply("$linear and /lin", 16, "linear")).toEqual({
@@ -259,5 +266,32 @@ describe("parseSlashCommand", () => {
     expect(parseSlashCommand("/")).toBeNull();
     expect(parseSlashCommand("// a comment")).toBeNull();
     expect(parseSlashCommand("/ spaced")).toBeNull();
+  });
+});
+
+describe("filterCommands without descriptions", () => {
+  const commands = [command("review", "Review the diff, etc."), command("compact", "Free up context")];
+
+  /// Mid-prompt, `/etc` is a path. A description match would let Enter swap it
+  /// for `/review` instead of sending.
+  it("matches names alone", () => {
+    expect(filterCommands(commands, "etc", { byDescription: false })).toEqual([]);
+    expect(filterCommands(commands, "etc")).toEqual([commands[0]]);
+    expect(filterCommands(commands, "rev", { byDescription: false })).toEqual([commands[0]]);
+  });
+});
+
+describe("usedCommands", () => {
+  const known = [command("linear", ""), command("review", "")];
+
+  it("records the leading command even when unlisted", () => {
+    expect(usedCommands("/gone do it", known)).toEqual(["gone"]);
+  });
+
+  it("records mid-prompt commands only when known", () => {
+    expect(usedCommands("$linear and /linear please", known)).toEqual(["linear"]);
+    expect(usedCommands("look in /tmp then /review", known)).toEqual(["review"]);
+    expect(usedCommands("/review then\n/linear", known)).toEqual(["review", "linear"]);
+    expect(usedCommands("see /Users/me", known)).toEqual([]);
   });
 });

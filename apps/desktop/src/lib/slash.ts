@@ -53,18 +53,26 @@ export function slashSpan(text: string, caret: number): SlashSpan | null {
 /// other command's description. The sort is stable and an empty query scores
 /// every command alike, so "just opened" shows the CLI's own ordering — which
 /// groups user commands ahead of built-ins — rather than a re-alphabetized list.
-export function filterCommands(commands: SlashCommand[], query: string): SlashCommand[] {
+///
+/// `byDescription` is off mid-prompt. There a `/word` is as likely a path as a
+/// command, and with descriptions searched `see /etc` matches some command's
+/// prose — then Enter completes that command instead of sending the message.
+export function filterCommands(
+  commands: SlashCommand[],
+  query: string,
+  { byDescription = true }: { byDescription?: boolean } = {},
+): SlashCommand[] {
   const q = query.toLowerCase();
 
   return commands
-    .map((command) => ({ command, score: score(command, q) }))
+    .map((command) => ({ command, score: score(command, q, byDescription) }))
     .filter((match) => match.score !== null)
     .sort((a, b) => a.score! - b.score!)
     .map((match) => match.command);
 }
 
 /// `null` when the command doesn't match at all. Lower is better.
-function score(command: SlashCommand, query: string): number | null {
+function score(command: SlashCommand, query: string, byDescription: boolean): number | null {
   const name = command.name.toLowerCase();
   if (name.startsWith(query)) return 0;
   if (command.aliases.some((alias) => alias.toLowerCase().startsWith(query))) return 1;
@@ -73,7 +81,7 @@ function score(command: SlashCommand, query: string): number | null {
   // `railway:deploy` matches "deploy" ahead of anything that only mentions it.
   if (name.slice(name.indexOf(":") + 1).startsWith(query)) return 2;
   if (name.includes(query)) return 3;
-  if (command.description.toLowerCase().includes(query)) return 4;
+  if (byDescription && command.description.toLowerCase().includes(query)) return 4;
 
   return null;
 }
@@ -84,7 +92,8 @@ function score(command: SlashCommand, query: string): number | null {
 /// Always lands the caret past exactly one space, reusing the one already there:
 /// every pick is either finished (the space is harmless) or about to take
 /// arguments (the space is needed), and the CLI reads `/model` and `/model `
-/// identically.
+/// identically. Only a real space is reused — a newline behind the token would
+/// put the caret on the next line.
 export function applyCommand(
   text: string,
   span: SlashSpan,
@@ -94,7 +103,7 @@ export function applyCommand(
   const tail = text.slice(span.end);
 
   return {
-    text: head + (SPACE.test(tail[0] ?? "") ? tail : ` ${tail}`),
+    text: head + (tail.startsWith(" ") ? tail : ` ${tail}`),
     caret: head.length + 1,
   };
 }
@@ -184,4 +193,23 @@ export function parseSlashCommand(text: string): { name: string; args: string } 
   if (!match) return null;
 
   return { name: match[1], args: match[2].trim() };
+}
+
+/// Every command a sent message uses, for recents.
+///
+/// The leading one counts whether or not it is still listed, the way
+/// [`parseSlashCommand`](#parseSlashCommand) reads it. A mid-prompt `/word`
+/// counts only when it names a known command, since there it may be a path.
+export function usedCommands(text: string, known: SlashCommand[]): string[] {
+  const names = new Set(known.map((command) => command.name));
+  const used: string[] = [];
+
+  const leading = parseSlashCommand(text);
+  if (leading) used.push(leading.name);
+
+  for (const match of text.matchAll(/(?<=\s)\/([^\s/]+)(?=\s|$)/g)) {
+    if (names.has(match[1]) && !used.includes(match[1])) used.push(match[1]);
+  }
+
+  return used;
 }
