@@ -54,7 +54,7 @@ import {
   filterCommands,
   groupCommands,
   parseSlashCommand,
-  slashQuery,
+  slashSpan,
 } from "@/lib/slash";
 import { cn } from "@/lib/utils";
 import type {
@@ -349,7 +349,8 @@ export default function ChatInput({
   // with the harness, then what was installed. Once there is a query it is
   // searching, and headers would hide matches behind section chrome, so the
   // ranked list is drawn flat.
-  const query = slashQuery(message, caret);
+  const slash = slashSpan(message, caret);
+  const query = slash?.query ?? null;
   const groups = useMemo(() => {
     if (query === null) return [];
     if (query === "") return groupCommands(commands, recent);
@@ -359,15 +360,15 @@ export default function ChatInput({
   }, [commands, query, recent]);
 
   // The two pickers are mutually exclusive without needing to be arbitrated:
-  // the caret sits in exactly one token, and a token opening with `/` at
-  // position zero is not one opening with `@`. Kept as two independent reads so
+  // the caret sits in exactly one token, and a token opening with `/` is not
+  // one opening with `@`. Kept as two independent reads so
   // neither has to know the other exists.
   const mention = mentionSpan(message, caret);
   const files = useFileSearch(cwd, mention?.query ?? null);
 
   // The third of the same shape, and mutually exclusive with the other two for
   // the same reason: the caret sits in exactly one token, and a token opening
-  // with `#` is neither one opening with `@` nor a command at position zero.
+  // with `#` is neither one opening with `@` nor one opening with `/`.
   const issue = issueSpan(message, caret);
   // The pick is read here rather than passed down: it is a module store every
   // issue surface subscribes to, so the chips in this menu's own header move
@@ -478,7 +479,9 @@ export default function ChatInput({
   }, [query, mentionQuery, issueQuery, sessionQuery]);
 
   const pickCommand = (command: SlashCommand) => {
-    const next = applyCommand(message, command.name);
+    if (!slash) return;
+
+    const next = applyCommand(message, slash, command.name);
     setMessage(next.text);
     setCaret(next.caret);
     editorRef.current?.focus();
