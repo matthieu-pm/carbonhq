@@ -32,7 +32,7 @@ type AppShellProps = {
   /// The window has no room for the crew beside the chat, so it is drawn
   /// between the transcript and the composer instead.
   crewStacked?: boolean;
-  /// Holds the composer in the upper middle of the window and drops the
+  /// Holds the composer in the middle of the available column and drops the
   /// transcript pane. The empty state has no transcript to anchor the composer
   /// against, so pinning it to the bottom leaves the one usable control as far
   /// from the eye as the window allows. `children` is not rendered in this state.
@@ -126,22 +126,15 @@ export default function AppShell({
           sets the flex item's floor and pushes the sidebar off-screen. */}
         <div className="flex min-w-0 flex-1 flex-col">
           {centered ? (
-            // Held below the top rather than centered. Centering moves the whole
-            // block every time the textarea grows a line, so the wordmark and the
-            // toolbar drift upwards as you type; a fixed offset keeps everything
-            // above the input still and lets the box grow downwards alone. The
-            // offset is a proportion of the window rather than a fixed inset, which
-            // would read as top-aligned on a tall window and off-centre on a short
-            // one. `overflow-y-auto` only ever engages on a window too short to
-            // hold the composer at its full height — the box caps itself well
-            // before that at the default size.
+            // Auto margins center the composer when it fits and collapse when
+            // it does not, keeping the top reachable in a short window.
             <div
               className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto"
               {...{ [DROP_ATTR]: EMPTY_VIEW }}
             >
               {/* `children` is deliberately dropped: there is no transcript to
                 show, and the composer is the whole state. */}
-              <div className="w-full shrink-0 pt-[13vh]">{footer}</div>
+              <div className="my-auto w-full shrink-0 pt-2 pb-22">{footer}</div>
               {overlay}
             </div>
           ) : (
