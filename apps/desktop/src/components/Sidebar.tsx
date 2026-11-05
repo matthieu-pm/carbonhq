@@ -1210,7 +1210,7 @@ export default function Sidebar({
           variant="ghost"
           size="sm"
           onClick={onNewSession}
-          className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 dark:hover:bg-sidebar-accent/50"
+          className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50"
         >
           <Plus />
           New Task
@@ -1227,7 +1227,7 @@ export default function Sidebar({
           size="sm"
           onClick={onOpenIssues}
           data-active={issuesOpen || undefined}
-          className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 dark:hover:bg-sidebar-accent/50 data-[active]:bg-sidebar-accent data-[active]:text-sidebar-accent-foreground"
+          className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50 data-[active]:bg-sidebar-accent data-[active]:text-sidebar-accent-foreground"
         >
           <CircleDot />
           Issues
@@ -1283,7 +1283,7 @@ export default function Sidebar({
             variant="ghost"
             size="sm"
             onClick={() => onSearchOpenChange(true)}
-            className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 dark:hover:bg-sidebar-accent/50"
+            className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50"
           >
             <Search />
             Search
@@ -2262,7 +2262,7 @@ function DraftRow({
           }
         }}
         className={cn(
-          "relative flex min-h-7 w-full cursor-pointer items-center rounded-md pr-0.5 pl-2 transition-colors select-none",
+          "relative flex min-h-7 w-full cursor-pointer items-center rounded-md pr-0.5 pl-2 select-none",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
           "data-[state=open]:bg-sidebar-accent/50",
           active
@@ -2476,11 +2476,6 @@ function SessionRow({
           // it always did and the rail can still touch the row's edge. The one
           // gap that remains — title to hover controls — is `pl-2` on that slot.
           "group relative flex min-h-7 w-full cursor-pointer items-center rounded-md pl-0 pr-0.5",
-          // Opacity is in the transition list for the faded rows below. It has
-          // to ride the same declaration: `transition-colors` and
-          // `transition-opacity` both set `transition-property`, so `cn` would
-          // merge one away and the row would lose its hover fill animation.
-          "transition-[color,background-color,opacity]",
           // Held back rather than hidden, and brought back to full strength the
           // moment the row is reached for — the fade sorts the list at a glance
           // and must not make an old row harder to read once it's the one being

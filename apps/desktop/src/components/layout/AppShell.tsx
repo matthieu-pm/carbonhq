@@ -84,8 +84,7 @@ export default function AppShell({
     // The header spans the window and everything else sits under it, the way a
     // browser's tab strip sits over its pages.
     <div className="relative flex h-full w-full flex-col overflow-hidden">
-      {/* Always floating, so the sheet's top can glide between under the
-          header and behind it; the strip above the sheet is the header's fill. */}
+      {/* The sheet can start behind the header or below it. */}
       <div className="absolute inset-x-0 top-0 z-30">{header}</div>
       {/* Not `overflow-hidden`: the sheet's ring and shadow sit just outside it,
           and the top edge would be cut away. The window clips already. */}
@@ -111,14 +110,7 @@ export default function AppShell({
             strips of the same fill: the sheet is glass, so a fill behind it
             would darken it as well. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div
-            className={cn(
-              "shrink-0 bg-surface-frame transition-[height]",
-              // The timing is the destination's: rising to a page quickly,
-              // settling into a task a little slower.
-              tall ? "h-2 duration-125 ease-in" : "h-(--titlebar-h) duration-200 ease-out",
-            )}
-          />
+          <div className={cn("shrink-0 bg-surface-frame", tall ? "h-2" : "h-(--titlebar-h)")} />
           <div className="flex min-h-0 min-w-0 flex-1">
             {panelLeft && panelCard}
             <Sheet className="flex-1" tall={tall}>
@@ -204,9 +196,8 @@ function Sheet({
       <span aria-hidden className={cn(corner, "right-0 bottom-0 bg-[radial-gradient(circle_at_0%_0%,transparent_8px,var(--surface-frame)_8.5px)]")} />
       <div
         className={cn(
-          // Grows by what the sheet rose, so the contents hold still.
-          "flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-[8px] bg-(--surface-sheet) transition-[padding]",
-          tall ? "pt-[calc(var(--titlebar-h)-0.5rem)] duration-125 ease-in" : "duration-200 ease-out",
+          "flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-[8px] bg-(--surface-sheet)",
+          tall && "pt-[calc(var(--titlebar-h)-0.5rem)]",
         )}
       >
         {children}
