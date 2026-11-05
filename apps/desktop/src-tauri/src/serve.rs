@@ -1350,6 +1350,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
 
         // Settings → MCP and Skills: the agents' own config, read and written.
         list_mcp_servers() => crate::mcp_servers::list_mcp_servers().await;
+        list_mcp_mentions(harness: Harness, cwd: String) => crate::mcp_mentions::list_mcp_mentions(harness, cwd).await;
         mcp_server_status() => ok(crate::mcp_servers::mcp_server_status().await);
         save_mcp_server(target: crate::mcp_servers::McpTarget, original: Option<String>, server: crate::mcp_servers::McpServerEntry) =>
             crate::mcp_servers::save_mcp_server(target, original, server).await;

@@ -13,7 +13,7 @@ let scenario = "Completed";
 let replay: (text: string) => void = () => {};
 function event(id: string, seq: number, text: string): AgentEvent {
   return { id, seq, sessionId: "edit-demo", harness: "codex", ts: new Date().toISOString(), turnId: null, subagent: null,
-    payload: { type: "user_message", text, baseline: "tree", queued: false, from: null, cwd: null, images: [], issues: [] } };
+    payload: { type: "user_message", text, baseline: "tree", queued: false, from: null, cwd: null, images: [], issues: [], mcpServers: [] } };
 }
 Object.assign(window, { __TAURI_INTERNALS__: {
   invoke: async (command: string, args: {cmd?: string; args?: {prompt: string}; prompt?: string}) => {

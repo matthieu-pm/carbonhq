@@ -6,7 +6,7 @@ import type { AgentEvent } from "@/types/events";
 function e(id: string, payload: AgentEvent["payload"]): AgentEvent {
   return {id,payload,sessionId:"s",harness:"codex",seq:0,ts:"2026-11-04T20:00:00Z",turnId:null,subagent:null};
 }
-function prompt(id: string) { return e(id,{type:"user_message",text:id,baseline:null,images:[],issues:[],queued:false,from:null,cwd:null}); }
+function prompt(id: string) { return e(id,{type:"user_message",text:id,baseline:null,images:[],issues:[],mcpServers:[],queued:false,from:null,cwd:null}); }
 
 describe("replayed message history", () => {
   it("removes exactly the superseded turn and leaves prior history and the replacement response", () => {

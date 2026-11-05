@@ -160,6 +160,7 @@ import LoginExpiredNotice from "@/components/composer/LoginExpiredNotice";
 import AutoContinueNotice from "@/components/composer/AutoContinueNotice";
 import type { Attachment, IssueRef, SessionIndexItem, WorktreeDisposition } from "@/types/events";
 import { useSlashCommands } from "@/hooks/useSlashCommands";
+import { useMcpMentions } from "@/hooks/useMcpMentions";
 import { useRecorder } from "@/hooks/useTranscription";
 import { useUpdater } from "@/hooks/useUpdater";
 import { appendToDraft, onDraftWrite, readDraft, useHasDraft, writeDraft } from "@/hooks/useDraft";
@@ -1592,6 +1593,7 @@ function App() {
       ),
     [sessionIndexItems, projects, space, composerProject],
   );
+  const mcpServers = useMcpMentions(composerCwd, harness);
   const { commands: slashCommands, loading: slashCommandsLoading } = useSlashCommands(
     composerCwd,
     harness,
@@ -3233,6 +3235,7 @@ function App() {
           onSend={(message, attachments) => void sendFromComposer(message, attachments)}
           commands={slashCommands}
           commandsLoading={slashCommandsLoading}
+          mcpServers={mcpServers}
           cwd={composerCwd}
           onStop={handleInterrupt}
           onCancelQueued={handleCancelQueued}

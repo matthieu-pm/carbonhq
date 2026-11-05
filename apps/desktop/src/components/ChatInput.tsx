@@ -14,6 +14,7 @@ import AttachmentTray from "@/components/composer/AttachmentTray";
 import FileMentionMenu from "@/components/composer/FileMentionMenu";
 import IssueMentionMenu from "@/components/composer/IssueMentionMenu";
 import RichInput from "@/components/composer/RichInput";
+import McpMentionMenu from "@/components/composer/McpMentionMenu";
 import SessionMentionMenu from "@/components/composer/SessionMentionMenu";
 import SlashCommandMenu from "@/components/composer/SlashCommandMenu";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ import {
 import { registerComposer, typeIntoComposer } from "@/lib/composerFocus";
 import { continueList } from "@/lib/list";
 import { selectionRange } from "@/lib/richDom";
+import { applyMcp, filterMcp, mcpSpan } from "@/lib/mcpMention";
 import { applyMention, mentionSpan } from "@/lib/mention";
 import { applySession, filterSessions, sessionSpan } from "@/lib/sessionTag";
 import {
@@ -61,6 +63,7 @@ import type {
   Attachment,
   FileMatch,
   Issue,
+  McpMention,
   QueuedMessage,
   SessionIndexItem,
   SlashCommand,
@@ -80,6 +83,9 @@ type ChatInputProps = {
   /// Whether that probe is still out. The picker draws "this agent publishes no
   /// slash commands" on an empty list, which is only true once it has answered.
   commandsLoading?: boolean;
+  /// What the `$` picker offers: the MCP servers the session's agent loads in
+  /// `cwd`. A `$word` naming none of them stays prose, so `$HOME` is safe.
+  mcpServers?: McpMention[];
   /// Where the `@` picker searches for files. The session's own directory, so a
   /// worktree session mentions paths inside its tree — the CLI resolves `@path`
   /// against the directory it was spawned in, and those are the same one.
@@ -232,10 +238,13 @@ const NO_COMMANDS_NOTE = "This agent publishes no slash commands";
 /// empty, which it plainly is not.
 const NO_SESSIONS_NOTE = "No other tasks in this project";
 
+const NO_MCP: McpMention[] = [];
+
 export default function ChatInput({
   onSend,
   commands = [],
   commandsLoading = false,
+  mcpServers = NO_MCP,
   cwd = null,
   issuesConnected = false,
   issueTrackers = { linear: false, github: false },
@@ -421,6 +430,13 @@ export default function ChatInput({
   // for somebody who reached for it anyway.
   const noSessions = session !== null && !canMentionSession;
 
+  // The fifth, exclusive with the rest for the same reason: a token opening
+  // with `$` is none of theirs. Drawn only with rows — an agent with no
+  // servers leaves `$` as prose, since `$HOME` is an ordinary thing to type.
+  const mcp = mcpSpan(message, caret);
+  const mcpMatches = mcp ? filterMcp(mcpServers, mcp.query) : NO_MCP;
+  const mcpNames = useMemo(() => mcpServers.map((server) => server.name), [mcpServers]);
+
   // Flattened in render order, so arrowing through the list and drawing it
   // can't disagree about which row an index names.
   const commandMatches = useMemo(() => groups.flatMap((group) => group.items), [groups]);
@@ -430,6 +446,8 @@ export default function ChatInput({
   // a union that `mention` already decided.
   const rowCount = mention
     ? files.length
+    : mcp
+      ? mcpMatches.length
     : issue
       ? issues.length
       : session
@@ -458,7 +476,7 @@ export default function ChatInput({
   const menuOpen =
     !dismissed &&
     (rowCount > 0 || issuesLoading || noCommands || noSessions || noIssues) &&
-    (query !== null || mention !== null || issue !== null || session !== null);
+    (query !== null || mention !== null || issue !== null || session !== null || mcp !== null);
   // Clamped rather than trusted: both lists arrive asynchronously, so a list
   // that shrinks under an already-moved selection would otherwise index past
   // its end — and an undefined row only shows up as a crash on the keystroke
@@ -470,12 +488,19 @@ export default function ChatInput({
   const mentionQuery = mention?.query ?? null;
   const issueQuery = issue?.query ?? null;
   const sessionQuery = session?.query ?? null;
+  const mcpQuery = mcp?.query ?? null;
   useEffect(() => {
     setActiveIndex(0);
-    if (query === null && mentionQuery === null && issueQuery === null && sessionQuery === null) {
+    if (
+      query === null &&
+      mentionQuery === null &&
+      issueQuery === null &&
+      sessionQuery === null &&
+      mcpQuery === null
+    ) {
       setDismissed(false);
     }
-  }, [query, mentionQuery, issueQuery, sessionQuery]);
+  }, [query, mentionQuery, issueQuery, sessionQuery, mcpQuery]);
 
   const pickCommand = (command: SlashCommand) => {
     const next = applyCommand(message, command.name);
@@ -532,6 +557,15 @@ export default function ChatInput({
     editorRef.current?.focus();
   };
 
+  const pickMcp = (picked: McpMention) => {
+    if (!mcp) return;
+
+    const next = applyMcp(message, mcp, picked.name);
+    setMessage(next.text);
+    setCaret(next.caret);
+    editorRef.current?.focus();
+  };
+
   /// The keyboard's way into whichever list is drawn. A click calls the same
   /// functions directly, so the two routes cannot diverge.
   const pickRow = (index: number, keepOpen = false) => {
@@ -550,6 +584,12 @@ export default function ChatInput({
     if (session) {
       const picked = sessionMatches[index];
       if (picked) pickSession(picked);
+      return;
+    }
+
+    if (mcp) {
+      const picked = mcpMatches[index];
+      if (picked) pickMcp(picked);
       return;
     }
 
@@ -952,6 +992,14 @@ export default function ChatInput({
                 onHover={setActiveIndex}
                 bare={isNewTask}
               />
+            ) : mcp ? (
+              <McpMentionMenu
+                servers={mcpMatches}
+                activeIndex={active}
+                onPick={pickMcp}
+                onHover={setActiveIndex}
+                bare={isNewTask}
+              />
             ) : (
               <SlashCommandMenu
                 groups={groups}
@@ -1037,6 +1085,7 @@ export default function ChatInput({
                   }}
                   onCaretChange={setCaret}
                   onPasteFiles={() => pasteAttachments(attachKey)}
+                  mcpServers={mcpNames}
                   maxRows={isNewTask ? NEW_TASK_MAX_ROWS : MAX_ROWS}
                   // The two that are always there lead, and the two that come
                   // and go trail — so the line grows and shrinks at its end
@@ -1057,6 +1106,7 @@ export default function ChatInput({
                           "@files.",
                           "/skills.",
                           canMentionSession && "&tasks.",
+                          mcpServers.length > 0 && "$mcp.",
                           issuesConnected && "#issues.",
                         ]
                           .filter(Boolean)

@@ -27,6 +27,7 @@ export type Segment = {
     | "mention"
     | "issue"
     | "session"
+    | "mcp"
     | "url"
     | "strong"
     | "em"
@@ -61,6 +62,7 @@ export const SEGMENT_COLOR: Record<Segment["kind"], string> = {
   mention: "text-accent-mention",
   issue: "text-accent-issue",
   session: "text-accent-session",
+  mcp: "text-accent-mcp",
   // Underlined and nothing else: a URL is already its own colour of word,
   // and it must read the same in the composer, where it is only text. The
   // decoration follows the *text* rather than naming a page token, since the

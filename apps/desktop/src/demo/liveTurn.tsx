@@ -47,6 +47,7 @@ const prompt = (text: string, queued: boolean): Payload => ({
   text,
   images: [],
   issues: [],
+  mcpServers: [],
   baseline: null,
   queued,
   from: null,

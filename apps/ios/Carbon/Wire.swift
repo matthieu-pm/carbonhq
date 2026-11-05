@@ -193,14 +193,16 @@ struct Queued: Decodable, Hashable {
     let id: String
     let text: String
     let attachmentPaths: [String]
+    let mcpServers: [String]
 
-    enum CodingKeys: String, CodingKey { case id, text, attachmentPaths }
+    enum CodingKeys: String, CodingKey { case id, text, attachmentPaths, mcpServers }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         text = try c.decode(String.self, forKey: .text)
         attachmentPaths = (try? c.decode([String].self, forKey: .attachmentPaths)) ?? []
+        mcpServers = (try? c.decode([String].self, forKey: .mcpServers)) ?? []
     }
 }
 
@@ -287,7 +289,7 @@ enum Payload: Decodable {
     case turnReplayed(promptEventId: String, replacementEventId: String)
     case turnCompleted(failed: Bool, finalText: String?)
     /// `queued` is a prompt typed into a running turn, which answers it inside that turn.
-    case userMessage(text: String, fromTitle: String?, fromId: String?, queued: Bool, images: [ImageRef])
+    case userMessage(text: String, fromTitle: String?, fromId: String?, queued: Bool, images: [ImageRef], mcpServers: [String])
     case assistantText(String)
     case toolStarted(callId: String, name: String, toolType: String, input: JSON, title: String?)
     case toolCompleted(callId: String, result: ToolResult)
@@ -320,7 +322,8 @@ enum Payload: Decodable {
                     text: try c.decode(String.self, forKey: "text"),
                     fromTitle: from?["title"], fromId: from?["sessionId"],
                     queued: (try? c.decode(Bool.self, forKey: "queued")) ?? false,
-                    images: decodeImages(c))
+                    images: decodeImages(c),
+                    mcpServers: (try? c.decode([String].self, forKey: "mcpServers")) ?? [])
             case "assistant_text":
                 self = .assistantText(try c.decode(String.self, forKey: "text"))
             case "tool_call_started":

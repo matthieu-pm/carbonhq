@@ -152,7 +152,7 @@ func buildTurns(_ events: [AgentEvent], busy: Bool) -> [Turn] {
     for e in main {
         switch e.payload {
         case .toolStarted(let callId, _, _, _, _) where results[callId] == nil: open.append(callId)
-        case .userMessage(_, _, _, false, _): abandoned.formUnion(open); open = []
+        case .userMessage(_, _, _, false, _, _): abandoned.formUnion(open); open = []
         default: break
         }
     }
@@ -197,7 +197,7 @@ func buildTurns(_ events: [AgentEvent], busy: Bool) -> [Turn] {
 
     for e in main {
         switch e.payload {
-        case .userMessage(let text, let fromTitle, let fromId, let queued, let images):
+        case .userMessage(let text, let fromTitle, let fromId, let queued, let images, _):
             let shown = stripSender(text, title: fromTitle, id: fromId)
             if queued, current != nil {
                 flushCalls()

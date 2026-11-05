@@ -211,6 +211,9 @@
      paper — additions are drawn in diffs and on the sidebar rail, never inside
      a run of prompt text, so the two are never read side by side. */
   --accent-session: oklch(0.82 0.13 160);
+  /* An MCP server mention. Orange, between `--destructive` and command,
+     the one gap left wide enough to read apart from both in a sentence. */
+  --accent-mcp: oklch(0.82 0.13 55);
 
   /* What a raised surface becomes under transparency: a veil rather than a
      fill. White here, black in light — a white veil on a light page is
@@ -417,6 +420,7 @@
      which is how the issue tag spent a while drawing as plain prose on every
      light palette with nothing saying why. */
   --accent-session: oklch(0.55 0.16 160);
+  --accent-mcp: oklch(0.6 0.15 50);
 
   /* Far shallower than dark's 22%: the same scrim over a near-white surface
      reads as a hole rather than a recess. */
@@ -685,6 +689,7 @@
          hand-written in-gamut value would have to be re-derived per display. */
       --accent-issue: oklch(1 0.195 330);
       --accent-session: oklch(0.95 0.19 150);
+      --accent-mcp: oklch(0.93 0.15 60);
     }
   }
 
@@ -940,6 +945,7 @@
   --color-accent-mention: var(--accent-mention);
   --color-accent-issue: var(--accent-issue);
   --color-accent-session: var(--accent-session);
+  --color-accent-mcp: var(--accent-mcp);
   --color-accent-merge: var(--accent-merge);
   --color-accent-merge-hover: var(--accent-merge-hover);
   --color-accent-merge-foreground: var(--accent-merge-foreground);
