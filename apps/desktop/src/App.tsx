@@ -1345,6 +1345,7 @@ function App() {
     !mainGroup && !crewDrawn,
   );
   const summaryShown = summary.open;
+  const sources = useMemo(() => summarySources(selectedSession?.events ?? []), [selectedSession?.events]);
   const pullRequests = usePullRequest(
     selectedSession?.cwd ?? "",
     prBranch,
@@ -2785,6 +2786,7 @@ function App() {
   const summaryCard = selectedSession && (
     <PinnedSummary
       key={selectedSession.sessionId}
+      sessionId={selectedSession.sessionId}
       project={basename(selectedSession.projectPath)}
       cwd={selectedSession.cwd}
       environment={serverName(serverOfPath(selectedSession.cwd))}
@@ -2800,7 +2802,7 @@ function App() {
       subagents={subagents}
       busy={busy}
       liveTaskIds={liveTaskIds}
-      sources={summarySources(selectedSession.events)}
+      sources={sources}
       context={contextUsage}
       onOpen={(tab) => { summary.closePopover(); showPanel(tab); }}
       onManageSources={serverOfPath(selectedSession.cwd) === LOCAL ? () => { summary.closePopover(); setSettingsTab("mcp"); setSettingsOpen(true); } : undefined}

@@ -95,6 +95,7 @@ describe("mcpCall", () => {
   it("reads Claude's mcp__server__tool", () => {
     expect(mcpCall("mcp__linear-server__save_issue", null)).toEqual({
       server: "Linear Server",
+      serverId: "linear-server",
       label: "Save Issue",
       detail: "linear-server · save_issue",
     });
@@ -105,6 +106,7 @@ describe("mcpCall", () => {
       mcpCall("list_document_sessions", "codex_apps · codex_document_control.list_document_sessions"),
     ).toEqual({
       server: "Codex Apps",
+      serverId: "codex_apps",
       label: "List Document Sessions",
       detail: "codex_apps · codex_document_control.list_document_sessions",
     });
@@ -120,6 +122,7 @@ describe("mcpCall", () => {
   it("falls back to the bare name", () => {
     expect(mcpCall("query", null)).toEqual({
       server: null,
+      serverId: null,
       label: "Query",
       detail: "query",
     });
@@ -130,6 +133,7 @@ describe("mcpCall", () => {
   it("reads a bare server__tool name", () => {
     expect(mcpCall("supermemory-ai__search_memory", null)).toEqual({
       server: "Supermemory Ai",
+      serverId: "supermemory-ai",
       label: "Search Memory",
       detail: "supermemory-ai · search_memory",
     });

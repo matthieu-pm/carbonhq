@@ -76,12 +76,14 @@ export default function ImageLightbox({
   index,
   onIndex,
   onClose,
+  onCloseAutoFocus,
 }: {
   images: LightboxImage[];
   /// `null` is closed.
   index: number | null;
   onIndex: (index: number) => void;
   onClose: () => void;
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   // Held across the close, because Radix keeps `Content` mounted while it fades
   // out and `index` is already `null` by then — without this the picture swaps
@@ -117,6 +119,7 @@ export default function ImageLightbox({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
 
         <Dialog.Content
+          onCloseAutoFocus={onCloseAutoFocus}
           // Handled here rather than on the window: the dialog holds focus while
           // it is open, so the keys are scoped to it without a listener that has
           // to be told when to stop caring. Escape is Radix's own.

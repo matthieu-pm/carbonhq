@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Popover } from "radix-ui";
-import { ChevronDown, ChevronUp, FileDiff, GitBranch, Monitor, MoreHorizontal, Plus, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, FileDiff, FileText, GitBranch, Globe, Image, Link, Monitor, MoreHorizontal, Plus, Search, SlidersHorizontal } from "lucide-react";
 
 import AgentIcon from "@/components/AgentIcon";
+import ImageLightbox, { Thumb, type LightboxImage } from "@/components/chat/ImageLightbox";
 import OpenInButton from "@/components/OpenInButton";
 import PrStateIcon from "@/components/PrStateIcon";
 import McpLogo from "@/components/settings/McpLogo";
@@ -13,11 +14,14 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { openPath } from "@/hooks/useDocs";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
-import { SUMMARY_ITEMS, setSummaryItem, summaryItemVisible, type SummaryItems } from "@/lib/pinnedSummary";
+import { openLink } from "@/lib/openLink";
+import { SUMMARY_ITEMS, setSummaryItem, summaryItemVisible, type SummaryItems, type SummarySource } from "@/lib/pinnedSummary";
 import type { SubagentRun } from "@/lib/transcript";
+import { fileSrc, qualify, serverOfPath } from "@/lib/transport";
 import { cn } from "@/lib/utils";
-import type { ChangeSet, Harness, McpServer, PrUnavailable, PullRequest } from "@/types/events";
+import type { ChangeSet, Harness, PrUnavailable, PullRequest } from "@/types/events";
 
 /// The same toolbar control pins on a roomy canvas and opens a popover otherwise.
 export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange }: {
@@ -53,6 +57,7 @@ export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange }: {
 }
 
 type Props = {
+  sessionId: string;
   project: string;
   cwd: string;
   environment: string;
@@ -68,7 +73,7 @@ type Props = {
   subagents: SubagentRun[];
   busy: boolean;
   liveTaskIds: ReadonlySet<string>;
-  sources: McpServer[] | null;
+  sources: readonly SummarySource[];
   context: { used: number; max: number } | null;
   onOpen: (tab: "changes" | "pr" | "more") => void;
   onManageSources?: () => void;
@@ -76,6 +81,15 @@ type Props = {
 };
 
 const row = "flex min-h-8 w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-1 text-left text-xs text-foreground/80 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+
+const SOURCE_ROWS = {
+  attachment: { icon: FileText, label: "Attachment" },
+  image: { icon: Image, label: "Image" },
+  link: { icon: Link, label: "Link" },
+  mcp: { icon: Globe, label: "MCP" },
+  search: { icon: Search, label: "Web search" },
+  web: { icon: Globe, label: "Web page" },
+};
 
 /// Only sections with content own a divider, so hidden details leave no empty rules.
 function SummarySection({ title, action, children }: { title?: string; action?: ReactNode; children: ReactNode }) {
@@ -92,11 +106,14 @@ function SummarySection({ title, action, children }: { title?: string; action?: 
 
 /// Details follow the conversation's real data; empty sections take no space.
 export default function PinnedSummary({
-  project, cwd, environment, branch, worktree, harness, changes, changesLoading, changesError,
+  sessionId, project, cwd, environment, branch, worktree, harness, changes, changesLoading, changesError,
   prs, prsLoading, prsError, subagents, busy, liveTaskIds, sources, context,
   onOpen, onManageSources, onHide,
 }: Props) {
   const [allSources, setAllSources] = useState(false);
+  const [previewImage, setPreviewImage] = useState<LightboxImage | null>(null);
+  const [imageOpen, setImageOpen] = useState(false);
+  const previewTrigger = useRef<HTMLButtonElement | null>(null);
   const [allPrs, setAllPrs] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [items, setItems] = useLocalStorage<SummaryItems>("ade.pinnedSummaryItems", {});
@@ -107,7 +124,7 @@ export default function PinnedSummary({
   const showWorkspace = visible("workspace");
   const showGit = (visible("branch") && branch) || visible("changes");
   const showPrs = visible("prs") && (prs.length > 0 || prsLoading || prsError !== null);
-  const showSources = visible("sources") && (!!sources?.length || !!onManageSources);
+  const showSources = visible("sources") && sources.length > 0;
   const empty = !showWorkspace && !showGit && !showPrs && !(visible("subagents") && subagents.length) && !showSources && !(visible("context") && context);
   const hide = () => {
     onHide();
@@ -187,18 +204,48 @@ export default function PinnedSummary({
         </SummarySection>}
 
         {showSources && <SummarySection title="Sources" action={onManageSources && <Tooltip>
-          <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" aria-label="Manage sources" onClick={onManageSources} className="-mr-1.5 text-muted-foreground"><Plus className="size-4" /></Button></TooltipTrigger>
-          <TooltipContent>Manage sources</TooltipContent>
+          <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" aria-label="Manage MCP servers" onClick={onManageSources} className="-mr-1.5 text-muted-foreground"><Plus className="size-4" /></Button></TooltipTrigger>
+          <TooltipContent>Manage MCP servers</TooltipContent>
         </Tooltip>}>
-          {(allSources ? sources : sources?.slice(0, 3))?.map((source) => <div key={source.name} className="flex min-h-8 items-center gap-2.5 px-2.5 py-1 text-xs text-muted-foreground">
-            <McpLogo server={{ name: source.name, transport: "http", command: null, args: [], env: [], url: null, headers: [], enabled: true, inherited: false }} className="size-4" />
-            <span className="min-w-0 flex-1 truncate" title={source.name}>{source.name}</span>
-            {source.status !== "connected" && <span className="max-w-24 truncate" title={source.status}>{source.status}</span>}
-          </div>)}
-          {!sources?.length && onManageSources && <button type="button" className={cn(row, "text-muted-foreground")} onClick={onManageSources}><Plus className="size-4" />Manage sources</button>}
-          {!!sources && sources.length > 3 && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => setAllSources((value) => !value)} aria-expanded={allSources}>
+          {(allSources ? sources : sources.slice(0, 3)).map((source) => {
+            const { icon: Icon, label } = SOURCE_ROWS[source.kind];
+            const thumbnail = source.kind === "image" && source.image.path
+              ? fileSrc(qualify(source.image.path, serverOfPath(cwd)))
+              : null;
+            const content = <>
+              {thumbnail ? <Thumb item={{ src: thumbnail, name: source.label }} className="size-4 shrink-0 rounded-sm object-cover" />
+                : source.kind === "mcp" && source.server
+                  ? <McpLogo server={{ name: source.server, transport: "http", command: null, args: [], env: [], url: null, headers: [], enabled: true, inherited: false }} className="text-muted-foreground" />
+                  : <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
+              <span className="min-w-0 flex-1 truncate" title={"url" in source ? source.url : source.label}>{source.label}</span>
+              <span className="shrink-0 text-muted-foreground">{label}</span>
+            </>;
+            if ("url" in source) return <a key={source.id} href={source.url} className={row} onClick={(event) => {
+              event.preventDefault();
+              openLink(source.url, event);
+            }}>{content}</a>;
+            if (source.kind === "attachment") return <button key={source.id} type="button" className={row} onClick={() => {
+              openPath(sessionId, source.path);
+            }}>{content}</button>;
+            if (source.kind === "image") return <button key={source.id} type="button" className={row} onClick={(event) => {
+              const src = thumbnail ?? source.image.url;
+              if (!src) return;
+              previewTrigger.current = event.currentTarget;
+              setPreviewImage({ src, name: source.label });
+              setImageOpen(true);
+            }}>{content}</button>;
+            return <div key={source.id} className="flex min-h-8 items-center gap-2.5 px-2.5 py-1 text-xs text-foreground/80">{content}</div>;
+          })}
+          {sources.length > 3 && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => setAllSources((value) => !value)} aria-expanded={allSources}>
             {allSources ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}{allSources ? "Show less" : `View all (${sources.length})`}
           </button>}
+          {previewImage && <ImageLightbox images={[previewImage]} index={imageOpen ? 0 : null}
+            onIndex={() => {}} onClose={() => setImageOpen(false)}
+            onCloseAutoFocus={(event) => {
+              if (!previewTrigger.current?.isConnected) return;
+              event.preventDefault();
+              previewTrigger.current.focus();
+            }} />}
         </SummarySection>}
 
         {visible("context") && context && <SummarySection title="Context window">
