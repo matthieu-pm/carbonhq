@@ -6,7 +6,8 @@ import {
   filterCommands,
   groupCommands,
   parseSlashCommand,
-  slashQuery,
+  slashSpan,
+  usedCommands,
 } from "./slash";
 import type { SlashCommand } from "@/types/events";
 
@@ -18,35 +19,49 @@ function command(
   return { name, description, argumentHint: "", aliases };
 }
 
-describe("slashQuery", () => {
+describe("slashSpan", () => {
+  const query = (text: string, caret: number) => slashSpan(text, caret)?.query ?? null;
+
   it("opens on a leading slash and tracks what follows it", () => {
-    expect(slashQuery("/", 1)).toBe("");
-    expect(slashQuery("/rev", 4)).toBe("rev");
+    expect(query("/", 1)).toBe("");
+    expect(query("/rev", 4)).toBe("rev");
   });
 
-  /// A slash inside prose is a path or a date, not a command. Firing there
-  /// would put a picker over most sentences that mention a file.
-  it("stays shut for a slash that isn't leading", () => {
-    expect(slashQuery("look at src/lib", 15)).toBeNull();
-    expect(slashQuery("on 12/08", 8)).toBeNull();
+  /// A skill named mid-sentence still runs on Claude Code, so a `/` opening any
+  /// word is a command being typed.
+  it("opens on a slash that starts a word mid-prompt", () => {
+    expect(slashSpan("$linear and /", 13)).toEqual({ start: 12, end: 13, query: "" });
+    expect(slashSpan("$linear and /lin", 16)).toEqual({ start: 12, end: 16, query: "lin" });
+    expect(query("first line\n/rev", 15)).toBe("rev");
+  });
+
+  /// A slash inside a word is a path or a date, and a token holding a second
+  /// slash is an absolute path. Neither names a command.
+  it("stays shut for paths and dates", () => {
+    expect(query("look at src/lib", 15)).toBeNull();
+    expect(query("on 12/08", 8)).toBeNull();
+    expect(query("see /Users/me", 13)).toBeNull();
+    expect(query("/Users/me", 9)).toBeNull();
   });
 
   /// The command is settled once a space is typed, so the picker gets out of
   /// the way of the arguments.
   it("closes once the caret moves into the arguments", () => {
-    expect(slashQuery("/review the diff", 16)).toBeNull();
-    expect(slashQuery("/review ", 8)).toBeNull();
+    expect(query("/review the diff", 16)).toBeNull();
+    expect(query("/review ", 8)).toBeNull();
   });
 
   /// Backspacing into the name to fix it has to reopen the picker, which is
   /// what makes this caret-based rather than "the text has no space in it".
   it("reopens when the caret goes back into the name", () => {
-    expect(slashQuery("/review the diff", 7)).toBe("review");
-    expect(slashQuery("/review the diff", 4)).toBe("review");
+    expect(query("/review the diff", 7)).toBe("review");
+    expect(query("/review the diff", 4)).toBe("review");
+    expect(query("do this /review the diff", 12)).toBe("review");
   });
 
-  it("ignores a caret sitting on the slash itself", () => {
-    expect(slashQuery("/rev", 0)).toBeNull();
+  it("ignores a caret sitting before the slash", () => {
+    expect(query("/rev", 0)).toBeNull();
+    expect(query("a /rev", 2)).toBeNull();
   });
 });
 
@@ -178,21 +193,42 @@ describe("groupCommands", () => {
 });
 
 describe("applyCommand", () => {
+  const apply = (text: string, caret: number, name: string) =>
+    applyCommand(text, slashSpan(text, caret)!, name);
+
   it("completes a half-typed name and leaves the caret past a space", () => {
-    expect(applyCommand("/comp", "compact")).toEqual({ text: "/compact ", caret: 9 });
+    expect(apply("/comp", 5, "compact")).toEqual({ text: "/compact ", caret: 9 });
   });
 
   /// Picking a different command from inside a line that already has arguments
   /// must not eat them.
   it("keeps arguments already typed", () => {
-    expect(applyCommand("/rev the diff", "review")).toEqual({
+    expect(apply("/rev the diff", 4, "review")).toEqual({
       text: "/review the diff",
       caret: 8,
     });
   });
 
   it("completes a bare slash", () => {
-    expect(applyCommand("/", "usage")).toEqual({ text: "/usage ", caret: 7 });
+    expect(apply("/", 1, "usage")).toEqual({ text: "/usage ", caret: 7 });
+  });
+
+  /// A newline behind the token is not a space to reuse: the caret would land on
+  /// the next line.
+  it("adds a space before a newline rather than reusing it", () => {
+    expect(apply("/rev\nmore", 4, "review")).toEqual({ text: "/review \nmore", caret: 8 });
+  });
+
+  /// Mid-prompt, only the token is replaced: the words either side stay put.
+  it("replaces just the token mid-prompt", () => {
+    expect(apply("$linear and /lin", 16, "linear")).toEqual({
+      text: "$linear and /linear ",
+      caret: 20,
+    });
+    expect(apply("use /rev on this", 8, "review")).toEqual({
+      text: "use /review on this",
+      caret: 12,
+    });
   });
 });
 
@@ -230,5 +266,32 @@ describe("parseSlashCommand", () => {
     expect(parseSlashCommand("/")).toBeNull();
     expect(parseSlashCommand("// a comment")).toBeNull();
     expect(parseSlashCommand("/ spaced")).toBeNull();
+  });
+});
+
+describe("filterCommands without descriptions", () => {
+  const commands = [command("review", "Review the diff, etc."), command("compact", "Free up context")];
+
+  /// Mid-prompt, `/etc` is a path. A description match would let Enter swap it
+  /// for `/review` instead of sending.
+  it("matches names alone", () => {
+    expect(filterCommands(commands, "etc", { byDescription: false })).toEqual([]);
+    expect(filterCommands(commands, "etc")).toEqual([commands[0]]);
+    expect(filterCommands(commands, "rev", { byDescription: false })).toEqual([commands[0]]);
+  });
+});
+
+describe("usedCommands", () => {
+  const known = [command("linear", ""), command("review", "")];
+
+  it("records the leading command even when unlisted", () => {
+    expect(usedCommands("/gone do it", known)).toEqual(["gone"]);
+  });
+
+  it("records mid-prompt commands only when known", () => {
+    expect(usedCommands("$linear and /linear please", known)).toEqual(["linear"]);
+    expect(usedCommands("look in /tmp then /review", known)).toEqual(["review"]);
+    expect(usedCommands("/review then\n/linear", known)).toEqual(["review", "linear"]);
+    expect(usedCommands("see /Users/me", known)).toEqual([]);
   });
 });

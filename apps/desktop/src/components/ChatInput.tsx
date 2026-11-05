@@ -55,8 +55,8 @@ import {
   applyCommand,
   filterCommands,
   groupCommands,
-  parseSlashCommand,
-  slashQuery,
+  slashSpan,
+  usedCommands,
 } from "@/lib/slash";
 import { cn } from "@/lib/utils";
 import type {
@@ -358,25 +358,27 @@ export default function ChatInput({
   // with the harness, then what was installed. Once there is a query it is
   // searching, and headers would hide matches behind section chrome, so the
   // ranked list is drawn flat.
-  const query = slashQuery(message, caret);
+  const slash = slashSpan(message, caret);
+  const query = slash?.query ?? null;
+  const slashStart = slash?.start ?? null;
   const groups = useMemo(() => {
     if (query === null) return [];
     if (query === "") return groupCommands(commands, recent);
 
-    const matches = filterCommands(commands, query);
+    const matches = filterCommands(commands, query, { byDescription: slashStart === 0 });
     return matches.length ? [{ label: null, items: matches }] : [];
-  }, [commands, query, recent]);
+  }, [commands, query, slashStart, recent]);
 
   // The two pickers are mutually exclusive without needing to be arbitrated:
-  // the caret sits in exactly one token, and a token opening with `/` at
-  // position zero is not one opening with `@`. Kept as two independent reads so
+  // the caret sits in exactly one token, and a token opening with `/` is not
+  // one opening with `@`. Kept as two independent reads so
   // neither has to know the other exists.
   const mention = mentionSpan(message, caret);
   const files = useFileSearch(cwd, mention?.query ?? null);
 
   // The third of the same shape, and mutually exclusive with the other two for
   // the same reason: the caret sits in exactly one token, and a token opening
-  // with `#` is neither one opening with `@` nor a command at position zero.
+  // with `#` is neither one opening with `@` nor one opening with `/`.
   const issue = issueSpan(message, caret);
   // The pick is read here rather than passed down: it is a module store every
   // issue surface subscribes to, so the chips in this menu's own header move
@@ -503,7 +505,9 @@ export default function ChatInput({
   }, [query, mentionQuery, issueQuery, sessionQuery, mcpQuery]);
 
   const pickCommand = (command: SlashCommand) => {
-    const next = applyCommand(message, command.name);
+    if (!slash) return;
+
+    const next = applyCommand(message, slash, command.name);
     setMessage(next.text);
     setCaret(next.caret);
     editorRef.current?.focus();
@@ -820,8 +824,7 @@ export default function ChatInput({
     // Recorded on send rather than on pick: choosing a command from the list
     // and then deleting it is not using it. Taken from the text, so a command
     // typed by hand counts the same as one picked.
-    const command = parseSlashCommand(trimmed);
-    if (command) recordCommand(command.name);
+    for (const name of usedCommands(trimmed, commands)) recordCommand(name);
 
     onSend(trimmed, attachments);
     setMessage("");

@@ -8,23 +8,43 @@
 /// [streaming.ts]: ./streaming.ts
 import type { SlashCommand } from "@/types/events";
 
-/// The command name being typed, or `null` when the caret isn't in one.
-///
-/// Only a *leading* slash counts, because that is the only one the CLI treats as
-/// a command — a slash mid-sentence is prose, and opening a picker over it would
-/// fire on every file path someone types.
-///
-/// The caret has to be inside the first token rather than the text merely
-/// lacking a space, so backspacing into `/review some args` to fix the name
-/// reopens the picker instead of leaving it shut until the line is cleared.
-export function slashQuery(text: string, caret: number): string | null {
-  if (!text.startsWith("/")) return null;
+/// The command token the caret is sitting in: where it starts and ends, and the
+/// name typed so far.
+type SlashSpan = {
+  start: number;
+  end: number;
+  query: string;
+};
 
-  const space = text.search(/\s/);
-  const end = space === -1 ? text.length : space;
-  if (caret < 1 || caret > end) return null;
+const SPACE = /\s/;
 
-  return text.slice(1, end);
+/// The command being typed, or `null` when the caret isn't in one.
+///
+/// Any word opening with `/` counts, not just the first. Claude Code expands a
+/// leading `/name` itself, and a skill named mid-sentence still runs: the model
+/// reads the name and calls its Skill tool (measured on v2.1.318).
+///
+/// Paths are kept out by shape. The walk back from the caret stops at
+/// whitespace, so `src/lib` never reaches a word-opening `/`; and a second `/`
+/// in the token (`/Users/me`) names no command, so it closes.
+///
+/// The caret has to be inside the token, so backspacing into `/review some
+/// args` to fix the name reopens the picker.
+export function slashSpan(text: string, caret: number): SlashSpan | null {
+  if (caret < 1 || caret > text.length) return null;
+
+  let start = caret;
+  while (start > 0 && !SPACE.test(text[start - 1])) start -= 1;
+  // `start === caret` is a caret sitting before the slash, not inside the token.
+  if (start === caret || text[start] !== "/") return null;
+
+  let end = caret;
+  while (end < text.length && !SPACE.test(text[end])) end += 1;
+
+  const query = text.slice(start + 1, end);
+  if (query.includes("/")) return null;
+
+  return { start, end, query };
 }
 
 /// Commands matching `query`, best first.
@@ -33,18 +53,26 @@ export function slashQuery(text: string, caret: number): string | null {
 /// other command's description. The sort is stable and an empty query scores
 /// every command alike, so "just opened" shows the CLI's own ordering — which
 /// groups user commands ahead of built-ins — rather than a re-alphabetized list.
-export function filterCommands(commands: SlashCommand[], query: string): SlashCommand[] {
+///
+/// `byDescription` is off mid-prompt. There a `/word` is as likely a path as a
+/// command, and with descriptions searched `see /etc` matches some command's
+/// prose — then Enter completes that command instead of sending the message.
+export function filterCommands(
+  commands: SlashCommand[],
+  query: string,
+  { byDescription = true }: { byDescription?: boolean } = {},
+): SlashCommand[] {
   const q = query.toLowerCase();
 
   return commands
-    .map((command) => ({ command, score: score(command, q) }))
+    .map((command) => ({ command, score: score(command, q, byDescription) }))
     .filter((match) => match.score !== null)
     .sort((a, b) => a.score! - b.score!)
     .map((match) => match.command);
 }
 
 /// `null` when the command doesn't match at all. Lower is better.
-function score(command: SlashCommand, query: string): number | null {
+function score(command: SlashCommand, query: string, byDescription: boolean): number | null {
   const name = command.name.toLowerCase();
   if (name.startsWith(query)) return 0;
   if (command.aliases.some((alias) => alias.toLowerCase().startsWith(query))) return 1;
@@ -53,22 +81,31 @@ function score(command: SlashCommand, query: string): number | null {
   // `railway:deploy` matches "deploy" ahead of anything that only mentions it.
   if (name.slice(name.indexOf(":") + 1).startsWith(query)) return 2;
   if (name.includes(query)) return 3;
-  if (command.description.toLowerCase().includes(query)) return 4;
+  if (byDescription && command.description.toLowerCase().includes(query)) return 4;
 
   return null;
 }
 
-/// Replaces the command being typed with `name`, leaving any arguments alone.
+/// Replaces the command being typed with `name`, leaving the rest of the line
+/// alone.
 ///
-/// Always lands the caret past a trailing space: every pick is either finished
-/// (the space is harmless) or about to take arguments (the space is needed), and
-/// the CLI reads `/model` and `/model ` identically.
-export function applyCommand(text: string, name: string): { text: string; caret: number } {
-  const space = text.search(/\s/);
-  const args = space === -1 ? "" : text.slice(space);
-  const head = `/${name}`;
+/// Always lands the caret past exactly one space, reusing the one already there:
+/// every pick is either finished (the space is harmless) or about to take
+/// arguments (the space is needed), and the CLI reads `/model` and `/model `
+/// identically. Only a real space is reused — a newline behind the token would
+/// put the caret on the next line.
+export function applyCommand(
+  text: string,
+  span: SlashSpan,
+  name: string,
+): { text: string; caret: number } {
+  const head = `${text.slice(0, span.start)}/${name}`;
+  const tail = text.slice(span.end);
 
-  return { text: head + (args || " "), caret: head.length + 1 };
+  return {
+    text: head + (tail.startsWith(" ") ? tail : ` ${tail}`),
+    caret: head.length + 1,
+  };
 }
 
 /// Where a command came from, as far as the CLI will tell us.
@@ -156,4 +193,23 @@ export function parseSlashCommand(text: string): { name: string; args: string } 
   if (!match) return null;
 
   return { name: match[1], args: match[2].trim() };
+}
+
+/// Every command a sent message uses, for recents.
+///
+/// The leading one counts whether or not it is still listed, the way
+/// [`parseSlashCommand`](#parseSlashCommand) reads it. A mid-prompt `/word`
+/// counts only when it names a known command, since there it may be a path.
+export function usedCommands(text: string, known: SlashCommand[]): string[] {
+  const names = new Set(known.map((command) => command.name));
+  const used: string[] = [];
+
+  const leading = parseSlashCommand(text);
+  if (leading) used.push(leading.name);
+
+  for (const match of text.matchAll(/(?<=\s)\/([^\s/]+)(?=\s|$)/g)) {
+    if (names.has(match[1]) && !used.includes(match[1])) used.push(match[1]);
+  }
+
+  return used;
 }

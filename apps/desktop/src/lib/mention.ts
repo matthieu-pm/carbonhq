@@ -1,11 +1,10 @@
 /// Where the composer's `@` file picker opens, and how a pick lands back in the
 /// text.
 ///
-/// The sibling of [slash.ts], and deliberately not the same shape. A command is
-/// the *whole* first token of a prompt, so the slash picker can key off position
-/// zero; a mention is a word inside a sentence, appears any number of times, and
-/// has to be told apart from the `@` in an email address. So the caret finds its
-/// own token here rather than the token being found once up front.
+/// The sibling of [slash.ts], and the same shape: a mention is a word inside a
+/// sentence, appears any number of times, and has to be told apart from the `@`
+/// in an email address. So the caret finds its own token rather than the token
+/// being found once up front.
 ///
 /// [slash.ts]: ./slash.ts
 
@@ -13,7 +12,7 @@
 ///
 /// The span is returned rather than just the query because [`applyMention`]
 /// needs to know what to replace — a mention can be anywhere in the line, so
-/// unlike a command there is no "from the start" to rewrite from.
+/// there is no "from the start" to rewrite from.
 type MentionSpan = {
   start: number;
   end: number;
