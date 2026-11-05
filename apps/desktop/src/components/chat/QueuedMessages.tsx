@@ -17,6 +17,7 @@ import { withMcpServers } from "@/lib/mcpMention";
 import { commandBrand } from "@/lib/pluginBrand";
 import { keyLabel, modifierLabels } from "@/lib/shortcuts";
 import { stripSenderPrefix } from "@/lib/relay";
+import { chipLabel } from "@/lib/richText";
 
 /// Prompts typed into the running turn that the app is still holding.
 ///
@@ -104,8 +105,8 @@ export default function QueuedMessages({
                         );
                       }
                       return (
-                        <span key={s} className={SEGMENT_COLOR[segment.kind]}>
-                          {segment.text}
+                        <span key={s} className={SEGMENT_COLOR[segment.kind]} title={segment.kind === "mcp" ? segment.text : undefined}>
+                          {segment.kind === "mcp" ? chipLabel(segment) : segment.text}
                         </span>
                       );
                     })}

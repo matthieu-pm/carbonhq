@@ -63,7 +63,7 @@ async fn servers(harness: Harness, cwd: &str) -> anyhow::Result<Vec<McpMention>>
         .await
 }
 
-/// Every enabled server in the files `harness` reads, first name wins.
+/// Project definitions override user definitions, including disabled entries.
 ///
 /// Per-project files are read from `cwd` itself rather than the project root:
 /// a worktree carries its own checked-in copy, and that copy is what the agent
@@ -72,14 +72,19 @@ async fn from_files(harness: Harness, cwd: &Path) -> Vec<McpMention> {
     let Some(home) = std::env::home_dir() else {
         return Vec::new();
     };
+    from_files_at(harness, cwd, &home).await
+}
+
+/// Keeps file discovery testable without changing the process's home directory.
+async fn from_files_at(harness: Harness, cwd: &Path, home: &Path) -> Vec<McpMention> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
-    for file in McpFile::ALL {
+    for file in McpFile::ALL.into_iter().rev() {
         if !file.readers().contains(&harness) {
             continue;
         }
         let project = file.per_project().then_some(cwd);
-        let Some(path) = file.path(&home, project) else {
+        let Some(path) = file.path(home, project) else {
             continue;
         };
         let Ok(Some(entries)) = crate::mcp_servers::read_servers(file, &path, project).await
@@ -88,7 +93,7 @@ async fn from_files(harness: Harness, cwd: &Path) -> Vec<McpMention> {
         };
         let scope = if file.per_project() { "project" } else { "user" };
         for McpServerEntry { name, enabled, .. } in entries {
-            if enabled && seen.insert(name.clone()) {
+            if seen.insert(name.clone()) && enabled {
                 out.push(McpMention {
                     name,
                     scope: scope.to_string(),
@@ -161,6 +166,62 @@ pub fn with_hint(text: &str, servers: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn project_overrides_decide_whether_a_server_is_available() {
+        let root = std::env::temp_dir().join(format!("carbon-mentions-{}", uuid::Uuid::now_v7()));
+        let home = root.join("home");
+        let cwd = root.join("project");
+        for (harness, user, project, enabled, disabled) in [
+            (
+                Harness::Codex,
+                ".codex/config.toml",
+                ".codex/config.toml",
+                "[mcp_servers.docs]\ncommand = 'docs'\nenabled = true\n",
+                "[mcp_servers.docs]\ncommand = 'docs'\nenabled = false\n",
+            ),
+            (
+                Harness::Grok,
+                ".grok/config.toml",
+                ".grok/config.toml",
+                "[mcp_servers.docs]\ncommand = 'docs'\nenabled = true\n",
+                "[mcp_servers.docs]\ncommand = 'docs'\nenabled = false\n",
+            ),
+            (
+                Harness::Pi,
+                ".pi/agent/mcp.json",
+                ".pi/mcp.json",
+                r#"{"mcpServers":{"docs":{"command":"docs","enabled":true}}}"#,
+                r#"{"mcpServers":{"docs":{"enabled":false}}}"#,
+            ),
+        ] {
+            let user_path = home.join(user);
+            let project_path = cwd.join(project);
+            tokio::fs::create_dir_all(user_path.parent().unwrap())
+                .await
+                .unwrap();
+            tokio::fs::create_dir_all(project_path.parent().unwrap())
+                .await
+                .unwrap();
+            tokio::fs::write(&user_path, enabled).await.unwrap();
+            tokio::fs::write(&project_path, disabled).await.unwrap();
+            assert!(
+                from_files_at(harness, &cwd, &home).await.is_empty(),
+                "{harness:?}"
+            );
+            tokio::fs::write(&user_path, disabled).await.unwrap();
+            tokio::fs::write(&project_path, enabled).await.unwrap();
+            assert_eq!(
+                from_files_at(harness, &cwd, &home).await,
+                vec![McpMention {
+                    name: "docs".into(),
+                    scope: "project".into(),
+                }],
+                "{harness:?}"
+            );
+        }
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
 
     #[test]
     fn reads_tokens_that_open_a_word() {

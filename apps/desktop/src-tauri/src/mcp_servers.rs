@@ -1157,7 +1157,7 @@ async fn run_cli(
 }
 
 /// A probe owns a process group so a timed-out CLI cannot leave MCP servers behind.
-struct ProbeGroup(u32);
+pub(crate) struct ProbeGroup(pub(crate) u32);
 
 impl Drop for ProbeGroup {
     fn drop(&mut self) {

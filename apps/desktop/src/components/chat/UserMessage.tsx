@@ -25,6 +25,7 @@ import { withMcpServers } from "@/lib/mcpMention";
 import { openLink } from "@/lib/openLink";
 import { commandBrand } from "@/lib/pluginBrand";
 import { stripSenderPrefix } from "@/lib/relay";
+import { chipLabel } from "@/lib/richText";
 import { shortenPath } from "@/lib/tools";
 import { useSendProgress } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
@@ -339,8 +340,8 @@ export default function UserMessage({
               }
 
               return (
-                <span key={i} className={SEGMENT_COLOR[segment.kind]}>
-                  {segment.text}
+                <span key={i} className={SEGMENT_COLOR[segment.kind]} title={segment.kind === "mcp" ? segment.text : undefined}>
+                  {segment.kind === "mcp" ? chipLabel(segment) : segment.text}
                 </span>
               );
             })}

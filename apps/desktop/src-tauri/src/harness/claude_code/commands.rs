@@ -189,7 +189,8 @@ fn mcp_servers_in(reply: Value) -> Result<Vec<(String, String)>> {
 /// of it changes the answer and every flag is one more way the probe can fail
 /// where a session would not.
 async fn probe(cwd: &str, ask: ControlRequest<'_>) -> Result<Value> {
-    let mut child = Command::new(crate::binpath::claude().await)
+    let mut command = Command::new(crate::binpath::claude().await);
+    command
         .args([
             "-p",
             "--input-format",
@@ -198,7 +199,13 @@ async fn probe(cwd: &str, ask: ControlRequest<'_>) -> Result<Value> {
             "stream-json",
             "--verbose",
         ])
-        .current_dir(cwd)
+        .current_dir(cwd);
+    probe_command(command, ask).await
+}
+
+/// Owns the whole probe tree, including MCP servers that ignore closed pipes.
+async fn probe_command(mut command: Command, ask: ControlRequest<'_>) -> Result<Value> {
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -206,8 +213,12 @@ async fn probe(cwd: &str, ask: ControlRequest<'_>) -> Result<Value> {
         // the child waits on a stdin that never closes, so dropping it has to be
         // enough to reap it.
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()
         .context("couldn't start claude to initialize")?;
+    let _group = crate::mcp_servers::ProbeGroup(
+        child.id().context("the probe has already exited")?,
+    );
 
     let mut stdin = child.stdin.take().context("failed to take stdin")?;
     let stdout = child.stdout.take().context("failed to take stdout")?;
@@ -263,6 +274,60 @@ fn matching_response(line: &str, request_id: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn probes_reap_mcp_children_on_reply_and_timeout() {
+        let root =
+            std::env::temp_dir().join(format!("carbon-mention-probe-{}", uuid::Uuid::now_v7()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        for mode in ["reply", "timeout"] {
+            let pid_file = root.join(mode);
+            let mut command = Command::new("/bin/sh");
+            command.args(["-c", r#"
+sleep 30 &
+echo $! > "$1"
+read -r request
+if [ "$2" = reply ]; then
+    id=$(printf '%s' "$request" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+    printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$id"
+fi
+wait
+"#, "probe"]).arg(&pid_file).arg(mode);
+            let result = timeout(
+                Duration::from_secs(1),
+                probe_command(command, ControlRequest::McpStatus),
+            )
+            .await;
+            if mode == "reply" {
+                assert_eq!(result.unwrap().unwrap(), serde_json::json!({}));
+            } else {
+                assert!(result.is_err());
+            }
+            let pid = tokio::fs::read_to_string(&pid_file).await.unwrap();
+            let mut alive = true;
+            for _ in 0..40 {
+                let state = std::process::Command::new("ps")
+                    .args(["-o", "stat=", "-p", pid.trim()])
+                    .output()
+                    .unwrap();
+                alive = state.status.success()
+                    && !String::from_utf8_lossy(&state.stdout)
+                        .trim()
+                        .starts_with('Z');
+                if !alive {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            if alive {
+                unsafe {
+                    libc::kill(pid.trim().parse().unwrap(), libc::SIGKILL);
+                }
+            }
+            assert!(!alive, "the {mode} probe left its MCP child running");
+        }
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
 
     /// Shape captured from v2.1 with configs trimmed: a plugin reports its
     /// source and a dynamic scope, a user server its scope alone.
