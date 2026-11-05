@@ -329,7 +329,7 @@ export function streamingLabel(name: string): string {
 export function mcpCall(
   name: string,
   title: string | null,
-): { server: string | null; label: string; detail: string } {
+): { server: string | null; serverId: string | null; label: string; detail: string } {
   let server: string | null = null;
   let tool = name;
 
@@ -355,6 +355,7 @@ export function mcpCall(
 
   return {
     server: server ? humanize(server) : null,
+    serverId: server || null,
     label: humanize(method),
     detail: server ? `${server} · ${tool}` : tool,
   };

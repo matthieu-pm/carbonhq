@@ -1,4 +1,7 @@
-import type { AgentEvent, McpServer } from "@/types/events";
+import { basename } from "@/lib/format";
+import { highlightSegments, withLineBreaks } from "@/lib/highlight";
+import { fileTarget, mcpCall, toolSummary } from "@/lib/tools";
+import type { AgentEvent, AgentEventPayload, ImageRef } from "@/types/events";
 
 export const SUMMARY_WIDTH = 320;
 export const SUMMARY_GAP = 12;
@@ -34,14 +37,132 @@ export function setSummaryItem(items: SummaryItems, id: SummaryItemId, visible: 
   return visible === SUMMARY_ITEMS.find((item) => item.id === id)!.defaultVisible ? rest : { ...rest, [id]: visible };
 }
 
-/// Only the latest main-thread init describes this child's connections.
-export function summarySources(events: readonly AgentEvent[]): McpServer[] | null {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i];
-    if (event.subagent || event.payload.type !== "turn_started") continue;
-    // Other harnesses synthesize an empty SessionInfo without querying MCP.
-    if (event.harness !== "claude_code" && event.payload.mcpServers.length === 0) return null;
-    return [...new Map(event.payload.mcpServers.map((server) => [server.name, server])).values()];
+export type SummarySource = { id: string; label: string } & (
+  | { kind: "attachment"; path: string }
+  | { kind: "image"; image: ImageRef }
+  | { kind: "mcp"; server: string | null }
+  | { kind: "search" }
+  | { kind: "link" | "web"; url: string }
+);
+
+type ToolCall = Extract<AgentEventPayload, { type: "tool_call_started" }>;
+
+function objectInput(value: ToolCall["input"] | undefined) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function webUrl(value: string): URL | null {
+  if (!/^https?:\/\//i.test(value) || /[\s"<>]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    return !url.username && !url.password ? url : null;
+  } catch {
+    return null;
   }
-  return null;
+}
+
+/// Conversation history is the source of truth, including tools called by subagents.
+export function summarySources(events: readonly AgentEvent[]): SummarySource[] {
+  const sources = new Map<string, SummarySource>();
+  const calls = new Map<string, ToolCall>();
+  const add = (source: SummarySource) => {
+    if (!sources.has(source.id)) sources.set(source.id, source);
+  };
+  const addLink = (href: string, kind: "link" | "web", label?: string) => {
+    const url = webUrl(href);
+    if (!url) return;
+    const id = `url:${url.href}`;
+    const previous = sources.get(id);
+    if (!previous || (kind === "web" && previous.kind === "link")) {
+      sources.set(id, {
+        id, kind, url: url.href,
+        label: label || previous?.label || `${url.host}${url.pathname === "/" ? "" : url.pathname}`,
+      });
+    }
+  };
+  const addImages = (images: readonly ImageRef[], fallback: string) => {
+    for (const image of images) {
+      const key = image.path || image.url;
+      if (!key) continue;
+      const name = image.path ? basename(image.path) : "";
+      const label = !name || /^[0-9a-f-]{36}\.[\w]+$/i.test(name) ? fallback : name;
+      add({ id: `image:${key}`, kind: "image", label, image });
+    }
+  };
+
+  for (const { sessionId, subagent, harness, payload } of events) {
+    if (payload.type === "user_message" || payload.type === "assistant_text") {
+      const message = withLineBreaks(payload.text);
+      if (payload.type === "user_message") {
+        addImages(payload.images ?? [], "Attached image");
+        // File attachments are saved in the prompt as a line of absolute mentions or as prose.
+        const attachments = harness === "claude_code"
+          ? [...message.matchAll(/^@\/[^\n]+$/gm)].flatMap(([line]) => line.slice(1).split(/ @(?=\/)/))
+          : [...message.matchAll(/^Attached file: (\/.+)$/gm)].map(([, path]) => path);
+        for (const path of attachments) {
+          add({ id: `file:${path}`, kind: "attachment", label: basename(path), path });
+        }
+        for (const issue of payload.issues ?? []) {
+          if (issue.url) addLink(issue.url, "link", issue.title || issue.identifier);
+        }
+      }
+      for (const segment of highlightSegments(message)) {
+        if (segment.href) addLink(segment.href, "link", segment.kind === "link" ? segment.inner : undefined);
+      }
+      for (const [, href] of message.matchAll(/<(https?:\/\/[^\s<>]+)>/gi)) addLink(href, "link");
+      continue;
+    }
+
+    if (payload.type !== "tool_call_started" && payload.type !== "tool_call_completed") continue;
+    const key = JSON.stringify([sessionId, subagent?.id, payload.callId]);
+    if (payload.type === "tool_call_started") {
+      calls.set(key, payload);
+      continue;
+    }
+
+    const call = calls.get(key);
+    const path = call?.toolType === "file_read" ? fileTarget(call.toolType, call.input) : null;
+    addImages(payload.result.images ?? [], path ? basename(path) : "Tool image");
+    if (!call || payload.result.isError) continue;
+
+    const { name, title, toolType, input } = call;
+    const mcpName = name === "use_tool" ? toolSummary(name, toolType, input) : name;
+    if (mcpName && (toolType === "mcp" || mcpName.includes("__"))) {
+      const { serverId, server, label } = mcpCall(mcpName, title);
+      if (serverId || toolType === "mcp") {
+        add({ id: `mcp:${serverId ?? mcpName}`, kind: "mcp", server: serverId, label: server ?? label });
+      }
+    }
+
+    const webName = mcpName ?? name;
+    const isSearch = /(?:^|[_.])(?:web_?search|search_web)$/i.test(webName) || (harness === "grok" && name === "search");
+    const isFetch = /(?:^|[_.])web_?fetch$/i.test(webName);
+    if (toolType !== "web" && !isSearch && !isFetch) continue;
+    const rawArgs = objectInput(input);
+    const args = name === "use_tool" ? objectInput(rawArgs.tool_input) : rawArgs;
+    const queries = Array.isArray(args.queries) ? args.queries : [args.query];
+    for (const query of queries) {
+      if (typeof query !== "string" || !query.trim()) continue;
+      const label = query.trim();
+      add({ id: `search:${label}`, kind: "search", label });
+    }
+    const urls = Array.isArray(args.urls) ? args.urls : [args.url];
+    for (const url of urls) {
+      if (typeof url === "string") addLink(url, "web");
+    }
+    if (isSearch || queries.some((query) => typeof query === "string")) {
+      const result = payload.result.text ?? "";
+      // Codex flattens each hit to a title followed by its URL on a separate line.
+      for (const [, label, href] of result.matchAll(/^([^\n]+)\n(https?:\/\/\S+)[ \t]*$/gim)) {
+        if (!webUrl(label)) addLink(href, "web", label.trim());
+      }
+      for (const segment of highlightSegments(result)) {
+        if (segment.href && (segment.kind === "link" || /^https?:\/\//i.test(segment.text))) {
+          addLink(segment.href, "web", segment.inner);
+        }
+      }
+      for (const [, href] of result.matchAll(/["<](https?:\/\/[^\s"<>]+)[">]/gi)) addLink(href, "web");
+    }
+  }
+  return [...sources.values()];
 }
