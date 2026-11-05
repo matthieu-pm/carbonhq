@@ -173,6 +173,14 @@ authFailed: boolean, } | { "type": "user_message", text: string, images: Array<I
  */
 issues: Array<IssueRef>, 
 /**
+ * The MCP servers this prompt names with `$`, out of those the agent
+ * loaded when it was sent — what the transcript draws as chips, so a
+ * `$HOME` typed as prose stays prose. The note telling the agent to
+ * use them went to the child alone and is not in `text`; see
+ * [`mcp_mentions`](crate::mcp_mentions).
+ */
+mcpServers: Array<string>, 
+/**
  * The working tree as it stood when this prompt was sent, as a git
  * tree id — the "before" side the changes panel diffs against.
  *
@@ -1128,6 +1136,16 @@ export type KeyValue = { name: string, value: string, };
 export type McpFile = "claude_user" | "claude_local" | "claude_project" | "codex" | "codex_project" | "grok_user" | "grok_project" | "fx" | "pi_user" | "pi_project";
 
 /**
+ * One row of the `$` picker.
+ */
+export type McpMention = { name: string, 
+/**
+ * Where it is configured — `user`, `project`, `local`, `plugin` — drawn
+ * dimmed beside the name. Empty where the agent does not say.
+ */
+scope: string, };
+
+/**
  * Shared with the harness parsers rather than duplicated — the wire shape
  * matches, so they deserialize straight into this.
  */
@@ -1635,7 +1653,12 @@ from: MessageSender | null,
  * the boundary would put a network call — and its failure — inside the
  * flush.
  */
-issues: Array<IssueRef>, };
+issues: Array<IssueRef>, 
+/**
+ * Resolved when typed, for `issues`' reason: Claude Code's server list is
+ * a child spawned to ask, which has no place inside a flush.
+ */
+mcpServers: Array<string>, };
 
 /**
  * What the This Mac row draws. No token: it is asked for on Copy, and never

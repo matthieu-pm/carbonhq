@@ -23,6 +23,7 @@ function prompt(baseline: string | null): AgentEvent {
       text: "hi",
       images: [],
       issues: [],
+      mcpServers: [],
       baseline,
       queued: false,
       from: null,

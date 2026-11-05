@@ -24,6 +24,7 @@ function event(id: string, seq: number, subagent: Subagent | null = null): Agent
       text: "hi",
       images: [],
       issues: [],
+      mcpServers: [],
       baseline: null,
       queued: false,
       from: null,

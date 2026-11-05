@@ -23,6 +23,7 @@ import { fileIconSrc } from "@/lib/fileIcon";
 import { issueFace, splitMention, withIssueTitles } from "@/lib/highlight";
 import type { Segment } from "@/lib/highlight";
 import { placedIssueTitle } from "@/lib/issue";
+import { mcpFace } from "@/lib/mcpMention";
 
 /// Where a chip keeps the run it stands for. Read back verbatim, so this is the
 /// attribute the round trip depends on.
@@ -35,7 +36,7 @@ export const TAG_ATTR = "data-tag";
 /// character on every render.
 export const FILLER_ATTR = "data-filler";
 
-/// The three runs drawn as chips.
+/// The runs drawn as chips.
 ///
 /// `command` is deliberately absent: `/caveman` is already the short form of
 /// itself, so a chip there would buy only whole-token deletion and cost the
@@ -43,7 +44,7 @@ export const FILLER_ATTR = "data-filler";
 /// bare paths and inline markdown marks are absent for a plainer reason — the
 /// reader typed those as prose rather than picking them off a menu, and there is
 /// nothing hidden behind them to stand for.
-const CHIP_KINDS = new Set<Segment["kind"]>(["mention", "session", "issue"]);
+const CHIP_KINDS = new Set<Segment["kind"]>(["mention", "session", "issue", "mcp"]);
 
 /// How much of an issue's title a chip shows before it gives up and elides.
 ///
@@ -88,6 +89,10 @@ export function chipLabel(segment: Segment): string | null {
     // asked for a third spelling of the same tag.
     case "session":
       return elide(segment.inner ? segment.inner.slice(1) : segment.text.slice(1), LABEL_MAX);
+    // Keeps its `$`: unlike a file there is no glyph to say what kind of
+    // thing the chip names.
+    case "mcp":
+      return elide(`$${mcpFace(segment.inner ?? segment.text.slice(1))}`, LABEL_MAX);
     default:
       return elide(issueFace(segment), ISSUE_LABEL_MAX + 1);
   }

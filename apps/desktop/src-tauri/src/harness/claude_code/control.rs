@@ -60,6 +60,10 @@ pub enum ControlRequest<'a> {
     /// Asked of a throwaway child rather than a session's, and answered without
     /// a model call. See [`commands`](super::commands).
     Initialize,
+    /// Every MCP server the CLI loads in its directory, plugins included, each
+    /// with its status. Also asked of a throwaway child; see
+    /// [`commands::list_mcp_servers`](super::commands::list_mcp_servers).
+    McpStatus,
 }
 
 /// The `flagSettings` layer, as both `--settings` and

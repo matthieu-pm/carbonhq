@@ -124,9 +124,62 @@ pub async fn list_commands(cwd: &str) -> Result<Vec<SlashCommand>> {
 
 /// The `initialize` reply's payload, from a throwaway child started in `cwd`.
 pub(super) async fn initialize(cwd: &str) -> Result<Value> {
-    timeout(PROBE_TIMEOUT, probe(cwd))
+    timeout(PROBE_TIMEOUT, probe(cwd, ControlRequest::Initialize))
         .await
         .context("timed out asking the CLI to initialize")?
+}
+
+/// One server out of the `mcp_status` reply. Only the name and where it came
+/// from are read: the reply also carries each server's `config`, headers and
+/// tokens included, and none of that may leave this file.
+#[derive(Debug, Deserialize)]
+struct McpStatusEntry {
+    name: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpStatusResponse {
+    #[serde(default)]
+    mcp_servers: Vec<McpStatusEntry>,
+}
+
+/// The MCP servers the CLI loads in `cwd`, as `(name, scope)` pairs, the ones
+/// switched off left out.
+///
+/// Asked of the CLI rather than read off its config files because plugins add
+/// servers no file of the reader's names (`plugin:figma:figma`), and the CLI
+/// already merges user, local, project and plugin scopes the way a session
+/// will. Most statuses are `pending` this early, the child having only just
+/// started connecting, so `disabled` is the only one filtered on.
+pub async fn list_mcp_servers(cwd: &str) -> Result<Vec<(String, String)>> {
+    let reply = timeout(PROBE_TIMEOUT, probe(cwd, ControlRequest::McpStatus))
+        .await
+        .context("timed out asking the CLI for its MCP servers")??;
+    mcp_servers_in(reply)
+}
+
+fn mcp_servers_in(reply: Value) -> Result<Vec<(String, String)>> {
+    let response: McpStatusResponse = serde_json::from_value(reply)
+        .context("the CLI's mcp_status reply had an unfamiliar shape")?;
+    Ok(response
+        .mcp_servers
+        .into_iter()
+        .filter(|server| server.status != "disabled")
+        .map(|server| {
+            let scope = match server.source.as_deref() {
+                Some("plugin") => "plugin".to_string(),
+                _ => server.scope.unwrap_or_default(),
+            };
+            (server.name, scope)
+        })
+        .collect())
 }
 
 /// Spawns a throwaway child purely to ask it what it can do, then kills it.
@@ -135,7 +188,7 @@ pub(super) async fn initialize(cwd: &str) -> Result<Value> {
 /// how a turn runs — no model, no permission mode, no session id — because none
 /// of it changes the answer and every flag is one more way the probe can fail
 /// where a session would not.
-async fn probe(cwd: &str) -> Result<Value> {
+async fn probe(cwd: &str, ask: ControlRequest<'_>) -> Result<Value> {
     let mut child = Command::new(crate::binpath::claude().await)
         .args([
             "-p",
@@ -159,7 +212,7 @@ async fn probe(cwd: &str) -> Result<Value> {
     let mut stdin = child.stdin.take().context("failed to take stdin")?;
     let stdout = child.stdout.take().context("failed to take stdout")?;
 
-    let request = ControlLine::new(ControlRequest::Initialize);
+    let request = ControlLine::new(ask);
     stdin
         .write_all(format!("{}\n", serde_json::to_string(&request)?).as_bytes())
         .await?;
@@ -210,6 +263,24 @@ fn matching_response(line: &str, request_id: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Shape captured from v2.1 with configs trimmed: a plugin reports its
+    /// source and a dynamic scope, a user server its scope alone.
+    #[test]
+    fn reads_mcp_servers_and_drops_disabled_ones() {
+        let line = r#"{"type":"control_response","response":{"subtype":"success","request_id":"req_2","response":{"mcpServers":[{"name":"plugin:figma:figma","status":"needs-auth","config":{"type":"http"},"transport":"http","scope":"dynamic","source":"plugin"},{"name":"linear","status":"pending","config":{"type":"http","headers":{"Authorization":"Bearer x"}},"scope":"user","source":"user"},{"name":"off","status":"disabled","scope":"project","source":"project"}]}}}"#;
+
+        let payload = matching_response(line, "req_2").expect("our own reply");
+        let servers = mcp_servers_in(payload).unwrap();
+
+        assert_eq!(
+            servers,
+            vec![
+                ("plugin:figma:figma".to_string(), "plugin".to_string()),
+                ("linear".to_string(), "user".to_string()),
+            ]
+        );
+    }
 
     /// The reply double-wraps, like a permission decision does in the other
     /// direction: the outer `response` is the control-protocol envelope, the

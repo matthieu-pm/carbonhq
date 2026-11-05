@@ -128,6 +128,13 @@ pub enum AgentEventPayload {
         /// exact string from *these* and drops it only if the text ends with it.
         #[serde(default)]
         issues: Vec<IssueRef>,
+        /// The MCP servers this prompt names with `$`, out of those the agent
+        /// loaded when it was sent — what the transcript draws as chips, so a
+        /// `$HOME` typed as prose stays prose. The note telling the agent to
+        /// use them went to the child alone and is not in `text`; see
+        /// [`mcp_mentions`](crate::mcp_mentions).
+        #[serde(default)]
+        mcp_servers: Vec<String>,
         /// The working tree as it stood when this prompt was sent, as a git
         /// tree id — the "before" side the changes panel diffs against.
         ///
@@ -935,9 +942,9 @@ mod tests {
             serde_json::from_str(r#"{"type":"user_message","text":"hi"}"#).unwrap();
         assert!(matches!(
             v,
-            // `baseline`, `queued`, `from`, `issues` and `cwd` default too:
-            // every prompt logged before each of those existed must not fail
-            // the line.
+            // `baseline`, `queued`, `from`, `issues`, `mcp_servers` and `cwd`
+            // default too: every prompt logged before each of those existed
+            // must not fail the line.
             AgentEventPayload::UserMessage {
                 ref text,
                 ref images,
@@ -945,6 +952,7 @@ mod tests {
                 queued,
                 ref from,
                 ref issues,
+                ref mcp_servers,
                 ref cwd,
             } if text == "hi"
                 && images.is_empty()
@@ -953,6 +961,7 @@ mod tests {
                 && !queued
                 && from.is_none()
                 && issues.is_empty()
+                && mcp_servers.is_empty()
         ));
 
         let v: AgentEventPayload = serde_json::from_str(

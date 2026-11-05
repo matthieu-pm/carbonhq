@@ -734,6 +734,7 @@ const provisionalPrompt = (
     text,
     images: imagesOf(attachments),
     issues: [],
+    mcpServers: [],
     baseline: null,
     queued: false,
     from: null,
