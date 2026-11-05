@@ -69,6 +69,7 @@ pub mod orchestration;
 pub mod drafts;
 pub mod projects;
 pub mod mcp_servers;
+pub mod mcp_mentions;
 #[cfg(feature = "desktop")]
 pub mod quit;
 #[cfg(feature = "desktop")]

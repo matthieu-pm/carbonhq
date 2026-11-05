@@ -11,8 +11,11 @@ import {
   renderInto,
   revealCaret,
 } from "@/lib/richDom";
+import { withMcpServers } from "@/lib/mcpMention";
 import { chipSignature, placeSegments, pushEntry, type Entry, type Placed } from "@/lib/richText";
 import { cn } from "@/lib/utils";
+
+const NO_SERVERS: readonly string[] = [];
 
 /// The fill each kind of chip takes.
 ///
@@ -32,6 +35,7 @@ const CHIP_ACCENT: Partial<Record<Placed["segment"]["kind"], string>> = {
   mention: "bg-accent-mention/12 text-accent-mention dark:bg-accent-mention dark:text-background",
   session: "bg-accent-session/12 text-accent-session dark:bg-accent-session dark:text-background",
   issue: "bg-accent-issue/12 text-accent-issue dark:bg-accent-issue dark:text-background",
+  mcp: "bg-accent-mcp/12 text-accent-mcp dark:bg-accent-mcp dark:text-background",
 };
 
 /// The chip's shape, which the mode does not move — only its fill does.
@@ -96,6 +100,9 @@ type Props = {
   onKeyDown?: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   /// Asked before a paste lands as text; `true` means it was taken as files.
   onPasteFiles?: () => Promise<boolean>;
+  /// The MCP servers a `$word` may name. Keep the array stable: a new one
+  /// re-runs the paint.
+  mcpServers?: readonly string[];
   placeholder?: string;
   className?: string;
   /// Rows before it stops growing and starts scrolling.
@@ -133,6 +140,7 @@ export default function RichInput({
   onCaretChange,
   onKeyDown,
   onPasteFiles,
+  mcpServers = NO_SERVERS,
   placeholder,
   className,
   maxRows = 10,
@@ -195,7 +203,10 @@ export default function RichInput({
     const target = asked || !edit ? caret : edit.start + edit.text.length;
 
     // A blurred box has no run being edited, so everything that can chip does.
-    const placed = placeSegments(highlightSegments(value), focused.current ? target : null);
+    const placed = placeSegments(
+      withMcpServers(highlightSegments(value), mcpServers),
+      focused.current ? target : null,
+    );
     const next = chipSignature(placed);
 
     // Rebuilt where the chips moved, where the value arrived from outside, or
@@ -218,7 +229,7 @@ export default function RichInput({
 
     // Said back, so the pickers are reading the caret the box actually has.
     if (target !== caret) onCaretChange(target);
-  }, [value, caret, blurs, onCaretChange]);
+  }, [value, caret, blurs, mcpServers, onCaretChange]);
 
   // A contenteditable has no `onSelect`, and the caret moves for reasons no
   // element-level handler sees — arrow keys, a drag, the OS putting it back. The

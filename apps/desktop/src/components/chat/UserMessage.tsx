@@ -21,9 +21,11 @@ import {
   withPaths,
 } from "@/lib/highlight";
 import { openIssue, parseIdentifier } from "@/lib/issue";
+import { withMcpServers } from "@/lib/mcpMention";
 import { openLink } from "@/lib/openLink";
 import { commandBrand } from "@/lib/pluginBrand";
 import { stripSenderPrefix } from "@/lib/relay";
+import { chipLabel } from "@/lib/richText";
 import { shortenPath } from "@/lib/tools";
 import { useSendProgress } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
@@ -67,6 +69,7 @@ export default function UserMessage({
   text,
   images = [],
   issues = [],
+  mcpServers = [],
   from = null,
   cwd: writtenIn = null,
   ts,
@@ -81,6 +84,9 @@ export default function UserMessage({
   /// sentence — but it is where a tag's link comes from, since a URL recovered
   /// from prose would be a guess.
   issues?: IssueRef[];
+  /// The `$` mentions that named a server the agent loaded when this was sent.
+  /// Only these are drawn as mentions, so a `$HOME` in the sentence stays prose.
+  mcpServers?: string[];
   /// The session that relayed this, or `null` for a prompt the user typed.
   from?: MessageSender | null;
   /// The working directory this prompt was written in, where it is not the
@@ -105,9 +111,12 @@ export default function UserMessage({
   // persisted — so a message replayed after a restart reads exactly as it did
   // live, where the composer's in-memory record of what it typed would be gone.
   const segments = withPaths(
-    withIssueTitles(
-      highlightSegments(body),
-      (identifier) => issues.find((issue) => issue.identifier === identifier)?.title ?? null,
+    withMcpServers(
+      withIssueTitles(
+        highlightSegments(body),
+        (identifier) => issues.find((issue) => issue.identifier === identifier)?.title ?? null,
+      ),
+      mcpServers,
     ),
   );
 
@@ -331,8 +340,8 @@ export default function UserMessage({
               }
 
               return (
-                <span key={i} className={SEGMENT_COLOR[segment.kind]}>
-                  {segment.text}
+                <span key={i} className={SEGMENT_COLOR[segment.kind]} title={segment.kind === "mcp" ? segment.text : undefined}>
+                  {segment.kind === "mcp" ? chipLabel(segment) : segment.text}
                 </span>
               );
             })}

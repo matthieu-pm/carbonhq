@@ -325,6 +325,7 @@ function userProps(turn: Turn) {
         text: payload.text,
         images: payload.images,
         issues: payload.issues,
+        mcpServers: payload.mcpServers,
         from: payload.from,
         cwd: payload.cwd,
         ts: turn.prompt?.ts,

@@ -78,7 +78,7 @@ pub enum McpFile {
 }
 
 impl McpFile {
-    const ALL: [McpFile; 10] = [
+    pub(crate) const ALL: [McpFile; 10] = [
         McpFile::ClaudeUser,
         McpFile::ClaudeLocal,
         McpFile::ClaudeProject,
@@ -106,7 +106,7 @@ impl McpFile {
     /// Every agent that loads this file. grok's compatibility scan of Claude's
     /// config and `.mcp.json` is on by default (`[compat.claude] mcps`), and a
     /// reader who turned it off sees one logo too many, never one too few.
-    fn readers(self) -> Vec<Harness> {
+    pub(crate) fn readers(self) -> Vec<Harness> {
         match self {
             McpFile::ClaudeUser | McpFile::ClaudeProject => {
                 vec![Harness::ClaudeCode, Harness::Grok]
@@ -115,7 +115,7 @@ impl McpFile {
         }
     }
 
-    fn per_project(self) -> bool {
+    pub(crate) fn per_project(self) -> bool {
         matches!(
             self,
             McpFile::ClaudeLocal
@@ -151,7 +151,7 @@ impl McpFile {
         }
     }
 
-    fn path(self, home: &Path, project: Option<&Path>) -> Option<PathBuf> {
+    pub(crate) fn path(self, home: &Path, project: Option<&Path>) -> Option<PathBuf> {
         Some(match self {
             McpFile::ClaudeUser | McpFile::ClaudeLocal => home.join(".claude.json"),
             McpFile::ClaudeProject => project?.join(".mcp.json"),
@@ -373,7 +373,7 @@ fn source_id(file: McpFile, project: Option<&Path>) -> String {
 
 /// `Ok(None)` for a file that does not exist, which is the ordinary state of
 /// most of these and never an error.
-async fn read_servers(
+pub(crate) async fn read_servers(
     file: McpFile,
     path: &Path,
     project: Option<&Path>,
@@ -1157,7 +1157,7 @@ async fn run_cli(
 }
 
 /// A probe owns a process group so a timed-out CLI cannot leave MCP servers behind.
-struct ProbeGroup(u32);
+pub(crate) struct ProbeGroup(pub(crate) u32);
 
 impl Drop for ProbeGroup {
     fn drop(&mut self) {

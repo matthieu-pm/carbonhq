@@ -91,6 +91,10 @@ pub struct QueuedMessage {
     /// flush.
     #[serde(default)]
     pub issues: Vec<IssueRef>,
+    /// Resolved when typed, for `issues`' reason: Claude Code's server list is
+    /// a child spawned to ask, which has no place inside a flush.
+    #[serde(default)]
+    pub mcp_servers: Vec<String>,
 }
 
 /// Held prompts, oldest first. Shared with the stdout task, which is where the
@@ -1050,8 +1054,12 @@ impl SessionManager {
                 app,
             )
             .await?;
+            // Asked where the child was spawned: a worktree the CLI makes
+            // itself does not exist yet, and its checked-in config is the
+            // project's anyway.
+            let mcp_servers = crate::mcp_mentions::mentioned(harness, spawn_cwd, prompt).await;
             if let Err(error) = session
-                .send_msg(prompt, attachment_paths, issues, baseline, from, app)
+                .send_msg(prompt, attachment_paths, issues, &mcp_servers, baseline, from, app)
                 .await
             {
                 // Nothing has this session yet — it is inserted below — so
@@ -1170,6 +1178,12 @@ impl SessionManager {
             Some(item) => item.cwd.clone(),
             None => cwd.to_string(),
         };
+        let mcp_cwd = if tokio::fs::try_exists(&session_cwd).await.unwrap_or(false) {
+            session_cwd.as_str()
+        } else {
+            cwd
+        };
+        let mcp_servers = &crate::mcp_mentions::mentioned(harness, mcp_cwd, prompt).await;
 
         // Recorded before the prompt goes out, and before the queue branch
         // below returns: a tag on a prompt held behind a running turn still
@@ -1266,7 +1280,7 @@ impl SessionManager {
                 // nothing for Carbon's queue to do here and no boundary for it to
                 // race for — whether or not a tool happens to be running now.
                 if matches!(s.stdin, Transport::Pi(_) | Transport::Grok(_)) {
-                    s.steer(prompt, attachment_paths, issues, from, app).await?;
+                    s.steer(prompt, attachment_paths, issues, mcp_servers, from, app).await?;
                     return Ok(SendOutcome {
                         issues: linked,
                         ..Default::default()
@@ -1296,7 +1310,7 @@ impl SessionManager {
                         });
                     }
                     if let Some(queued) = s
-                        .queue_if_in_flight(prompt, attachment_paths, issues, from.clone(), app)
+                        .queue_if_in_flight(prompt, attachment_paths, issues, mcp_servers, from.clone(), app)
                         .await
                     {
                         return Ok(SendOutcome {
@@ -1316,7 +1330,7 @@ impl SessionManager {
                     }
                 } else {
                     if tool_in_flight {
-                        s.queue_and_flush(prompt, attachment_paths, issues, from, app)
+                        s.queue_and_flush(prompt, attachment_paths, issues, mcp_servers, from, app)
                             .await;
                         return Ok(SendOutcome {
                             issues: linked,
@@ -1324,7 +1338,7 @@ impl SessionManager {
                         });
                     }
 
-                    let queued = s.queue_msg(prompt, attachment_paths, issues, from, app).await;
+                    let queued = s.queue_msg(prompt, attachment_paths, issues, mcp_servers, from, app).await;
                     return Ok(SendOutcome {
                         snapshot: None,
                         queued: Some(queued),
@@ -1337,7 +1351,7 @@ impl SessionManager {
             // but alive, so the narrower the gap the less of the user's own
             // editing lands on the turn's side of the diff.
             let baseline = git::snapshot_tree(&session_cwd).await;
-            s.send_msg(prompt, attachment_paths, issues, baseline, from, app)
+            s.send_msg(prompt, attachment_paths, issues, mcp_servers, baseline, from, app)
                 .await?;
             return Ok(SendOutcome {
                 issues: linked,
@@ -1440,7 +1454,7 @@ impl SessionManager {
         }
 
         if let Err(error) = session
-            .send_msg(prompt, attachment_paths, issues, baseline, from, app)
+            .send_msg(prompt, attachment_paths, issues, mcp_servers, baseline, from, app)
             .await
         {
             // Same reason as the creation path above: the insert is below, so
@@ -1708,7 +1722,8 @@ impl SessionManager {
         let AgentEventPayload::UserMessage { issues, .. } = &plan.prompt.payload else {
             unreachable!()
         };
-        session.send_msg(prompt, &[], issues, Some(plan.baseline), None, app).await
+        let mcp_servers = crate::mcp_mentions::mentioned(item.harness, &item.cwd, prompt).await;
+        session.send_msg(prompt, &[], issues, &mcp_servers, Some(plan.baseline), None, app).await
             .context("The old turn was rewound, but the revised prompt could not be sent. Your edit is preserved")?;
         let replacement = list_session_events(session_id)
             .await?
@@ -2339,6 +2354,7 @@ impl Session {
         prompt: &str,
         attachment_paths: &[String],
         issues: &[IssueRef],
+        mcp_servers: &[String],
         baseline: Option<String>,
         from: Option<MessageSender>,
         app: &Sink,
@@ -2349,6 +2365,7 @@ impl Session {
             prompt,
             attachment_paths,
             issues,
+            mcp_servers,
             baseline.clone(),
             false,
             crate::harness::pi::Delivery::WhenIdle,
@@ -2409,6 +2426,7 @@ impl Session {
         prompt: &str,
         attachment_paths: &[String],
         issues: &[IssueRef],
+        mcp_servers: &[String],
         from: Option<MessageSender>,
         app: &Sink,
     ) -> QueuedMessage {
@@ -2419,6 +2437,7 @@ impl Session {
             attachment_paths: attachment_paths.to_vec(),
             from,
             issues: issues.to_vec(),
+            mcp_servers: mcp_servers.to_vec(),
         };
         self.queued.lock().await.push(message.clone());
         publish_queue(&self.id, &self.queued, app).await;
@@ -2446,6 +2465,7 @@ impl Session {
         prompt: &str,
         attachment_paths: &[String],
         issues: &[IssueRef],
+        mcp_servers: &[String],
         from: Option<MessageSender>,
         app: &Sink,
     ) -> Option<QueuedMessage> {
@@ -2453,7 +2473,7 @@ impl Session {
         if !_turn.turn_in_flight() {
             return None;
         }
-        Some(self.queue_msg(prompt, attachment_paths, issues, from, app).await)
+        Some(self.queue_msg(prompt, attachment_paths, issues, mcp_servers, from, app).await)
     }
 
     /// Takes back the newest held prompt, newest-first because that is the one
@@ -2494,6 +2514,7 @@ impl Session {
         prompt: &str,
         attachment_paths: &[String],
         issues: &[IssueRef],
+        mcp_servers: &[String],
         from: Option<MessageSender>,
         app: &Sink,
     ) -> Result<()> {
@@ -2503,6 +2524,7 @@ impl Session {
             prompt,
             attachment_paths,
             issues,
+            mcp_servers,
             // No baseline, for the reason a flushed prompt has none: the
             // changes panel pairs the newest baseline with the newest head
             // after it, so a snapshot taken mid-turn would cut the running
@@ -2543,10 +2565,11 @@ impl Session {
         prompt: &str,
         attachment_paths: &[String],
         issues: &[IssueRef],
+        mcp_servers: &[String],
         from: Option<MessageSender>,
         app: &Sink,
     ) {
-        self.queue_msg(prompt, attachment_paths, issues, from, app).await;
+        self.queue_msg(prompt, attachment_paths, issues, mcp_servers, from, app).await;
         flush_queued(
             &self.id,
             self.harness,
@@ -3142,6 +3165,9 @@ async fn deliver_prompt(
     // the child is given, so the transcript keeps showing exactly what the
     // model was told — the same rule a non-image attachment's `@path` follows.
     issues: &[IssueRef],
+    // The `$` mentions that matched. Their note goes to the child and not to
+    // the event, unlike `issues` — see [`crate::mcp_mentions`].
+    mcp_servers: &[String],
     baseline: Option<String>,
     queued: bool,
     // Where this lands on a harness that can take a prompt into a turn already
@@ -3164,6 +3190,7 @@ async fn deliver_prompt(
     // the transcript has to show what the model was actually given.
     let prepared = attachments::prepare(session_id, prompt, attachment_paths, harness).await?;
     let text = prepared.text;
+    let sent = crate::mcp_mentions::with_hint(&text, mcp_servers);
 
     // Ahead of the event for a second reason, and this one is about failure
     // rather than content. Codex resolves a leading `/skill` by asking its own
@@ -3175,15 +3202,16 @@ async fn deliver_prompt(
         Transport::Rpc(thread) if send => {
             Some((
                 thread,
-                crate::harness::codex::turn_input(thread, &text, &prepared.images).await?,
+                crate::harness::codex::turn_input(thread, &sent, &prepared.images).await?,
             ))
         }
         _ => None,
     };
 
     let payload = AgentEventPayload::UserMessage {
-        text: text.clone(),
+        text,
         issues: issues.to_vec(),
+        mcp_servers: mcp_servers.to_vec(),
         images: prepared
             .images
             .iter()
@@ -3220,7 +3248,7 @@ async fn deliver_prompt(
 
     // Logged, not sent: the caller holds the text and opens the turn itself.
     if !send {
-        return Ok((text, true));
+        return Ok((sent, true));
     }
 
     // Codex takes a prompt as a request that opens a turn, so the write is the
@@ -3229,30 +3257,30 @@ async fn deliver_prompt(
     // a no-op.
     if let Some((thread, input)) = codex {
         crate::harness::codex::start_turn(thread, input).await?;
-        return Ok((text, true));
+        return Ok((sent, true));
     }
     // pi takes a prompt as a command whose answer says it was accepted, so the
     // write is the send rather than a line the child picks up on its own
     // schedule.
     if let Transport::Pi(client) = transport {
-        let runs = crate::harness::pi::send_prompt(client, &text, delivery, &prepared.images)
+        let runs = crate::harness::pi::send_prompt(client, &sent, delivery, &prepared.images)
             .await
             .context(Undelivered)?;
-        return Ok((text, runs));
+        return Ok((sent, runs));
     }
     // grok takes a prompt into the running turn through a method of its own;
     // a second `session/prompt` would take over the id the turn settles on.
     if let (Transport::Grok(session), crate::harness::pi::Delivery::Steer) = (transport, delivery) {
-        crate::harness::grok::interject(session, &text, &prepared.images)
+        crate::harness::grok::interject(session, &sent, &prepared.images)
             .await
             .context(Undelivered)?;
-        return Ok((text, true));
+        return Ok((sent, true));
     }
     // fx and grok take a prompt as a request that blocks for the turn, so the
     // write is the send and the reader settles the answer.
-    if let Some(sent) = transport.open_turn(&text, &prepared.images).await {
-        sent?;
-        return Ok((text, true));
+    if let Some(opened) = transport.open_turn(&sent, &prepared.images).await {
+        opened?;
+        return Ok((sent, true));
     }
     let stdin = transport.lines()?;
 
@@ -3260,11 +3288,11 @@ async fn deliver_prompt(
     // shape every fixture captures, kept rather than always sending the
     // one-element block array it is sugar for.
     let content = if prepared.images.is_empty() {
-        json!(text)
+        json!(sent)
     } else {
         let mut blocks = Vec::new();
-        if !text.is_empty() {
-            blocks.push(json!({"type": "text", "text": text}));
+        if !sent.is_empty() {
+            blocks.push(json!({"type": "text", "text": sent}));
         }
         for image in &prepared.images {
             blocks.push(json!({
@@ -3281,7 +3309,7 @@ async fn deliver_prompt(
 
     let line = json!({"type":"user","message":{"role":"user","content": content}});
     write_line(stdin, &line).await?;
-    Ok((text, true))
+    Ok((sent, true))
 }
 
 /// The handles a read loop needs once its harness has stopped being relevant.
@@ -3843,6 +3871,7 @@ async fn flush_one_per_turn(
                 &message.text,
                 &message.attachment_paths,
                 &message.issues,
+                &message.mcp_servers,
                 // No baseline, for `deliver_batch`'s reason.
                 None,
                 true,
@@ -3911,6 +3940,7 @@ async fn deliver_batch(
             &message.text,
             &message.attachment_paths,
             &message.issues,
+            &message.mcp_servers,
             None,
             true,
             // A flush runs at a boundary, so there is no turn to steer into.
@@ -4049,6 +4079,7 @@ pub async fn strand_queue_on_exit(
             AgentEventPayload::UserMessage {
                 text,
                 issues: message.issues.clone(),
+                mcp_servers: message.mcp_servers.clone(),
                 images,
                 baseline: None,
                 queued: true,

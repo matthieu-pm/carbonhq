@@ -13,9 +13,11 @@ import {
   splitMention,
   withLineBreaks,
 } from "@/lib/highlight";
+import { withMcpServers } from "@/lib/mcpMention";
 import { commandBrand } from "@/lib/pluginBrand";
 import { keyLabel, modifierLabels } from "@/lib/shortcuts";
 import { stripSenderPrefix } from "@/lib/relay";
+import { chipLabel } from "@/lib/richText";
 
 /// Prompts typed into the running turn that the app is still holding.
 ///
@@ -87,7 +89,7 @@ export default function QueuedMessages({
                       clamp — see `ClampedBody` for why a held prompt cannot be
                       bounded differently to the delivered one. */}
                   <ClampedBody>
-                    {highlightSegments(body).map((segment, s) => {
+                    {withMcpServers(highlightSegments(body), message.mcpServers ?? []).map((segment, s) => {
                       // Same marks the delivered bubble draws — see `inlineMark`
                       // for why a queued prompt cannot read differently.
                       const mark = inlineMark(segment, s);
@@ -103,8 +105,8 @@ export default function QueuedMessages({
                         );
                       }
                       return (
-                        <span key={s} className={SEGMENT_COLOR[segment.kind]}>
-                          {segment.text}
+                        <span key={s} className={SEGMENT_COLOR[segment.kind]} title={segment.kind === "mcp" ? segment.text : undefined}>
+                          {segment.kind === "mcp" ? chipLabel(segment) : segment.text}
                         </span>
                       );
                     })}
