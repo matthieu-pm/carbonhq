@@ -93,7 +93,7 @@ export default function SubscriptionUsageButton({ onAccounts }: { onAccounts: ()
           <Popover.Trigger asChild>
             <Button
               variant="ghost" size="icon-sm" aria-label={`Subscription usage: ${summary}`}
-              className={cn("transition-[color,background-color,scale] duration-150 ease-out active:scale-[0.96] motion-reduce:active:scale-100", shown === null ? "text-muted-foreground" : usageColor(percent))}
+              className={cn("transition-[color,background-color] duration-150 ease-out", shown === null ? "text-muted-foreground" : usageColor(percent))}
             >
               <UsageRing percent={percent} partial={count > 0 && count < 3} />
             </Button>
