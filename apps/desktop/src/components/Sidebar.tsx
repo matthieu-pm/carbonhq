@@ -755,7 +755,7 @@ export function SidebarToggle({ onToggle }: { onToggle: () => void }) {
           aria-label="Toggle sidebar"
           // The chat tab's mark colour, open or shut: the pane itself says
           // which, and a strength flip read backwards on a sidebar kept open.
-          className="text-muted-foreground transition-colors hover:text-foreground"
+          className="text-muted-foreground transition-colors hover:text-foreground active:not-aria-[haspopup]:translate-y-0"
         >
           <PanelLeftIcon className="size-4.5" />
         </Button>
@@ -781,7 +781,7 @@ export function SettingsButton({ onOpen }: { onOpen: () => void }) {
           size="icon-sm"
           onClick={onOpen}
           aria-label="Settings"
-          className="text-muted-foreground transition-colors hover:text-foreground"
+          className="text-muted-foreground transition-colors hover:text-foreground active:not-aria-[haspopup]:translate-y-0"
         >
           <Cog6ToothIcon className="size-4" />
         </Button>

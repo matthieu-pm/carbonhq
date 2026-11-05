@@ -1423,7 +1423,7 @@ function SettingsTabs({
                   size="icon-sm"
                   aria-label="Back"
                   onClick={onClose}
-                  className="opacity-80 transition-opacity hover:opacity-100"
+                  className="opacity-80 transition-opacity hover:opacity-100 active:not-aria-[haspopup]:translate-y-0"
                 >
                   <ArrowLeft className="size-4" />
                 </Button>
