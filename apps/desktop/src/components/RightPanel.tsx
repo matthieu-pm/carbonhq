@@ -14,8 +14,7 @@ import { cn } from "@/lib/utils";
 
 /// The header button that opens and closes the pane. Lives here rather than in
 /// `App` so the toggle and the thing it toggles stay in one file, and outside
-/// [RightPanel] itself because the pane doesn't exist before a session does —
-/// the button has to outlive it. Mirrors `SidebarToggle` on the far side.
+/// [RightPanel] so it remains reachable when the pane is closed.
 export function PanelToggle({ onToggle }: { onToggle: () => void }) {
   return (
     <Tooltip>
@@ -337,7 +336,9 @@ export default function RightPanel({
                 light takes no opacity at all; the caps there are already quieter
                 than their dark twins, `--muted` being a black veil on a near-white
                 page rather than a white one on near-black. */}
-            <ShortcutKeys ids={["panel.tab.prev", "panel.tab.next"]} className="ml-1.5 h-full shrink-0 dark:opacity-50" />
+            {tabs.length > 1 && (
+              <ShortcutKeys ids={["panel.tab.prev", "panel.tab.next"]} className="ml-1.5 h-full shrink-0 dark:opacity-50" />
+            )}
           </div>
         )}
 

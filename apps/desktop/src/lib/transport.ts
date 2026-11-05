@@ -47,12 +47,16 @@ export function qualify(path: string, server: ServerId): string {
 
 // ── sessions ──────────────────────────────────────────────────────────────────
 
-/// Which server each session lives on. A session never moves servers, so an
-/// entry is never wrong once written.
+/// Which server each session lives on.
 const sessionServers = new Map<string, ServerId>();
 
 export function noteSession(sessionId: string, server: ServerId): void {
   if (server !== LOCAL) sessionServers.set(sessionId, server);
+}
+
+/// A rejected first send can return an unused id to the local draft.
+export function forgetSessionServer(sessionId: string): void {
+  sessionServers.delete(sessionId);
 }
 
 export const serverOfSession = (sessionId: string | null | undefined): ServerId =>

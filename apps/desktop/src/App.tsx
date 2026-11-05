@@ -203,11 +203,13 @@ function SettingsReady({ onReady }: { onReady: (ready: boolean) => void }) {
 
 /// One empty set, so clearing the rail's open rows twice is one state change.
 const NO_ROWS: ReadonlySet<string> = new Set();
+const DRAFT_PANEL_TABS = ["browser"] as const;
 
 function App() {
   const {
     selectedSessionId,
     selectedSession,
+    newTaskId,
     sessions,
     sessionIndexItems,
     statusBySession,
@@ -263,7 +265,7 @@ function App() {
     handleAnswerQuestions,
     handleSelectSessionIndexItem,
     navGen,
-    handleNewSession,
+    handleNewSession: resetSession,
     restoreDraftControls,
     markSessionUnread,
     setSessionFlags,
@@ -576,7 +578,9 @@ function App() {
   /// on it.
   const [pickedIssue, setPickedIssue] = useState<IssueRef | null>(null);
 
-  const viewTab: ViewTab = selectedSessionId ? viewTabs[selectedSessionId] ?? "chat" : "chat";
+  const browserSessionId = selectedSessionId ?? newTaskId;
+  const savedViewTab = viewTabs[browserSessionId] ?? "chat";
+  const viewTab = selectedSessionId || savedViewTab === "browser" ? savedViewTab : "chat";
 
   /// The picked issue as the one-element list the panel reads.
   ///
@@ -750,7 +754,9 @@ function App() {
     });
   };
   const setViewTab = (tab: ViewTab) => {
-    if (selectedSessionId) setViewTabs((prev) => ({ ...prev, [selectedSessionId]: tab }));
+    if (selectedSessionId || tab === "chat" || tab === "browser") {
+      setViewTabs((prev) => ({ ...prev, [browserSessionId]: tab }));
+    }
   };
 
   // Themes and Shiki's engine are shared by every code surface, so they load
@@ -839,10 +845,8 @@ function App() {
   // The pane's open flag and tab pick are held per session, like `viewTabs`
   // above and for the same reason: app-wide, a pane opened on one session's
   // PR sat blank beside the next session, which had none, and was gone again
-  // on the way back. Not persisted, and a session never opened holds no entry,
-  // which is also what keeps a new task from inheriting whichever pane the
-  // last session left up — the reads there have nothing to answer from until
-  // the first turn lands.
+  // on the way back. New Task uses its reserved session id so its open panel
+  // stays beside the composer through the first send.
   //
   // The open flag alone is keyed by the *group* while the session sits in one.
   // The pane stands beside the whole grid, and the selected session is
@@ -873,14 +877,14 @@ function App() {
       key in prev ? prev : { ...prev, [key]: prev[selectedSessionId] ?? false },
     );
   }, [activeGroup, selectedSessionId]);
-  const panelTab = selectedSessionId ? (panelTabs[selectedSessionId] ?? null) : null;
+  const panelTab = panelTabs[browserSessionId] ?? null;
   // Both take the session because one caller opens a session and its pane in
   // the same breath, before the selection has moved.
   const setPanelTab = useCallback(
-    (tab: PanelTab | null, id = selectedSessionId) => {
-      if (id) setPanelTabs((prev) => ({ ...prev, [id]: tab }));
+    (tab: PanelTab | null, id = browserSessionId) => {
+      setPanelTabs((prev) => ({ ...prev, [id]: tab }));
     },
-    [selectedSessionId],
+    [browserSessionId],
   );
 
   const memberKey = activeGroup ? members(activeGroup).join("\n") : "";
@@ -1007,25 +1011,21 @@ function App() {
   // rather than as a preference being honoured. Reached from the sidebar or a
   // chord the crew is down and the session answers for itself again, which is
   // the same rule seen from the other side.
-  const panelKey =
-    crewUp && crewAnchorId ? crewAnchorId : selectedSessionId && openKey(selectedSessionId);
+  const panelKey = crewUp && crewAnchorId ? crewAnchorId : openKey(browserSessionId);
   // The bare session id stands in for a group key the seeding effect below has
   // not filled yet, or a session reads shut for the commit before it lands.
   // Not offered to the crew: its key is a plain session id already, so falling
   // through there would read the *row's* own flag — the very thing this is
   // keyed away from.
-  const panelOpen = panelKey
-    ? (panelOpens[panelKey] ??
-      (!crewUp && selectedSessionId ? panelOpens[selectedSessionId] : undefined) ??
-      false)
-    : false;
+  const panelOpen = panelOpens[panelKey] ??
+    (!crewUp && selectedSessionId ? panelOpens[selectedSessionId] : undefined) ??
+    false;
   const setPanelOpen = useCallback(
     (open: boolean | ((prev: boolean) => boolean), id?: string | null) => {
       // A caller naming a session means that one — it is opening a session and
       // its pane in the same breath, before the selection has moved — where the
       // default is the arrangement already on screen.
       const key = id ? openKey(id) : panelKey;
-      if (!key) return;
       setPanelOpens((prev) => {
         const next = typeof open === "function" ? open(prev[key] ?? false) : open;
         return id ? { ...prev, [key]: next, [id]: next } : { ...prev, [key]: next };
@@ -1461,8 +1461,8 @@ function App() {
 
   const activeDoc = docs.find((doc) => doc.path === activeDocPath) ?? null;
 
-  const browserTabs = useBrowserTabs(selectedSessionId);
-  const blankTabs = useBlankTabs(selectedSessionId ?? "");
+  const browserTabs = useBrowserTabs(browserSessionId);
+  const blankTabs = useBlankTabs(browserSessionId);
   const pendingBrowserTab = blankTabs.active !== null;
   const hasBrowserTabs = browserTabs && browserTabs.length > 0;
   // A link's tab is answered for before the strip lists it, and the Browser
@@ -1492,21 +1492,24 @@ function App() {
     const keyMoved = lastPanelKey.current !== panelKey;
     lastPanelKey.current = panelKey;
 
-    if (panelKey) {
-      const move = panelMove({
-        from: was,
-        to: viewTab,
-        keyMoved,
-        enabled: autoHidePanel,
-        open: panelOpen,
-        claimed: panelHidForBrowser.current.has(panelKey),
-      });
-      if (move === "hide") panelHidForBrowser.current.add(panelKey);
-      else if (move === "restore") panelHidForBrowser.current.delete(panelKey);
-      if (move) setPanelOpen(move === "restore");
-    }
+    const move = panelMove({
+      from: was,
+      to: viewTab,
+      keyMoved,
+      enabled: autoHidePanel,
+      open: panelOpen,
+      claimed: panelHidForBrowser.current.has(panelKey),
+    });
+    if (move === "hide") panelHidForBrowser.current.add(panelKey);
+    else if (move === "restore") panelHidForBrowser.current.delete(panelKey);
+    if (move) setPanelOpen(move === "restore");
   }, [viewTab, setPanelOpen, panelOpen, panelKey, autoHidePanel]);
-  const expandBrowser = () => setViewTab("browser");
+  const expandBrowser = () => {
+    if (!pendingBrowserTab && !browserTabs?.some((tab) => tab.active)) {
+      setPendingTab(browserSessionId, true);
+    }
+    setViewTab("browser");
+  };
   const collapseBrowser = () => {
     setViewTab("chat");
     showPanel("browser");
@@ -1533,7 +1536,9 @@ function App() {
   // still names a tab this session draws, and otherwise the derived default
   // stands in. Not written back, so switching to a session without a PR keeps
   // the reader's pick for when they switch to one that has it.
-  const activeTab: PanelTab = panelTab && tabs.includes(panelTab) ? panelTab : defaultTab;
+  const activeTab: PanelTab = !selectedSessionId
+    ? "browser"
+    : panelTab && tabs.includes(panelTab) ? panelTab : defaultTab;
 
   // The attachment grid reads the session's whole log, but a transcript drawn
   // as a crew strip never pages past its tail — so the More tab pages in the
@@ -1547,7 +1552,8 @@ function App() {
   // Drops the Browser view's claim, `toggleSidebar`'s reason: a pane moved by
   // hand is the reader's.
   const togglePanel = () => {
-    if (panelKey) panelHidForBrowser.current.delete(panelKey);
+    panelHidForBrowser.current.delete(panelKey);
+    if (!selectedSessionId && !panelOpen) return showPanel("browser");
     setPanelOpen((prev) => !prev);
   };
 
@@ -2083,12 +2089,19 @@ function App() {
     go();
   };
 
+  const showNewTaskComposer = () => setViewTabs((prev) => ({ ...prev, [newTaskId]: "chat" }));
+  const handleNewSession = () => {
+    resetSession();
+    showNewTaskComposer();
+  };
+
   /// The new-task composer, carrying a draft's text and picks.
   const openDraft = (id: string) => {
     const draft = getDraft(id);
     if (!draft) return;
     goToSession(() => {
       restoreDraftControls(draft);
+      showNewTaskComposer();
       writeDraft(draftKey(id), draft.prompt);
       setOpenDraftId(id);
     });
@@ -2550,12 +2563,12 @@ function App() {
   // arbitration — bar the last arm, which is the reader on Chat with the
   // browser beside it in the panel and no grid to close a pane out of.
   const closeBrowserTab = () => {
-    if (!selectedSessionId || isRecording(selectedSessionId)) return;
+    if (isRecording(browserSessionId)) return;
     // A blank tab has no browser behind it, so it is dropped rather than
     // closed — and it is what the reader is looking at while it is up.
-    if (blankTabs.active !== null) return closeBlankTab(selectedSessionId, blankTabs.active);
+    if (blankTabs.active !== null) return closeBlankTab(browserSessionId, blankTabs.active);
     const open = browserTabs?.find((tab) => tab.active);
-    if (open) void closeTab(selectedSessionId, open.id);
+    if (open) void closeTab(browserSessionId, open.id);
   };
   // `viewTab` is per session and the issues page does not clear it, so a
   // reader who opened Issues from the Files view still has `activeFile`
@@ -2565,12 +2578,12 @@ function App() {
   // page hides.
   const fileShown = !issuesOpen && viewTab === "files" && !!activeFile;
   const rowTabOnScreen =
-    !issuesOpen && !!selectedSessionId && (viewTab === "files" || viewTab === "changes" || fullBrowserOpen);
+    fullBrowserOpen || (!issuesOpen && !!selectedSessionId && (viewTab === "files" || viewTab === "changes"));
   const closeTabOrPane = () => {
-    if (!selectedSessionId) return;
     // The row's own close, so the chord lands where the cross would — and
     // reaches the Files and Diff tabs themselves once nothing is open in them.
     if (rowTabOnScreen && closeActiveTab()) return;
+    if (!selectedSessionId) return closeBrowserTab();
     if (fileShown && activeFile) return closeFile(selectedSessionId, activeFile);
     if (fullBrowserOpen) return closeBrowserTab();
     if (gridShown) return closeSessionPane(selectedSessionId);
@@ -2606,8 +2619,8 @@ function App() {
   // arrives already known. The shift layout reaches `key`, so the character is
   // `{` rather than `[`; the physical key rides along for the engines that
   // report the unshifted one — see `code`.
-  useHotkey("panel.tab.prev", () => stepTab(-1));
-  useHotkey("panel.tab.next", () => stepTab(1));
+  useHotkey("panel.tab.prev", () => stepTab(-1), { enabled: !!selectedSessionId && !issuesOpen });
+  useHotkey("panel.tab.next", () => stepTab(1), { enabled: !!selectedSessionId && !issuesOpen });
   // ⌘R re-reads whatever the panel is showing — the same one button in the tab
   // row, so the chord means "refresh this" and never "refresh a specific
   // thing". `panelRefresh` is null on Subagents, which has nothing to fetch,
@@ -2629,9 +2642,9 @@ function App() {
       if (pickedIssue) return pickedIssueData.refresh();
       return issuesRefreshRef.current?.();
     }
-    if (browserShown && selectedSessionId) {
+    if (browserShown) {
       if (!pendingBrowserTab && browserTabs?.some((tab) => tab.active)) {
-        void navigate(selectedSessionId, "reload");
+        void navigate(browserSessionId, "reload");
       }
       return;
     }
@@ -2640,12 +2653,12 @@ function App() {
   // ⌘⇧← / ⌘⇧→ step the browser's strip, clamped like every other subtab row.
   // The pending tab sits at the end of it, which is where the strip draws it.
   const stepBrowserTab = (delta: number) => {
-    if (!selectedSessionId || !browserTabs || isRecording(selectedSessionId)) return;
+    if (!browserTabs || isRecording(browserSessionId)) return;
     const from = pendingBrowserTab ? browserTabs.length : browserTabs.findIndex((tab) => tab.active);
     const next = browserTabs[from + delta];
     if (!next) return;
-    if (pendingBrowserTab) setPendingTab(selectedSessionId, false);
-    if (!next.active) void activateTab(selectedSessionId, next.id);
+    if (pendingBrowserTab) setPendingTab(browserSessionId, false);
+    if (!next.active) void activateTab(browserSessionId, next.id);
   };
   // The Diff view and an open file step their own strip on this chord, and the
   // main column's row wins over a browser sitting beside it in the panel.
@@ -2781,8 +2794,13 @@ function App() {
     onSendNow: handleInterrupt,
   };
 
-  // Pages with no tabs for the strip: the sheet reaches up behind the header.
-  const tallSheet = issuesOpen || !shownSession;
+  const viewTitle = shownSession
+    ? mainGroup
+      ? groupName(mainGroup)
+      : projectFilter
+        ? shownSession.title
+        : `${basename(shownSession.projectPath)} / ${shownSession.title}`
+    : "New Task";
   const summaryCard = selectedSession && (
     <PinnedSummary
       key={selectedSession.sessionId}
@@ -2819,12 +2837,12 @@ function App() {
     <div className={cn("h-full w-full", settingsOpen && settingsReady && "hidden")}>
     <AppShell
       sidebarOpen={!collapsed}
-      tall={tallSheet}
+      tall={issuesOpen}
       // The issues page fills the column, so the centred empty-composer state
       // is wrong there even with no session selected.
-      centered={!shownSession && !issuesOpen}
+      centered={!shownSession && !issuesOpen && viewTab === "chat"}
       panelLeft={panelSide === "left"}
-      panelOpen={issuesOpen ? !!pickedIssue : !!shownSession && panelShown}
+      panelOpen={issuesOpen ? !!pickedIssue : panelShown}
       summaryLayoutRef={summary.ref}
       summary={summary.mode === "pinned" && !issuesOpen && viewTab === "chat" ? summaryCard : null}
       summaryOpen={summaryShown}
@@ -2984,9 +3002,6 @@ function App() {
           </div>
           )}
 
-          {/* With a session up, the session is the strip's first tab and the
-              header has nothing left to say; it stays for the pages that are
-              not a session — the issues page, a new task. */}
           {/* A hidden session has no sidebar row, so this is the way back to
               the crew it sits in. */}
           {!issuesOpen && shownSession && hiddenParent && (
@@ -3000,21 +3015,13 @@ function App() {
               {hiddenParent.title} /
             </button>
           )}
-          {!issuesOpen && shownSession && (
+          {!issuesOpen && (
             <ViewTabs
-              sessionId={shownSession.sessionId}
-              // The group's name over a grid, for the reason the header gave:
-              // each pane already names its own session. The project is left
-              // off where the sidebar is already filtered down to it.
-              title={
-                mainGroup
-                  ? groupName(mainGroup)
-                  : projectFilter
-                    ? shownSession.title
-                    : `${basename(shownSession.projectPath)} / ${shownSession.title}`
-              }
+              sessionId={browserSessionId}
+              title={viewTitle}
+              repoTabs={!!shownSession}
               rename={
-                mainGroup
+                mainGroup || !shownSession
                   ? undefined
                   : {
                       title: shownSession.title,
@@ -3028,13 +3035,13 @@ function App() {
               onChange={setViewTab}
               working={busy}
               branch={prBranch}
-              cwd={shownSession.cwd}
+              cwd={shownSession?.cwd}
               // Not past a parent's breadcrumb, whose width the lead leaves out.
               alignX={hiddenParent ? 0 : sidebarDrawn}
             />
           )}
-          {/* Keeps the far end at the far end on pages with no tab row. */}
-          {(issuesOpen || !shownSession) && <div className="min-w-0 flex-1" />}
+          {/* Issues has no title-bar tabs to take up the remaining width. */}
+          {issuesOpen && <div className="min-w-0 flex-1" />}
 
 
           {issuesOpen
@@ -3044,7 +3051,7 @@ function App() {
               pickedIssue && (
                 <PanelToggle onToggle={() => setPickedIssue(null)} />
               )
-            : shownSession && (
+            : shownSession ? (
                 <>
                   <PanelActions
                     // In the Files view alone: the file on screen, or the
@@ -3081,7 +3088,7 @@ function App() {
                     <PanelToggle onToggle={togglePanel} />
                   )}
                 </>
-              )}
+              ) : <PanelToggle onToggle={togglePanel} />}
         </header>
       }
       panel={
@@ -3131,21 +3138,31 @@ function App() {
               </MountOnce>
             </TabBody>
           </RightPanel>
-        ) : // Mounted whenever a session is, open or not — closing or switching
-        // tabs only hides, so reopening shows what was already there instead of
-        // refetching and re-highlighting it. `active` is what stops the hidden
-        // changes tab from snapshotting the working tree in the background.
-        shownSession ? (
+        ) : (
+          // Closing the panel or switching tabs only hides the mounted bodies.
           <RightPanel
             side={panelSide}
             open={panelShown}
             tab={activeTab}
             onTabChange={setPanelTab}
-            tabs={tabs}
-            widthKey={shownSession.sessionId}
+            tabs={shownSession ? tabs : DRAFT_PANEL_TABS}
+            widthKey={browserSessionId}
             refresh={panelRefresh}
-            cwd={shownSession.cwd}
+            cwd={shownSession?.cwd}
           >
+            <TabBody active={activeTab === "browser"}>
+              <MountOnce when={panelShown && activeTab === "browser"}>
+              <BrowserPane
+                sessionId={browserSessionId}
+                active={panelShown && activeTab === "browser"}
+                mode="panel"
+                fullOpen={fullBrowserOpen}
+                onExpand={expandBrowser}
+                onCollapse={collapseBrowser}
+              />
+              </MountOnce>
+            </TabBody>
+            {shownSession && <>
             <TabBody active={activeTab === "changes"}>
               <MountOnce when={panelShown && activeTab === "changes"}>
               <ChangesPanel
@@ -3153,18 +3170,6 @@ function App() {
                 baseline={baseline}
                 onOpenRepo={() => setViewTab("changes")}
                 {...shownChanges}
-              />
-              </MountOnce>
-            </TabBody>
-            <TabBody active={activeTab === "browser"}>
-              <MountOnce when={panelShown && activeTab === "browser"}>
-              <BrowserPane
-                sessionId={shownSession.sessionId}
-                active={panelShown && activeTab === "browser"}
-                mode="panel"
-                fullOpen={fullBrowserOpen}
-                onExpand={expandBrowser}
-                onCollapse={collapseBrowser}
               />
               </MountOnce>
             </TabBody>
@@ -3223,8 +3228,9 @@ function App() {
               />
               </MountOnce>
             </TabBody>
+            </>}
           </RightPanel>
-        ) : null
+        )
       }
       footer={
         // Only under the transcript it writes into. The other views are not
@@ -3232,7 +3238,7 @@ function App() {
         // the reader can't see. Safe to unmount: the draft and the attachment
         // tray are module-level stores precisely because the composer already
         // unmounts crossing the empty state.
-        issuesOpen || (selectedSession && viewTab !== "chat") ? null : (
+        issuesOpen || viewTab !== "chat" ? null : (
         <ChatInput
           onSend={(message, attachments) => void sendFromComposer(message, attachments)}
           commands={slashCommands}
@@ -3505,18 +3511,16 @@ function App() {
         </TabBody>
       )}
 
-      {selectedSession && (
-        <TabBody active={!issuesOpen && viewTab === "browser"}>
-          <MountOnce when={fullBrowserOpen}>
+      <TabBody active={fullBrowserOpen}>
+        <MountOnce when={fullBrowserOpen}>
           <BrowserPane
-            sessionId={selectedSession.sessionId}
+            sessionId={browserSessionId}
             active={fullBrowserOpen}
             mode="full"
             onCollapse={collapseBrowser}
           />
-          </MountOnce>
-        </TabBody>
-      )}
+        </MountOnce>
+      </TabBody>
 
       {selectedSession && (
         // Keyed by session so the expanded tree resets with it. The tab strip

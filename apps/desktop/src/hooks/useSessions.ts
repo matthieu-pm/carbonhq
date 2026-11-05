@@ -1,4 +1,4 @@
-import { invoke, listen, LOCAL, noteSession, qualify, serverOfPath, serverOfSession, type ServerId } from "@/lib/transport";
+import { forgetSessionServer, invoke, listen, LOCAL, noteSession, qualify, serverOfPath, serverOfSession, type ServerId } from "@/lib/transport";
 import { mergeFrom, remoteServers, serverConnected, serverName, subscribeServers } from "@/lib/servers";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { activeMessageEvents } from "@/lib/messageEdit";
@@ -246,6 +246,7 @@ export function useSessions() {
 
     const [sessions, setSessions] = useState<SessionSnapshot[]>([]);
     const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+    const [newTaskId, setNewTaskId] = useState<string>(() => crypto.randomUUID());
     const [sessionIndexItems, setSessionIndexItems] = useState<SessionIndexItem[]>([]);
     // Which side of the archived split the sidebar is showing. Not persisted:
     // archived is the exception view, so every launch starts on the active list.
@@ -839,7 +840,9 @@ const handleSendMsg = async (
     return false;
   }
   if (!sessionId) {
-    sessionId = crypto.randomUUID();
+    // The browser already uses this id, so its tabs follow the first prompt.
+    sessionId = newTaskId;
+    setNewTaskId(crypto.randomUUID());
     // Before the selection moves, so the composer reads this server's models
     // on the very frame it lands on the new session.
     noteSession(sessionId, serverOfPath(cwd));
@@ -1090,9 +1093,18 @@ const handleSendMsg = async (
     // composer back where the reader typed, with `useDraft` still holding the
     // text under the new-task key.
     if (isNewSession) {
+      // A late failure can leave an indexed session behind. Only give its id
+      // back to New Task if the server confirms it is still free.
+      const unused = selectionRequestRef.current === sessionId &&
+        (await invoke<SessionIndexItem | null>("session_index_item", { sessionId })
+          .catch(() => undefined)) === null;
       setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
       dropHeld(sessionId);
       if (selectionRequestRef.current === sessionId) {
+        if (unused) {
+          forgetSessionServer(sessionId);
+          setNewTaskId(sessionId);
+        }
         setSelectedSessionId(null);
       }
     } else {
@@ -3250,6 +3262,6 @@ const contextUsage: { used: number; max: number } | null = (() => {
   return used !== null && max !== null ? { used, max } : null;
 })();
 
-return {harness, setHarness, sessions, selectedSessionId, selectedSession, sessionIndexItems, statusBySession, askingSessions, archivedShown, archivedRequested: showArchived, setShowArchived, models, refreshModels, reloadModels, seedFxModels, loadingModels, modelId, effort, fast, setFast, fastNote, permissionMode, projects: orderedProjects, projectPath, branches, branch, useWorktree, busy, working, backgroundTasks, liveTaskIds, tasksBySession, compacting, apiRetry, contextUsage, error, setError, handleModelChange, setPermissionMode, handleAttachProject, handleSelectProject, handleRemoveProject, setProjectSpace, moveProject, retagSpace, canAnnounce, handleSelectBranch, refreshBranches, pendingBranch, setPendingBranch, runCheckout, setUseWorktree, handleSendMsg, handleInterrupt, handleStopTask, queuedMessages, handleCancelQueued, handleRespondPermission, handleAnswerQuestions, handleSelectSessionIndexItem, handleNewSession, restoreDraftControls, markSessionUnread, setSessionFlags, forkSession, unlinkIssue, detachSession, deleteSession, removeWorktree, ensureLoaded, setNeighbours, dropNeighbours, setOnScreen, setCrewSeen, paneState, indexSide, navGen, activeServer};
+return {harness, setHarness, sessions, selectedSessionId, selectedSession, newTaskId, sessionIndexItems, statusBySession, askingSessions, archivedShown, archivedRequested: showArchived, setShowArchived, models, refreshModels, reloadModels, seedFxModels, loadingModels, modelId, effort, fast, setFast, fastNote, permissionMode, projects: orderedProjects, projectPath, branches, branch, useWorktree, busy, working, backgroundTasks, liveTaskIds, tasksBySession, compacting, apiRetry, contextUsage, error, setError, handleModelChange, setPermissionMode, handleAttachProject, handleSelectProject, handleRemoveProject, setProjectSpace, moveProject, retagSpace, canAnnounce, handleSelectBranch, refreshBranches, pendingBranch, setPendingBranch, runCheckout, setUseWorktree, handleSendMsg, handleInterrupt, handleStopTask, queuedMessages, handleCancelQueued, handleRespondPermission, handleAnswerQuestions, handleSelectSessionIndexItem, handleNewSession, restoreDraftControls, markSessionUnread, setSessionFlags, forkSession, unlinkIssue, detachSession, deleteSession, removeWorktree, ensureLoaded, setNeighbours, dropNeighbours, setOnScreen, setCrewSeen, paneState, indexSide, navGen, activeServer};
 
 }

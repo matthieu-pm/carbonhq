@@ -129,11 +129,14 @@ export default function ViewTabs({
   alignX = 0,
   rename,
   working = false,
+  repoTabs = true,
 }: {
   /// Mid-turn: off Chat, the chat tab's icon says so, since the transcript
   /// that would is not on screen.
   working?: boolean;
   sessionId: string;
+  /// Diff and Files become available once the task has a working directory.
+  repoTabs?: boolean;
   /// The session's own title and how to change it; absent where the chat
   /// stands for a group rather than one session.
   rename?: Rename;
@@ -155,7 +158,8 @@ export default function ViewTabs({
   // The agent's next verb goes to whichever page is active, so the reader
   // cannot move it mid-recording — the panel strip's own rule.
   const recording = useRecording(sessionId);
-  const { open: files, active: activeFile } = useOpenFiles(sessionId);
+  const { open: openFiles, active: activeFile } = useOpenFiles(sessionId);
+  const files = repoTabs ? openFiles : [];
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const fileLabels = tabLabels(files.map((f) => f.path));
 
@@ -163,8 +167,8 @@ export default function ViewTabs({
   // button in the panel, a file link in the chat — so the row never shows a
   // view with nothing lit for it.
   const shown: Added = {
-    changes: (added.get(sessionId) ?? NONE).changes || tab === "changes",
-    files: (added.get(sessionId) ?? NONE).files || tab === "files",
+    changes: repoTabs && ((added.get(sessionId) ?? NONE).changes || tab === "changes"),
+    files: repoTabs && ((added.get(sessionId) ?? NONE).files || tab === "files"),
   };
   added.set(sessionId, shown);
   const setShown = (kind: keyof Added, on: boolean) => {
@@ -387,7 +391,7 @@ export default function ViewTabs({
   // What + can still add. With Diff and Files both in the row it is a plain
   // new-tab button, the one thing left to offer.
   const offer = [
-    !shown.changes && {
+    repoTabs && !shown.changes && {
       key: "changes",
       icon: <DocumentPlusIcon className={MARK} />,
       label: "Diff",
@@ -396,7 +400,7 @@ export default function ViewTabs({
         onChange("changes");
       },
     },
-    !shown.files &&
+    repoTabs && !shown.files &&
       files.length === 0 && {
         key: "files",
         icon: FOLDER,

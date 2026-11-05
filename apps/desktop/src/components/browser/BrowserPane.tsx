@@ -392,8 +392,8 @@ function Chrome({
 
   // A new tab is for typing into.
   useEffect(() => {
-    if (pending) inputRef.current?.focus();
-  }, [pending]);
+    if (blanks.active !== null) inputRef.current?.focus();
+  }, [blanks.active]);
 
   // The pages this session visited, matched against what is typed. Read on
   // focus, so a page opened since is in the list next time.
