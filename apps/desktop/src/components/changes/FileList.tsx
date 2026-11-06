@@ -73,17 +73,19 @@ const Row = memo(function Row({
     >
       <FileIcon path={file.path} />
 
-      {/* Name first and never shrinking, directory after it and truncating.
-          One truncating span holding `dir + name` clips from the *end*, which
-          is the filename — the one part of a path that has to be readable, and
-          the part a deep tree is most likely to have cost. */}
+      {/* Name first, directory after it. The directory gives up its width
+          first; the name truncates only once that is gone, since a name that
+          never shrinks spills over the counts in a narrow pane. One span
+          holding `dir + name` would clip from the end, which is the filename. */}
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
-        <span className="shrink-0 text-sidebar-foreground">{name}</span>
+        <span className="min-w-0 truncate text-sidebar-foreground">{name}</span>
         {dir && (
-          <span className="min-w-0 truncate text-muted-foreground">{trimSlash(dir)}</span>
+          <span className="min-w-0 shrink-[1000] truncate text-muted-foreground">
+            {trimSlash(dir)}
+          </span>
         )}
         {file.oldPath && (
-          <span className="shrink-0 text-muted-foreground">
+          <span className="min-w-0 truncate text-muted-foreground">
             ← {splitPath(file.oldPath).name}
           </span>
         )}
@@ -92,7 +94,7 @@ const Row = memo(function Row({
       {file.binary ? (
         <span className="shrink-0 text-muted-foreground">binary</span>
       ) : (
-        <Counts added={file.added} removed={file.removed} />
+        <Counts added={file.added} removed={file.removed} className="shrink-0" />
       )}
     </button>
   );
