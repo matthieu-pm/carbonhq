@@ -51,8 +51,10 @@ describe("invoke", () => {
   it("lists exactly the commands the app registers", () => {
     const lib = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
     const block = lib.slice(lib.indexOf("generate_handler!["), lib.indexOf("])", lib.indexOf("generate_handler![")));
-    const registered = [...block.matchAll(/^\s+(?:[a-z_]+::)*([a-z_]+),$/gm)].map((m) => m[1]);
-    expect(new Set(registered)).toEqual(APP_COMMANDS);
+    const registered = [...block.matchAll(/(?:^\s*(#\[cfg\(.*\)\])\n)?^\s+(?:[a-z_]+::)*([a-z_]+),$/gm)];
+    expect(new Set(registered.map(([, , name]) => name))).toEqual(APP_COMMANDS);
+    // The browser UI can invoke this even in a desktop build without CEF.
+    expect(registered.find(([, , name]) => name === "browser_open")?.[1]).toBeUndefined();
   });
 
   it("routes by a qualified argument and unwraps it", async () => {

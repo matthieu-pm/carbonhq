@@ -2001,8 +2001,7 @@ pub fn browser_shutter_ready(shot: u64) {
 /// Loads `url` in the session's active tab, or in a new one. A tab that
 /// cannot be made is the caller's error, not a log line: the pane leaves
 /// its pending tab standing otherwise, with nothing to say why.
-#[tauri::command]
-pub fn browser_open(session_id: String, url: String, new_tab: bool) -> Result<(), String> {
+pub(super) fn browser_open(session_id: String, url: String, new_tab: bool) -> Result<(), String> {
     let tab = if new_tab { None } else { active_id(&session_id) };
     load(session_id, url, tab)
 }

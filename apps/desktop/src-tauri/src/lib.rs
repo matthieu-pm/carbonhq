@@ -735,6 +735,21 @@ async fn mark_session_read(
     Ok(next)
 }
 
+/// Reports browser availability through the same command in every desktop build.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn browser_open(session_id: String, url: String, new_tab: bool) -> Result<(), String> {
+    #[cfg(all(feature = "cef", target_os = "macos"))]
+    {
+        cef::browser_open(session_id, url, new_tab)
+    }
+    #[cfg(not(all(feature = "cef", target_os = "macos")))]
+    {
+        let _ = (session_id, url, new_tab);
+        Err("The built-in browser is unavailable in this build of Carbon.".into())
+    }
+}
+
 #[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -873,8 +888,7 @@ pub fn run() {
             // Here and not on the server: a video plays through this
             // webview's asset protocol, which only this process can widen.
             files::read_file,
-            #[cfg(all(feature = "cef", target_os = "macos"))]
-            cef::browser_open,
+            browser_open,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_tabs,
             #[cfg(all(feature = "cef", target_os = "macos"))]
