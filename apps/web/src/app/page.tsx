@@ -5,7 +5,6 @@ import { Features } from "@/components/home/Features";
 import { Hero } from "@/components/home/Hero";
 import { Island } from "@/components/home/Island";
 import { Orchestrate } from "@/components/home/Orchestrate";
-import { Testimonials } from "@/components/home/Testimonials";
 import { COMPANY, DOWNLOAD, REPO } from "@/lib/links";
 
 // Hardcoded, not `siteUrl`: a preview deploy must still name the real site.
@@ -51,7 +50,6 @@ export default function Home() {
         <Everywhere />
         <Features />
         <Island />
-        <Testimonials />
         <Faq />
       </main>
       <Closing />
