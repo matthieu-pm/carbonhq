@@ -1,41 +1,10 @@
 export const REPO = "https://github.com/matthieu-pm/carbonhq";
 
-/// The newest stable dmg, off the R2 mirror rather than GitHub, whose release
-/// CDN has had 42MB take 45 minutes. release.yml overwrites this one key on
-/// every stable release, so the button needs no build-time lookup; betas leave
-/// it alone, the beta channel being the updater's and not this page's.
-export const DOWNLOAD = "https://downloads.carbonhq.com/Carbon_universal.dmg";
+export const SITE = "https://carbon.forgenow.tech";
 
 /// The server install. `public/install.sh` resolves the newest `cli-v*` tag
 /// itself, so this line never needs a version in it.
-export const INSTALL_LINE = "curl -fsSL https://www.carbonhq.com/install.sh | sh";
-
-/// The person who builds it, on X — the nav's "Feedback" link and the
-/// footer's mark both. Most visitors arrive from a tweet, so this is the
-/// channel they are already on.
-///
-/// The product's own account (`x.com/carbon_hq`) was here too and the footer
-/// pointed at it. It posts releases; somebody who reaches the bottom of this
-/// page is looking for a person, so both now go to the same place and there
-/// is no second constant to keep.
-export const FEEDBACK = "https://x.com/yogesharc";
-
-export const COMPANY = "Monorepo Labs";
-
-/// Where the next sponsor signs up: the site's own page, which sends them on
-/// to Dodo's checkout.
-export const SPONSOR = "/support";
-
-/// Dodo checkout for a one-time gift. `paymentAmount` is whole dollars, not
-/// cents, measured against the live link; Dodo raises anything under $5.
-export const GIVE_ONCE = "https://checkout.dodopayments.com/buy/pdt_0Nr3TIt1S5EknDdqXtkz6?quantity=1&showDiscounts=false";
-
-/// Dodo's monthly plans, cheapest first.
-export const MONTHLY = [
-  { name: "Coffee", price: "$9.99", href: "https://checkout.dodopayments.com/buy/pdt_0Nr3TUpvqIitzXs9Fu8iH?quantity=1&showDiscounts=false" },
-  { name: "Supporter", price: "$19.99", href: "https://checkout.dodopayments.com/buy/pdt_0Nr3U3A56BDcjWAanib29?quantity=1&showDiscounts=false" },
-  { name: "Angel", price: "$100", href: "https://checkout.dodopayments.com/buy/pdt_0Nr3U7XSvvd1wQR7RifpC?quantity=1&showDiscounts=false" },
-] as const;
+export const INSTALL_LINE = "curl -fsSL https://carbon.forgenow.tech/install.sh | sh";
 
 /// What the nav shows when GitHub cannot be asked. Bump it now and then so a
 /// rate-limited render does not undercount by much.

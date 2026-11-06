@@ -5,10 +5,7 @@ import { Features } from "@/components/home/Features";
 import { Hero } from "@/components/home/Hero";
 import { Island } from "@/components/home/Island";
 import { Orchestrate } from "@/components/home/Orchestrate";
-import { COMPANY, DOWNLOAD, REPO } from "@/lib/links";
-
-// Hardcoded, not `siteUrl`: a preview deploy must still name the real site.
-const SITE = "https://www.carbonhq.com";
+import { REPO, SITE } from "@/lib/links";
 
 const SCHEMA = JSON.stringify({
   "@context": "https://schema.org",
@@ -17,10 +14,10 @@ const SCHEMA = JSON.stringify({
     {
       "@type": "Organization",
       "@id": `${SITE}/#org`,
-      name: COMPANY,
+      name: "Carbon",
       url: SITE,
       logo: `${SITE}/icon.png`,
-      sameAs: [REPO, "https://x.com/carbon_hq"],
+      sameAs: [REPO],
     },
     {
       "@type": "SoftwareApplication",
@@ -29,7 +26,7 @@ const SCHEMA = JSON.stringify({
       description: "One Mac app for every coding agent: Claude Code, Codex, Grok Build, pi and fx.",
       applicationCategory: "DeveloperApplication",
       operatingSystem: "macOS",
-      downloadUrl: DOWNLOAD,
+      downloadUrl: `${SITE}/download`,
       license: "https://www.apache.org/licenses/LICENSE-2.0",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
       publisher: { "@id": `${SITE}/#org` },

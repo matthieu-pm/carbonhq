@@ -1,6 +1,6 @@
 # Writing the Carbon docs
 
-Pages live in `content/`, served at carbonhq.com/docs. Blume builds the sidebar
+Pages live in `content/`, served at carbon.forgenow.tech/docs. Blume builds the sidebar
 from folders, and `llms.txt` / `llms-full.txt` from every page.
 
 ## Who reads this

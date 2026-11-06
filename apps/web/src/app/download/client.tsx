@@ -2,43 +2,13 @@
 
 import { useEffect, useRef } from "react";
 
-import { posthog } from "@/lib/posthog";
-import { DOWNLOAD } from "@/lib/links";
-
-/// Starts the dmg as the page opens. The file is served as a download, so the
-/// browser keeps this page up. The ref holds it to one start where React runs
-/// the effect twice in development.
-export function StartDownload() {
+/// Start a confirmed download once, including under React's dev Strict Mode.
+export function StartDownload({ url }: { url: string }) {
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    window.location.href = DOWNLOAD;
-  }, []);
+    window.location.href = url;
+  }, [url]);
   return null;
-}
-
-/// An outbound link off the download page, counted by where it leads, so the
-/// ask can be judged by how many readers act on it.
-export function SupportLink({
-  href,
-  to,
-  className,
-  children,
-}: {
-  href: string;
-  to: "dmg";
-  className: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      {...(to === "dmg" ? {} : { target: "_blank", rel: "noopener noreferrer" })}
-      onClick={() => posthog.capture("support_click", { to }, { transport: "sendBeacon" })}
-      className={className}
-    >
-      {children}
-    </a>
-  );
 }

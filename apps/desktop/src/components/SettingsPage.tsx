@@ -12,7 +12,7 @@ import {
   NewspaperIcon,
   ServerStackIcon,
 } from "@heroicons/react/16/solid";
-import { ArrowLeft, Check, ChevronDown, Heart, RotateCcw, Star } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, RotateCcw, Star } from "lucide-react";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -87,7 +87,6 @@ const CONTACT_URL = "https://x.com/yogesharc";
 const REPO_URL = "https://github.com/matthieu-pm/carbonhq";
 const ISSUES_URL = `${REPO_URL}/issues/new`;
 // The landing page's own link, so both ask through one door.
-const SPONSOR_URL = "https://www.carbonhq.com/support";
 
 /// The app's preferences, such as they are.
 ///
@@ -950,19 +949,15 @@ function ContactBlock() {
   );
 }
 
-/// Links to support Carbon or star the repo.
+/// Gives users a way to support the open source project.
 function SupportBlock() {
   return (
     <div className="flex flex-col gap-2.5">
       <p className="text-ui text-muted-foreground">
-        Carbon is free and open source. Sponsoring or starring the repo keeps it going.
+        Carbon is free and open source. Star the repository to support the project.
       </p>
       <div className="flex items-center gap-1.5">
-        <Button variant="secondary" size="sm" onClick={() => void openUrl(SPONSOR_URL)}>
-          <Heart />
-          Sponsor
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => void openUrl(REPO_URL)}>
+        <Button variant="secondary" size="sm" onClick={() => void openUrl(REPO_URL)}>
           <Star />
           Star on GitHub
         </Button>

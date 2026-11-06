@@ -26,7 +26,7 @@ export type Release = {
 
 /// Media lives in this site's `public/changelog/`. Absolute, since the app
 /// reads the same URLs out of `/changelog.json`.
-const MEDIA_BASE = "https://www.carbonhq.com";
+const MEDIA_BASE = "https://carbon.forgenow.tech";
 
 const SECTIONS: Record<string, SectionKind> = {
   New: "new",
