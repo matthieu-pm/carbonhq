@@ -19,6 +19,21 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.30.0-beta.1
+
+### New
+
+- Open browser tabs from New Task and carry them into the session.
+- Manage MCP servers and skills from Settings.
+- See conversation sources in the pinned summary.
+- View subscription usage across supported providers.
+
+### Improved
+
+- Choose installed fonts for the interface and chat.
+- Sync the branch picker with GitHub.
+- Copy sent messages and completed agent responses.
+
 ## 0.29.17 · 2026-11-03
 
 ### New

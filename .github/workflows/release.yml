@@ -10,7 +10,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   # Part of the cache key's environment, so it has to match warm-cache.yml.
@@ -32,9 +32,12 @@ jobs:
   build:
     needs: notary-check
     runs-on: macos-latest
+    permissions:
+      contents: write
     outputs:
       channel: ${{ steps.channel.outputs.channel }}
       dmg: ${{ steps.mirror.outputs.dmg }}
+      release_id: ${{ steps.bundle.outputs.releaseId }}
     steps:
       - uses: actions/checkout@v4
 
@@ -72,7 +75,7 @@ jobs:
             found && /^## / { exit }
             found { print }
           ' apps/desktop/CHANGELOG.md)"
-          BODY="$(printf '%s\n' "$BODY" | sed 's#](changelog/#](https://www.carbonhq.com/changelog/#g')"
+          BODY="$(printf '%s\n' "$BODY" | sed 's#](changelog/#](https://carbon.forgenow.tech/changelog/#g')"
 
           # A stable release with no section would publish notes saying nothing,
           # which is worth stopping for — same reason the version guard above
@@ -128,7 +131,8 @@ jobs:
       - name: Build the carbon CLI
         run: apps/desktop/scripts/cli-sidecar.sh apps/desktop/src-tauri/target/cli
 
-      - uses: tauri-apps/tauri-action@v0
+      - id: bundle
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Signs the updater bundle. Separate from Apple's signature and not
@@ -154,6 +158,7 @@ jobs:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
+          releaseDraft: true
           prerelease: ${{ steps.channel.outputs.prerelease }}
           releaseBody: ${{ steps.notes.outputs.body }}
           generateReleaseNotes: true
@@ -203,14 +208,11 @@ jobs:
           lipo "$CLI" -verify_arch arm64 x86_64
           "$CLI" --version
 
-      # Downloads are served from R2, not the release: GitHub's asset CDN has
-      # had whole afternoons of a 42MB dmg taking 45 minutes. Versioned keys
-      # are immutable and back the updater manifest; the site's versionless
-      # dmg is moved by the manifest job, behind its semver guard. A missing
-      # secret fails the release rather than shipping a manifest whose URLs
-      # point at nothing.
+      # If configured, R2 takes the download traffic off GitHub's asset CDN.
+      # A partially configured mirror fails before any release is published.
       - name: Mirror to R2
         id: mirror
+        if: vars.R2_BUCKET != '' || vars.DOWNLOADS_URL != ''
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -220,9 +222,10 @@ jobs:
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
+          DOWNLOADS_URL: ${{ vars.DOWNLOADS_URL }}
         run: |
           set -euo pipefail
-          : "${AWS_ACCESS_KEY_ID:?}" "${R2_ACCOUNT_ID:?}" "${R2_BUCKET:?}"
+          : "${AWS_ACCESS_KEY_ID:?}" "${AWS_SECRET_ACCESS_KEY:?}" "${R2_ACCOUNT_ID:?}" "${R2_BUCKET:?}" "${DOWNLOADS_URL:?}"
           BUNDLE=apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle
           put() {
             aws s3 cp "$1" "s3://${R2_BUCKET}/$2" \
@@ -236,13 +239,13 @@ jobs:
           put "$(ls "$BUNDLE"/macos/*.app.tar.gz)" "${GITHUB_REF_NAME}/Carbon_universal.app.tar.gz"
           echo "dmg=$(basename "$DMG")" >> "$GITHUB_OUTPUT"
 
-  # The manifests live on a branch rather than in the release, because
-  # `/releases/latest/` skips prereleases — so beta would have no fixed URL.
-  # GitHub Pages serves this branch; the artifact URLs inside are rewritten
-  # onto the R2 mirror the build job uploaded to.
+  # Keep both channels on the updates branch. Pages deploys their artifact
+  # explicitly because pushes made with GITHUB_TOKEN don't trigger Pages.
   manifest:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -251,6 +254,7 @@ jobs:
 
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.build.outputs.release_id }}
           DOWNLOADS_URL: ${{ vars.DOWNLOADS_URL }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -262,22 +266,26 @@ jobs:
           DMG: ${{ needs.build.outputs.dmg }}
         run: |
           set -euo pipefail
-          : "${DOWNLOADS_URL:?}" "${DMG:?}"
-          gh release download "${GITHUB_REF_NAME}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --pattern latest.json --output release.json --clobber
+          : "${RELEASE_ID:?}"
+          RELEASE_API="repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"
+          MANIFEST_ID="$(gh api "$RELEASE_API" --jq '.assets[] | select(.name == "latest.json") | .id')"
+          : "${MANIFEST_ID:?}"
+          gh api -H "Accept: application/octet-stream" \
+            "repos/${GITHUB_REPOSITORY}/releases/assets/${MANIFEST_ID}" > manifest.json
+          jq -e --arg version "${GITHUB_REF_NAME#v}" '
+            .version == $version and
+            (.platforms | [.["darwin-aarch64"], .["darwin-x86_64"]]
+              | all((.url | startswith("https://")) and (.signature | length > 0)))
+          ' manifest.json >/dev/null
 
-          # The signature covers the bytes, not the URL, so moving the host
-          # changes nothing the client verifies.
-          jq --arg from "https://github.com/${GITHUB_REPOSITORY}/releases/download/" \
-             --arg to "${DOWNLOADS_URL%/}/" \
-             '.platforms |= map_values(.url |= sub($from; $to))' \
-             release.json > manifest.json
-          rm release.json
-          # A rewrite matching nothing is what a changed URL shape looks like.
-          if jq -e '[.platforms[].url] | any(startswith("https://github.com/"))' manifest.json >/dev/null; then
-            echo "manifest still points at GitHub" >&2
-            exit 1
+          if [ -n "$DOWNLOADS_URL" ]; then
+            jq --arg from "https://github.com/${GITHUB_REPOSITORY}/releases/download/" \
+               --arg to "${DOWNLOADS_URL%/}/" \
+               '.platforms |= map_values(.url |= sub($from; $to))' \
+               manifest.json > mirrored.json
+            mv mirrored.json manifest.json
+            jq -e --arg base "${DOWNLOADS_URL%/}/" \
+              '[.platforms[].url] | length > 0 and all(startswith($base))' manifest.json >/dev/null
           fi
 
           # Writes the release over a channel manifest unless that would move
@@ -312,8 +320,7 @@ jobs:
           fi
           rm manifest.json
 
-          # Pages would otherwise run these through Jekyll.
-          touch .nojekyll
+          gh api --method PATCH "$RELEASE_API" -F draft=false --silent
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -331,10 +338,32 @@ jobs:
           # only after the push landed, since a push lost to a concurrent
           # release means this one did not win. A server-side copy of the key
           # the build job uploaded; nothing is re-sent.
-          if [ "$(jq -r '.version // empty' stable.json 2>/dev/null)" = "$NEW" ]; then
+          if [ -n "$DMG" ] && [ "$(jq -r '.version // empty' stable.json 2>/dev/null)" = "$NEW" ]; then
             aws s3 cp "s3://${R2_BUCKET}/${GITHUB_REF_NAME}/${DMG}" "s3://${R2_BUCKET}/Carbon_universal.dmg" \
               --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
               --metadata-directive REPLACE \
               --content-type application/x-apple-diskimage \
               --cache-control "public, max-age=300"
           fi
+
+      - name: Stage updater manifests
+        run: |
+          mkdir pages
+          cp ./*.json pages/
+
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: pages
+
+  publish-updates:
+    needs: manifest
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

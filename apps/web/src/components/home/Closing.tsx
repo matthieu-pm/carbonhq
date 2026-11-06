@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { DownloadButton } from "@/components/DownloadButton";
 import { Title } from "@/components/home/Section";
 import { Stripes } from "@/components/home/Stripes";
-import { FEEDBACK, INSTALL_LINE, REPO, SPONSOR } from "@/lib/links";
+import { INSTALL_LINE, REPO } from "@/lib/links";
 
 const LABEL = "font-mono text-[11px] leading-[14px] tracking-[0.06em] text-white/70 uppercase";
 
@@ -14,8 +14,6 @@ const LINKS = [
   { label: "Changelog", href: "/changelog" },
   { label: "llms.txt", href: "/llms.txt" },
   { label: "GitHub", href: REPO, out: true },
-  { label: "X", href: FEEDBACK, out: true },
-  { label: "Support", href: SPONSOR },
 ];
 
 /// The last blue band: the closing line, both ways in, and the footer.

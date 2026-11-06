@@ -272,7 +272,7 @@ pub fn explain(failure: ssh::Failure, login: &str) -> String {
             format!("{message} Add it from the app's Settings → Servers, which can install it.")
         }
         Some(ssh::Fix::Install) => {
-            format!("{message} Install it there first: curl -fsSL https://www.carbonhq.com/install.sh | sh")
+            format!("{message} Install it there first: curl -fsSL https://carbon.forgenow.tech/install.sh | sh")
         }
         // A reconnect's fix, never an add's; the sentence already says it.
         Some(ssh::Fix::NewAddress) | None => message,

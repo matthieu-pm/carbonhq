@@ -36,7 +36,7 @@ const MAX_READ: usize = 4096;
 /// A whole connect: login, script, `carbon service start`'s own 1.5s check.
 const OPEN: Duration = Duration::from_secs(45);
 
-const INSTALLER: &str = "https://www.carbonhq.com/install.sh";
+const INSTALLER: &str = "https://carbon.forgenow.tech/install.sh";
 
 /// An install over a login: a package manager and five vendor scripts.
 const INSTALLING: Duration = Duration::from_secs(30 * 60);

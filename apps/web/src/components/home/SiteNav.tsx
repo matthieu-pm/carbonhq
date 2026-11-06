@@ -3,7 +3,7 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { GitHubGlyph } from "@/components/GitHubGlyph";
 import { Wordmark } from "@/components/Wordmark";
 import { fetchStars, formatStars } from "@/lib/github";
-import { REPO, SPONSOR } from "@/lib/links";
+import { REPO } from "@/lib/links";
 import { SchemeToggle } from "./SchemeToggle";
 
 const NAV_CELL =
@@ -22,7 +22,7 @@ export async function SiteNav({ bare = false }: { bare?: boolean } = {}) {
         <Wordmark className="h-6 w-auto text-white light:text-[#0A0A0A]" />
       </Link>
       {/* The box draws its right and bottom edges; every cell draws its own
-          left, so hiding Docs and Support on a phone, and the stars on the
+          left, so hiding Docs on a phone, and the stars on the
           narrowest, leaves no doubled line. */}
       <div className="flex h-10 border-r border-b border-white/20 light:border-black/15">
         <SchemeToggle className={`${NAV_CELL} flex w-10 cursor-pointer`} />
@@ -30,9 +30,6 @@ export async function SiteNav({ bare = false }: { bare?: boolean } = {}) {
             client-side routing has nothing to route to. */}
         <a href="/docs" className={`${NAV_CELL} hidden w-[72px] sm:flex`}>
           Docs
-        </a>
-        <a href={SPONSOR} className={`${NAV_CELL} hidden w-24 sm:flex`}>
-          Support
         </a>
         <a
           href={REPO}

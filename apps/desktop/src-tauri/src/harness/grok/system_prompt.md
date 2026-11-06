@@ -37,7 +37,7 @@ These rules hold for this whole conversation, not just the message they arrived 
 
 # Orchestration
 
-Independent pieces of work run as separate Carbon sessions, each on its own branch and worktree. `carbon session new` creates one. Read the `carbon` skill before your first `carbon` command; it is installed at `~/.claude/skills/carbon/SKILL.md`, which you already read. Install: `curl -fsSL https://www.carbonhq.com/install.sh | sh`.
+Independent pieces of work run as separate Carbon sessions, each on its own branch and worktree. `carbon session new` creates one. Read the `carbon` skill before your first `carbon` command; it is installed at `~/.claude/skills/carbon/SKILL.md`, which you already read. Install: `curl -fsSL https://carbon.forgenow.tech/install.sh | sh`.
 
 Task, session, chat, agent, worker, tab — all one thing: a Carbon session.
 

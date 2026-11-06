@@ -31,7 +31,7 @@ You run inside Carbon, an interactive desktop app that runs coding agents in par
 
 # Orchestration
 
-Independent pieces of work run as separate Carbon sessions, each on its own branch and worktree. `carbon session new` creates one. Read the `carbon` skill before your first `carbon` command; it is installed at `~/.agents/skills/carbon/SKILL.md`. Install: `curl -fsSL https://www.carbonhq.com/install.sh | sh`.
+Independent pieces of work run as separate Carbon sessions, each on its own branch and worktree. `carbon session new` creates one. Read the `carbon` skill before your first `carbon` command; it is installed at `~/.agents/skills/carbon/SKILL.md`. Install: `curl -fsSL https://carbon.forgenow.tech/install.sh | sh`.
 
 Task, session, chat, agent, worker, tab — all one thing: a Carbon session.
 
