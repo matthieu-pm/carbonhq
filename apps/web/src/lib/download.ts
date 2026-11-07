@@ -1,9 +1,15 @@
 import { REPO } from "@/lib/links";
 
 const STABLE_MANIFEST = "https://matthieu-pm.github.io/carbonhq/stable.json";
+const BETA_DOWNLOAD = `${REPO}/releases/download/v0.30.0-beta.1/Carbon_0.30.0-beta.1_universal.dmg`;
+
+/// Offer the published beta until a stable desktop installer is available.
+export async function macosDownload(): Promise<string> {
+  return (await stableDownload()) ?? BETA_DOWNLOAD;
+}
 
 /// The stable manifest selects the desktop release independently of CLI tags.
-export async function stableDownload(): Promise<string | null> {
+async function stableDownload(): Promise<string | null> {
   const options = { next: { revalidate: 60 } };
 
   try {

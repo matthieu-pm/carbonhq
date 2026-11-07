@@ -4,10 +4,8 @@ import { posthog } from "@/lib/posthog";
 import { AppleGlyph } from "@/components/AppleGlyph";
 
 /// The download link, split out as a client component so the click can be
-/// counted. It goes to `/download`, which starts the dmg itself and asks for
-/// support while the file comes down. A plain anchor, not `Link`: from
-/// `/download` itself a client navigation keeps the page mounted, and the
-/// dmg would not start again.
+/// counted. A plain anchor lets the browser follow the installer redirect
+/// and start the file download without a client navigation.
 ///
 /// The click is sent with `sendBeacon`, since it leaves the page and the
 /// default transport is a request the browser is free to cancel as it goes.
@@ -25,7 +23,7 @@ export function DownloadButton({
 }) {
   return (
     <a
-      href="/download"
+      href="/download/macos"
       onClick={() =>
         posthog.capture("download", { platform: "macos", from }, { transport: "sendBeacon" })
       }
