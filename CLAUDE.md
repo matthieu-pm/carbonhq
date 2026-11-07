@@ -236,6 +236,8 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 
 [main-font.html](apps/desktop/demo/main-font.html) mounts the real font picker beside interface, chat and code samples. Its **Run keyboard checks** button verifies IME confirmation, WebKit's composition Enter, unmatched searches and keyboard selection.
 
+[font-sizes.html](apps/desktop/demo/font-sizes.html) mounts the UI and code font size rows above chrome, chat, a raw `text-sm` button, tool output, an Edit diff and the virtualized Files view. Its **Run size check** reads every computed size back at two non-default pairs and checks the Files view's row pitch matches its line height.
+
 **Every demo's `<html>` carries `data-demo`**, or it cannot scroll: the app pins `html`, `body` and `#root` to the window with overflow hidden, since it owns every scroll container, and [App.css](apps/desktop/src/App.css) gives page scroll back only to that attribute.
 
 **A new demo mounts `<DemoThemeBar />`** ([ThemeBar.tsx](apps/desktop/src/demo/ThemeBar.tsx)): Settings' own theme swatches ([ThemeSwatches](apps/desktop/src/components/ThemeSwatches.tsx), arrow keys included) and Light/Dark on the app's theme store, since a surface is judged across every palette and both modes. No hand-rolled mode toggle, and no theme attributes hardcoded on the page's `<html>`. The recording demo has it; the three older demos predate it and are left as they were, on purpose.

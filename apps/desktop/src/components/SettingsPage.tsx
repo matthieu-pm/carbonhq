@@ -62,6 +62,8 @@ import ServersSettings from "@/components/settings/ServersSettings";
 import HandoffSettings from "@/components/settings/HandoffSettings";
 import SettingRow from "@/components/settings/SettingRow";
 import MainFontRow from "@/components/settings/MainFontRow";
+import FontSizeRow from "@/components/settings/FontSizeRow";
+import { FONT_SLOTS } from "@/lib/fontSize";
 import ShortcutsSettings from "@/components/settings/ShortcutsSettings";
 import SpacesSettings from "@/components/settings/SpacesSettings";
 import TranscriptionSettings from "@/components/settings/TranscriptionSettings";
@@ -182,6 +184,9 @@ export default function SettingsPage({
             </Section>
             <Section>
               <MainFontRow />
+              {FONT_SLOTS.map((slot) => (
+                <FontSizeRow key={slot.id} slot={slot} />
+              ))}
               <ZoomRow />
             </Section>
             <Section>
@@ -278,9 +283,8 @@ export default function SettingsPage({
   );
 }
 
-/// The chords only — zoom has no control of its own. It replaced the per-text
-/// font sizes, so a reader who had set one and found it gone learns here
-/// what stands in for it.
+/// The chords only — zoom has no control of its own. It scales the whole
+/// window on top of the two font sizes above it.
 function ZoomRow() {
   const id = useId();
   useShortcutOverrides();
