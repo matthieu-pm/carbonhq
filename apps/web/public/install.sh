@@ -6,7 +6,7 @@
 # Deliberately POSIX sh, not bash: this is piped into whatever /bin/sh is, and
 # on a minimal linux image that is dash rather than bash.
 #
-#   curl -fsSL https://carbon.forgenow.tech/install.sh | sh
+#   curl -fsSL https://carbonhq.sh/install.sh | sh
 #
 # Honours:
 #   CARBON_INSTALL_DIR      where the binary lands (default ~/.local/bin)

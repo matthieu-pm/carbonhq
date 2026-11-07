@@ -14,7 +14,7 @@ the project to Carbon and replaces its branding.
 | ------------------- | ------------------------------------------------------ |
 | `apps/desktop`      | The Tauri app. React 19 + Vite frontend, Rust backend. |
 | `apps/web`          | Marketing site. Next.js, deployed to Vercel.           |
-| `apps/docs`         | Docs at carbon.forgenow.tech/docs. Blume, deployed to Vercel.    |
+| `apps/docs`         | Docs at carbonhq.sh/docs. Blume, deployed to Vercel.    |
 | `apps/cli`          | The `carbon` CLI agents use to fan work out.             |
 | `crates/carbon-proto` | Wire types shared by the CLI and the app.              |
 
@@ -45,10 +45,10 @@ A standalone binary. It talks to the running app over `~/.carbon/carbon.sock`, s
 an agent in one session can create, list and message others.
 
 ```bash
-curl -fsSL https://carbon.forgenow.tech/install.sh | sh
+curl -fsSL https://carbonhq.sh/install.sh | sh
 ```
 
-On Linux the same line makes the machine a Carbon server: [carbon.forgenow.tech/docs/server](https://carbon.forgenow.tech/docs/server).
+On Linux the same line makes the machine a Carbon server: [carbonhq.sh/docs/server](https://carbonhq.sh/docs/server).
 
 ## Releasing
 

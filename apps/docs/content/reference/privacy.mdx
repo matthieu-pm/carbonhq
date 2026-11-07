@@ -72,7 +72,7 @@ When you start a session on another machine from the Mac app, the app sends that
 
 ## The website and these docs
 
-When analytics is configured, carbon.forgenow.tech and these docs count page views and download clicks in the same PostHog project. They set a PostHog cookie holding a random id, so repeat visits and moves between pages count as one visitor. Nothing ties that id to who you are. Click tracking and session recording are off.
+When analytics is configured, carbonhq.sh and these docs count page views and download clicks in the same PostHog project. They set a PostHog cookie holding a random id, so repeat visits and moves between pages count as one visitor. Nothing ties that id to who you are. Click tracking and session recording are off.
 
 ## Other connections Carbon makes
 
@@ -80,7 +80,7 @@ Besides analytics, Carbon connects to the network for:
 
 - **Your agents.** Each agent CLI talks to its own provider, as it does in a terminal. Carbon also asks the session's own agent, on its cheapest model, to write each session's title from your first prompt. For fx, Carbon reads Vercel's public model list to know each model's effort levels.
 - **Updates.** Checking for and downloading new versions of the app and the `carbon` CLI.
-- **The changelog.** Reading what's new from carbon.forgenow.tech.
+- **The changelog.** Reading what's new from carbonhq.sh.
 - **Downloads you trigger or need:** the Chromium framework for Carbon's browser (from Spotify's CEF build server), dictation models (from Hugging Face).
 - **GitHub and Linear,** when you use pull requests or issues, through `gh` or your Linear key.
 - **OpenTunnel,** only while [Remote access](/reference/remote-access#remote-access) is on or a [public link](/reference/remote-access#share-a-dev-server) is live.

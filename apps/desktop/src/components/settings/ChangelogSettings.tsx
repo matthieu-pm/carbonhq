@@ -100,7 +100,7 @@ function formatDate(date: string): string {
   });
 }
 
-/// Every release, newest first, as carbon.forgenow.tech/changelog draws it. The beta
+/// Every release, newest first, as carbonhq.sh/changelog draws it. The beta
 /// channel sees betas too.
 export default function ChangelogSettings({ channel }: { channel: UpdateChannel }) {
   const [releases, setReleases] = useState<Release[] | null>(null);

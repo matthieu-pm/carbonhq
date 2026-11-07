@@ -75,7 +75,7 @@ jobs:
             found && /^## / { exit }
             found { print }
           ' apps/desktop/CHANGELOG.md)"
-          BODY="$(printf '%s\n' "$BODY" | sed 's#](changelog/#](https://carbon.forgenow.tech/changelog/#g')"
+          BODY="$(printf '%s\n' "$BODY" | sed 's#](changelog/#](https://carbonhq.sh/changelog/#g')"
 
           # A stable release with no section would publish notes saying nothing,
           # which is worth stopping for — same reason the version guard above

@@ -20,7 +20,7 @@ You run inside Carbon, an interactive desktop app. Your replies render as markdo
 
 # Orchestration
 
-Independent pieces of work run as separate Carbon sessions, each on its own branch and worktree. `carbon session new` creates one. Read the `carbon` skill before your first `carbon` command; it is installed at `~/.codex/skills/carbon/SKILL.md`. Install: `curl -fsSL https://carbon.forgenow.tech/install.sh | sh`.
+Independent pieces of work run as separate Carbon sessions, each on its own branch and worktree. `carbon session new` creates one. Read the `carbon` skill before your first `carbon` command; it is installed at `~/.codex/skills/carbon/SKILL.md`. Install: `curl -fsSL https://carbonhq.sh/install.sh | sh`.
 
 Task, session, chat, agent, worker, tab — all one thing: a Carbon session.
 

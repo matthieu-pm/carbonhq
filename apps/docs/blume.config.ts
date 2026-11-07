@@ -8,7 +8,7 @@ export default defineConfig({
   description: "How to install and use Carbon, the desktop app for coding agents.",
   // The wordmark already says the name, so no text beside it. `href` leaves
   // the docs for the site, since `/` here is the docs' own index.
-  logo: { image: "/logo.svg", text: "", href: "https://carbon.forgenow.tech" },
+  logo: { image: "/logo.svg", text: "", href: "https://carbonhq.sh" },
   content: { root: "content" },
   // Dark first, like the site and the app. The palette is the site's: neutral
   // ramp, near-white accent, Geist.
@@ -24,7 +24,7 @@ export default defineConfig({
   // The site's PostHog project and settings (apps/web instrumentation-client.ts):
   // the same cookie, so a visitor moving between the site and the docs stays one
   // person, no autocapture, no recording. `/ingest` is the site's own
-  // rewrite, reachable because the docs are served through carbon.forgenow.tech.
+  // rewrite, reachable because the docs are served through carbonhq.sh.
   // `source` is registered through the snippet's queue, which replays before
   // the first pageview fires, so every docs event can be told from the site's.
   analytics: analyticsKey ? [
@@ -43,14 +43,14 @@ export default defineConfig({
   agents: {
     llmsTxt: {
       details:
-        "Carbon is a free, open-source macOS app that runs coding-agent CLIs (Claude Code, Codex, pi, fx and Grok Build) in one chat window, many sessions at once, each optionally in its own git worktree. Download it from https://carbon.forgenow.tech. Its `carbon` command line (`curl -fsSL https://carbon.forgenow.tech/install.sh | sh`) lets you or an agent create, list and message sessions, save drafts, link issues, share a dev server by public link and drive the built-in browser. Carbon can also run headless on a Linux server and be driven from the Mac app. Reach for these docs to answer what Carbon can do, where in the app a feature lives, and the exact steps, commands and flags.",
+        "Carbon is a free, open-source macOS app that runs coding-agent CLIs (Claude Code, Codex, pi, fx and Grok Build) in one chat window, many sessions at once, each optionally in its own git worktree. Download it from https://carbonhq.sh. Its `carbon` command line (`curl -fsSL https://carbonhq.sh/install.sh | sh`) lets you or an agent create, list and message sessions, save drafts, link issues, share a dev server by public link and drive the built-in browser. Carbon can also run headless on a Linux server and be driven from the Mac app. Reach for these docs to answer what Carbon can do, where in the app a feature lives, and the exact steps, commands and flags.",
     },
   },
   github: { owner: "matthieu-pm", repo: "carbonhq", dir: "apps/docs" },
   footer: {
     copyright: `© ${new Date().getFullYear()} Carbon`,
   },
-  // Served at carbon.forgenow.tech/docs through a rewrite in apps/web. The content
+  // Served at carbonhq.sh/docs through a rewrite in apps/web. The content
   // folder is not named `docs`, or every page would land at /docs/docs/….
-  deployment: { site: "https://carbon.forgenow.tech", base: "/docs" },
+  deployment: { site: "https://carbonhq.sh", base: "/docs" },
 });

@@ -3,7 +3,7 @@ import { version as APP_VERSION } from "../../src-tauri/tauri.conf.json";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 import type { UpdateChannel } from "@/types/events";
 
-/// What carbon.forgenow.tech/changelog.json answers, parsed from CHANGELOG.md by the
+/// What carbonhq.sh/changelog.json answers, parsed from CHANGELOG.md by the
 /// site. Stated again here because the two apps share no code; the site's
 /// [changelog.ts](../../../web/src/lib/changelog.ts) is the one to change first.
 export type ChangelogMedia = { kind: "image" | "video"; url: string; alt: string };
@@ -19,7 +19,7 @@ export type Release = {
 
 /// `www`, not the apex: the apex answers with a redirect, and a redirect
 /// carries no CORS header for the webview to pass.
-const URL = "https://carbon.forgenow.tech/changelog.json";
+const URL = "https://carbonhq.sh/changelog.json";
 
 /// The newest release the reader has been told about, or skipped past.
 const SEEN_KEY = "ade.changelogSeen";

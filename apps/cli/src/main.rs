@@ -29,7 +29,7 @@ use std::process::ExitCode;
 /// than no skill, and fetching it separately is exactly how that happens.
 const SKILL: &str = include_str!("../skill/SKILL.md");
 
-const INSTALLER_URL: &str = "https://carbon.forgenow.tech/install.sh";
+const INSTALLER_URL: &str = "https://carbonhq.sh/install.sh";
 
 #[derive(Parser)]
 #[command(

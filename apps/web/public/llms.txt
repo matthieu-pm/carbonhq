@@ -21,9 +21,9 @@
 
 ## Links
 
-- [Download for Mac](https://carbon.forgenow.tech/download)
-- [Install on a server](https://carbon.forgenow.tech/install.sh): `curl -fsSL https://carbon.forgenow.tech/install.sh | sh`
+- [Download for Mac](https://carbonhq.sh/download)
+- [Install on a server](https://carbonhq.sh/install.sh): `curl -fsSL https://carbonhq.sh/install.sh | sh`
 - [GitHub](https://github.com/matthieu-pm/carbonhq)
-- [Docs](https://carbon.forgenow.tech/docs)
-- [Docs llms.txt](https://carbon.forgenow.tech/docs/llms.txt): every docs page, one line each.
-- [Changelog](https://carbon.forgenow.tech/changelog)
+- [Docs](https://carbonhq.sh/docs)
+- [Docs llms.txt](https://carbonhq.sh/docs/llms.txt): every docs page, one line each.
+- [Changelog](https://carbonhq.sh/changelog)

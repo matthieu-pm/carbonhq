@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import Script from "next/script";
 import { SCHEME_SCRIPT } from "@/components/home/scheme";
+import { SITE } from "@/lib/links";
 import "./globals.css";
 
 // The app loads these through fontsource; here they come from next/font so the
@@ -20,14 +21,8 @@ const title = "Carbon - Run every coding agent in one app.";
 const description =
   "Supports Claude Code, Codex, Grok, pi and fx. Free and open source, runs on the subscriptions you already have.";
 
-// Without a base, Next emits relative og:image URLs and most crawlers drop
-// them. The domain is not known at build time, so Vercel's own is the fallback
-// and NEXT_PUBLIC_SITE_URL is what pins it once there is a real one.
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
-  ? process.env.NEXT_PUBLIC_SITE_URL
-  : process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
+// Share images must use the public domain, even on a Vercel deployment URL.
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || SITE;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
