@@ -11,7 +11,10 @@ reads:
 
 - `## <version> · <date> · notify` — date is `YYYY-MM-DD`. `notify` raises a
   card in the app for people who update to it; leave it off and the release is
-  listed quietly.
+  listed quietly. Date a beta when it is published so it appears on the website;
+  undated betas stay in the app's beta channel.
+- `## Unreleased` holds changes made after the latest installer was built. It
+  stays out of the website and app feed until those changes have a release.
 - `### New`, `### Improved`, `### Fixed`. Any other heading reaches GitHub
   only.
 - `- **Title.** Description.` or a plain one-liner.
@@ -19,20 +22,84 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
-## 0.30.0-beta.1
-
-### New
-
-- Open browser tabs from New Task and carry them into the session.
-- Manage MCP servers and skills from Settings.
-- See conversation sources in the pinned summary.
-- View subscription usage across supported providers.
+## Unreleased
 
 ### Improved
 
+- Website download buttons start the macOS installer directly and keep the
+  homepage open. The published beta is available until a stable installer ships.
+- The website labels the download as a beta and uses icons that follow the
+  browser's light or dark appearance. The site and docs now use carbonhq.sh.
+- About keeps GitHub support and feedback links without the personal author
+  credit or direct-message button.
+
+### Fixed
+
+- Skills appear in Settings without waiting for pi to start. The list stays
+  usable while pi discovers additional skills, and saving no longer waits for
+  that discovery.
+
+## 0.30.0-beta.1 · 2026-11-07
+
+### New
+
+- **macOS beta installer.** Download the universal `.dmg` for Apple silicon and
+  Intel Macs from the [GitHub beta release](https://github.com/matthieu-pm/carbonhq/releases/tag/v0.30.0-beta.1).
+  This beta is ad-hoc signed and not notarized by Apple. macOS may block it on
+  first launch.
+- **Browser tabs before a task starts.** Open tabs from New Task and carry them
+  into the session when you send the first prompt.
+- **MCP server settings.** Add, edit, enable and remove MCP servers in the agents'
+  own configuration files. See which agents use each server and check connection
+  status where the agent reports it.
+- **Skill management.** Create skills, import folders with their support files,
+  and edit, rename or remove them from Settings. Built-in and Carbon-managed
+  skills open read-only.
+- **Pinned conversation details.** Keep the workspace, branch, changes, pull
+  requests and subagents beside the chat. Choose which sections to show; smaller
+  windows open the same details in a popover.
+- **Conversation sources.** Find attachments, links, web searches, pages and MCP
+  servers used in the conversation, including work done by subagents, in the
+  pinned summary.
+- **Edit the latest sent prompt.** Replace and replay verified text-only Codex
+  turns in the same chat. Turns with tool activity, attachments or file changes
+  remain blocked.
+- **MCP mentions.** Type `$` to pick an available MCP server and ask the agent to
+  use its tools. Mentions stay visible as chips in the sent message.
+- **Subscription usage counters.** Check remaining usage for Claude Code, Codex
+  and Grok from the sidebar. See each available limit's percentage remaining and
+  reset time, plus a combined remaining indicator. Refresh the counters or open
+  account settings from the same popover; unavailable or stale usage is marked.
+- **Linear updates from sessions.** Agents can comment on issues and change their
+  status through `carbon issue comment` and `carbon issue status`, using the
+  account connected in Carbon.
+
+### Improved
+
+- Carbon branding now appears across the app, website and docs.
 - Choose installed fonts for the interface and chat.
-- Sync the branch picker with GitHub.
-- Copy sent messages and completed agent responses.
+- The branch picker refreshes from GitHub, includes remote-only branches and
+  hides local branches whose upstream was deleted. Picking a remote branch
+  creates a local branch that tracks it.
+- Copy sent messages and completed agent responses from their hover actions.
+- Open the slash-command picker partway through a prompt and replace just the
+  command you are typing.
+- The New Task composer is centered in the available column. Sidebar and sheet
+  changes respond without transition animations.
+
+### Fixed
+
+- Codex MCP tool approvals appear in the permission card and receive the correct
+  response, so approval requests no longer leave a turn waiting.
+- A pending GitHub review no longer hides the PR panel. Unsubmitted reviews and
+  draft comments stay off the posted timeline.
+- Picking a slash command mid-prompt preserves surrounding paths and newlines.
+- MCP mentions discover configured servers reliably and keep their chips when
+  messages are rendered.
+- The right panel stays closed until a session is selected.
+- Long file names no longer overlap added and removed line counts in Changes.
+- Opening a URL in a build without the built-in browser shows an availability
+  message instead of an unknown-command error.
 
 ## 0.29.17 · 2026-11-03
 

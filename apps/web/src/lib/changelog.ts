@@ -19,7 +19,7 @@ export type Release = {
   date: string | null;
   /// Raises the app's what's-new card for readers who update to it.
   notify: boolean;
-  /// Shown in the app on the beta channel alone, and never on the site.
+  /// The app shows these on its beta channel; the site includes dated betas.
   beta: boolean;
   sections: Section[];
 };
@@ -98,7 +98,7 @@ export function parseChangelog(md: string, mediaBase = MEDIA_BASE): Release[] {
     }
   }
   flush();
-  return releases;
+  return releases.filter((release) => release.version !== "Unreleased");
 }
 
 /// The whole file, parsed. Next runs this at build, with cwd at `apps/web`.

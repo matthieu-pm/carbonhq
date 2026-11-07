@@ -93,8 +93,8 @@ function ChangelogItem({ item }: { item: Item }) {
 }
 
 export default function Changelog() {
-  // Betas are the app's beta channel's alone.
-  const releases = loadChangelog().filter((r) => !r.beta && r.sections.length > 0);
+  // A dated beta has been published; undated beta notes are still in progress.
+  const releases = loadChangelog().filter((r) => (!r.beta || r.date) && r.sections.length > 0);
 
   return (
     <div
