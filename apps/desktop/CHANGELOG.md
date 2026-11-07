@@ -22,7 +22,13 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
-## Unreleased
+## 0.30.0-beta.2 · 2026-11-07 · notify
+
+### New
+
+- **In-app beta updates.** Turn on Beta updates in Settings → About to receive
+  new betas without downloading another installer. Carbon downloads the update
+  and offers to install it once no session is mid-turn.
 
 ### Improved
 
