@@ -906,19 +906,23 @@
   /* Semantic sizes. Components use `text-chat`/`text-code`/… and never a raw
      `text-sm`, so each class of text is sized in one place.
 
+     Two reader settings move them (src/lib/fontSize.ts): `--fs-ui` is every
+     size that is not code, `--fs-code` every size that is. Tool output stays
+     one px under code, as it sits by default.
+
      Everything in the transcript is one size — headings, prose, tool rows, list
      items alike. Weight and color carry hierarchy instead, so a heading is bold
      rather than bigger. Only code and tool output scale separately. */
-  --text-chat: 0.8125rem;
+  --text-chat: var(--fs-ui, 0.8125rem);
   --text-chat--line-height: 1.65;
-  --text-code: 0.875rem;
+  --text-code: var(--fs-code, 0.875rem);
   --text-code--line-height: 1.6;
   /* Tool output is reference material next to the conversation, so it sits one
      step down from chat text. */
-  --text-tool: 0.8125rem;
+  --text-tool: calc(var(--fs-code, 0.875rem) - 1px);
   --text-tool--line-height: 1.55;
   /* Chrome outside the transcript — sidebar, headers, panel. */
-  --text-ui: 0.8125rem;
+  --text-ui: var(--fs-ui, 0.8125rem);
   --text-ui--line-height: 1.4;
   /* **Not `--text-composer`, and not `--text-input` before it.** A font-size
      token and a colour token share one utility name, and the colour wins it —
@@ -931,8 +935,13 @@
      The default matches `--text-chat`: what the reader types and what comes
      back are one conversation, so a composer a step down read as small rather
      than as chrome. */
-  --text-prompt: 0.8125rem;
+  --text-prompt: var(--fs-ui, 0.8125rem);
   --text-prompt--line-height: 1.5;
+  /* The stray raw sizes, mostly in the shadcn primitives (menus, buttons,
+     tooltips), scale with the UI setting rather than staying put beside it.
+     `--ui-scale` is unitless because calc cannot divide a length by one. */
+  --text-xs: calc(0.75rem * var(--ui-scale, 1));
+  --text-sm: calc(0.875rem * var(--ui-scale, 1));
 
   --color-surface-raised: var(--surface-raised);
   --color-surface-well: var(--surface-well);

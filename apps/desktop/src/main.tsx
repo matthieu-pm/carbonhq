@@ -10,6 +10,7 @@ import { startSurveys } from "@/lib/surveys";
 import { startAgentUpdateChecks } from "@/hooks/useAgentUpdates";
 import { applyZoom } from "@/lib/zoom";
 import { applyStoredFont, refreshFonts } from "@/lib/fonts";
+import { applyStoredFontSizes } from "@/lib/fontSize";
 
 // Coming back to check on a session an agent is running sends no prompt and
 // starts nothing, so it is the one kind of use the backend's own call sites
@@ -31,6 +32,7 @@ void applyIsland();
 // The webview opens at 100% whatever the reader left it at.
 applyZoom();
 applyStoredFont();
+applyStoredFontSizes();
 void refreshFonts();
 // An Escape nothing handled is passed on to the window, which macOS reads as
 // "leave fullscreen". On `window` in bubble phase, so every handler on the

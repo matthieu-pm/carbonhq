@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { fileSrc, invoke } from "@/lib/transport";
-import { getFiletypeFromFileName } from "@pierre/diffs";
+import { DEFAULT_VIRTUAL_FILE_METRICS, getFiletypeFromFileName } from "@pierre/diffs";
 import { File, Virtualizer } from "@pierre/diffs/react";
 
 import Note from "@/components/changes/Note";
@@ -10,6 +10,7 @@ import type { OpenFile } from "@/hooks/useOpenFiles";
 import type { FileBody } from "@/types/events";
 import { diffSide } from "@/lib/diff";
 import { basename } from "@/lib/format";
+import { diffMetrics, useFontSizes } from "@/lib/fontSize";
 
 /// The line a chat link named, painted where the row sits.
 ///
@@ -156,8 +157,8 @@ export default function FileViewer({
   // the rows in and around the viewport exist in the DOM. Without it an
   // 8000-line lockfile is 8000 rows laid out for a pane showing forty, on open
   // and again on every tab switch. `overflow: "scroll"` above is the library's
-  // uniform-row path, so nothing is measured per line and the default 20px
-  // metric is exactly the `--diffs-line-height` its rows are drawn at.
+  // uniform-row path, so nothing is measured per line and `SizedFile` hands it
+  // the `--diffs-line-height` its rows are drawn at.
   return (
     <Virtualizer className="min-h-0 flex-1 overflow-auto text-code">
       <Body file={file} contents={contents} options={options} ready={ready} />
@@ -216,7 +217,24 @@ function Body({
   // past — which a host not yet rendered, at 0px, is. It then keeps that bottom
   // edge in place as the host grows to its virtual height, so an 8000-line file
   // opened at the top landed at the end. Measured; one pixel is the whole cure.
-  return <File file={contents} options={options} style={{ minHeight: 1 }} />;
+  return <SizedFile contents={contents} options={options} />;
+}
+
+/// The virtualizer places rows by a stated height rather than measuring them,
+/// so it has to be told the row the code size setting draws. Keyed on it so a
+/// change rebuilds the layout instead of leaving rows at the old pitch.
+function SizedFile({
+  contents,
+  options,
+}: {
+  contents: { name: string; contents: string };
+  options: Parameters<typeof File>[0]["options"];
+}) {
+  const { lineHeight } = diffMetrics(useFontSizes().code);
+  const metrics = useMemo(() => ({ ...DEFAULT_VIRTUAL_FILE_METRICS, lineHeight }), [lineHeight]);
+  return (
+    <File key={lineHeight} file={contents} options={options} metrics={metrics} style={{ minHeight: 1 }} />
+  );
 }
 
 /// A video, streamed through the asset protocol `read_file` just allowed it on.
