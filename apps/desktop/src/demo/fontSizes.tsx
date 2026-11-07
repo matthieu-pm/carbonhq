@@ -20,8 +20,9 @@ import "../App.css";
 /// The two font size rows from Settings → Appearance above one sample of every
 /// surface they move: chrome, chat, a raw `text-sm` button, tool output, an
 /// Edit diff and the virtualized Files view opened at line 1200. **Run size
-/// check** reads the computed sizes back at a non-default pair, and checks the
-/// Files view's rows are spaced at the line height its code is drawn with.
+/// check** reads the computed sizes back at a non-default pair, checks the
+/// Files view's rows are spaced at the line height its code is drawn with, and
+/// that the line at its top stays there across each change.
 
 const PATH = "/Users/me/carbon/apps/desktop/src/App.tsx";
 const lines = big.split("\n");
@@ -37,6 +38,18 @@ const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 const settle = async () => {
   for (let i = 0; i < 20; i++) await frame();
 };
+/// The zero-based index of the row under the pane's top edge.
+function topLine(pane: Element | null): number | undefined {
+  if (!pane) return undefined;
+  const edge = pane.getBoundingClientRect().top + 1;
+  const rows = pane.querySelector("diffs-container")?.shadowRoot?.querySelectorAll("[data-line]") ?? [];
+  for (const row of rows) {
+    const { top, bottom } = row.getBoundingClientRect();
+    if (top <= edge && edge < bottom) return Number(row.getAttribute("data-line-index"));
+  }
+  return undefined;
+}
+
 const px = (el: Element | null | undefined) => (el ? parseFloat(getComputedStyle(el).fontSize) : NaN);
 
 async function runChecks(): Promise<string> {
@@ -44,10 +57,18 @@ async function runChecks(): Promise<string> {
   const expect = (what: string, got: number, want: number) => {
     if (Math.abs(got - want) > 0.01) failures.push(`${what}: ${got} ≠ ${want}`);
   };
+  // Park line 800 at the Files view's top edge; every size change must keep it there.
+  setFontSize("code", 14);
+  await settle();
+  const pane = document.querySelector('[data-check="files"] .overflow-auto');
+  if (pane) pane.scrollTop = 8 + 799 * diffMetrics(14).lineHeight;
+  await settle();
   for (const [ui, code] of [[17, 18], [11, 12]]) {
     setFontSize("ui", ui);
     setFontSize("code", code);
     await settle();
+    const top = topLine(pane);
+    if (top !== 799) failures.push(`files ${code}: top line ${top === undefined ? "none" : top + 1} ≠ 800`);
     const q = (s: string) => document.querySelector(`[data-check="${s}"]`);
     expect(`ui ${ui}`, px(q("ui")), ui);
     expect(`chat ${ui}`, px(q("chat")?.querySelector("p")), ui);

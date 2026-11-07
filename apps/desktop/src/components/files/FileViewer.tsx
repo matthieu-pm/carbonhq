@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { fileSrc, invoke } from "@/lib/transport";
 import { DEFAULT_VIRTUAL_FILE_METRICS, getFiletypeFromFileName } from "@pierre/diffs";
-import { File, Virtualizer } from "@pierre/diffs/react";
+import { File, Virtualizer, useVirtualizer } from "@pierre/diffs/react";
 
 import Note from "@/components/changes/Note";
 import { useCodeThemeWithMode } from "@/hooks/useCodeTheme";
@@ -232,9 +232,62 @@ function SizedFile({
 }) {
   const { lineHeight } = diffMetrics(useFontSizes().code);
   const metrics = useMemo(() => ({ ...DEFAULT_VIRTUAL_FILE_METRICS, lineHeight }), [lineHeight]);
+  useKeepTopLine(lineHeight);
   return (
     <File key={lineHeight} file={contents} options={options} metrics={metrics} style={{ minHeight: 1 }} />
   );
+}
+
+/// Keeps the line at the top of the pane there across a code size change.
+///
+/// The remount `SizedFile` keys on leaves the pane one pixel tall for a frame,
+/// and the browser clamps its scroll to 0 then, before any effect could read
+/// it. So the line is read off every scroll instead, and put back once the new
+/// host is tall enough to scroll to it — the wait the reveal in `mark` takes.
+function useKeepTopLine(lineHeight: number) {
+  const virtualizer = useVirtualizer();
+  // Fractional, so a row half scrolled past stays half scrolled past. Rows sit
+  // below the file's top padding, which the size setting does not move.
+  const topLine = useRef(0);
+  const pitch = useRef(lineHeight);
+
+  // Layout, not passive: the old listener has to be gone before the clamp's
+  // scroll event can land, or it records line 0 as the place to go back to.
+  useLayoutEffect(() => {
+    const pad = DEFAULT_VIRTUAL_FILE_METRICS.spacing;
+    let restoring = pitch.current !== lineHeight;
+    pitch.current = lineHeight;
+
+    // Captured on the document rather than bound to the pane, since the pane's
+    // ref lands after this effect on a mount that opens the view.
+    const onScroll = (event: Event) => {
+      const pane = virtualizer?.getRoot();
+      if (restoring || event.target !== pane || !(pane instanceof HTMLElement)) return;
+      topLine.current = (pane.scrollTop - pad) / lineHeight;
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+
+    let frame = 0;
+    const pane = virtualizer?.getRoot();
+    if (restoring && pane instanceof HTMLElement) {
+      const target = pad + topLine.current * lineHeight;
+      let frames = 0;
+      const restore = () => {
+        if (pane.scrollHeight - pane.clientHeight < target && ++frames < 60) {
+          frame = requestAnimationFrame(restore);
+          return;
+        }
+        restoring = false;
+        pane.scrollTop = target;
+      };
+      frame = requestAnimationFrame(restore);
+    }
+
+    return () => {
+      document.removeEventListener("scroll", onScroll, { capture: true });
+      cancelAnimationFrame(frame);
+    };
+  }, [virtualizer, lineHeight]);
 }
 
 /// A video, streamed through the asset protocol `read_file` just allowed it on.
