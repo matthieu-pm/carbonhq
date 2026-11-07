@@ -17,6 +17,12 @@ import type { IssueLabel } from "@/types/events";
 /// Its own component because three surfaces draw one — the page's rows, the
 /// panel's detail and the filter menu's dot — and a per-site copy would leave
 /// them disagreeing about the mode the first time one forgot to read it.
+/// The pill every trailing chip on an issue row wears — labels, project, PRs,
+/// relations — so the row reads as one set of metadata, Linear's way. A fixed
+/// height, since the row's label strip hides overflow by being one chip tall.
+export const ISSUE_CHIP =
+  "h-6 shrink-0 items-center gap-1.5 rounded-full border border-border px-2 text-muted-foreground";
+
 export default function IssueLabelChip({
   label,
   dot,
@@ -30,20 +36,21 @@ export default function IssueLabelChip({
   const { resolvedMode } = useTheme();
   const color = label.color ? readableStateColor(label.color, resolvedMode === "light") : null;
 
-  if (dot) {
-    return (
-      <span
-        className={cn("size-2 shrink-0 rounded-full", className)}
-        style={{ background: color ?? "var(--muted-foreground)" }}
-      />
-    );
-  }
+  const swatch = (
+    <span
+      className={cn("size-2 shrink-0 rounded-full", dot && className)}
+      style={{ background: color ?? "var(--muted-foreground)" }}
+    />
+  );
+  if (dot) return swatch;
 
+  // Linear's own pill: the colour on a dot and the name in the row's quiet
+  // tone, so a row of five labels reads as metadata rather than five accents.
   return (
     <span
-      className={cn("shrink-0 rounded-full border px-1.5 py-px", className)}
-      style={{ borderColor: color ?? undefined, color: color ?? undefined }}
+      className={cn(ISSUE_CHIP, "inline-flex", className)}
     >
+      {swatch}
       {label.name}
     </span>
   );

@@ -7,11 +7,12 @@ import Avatar from "@/components/Avatar";
 import { IssueFile, IssueImage } from "@/components/IssueAsset";
 import { PriorityMenu, StatusMenu } from "@/components/IssueMenus";
 import IssueLabelChip from "@/components/IssueLabelChip";
+import { RelationList } from "@/components/IssueRelations";
 import IssueStateIcon, { IssuePriorityIcon } from "@/components/IssueStateIcon";
 import { Markdown } from "@/components/chat/Markdown";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/format";
-import { shortIdentifier } from "@/lib/issue";
+import { cycleReading, shortIdentifier } from "@/lib/issue";
 import { cn } from "@/lib/utils";
 import type { Components } from "streamdown";
 
@@ -353,6 +354,8 @@ function IssueBody({ detail, loading }: { detail: IssueDetail | null; loading: b
 
         {detail.project && <span>{detail.project}</span>}
 
+        {detail.cycle && <span>{cycleReading(detail.cycle, Date.now()).label}</span>}
+
         {/* Last, because it is the least of the four and the one that keeps
             changing — a row that reflows as the clock moves is worse at the
             left edge than at the right. */}
@@ -364,6 +367,13 @@ function IssueBody({ detail, loading }: { detail: IssueDetail | null; loading: b
           {detail.labels.map((label) => (
             <IssueLabelChip key={label.name} label={label} className="text-ui" />
           ))}
+        </div>
+      )}
+
+      {(detail.blockedBy.length > 0 || detail.blocking.length > 0) && (
+        <div className="flex flex-col gap-2">
+          <RelationList direction="blockedBy" issues={detail.blockedBy} />
+          <RelationList direction="blocking" issues={detail.blocking} />
         </div>
       )}
 

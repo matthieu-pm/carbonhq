@@ -101,3 +101,13 @@ The two menus live on `IssueRow`'s header in [IssuePanel](../src/components/Issu
 **A CLI write is the other moment the cache lies.** `carbon issue comment` and `carbon issue status` emit `issues_stale` after the write succeeds, and `useSessions` calls `forgetIssues()`. The panel's own `update_issue` does not emit it — that path paints the new status before the re-read comes back, and forgetting there would wipe the paint.
 
 **⌘-click on an issue row opens it in the tracker**, on the panel's rows and the page's list alike — the same modifier a transcript link uses to mean "out there, not here". A shortcut, not the affordance: the row's own button is that.
+
+## Relations and sub-issues
+
+**Linear's `blocks` relations ride the list read**, beside sub-issue counts, because a row draws both — 221 complexity points for 100 issues against 13 without, measured, where Linear's budget is 3M an hour per key. `relations` are the issue's own (it blocks `relatedIssue`), `inverseRelations` point in (`issue` blocks it); swapping the two puts every blocker under Blocking with nothing failing, which is what the test pins. `related`, `duplicate` and `similar` ride the same lists and are dropped. GitHub reads none: its dependencies are another API on the shared `gh` budget.
+
+- **A row counts live relations; the pane lists them all.** A blocker that shipped is history, not something in the way, so the chip leaves settled issues out and the pane keeps them with their status.
+- **One related issue hovers as a card, several as a count**, and either opens a menu on click. A pick goes through `openIssue`, so ⌘-click leaves for Linear as it does on a tag.
+- **Labels and project share a strip one chip tall that wraps**, so a label that does not fit drops onto a hidden line whole. The strip opens with a zero-width spacer, chip-tall: flex never wraps a line's first item, and a zero-high spacer line lets the wrapped line land back on top of it. The cluster shrinks a thousand times faster than the title, which keeps a floor: the relation chips never drop, the labels go first, the title last.
+- **The cycle rides the same read** (one more point) and draws as a chip outside the label strip, since when work is planned matters more than a label. It draws the number alone beside a play mark; the tooltip carries the name, phase and dates, `completedAt` outranking the dates since Linear closes a cycle on its own schedule. `name` is usually null, hence "Cycle N" there and in the pane.
+- **The dashed face is Linear's alone.** On GitHub unassigned is the ordinary case and would sit on nearly every row.

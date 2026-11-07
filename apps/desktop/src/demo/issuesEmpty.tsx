@@ -36,7 +36,7 @@ const LINEAR_ROWS: Issue[] = [
     createdAt: "2026-09-05T10:30:02Z",
     updatedAt: "2026-09-09T05:51:58Z",
     pullRequests: [143, 144],
-    issueType: null,
+    issueType: null, blockedBy: [], blocking: [], subIssues: { done: 0, total: 0 }, cycle: null,
   },
   {
     tracker: "linear",
@@ -54,7 +54,7 @@ const LINEAR_ROWS: Issue[] = [
     createdAt: "2026-08-29T09:00:00Z",
     updatedAt: "2026-09-01T09:00:00Z",
     pullRequests: [54],
-    issueType: null,
+    issueType: null, blockedBy: [], blocking: [], subIssues: { done: 0, total: 0 }, cycle: null,
   },
 ];
 
@@ -75,7 +75,7 @@ const GITHUB_ROWS: Issue[] = [
     createdAt: "2026-09-22T05:32:40Z",
     updatedAt: "2026-09-22T05:32:40Z",
     pullRequests: [249],
-    issueType: { name: "Feature", color: "#0969da" },
+    issueType: { name: "Feature", color: "#0969da" }, blockedBy: [], blocking: [], subIssues: { done: 0, total: 0 }, cycle: null,
   },
   {
     tracker: "github",
@@ -93,7 +93,7 @@ const GITHUB_ROWS: Issue[] = [
     createdAt: "2026-09-01T16:56:52Z",
     updatedAt: "2026-09-18T11:00:00Z",
     pullRequests: [],
-    issueType: { name: "Bug", color: "#d1242f" },
+    issueType: { name: "Bug", color: "#d1242f" }, blockedBy: [], blocking: [], subIssues: { done: 0, total: 0 }, cycle: null,
   },
 ];
 

@@ -874,7 +874,27 @@ pullRequests: Array<number>,
  * GitHub's issue type (Bug, Feature, Task…). A name and a colour, so it
  * reuses [`IssueLabel`]. Always `None` on Linear, which has no such field.
  */
-issueType: IssueLabel | null, };
+issueType: IssueLabel | null, 
+/**
+ * Issues that block this one. Linear's `blocks` relations pointing *in*,
+ * settled blockers included — whether one still counts is the reader's
+ * call to draw, and the pane lists them all with their status.
+ */
+blockedBy: Array<RelatedIssue>, 
+/**
+ * Issues this one blocks: the same relations pointing *out*.
+ */
+blocking: Array<RelatedIssue>, 
+/**
+ * Sub-issues, counted. Zero total for an issue with none, and always on
+ * GitHub, which this does not read.
+ */
+subIssues: SubIssues, 
+/**
+ * The Linear cycle it is planned into. `None` outside one, and always on
+ * GitHub, which has no cycles.
+ */
+cycle: IssueCycle | null, };
 
 /**
  * A file uploaded to an issue, fetched with the stored key.
@@ -899,6 +919,20 @@ mime: string,
 dataUrl: string, bytes: number, };
 
 export type IssueComment = { author: IssuePerson, body: string, createdAt: string, url: string | null, };
+
+/**
+ * A Linear cycle as a row draws it. Dates are RFC3339, as Linear sends them.
+ */
+export type IssueCycle = { number: number, 
+/**
+ * Usually `None`: Linear names cycles by number unless somebody gives one
+ * a name, so the chip falls back to "Cycle N".
+ */
+name: string | null, startsAt: string, endsAt: string, 
+/**
+ * Set once Linear closes the cycle, which can trail `ends_at`.
+ */
+completedAt: string | null, };
 
 /**
  * One issue, opened. The panel's read.
@@ -951,7 +985,27 @@ pullRequests: Array<number>,
  * GitHub's issue type (Bug, Feature, Task…). A name and a colour, so it
  * reuses [`IssueLabel`]. Always `None` on Linear, which has no such field.
  */
-issueType: IssueLabel | null, };
+issueType: IssueLabel | null, 
+/**
+ * Issues that block this one. Linear's `blocks` relations pointing *in*,
+ * settled blockers included — whether one still counts is the reader's
+ * call to draw, and the pane lists them all with their status.
+ */
+blockedBy: Array<RelatedIssue>, 
+/**
+ * Issues this one blocks: the same relations pointing *out*.
+ */
+blocking: Array<RelatedIssue>, 
+/**
+ * Sub-issues, counted. Zero total for an issue with none, and always on
+ * GitHub, which this does not read.
+ */
+subIssues: SubIssues, 
+/**
+ * The Linear cycle it is planned into. `None` outside one, and always on
+ * GitHub, which has no cycles.
+ */
+cycle: IssueCycle | null, };
 
 /**
  * The filter row's options, read once per connection rather than per keystroke.
@@ -1661,6 +1715,13 @@ issues: Array<IssueRef>,
 mcpServers: Array<string>, };
 
 /**
+ * An issue another one is tied to, carried whole enough to draw its row in a
+ * hover card or menu and to open it: the [`IssueRef`] fields plus what those
+ * surfaces show beside the title.
+ */
+export type RelatedIssue = { tracker: IssueTracker, id: string, identifier: string, title: string, url: string, state: IssueState, priority: IssuePriority, project: string | null, };
+
+/**
  * What the This Mac row draws. No token: it is asked for on Copy, and never
  * stored in the webview.
  */
@@ -2153,6 +2214,12 @@ export type Stage = "connecting" | "finding" | "starting";
  * Why a press could not start recording, or `None` where it did.
  */
 export type StartRefusal = { "kind": "needsModel" } | { "kind": "needsPermission" };
+
+/**
+ * How many sub-issues an issue has, and how many of them are finished
+ * (completed or cancelled), which is the pair Linear's own chip reads.
+ */
+export type SubIssues = { done: number, total: number, };
 
 /**
  * A running subagent, whose events interleave with the main conversation's on

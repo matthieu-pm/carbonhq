@@ -466,6 +466,44 @@ identifier there is an address.
 
 ---
 
+**Relation chips on a Linear row**, each a glyph and a count. Settled issues
+are not counted: a blocker that shipped no longer stands in the way.
+
+> Blocked by 1 issue
+> Blocking 3 issues
+
+That is also the tooltip over a count above one. Over a count of one the
+tooltip is a card instead, headed with the direction and the identifier:
+
+> Blocked by FOR-70
+
+The menu a click opens is headed with the direction alone:
+
+> Blocked by
+> Blocking
+
+**Sub-issue chip**, finished over total, and its tooltip:
+
+> 1/3
+> 1 of 3 sub-issues done
+
+**Cycle chip**, the number alone; its tooltip carries the name — the
+number spelled out where the cycle has none — the phase and the dates:
+
+> 2
+> Cycle 2 · Current · Nov 3 – Nov 17
+
+The phase is one of:
+
+> Upcoming
+> Current
+> Completed
+
+**Nobody assigned**, Linear rows only — the dashed face's accessible name. On
+GitHub, unassigned is the ordinary case and draws nothing.
+
+> Unassigned
+
 ## Right panel — Issue tab
 
 Two things open this: a session tagged with issues, and a row picked on the
@@ -496,6 +534,13 @@ The status is drawn as a glyph at the head of each row and **its name appears
 nowhere** — the row already says it, and a word under the glyph saying the same
 thing was the fact twice. The glyph keeps an `aria-label` so a screen reader
 still gets the name.
+
+**Relations**, under the labels, each a heading over the issues it lists —
+settled ones included, since this is where the reader checks what *was* in the
+way. Each row opens that issue; ⌘-click leaves for Linear.
+
+> Blocked by
+> Blocking
 
 **Uploads inside the description**, where Linear puts them. Images draw as
 images; anything else draws as a card with its name, its size, and a download

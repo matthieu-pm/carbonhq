@@ -15,7 +15,7 @@
 /// [slash.ts]: ./slash.ts
 /// [mention.ts]: ./mention.ts
 import { channel } from "@/lib/channel";
-import type { Issue, IssueRef, IssueStateKind, IssueTracker } from "@/types/events";
+import type { Issue, IssueCycle, IssueRef, IssueStateKind, IssueTracker } from "@/types/events";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 /// The tag token the caret is sitting in.
@@ -341,4 +341,15 @@ export function filterIssues(issues: Issue[], query: string): Issue[] {
       issue.identifier.toLowerCase().includes(needle) ||
       issue.title.toLowerCase().includes(needle),
   );
+}
+
+/// Name and phase, read against `now`. Linear may close
+/// a cycle after its end date, so either one marks it over.
+export function cycleReading(cycle: IssueCycle, now: number) {
+  const start = Date.parse(cycle.startsAt);
+  const end = Date.parse(cycle.endsAt);
+  const label = cycle.name ?? `Cycle ${cycle.number}`;
+  if (cycle.completedAt || now >= end) return { label, phase: "Completed" };
+  if (now < start) return { label, phase: "Upcoming" };
+  return { label, phase: "Current" };
 }
