@@ -28,6 +28,24 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title,
   description,
+  icons: {
+    icon: [
+      // Crawlers and browsers that ignore media still need a visible default.
+      { url: "/icon.svg", type: "image/svg+xml", sizes: "any" },
+      {
+        url: "/icon-dark.svg",
+        type: "image/svg+xml",
+        sizes: "any",
+        media: "(prefers-color-scheme: dark)",
+      },
+      {
+        url: "/icon.svg",
+        type: "image/svg+xml",
+        sizes: "any",
+        media: "(prefers-color-scheme: light)",
+      },
+    ],
+  },
   openGraph: { title, description, type: "website", siteName: "Carbon" },
   twitter: { card: "summary_large_image", title, description },
 };
