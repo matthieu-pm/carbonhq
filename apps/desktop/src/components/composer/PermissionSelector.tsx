@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Hand, ListChecks, ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,11 +25,11 @@ import type { ApprovalPolicy, Harness } from "@/types/events";
 /// invites picking the wrong one; and `acceptEdits`, which was here and was
 /// removed — it applied edits without asking while still asking about
 /// commands, a promise too narrow to fit on a button beside `auto`.
-const MODES: { id: ApprovalPolicy; label: string }[] = [
-  { id: "bypassPermissions", label: "Bypass permissions" },
-  { id: "manual", label: "Ask every time" },
-  { id: "plan", label: "Plan" },
-  { id: "auto", label: "Auto" },
+const MODES: { id: ApprovalPolicy; label: string; icon: LucideIcon }[] = [
+  { id: "bypassPermissions", label: "Bypass permissions", icon: ShieldOff },
+  { id: "manual", label: "Ask every time", icon: Hand },
+  { id: "plan", label: "Plan", icon: ListChecks },
+  { id: "auto", label: "Auto", icon: ShieldCheck },
 ];
 
 /// Whether this harness has a stance worth picking between.
@@ -72,6 +73,7 @@ export default function PermissionSelector({
   // ends and the lock lifts.
   if (locked && open) setOpen(false);
   const selected = MODES.find((m) => m.id === stance);
+  const bypass = stance === "bypassPermissions";
 
   return (
     <DropdownMenu open={open} onOpenChange={(next) => setOpen(next && !locked)}>
@@ -84,9 +86,15 @@ export default function PermissionSelector({
               size="sm"
               // `aria-disabled` so the tooltip saying why can still open.
               aria-disabled={locked}
-              className="px-1.5 text-ui text-muted-foreground aria-disabled:opacity-50"
+              className={cn(
+                "px-1.5 text-ui text-muted-foreground aria-disabled:opacity-50",
+                // Red stays on hover and while open, which the ghost variant
+                // would otherwise turn to foreground.
+                bypass && "text-destructive hover:text-destructive aria-expanded:text-destructive",
+              )}
               aria-label="Switch permission"
             >
+              {selected && <selected.icon />}
               {selected?.label ?? "Permissions"}
             </Button>
           </DropdownMenuTrigger>
@@ -109,12 +117,14 @@ export default function PermissionSelector({
               key={mode.id}
               value={mode.id}
               className={cn(
-                "text-ui",
+                "text-ui whitespace-nowrap",
                 // It turns off every permission check; the picker should say so
                 // before the click, not after.
-                mode.id === "bypassPermissions" && "text-destructive",
+                mode.id === "bypassPermissions" &&
+                  "text-destructive focus:text-destructive focus:**:text-destructive",
               )}
             >
+              <mode.icon className="size-3.5" />
               {mode.label}
             </DropdownMenuRadioItem>
           ))}
