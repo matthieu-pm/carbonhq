@@ -189,9 +189,10 @@ fn root_of(known: &Known, skills: Vec<SkillEntry>, error: Option<String>) -> Ski
 /// Standalone skill folders and built-in skills, without plugin-owned skills.
 ///
 /// Read fresh on every call: a skill added in a terminal must show the next
-/// time the tab opens, and this is a few dozen `read_dir`s.
+/// time the tab opens. CLI discovery is opt-in so a slow pi startup never
+/// holds the folder listing behind its handshake.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub async fn list_skills() -> Result<SkillsListing, Fail> {
+pub async fn list_skills(discover_pi: Option<bool>) -> Result<SkillsListing, Fail> {
     let home = home()?;
     let mut known = known_roots().await?;
     let projects: Vec<PathBuf> = known
@@ -200,7 +201,7 @@ pub async fn list_skills() -> Result<SkillsListing, Fail> {
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    let pi_installed = crate::binpath::agent_installed(Pi).await;
+    let pi_installed = discover_pi.unwrap_or(false) && crate::binpath::agent_installed(Pi).await;
     if pi_installed {
         known.retain(|root| root.readers != [Pi] || root.creatable);
         for root in &mut known {

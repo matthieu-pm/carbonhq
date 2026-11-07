@@ -80,10 +80,6 @@ import type {
   UpdateStatus,
 } from "@/types/events";
 
-/// Where feedback and support go. Issues lead, since a report filed there is one
-/// the next person with the same bug can find; a direct message is beside it for
-/// what an issue is too heavy for.
-const CONTACT_URL = "https://x.com/yogesharc";
 const REPO_URL = "https://github.com/matthieu-pm/carbonhq";
 const ISSUES_URL = `${REPO_URL}/issues/new`;
 // The landing page's own link, so both ask through one door.
@@ -274,16 +270,6 @@ export default function SettingsPage({
             <Section title="Feedback">
               <ContactBlock />
             </Section>
-            <p className="text-ui text-muted-foreground">
-              Made by{" "}
-              <button
-                type="button"
-                onClick={() => void openUrl(CONTACT_URL)}
-                className="cursor-pointer text-foreground underline-offset-4 hover:underline"
-              >
-                Yogesh
-              </button>
-            </p>
           </>
         ),
         changelog: <ChangelogSettings channel={updateChannel} />,
@@ -920,17 +906,7 @@ function IssueTrackerRow({
   );
 }
 
-/// Two ways out of the app, and deliberately not a `SettingRow`.
-///
-/// Nothing here is a setting — there is no state to read back — so the label a row
-/// would demand ("Get in touch") sits under a heading that already says Feedback and
-/// earns nothing but a third line. A sentence and the two buttons it names is the
-/// whole block. An issue leads, since a report there is one the next person with the
-/// same bug can find; a message is for what an issue is too heavy for.
-///
-/// Both go through `openUrl` — the same route the PR panel and transcript links
-/// take, so a link from here lands in the reader's own browser rather than turning
-/// the app window into one.
+/// Feedback goes to public issues so others can find existing reports.
 function ContactBlock() {
   return (
     <div className="flex flex-col gap-2.5">
@@ -940,9 +916,6 @@ function ContactBlock() {
       <div className="flex items-center gap-1.5">
         <Button variant="secondary" size="sm" onClick={() => void openUrl(ISSUES_URL)}>
           Open an issue
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => void openUrl(CONTACT_URL)}>
-          Message me
         </Button>
       </div>
     </div>

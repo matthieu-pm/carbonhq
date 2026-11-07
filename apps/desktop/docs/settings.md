@@ -65,6 +65,8 @@ The cost, stated: a `.command` handed to `open` is run by **Terminal.app alone**
 
 **Skills can be created, imported as a folder, edited, renamed and removed.** Imports keep support files and leave `.git` behind; circular links fail without leaving a partial copy. Rename collisions leave both originals intact. Removing a linked skill takes the link alone. Carbon-managed and built-in skills open read-only. Plugin skills are not listed. A normal skill removal moves it to Trash on macOS and removes it on other systems, after an in-row confirmation. Pi's own resource listing supplies nested skills, configured files and package provenance. Body-only edits preserve frontmatter and keep a folder whose name differs from the skill's declared name.
 
+**Skill folders load before pi discovery.** `list_skills` reads folders without starting a CLI; `discoverPi: true` adds pi's resource listing afterward. The hook shows the first answer while that probe runs, and saves finish after the folder read. In the demo, `?slowPi` delays discovery by fifteen seconds to check that rows and editing stay available.
+
 [The agent settings demo](../demo/agent-settings.html) mounts both real tabs with a stateful fake bridge. It covers editable and read-only rows, a project source, an unreadable config, masked headers, and a change made outside the tab. Production commands have filesystem regression tests in `mcp_servers.rs` and `skills.rs`.
 
 ## Closing with ⌘W

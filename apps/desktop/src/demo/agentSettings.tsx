@@ -76,7 +76,12 @@ mockIPC(async (command, payload) => {
       source.servers = source.servers.filter((s) => s.name !== args.name);
       return;
     }
-    case "list_skills": return structuredClone(listing);
+    case "list_skills": {
+      if (args.discoverPi && new URLSearchParams(location.search).has("slowPi")) {
+        await new Promise((resolve) => setTimeout(resolve, 15_000));
+      }
+      return structuredClone(listing);
+    }
     case "read_skill": return documents.get(String(args.path));
     case "create_skill": return addSkill(String(args.root), args.skill as SkillDocument);
     case "save_skill": {

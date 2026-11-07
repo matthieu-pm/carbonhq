@@ -1356,7 +1356,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
             crate::mcp_servers::save_mcp_server(target, original, server).await;
         remove_mcp_server(target: crate::mcp_servers::McpTarget, name: String) =>
             crate::mcp_servers::remove_mcp_server(target, name).await;
-        list_skills() => crate::skills::list_skills().await;
+        list_skills(discover_pi: Option<bool>) => crate::skills::list_skills(discover_pi).await;
         read_skill(path: String) => crate::skills::read_skill(path).await;
         create_skill(root: String, skill: crate::skills::SkillDocument) => crate::skills::create_skill(root, skill).await;
         save_skill(path: String, skill: crate::skills::SkillDocument) => crate::skills::save_skill(path, skill).await;

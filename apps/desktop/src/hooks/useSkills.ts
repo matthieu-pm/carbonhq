@@ -23,11 +23,26 @@ export function useSkills() {
         lastRead = next;
         setListing(next);
         setError(null);
+        // pi starts a CLI for every project; show the folders while it reads
+        // configured and package skills, and let writes finish after that read.
+        void invoke<SkillsListing>("list_skills", { discoverPi: true }, LOCAL)
+          .then((discovered) => {
+            if (mine !== generation) return;
+            lastRead = discovered;
+            setListing(discovered);
+          })
+          .catch((err) => {
+            if (mine === generation) setError(String(err));
+          })
+          .finally(() => {
+            if (mine === generation) setBusy(false);
+          });
       }
     } catch (err) {
-      if (mine === generation) setError(String(err));
-    } finally {
-      if (mine === generation) setBusy(false);
+      if (mine === generation) {
+        setError(String(err));
+        setBusy(false);
+      }
     }
   }, []);
 
