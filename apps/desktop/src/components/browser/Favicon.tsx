@@ -1,24 +1,9 @@
 import { useEffect, useState } from "react";
 
+import CarbonIcon from "@/components/CarbonIcon";
 import Orb from "@/components/Orb";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDriven } from "@/lib/browser";
-
-/// A mask rather than an `<img>`, so the mark takes the text colour — the
-/// theme's, and the URL row's tint over a dark page.
-const MARK = {
-  maskImage: "url(/assets/icon-square-frame.svg)",
-  WebkitMaskImage: "url(/assets/icon-square-frame.svg)",
-  maskSize: "contain",
-  WebkitMaskSize: "contain",
-  maskRepeat: "no-repeat",
-  WebkitMaskRepeat: "no-repeat",
-} as const;
-
-/// Carbon's mark, for a page with no icon of its own.
-function FallbackIcon() {
-  return <span aria-hidden className="size-3.5 shrink-0 bg-current opacity-60" style={MARK} />;
-}
 
 /// The page's icon, or Carbon's mark until one arrives or where the site has
 /// none. A tab or a history entry, which carries no error and no id. A tab the
@@ -52,7 +37,7 @@ export default function Favicon({
   // `data:,` is how a page says it has no icon (example.com does), and WebKit
   // draws its broken-image box for it with neither `load` nor `error` firing.
   if (!tab.favicon || /^data:[^,]*,$/.test(tab.favicon) || broken || tab.error) {
-    return <FallbackIcon />;
+    return <CarbonIcon className="size-3.5 opacity-60" />;
   }
   return (
     <img
