@@ -77,10 +77,9 @@ export default function SpacesView({ active, projects, visibleProjects, request,
   const seen = useRef(new Set<string>());
   seen.current.add(state.active);
 
-  // The rows live in one place at a time: in the floating card from its
-  // opening until its 140ms fade has finished, in the docked frame otherwise,
-  // so neither animation runs with nothing in it.
+  // Keep the floating rows mounted while hidden so hovering never opens an empty card.
   const docked = active && !sidebarCollapsed;
+  const floating = !docked;
   // The width eases only while the sidebar opens or shuts. Left on, it eased
   // every frame of a resize drag too, so the page trailed the pointer.
   const [motion, setMotion] = useState(false);
@@ -91,13 +90,6 @@ export default function SpacesView({ active, projects, visibleProjects, request,
     const timer = window.setTimeout(() => setMotion(false), 220);
     return () => window.clearTimeout(timer);
   }, [motion]);
-  const [floating, setFloating] = useState(false);
-  useEffect(() => {
-    if (docked) { setFloating(false); return; }
-    if (peek) { setFloating(true); return; }
-    const timer = window.setTimeout(() => setFloating(false), 140);
-    return () => window.clearTimeout(timer);
-  }, [peek, docked]);
   // The task sidebar's own width and key, so the two are one setting.
   const { style: widthStyle, handle } = useResizable({ storageKey: "ade.sidebarWidth", initial: SIDEBAR_MIN, min: SIDEBAR_MIN, edge: "right", label: "Resize the sidebar" });
   const width = Number(widthStyle.width);
@@ -209,10 +201,10 @@ export default function SpacesView({ active, projects, visibleProjects, request,
   const shell = typeof document === "undefined" ? null : document.querySelector<HTMLElement>(".app-shell");
   // Drawn in the shell, not in this page, so it floats over Home and Issues
   // too, from where Home's own card does: Spaces is hidden there.
-  const card = !docked && <div className={cn("spaces-sidebar-float sidebar-floating absolute bottom-2.5 z-40 flex overflow-hidden rounded-[8px] border border-edge-surface bg-background shadow-(--shadow-surface)", SIDEBAR_TOKENS)}
+  const card = floating && <div className={cn("spaces-sidebar-float sidebar-floating absolute bottom-2.5 z-40 flex overflow-hidden rounded-[8px] border border-edge-surface bg-background shadow-(--shadow-surface)", SIDEBAR_TOKENS)}
     style={{ ...widthVar, left: RAIL_W + 2, top: "calc(var(--titlebar-h) + 0.125rem)" }}
     data-open={peek} aria-hidden={!peek} inert={!peek || undefined}
-    onPointerEnter={() => peek && onPeekHover?.(true)} onPointerLeave={() => onPeekHover?.(false)}>{floating && sidebar}</div>;
+    onPointerEnter={() => peek && onPeekHover?.(true)} onPointerLeave={() => onPeekHover?.(false)}>{sidebar}</div>;
 
   return <div className={cn("spaces-workspace", !active && "hidden")} style={widthVar}>
     <div className="spaces-body">

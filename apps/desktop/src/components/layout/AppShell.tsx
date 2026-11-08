@@ -233,12 +233,16 @@ function SlidingSidebar({
   useLayoutEffect(() => {
     const node = body.current;
     if (!node) return;
-    const measure = () => setWidth(node.getBoundingClientRect().width);
+    const measure = () => {
+      const nextWidth = node.getBoundingClientRect().width;
+      // A hidden page reports zero; keep the last width until it can be measured again.
+      if (nextWidth > 0) setWidth(nextWidth);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [open]);
 
   return (
     <div
