@@ -177,12 +177,11 @@ export default function AppShell({
         <div className="w-2 shrink-0 bg-surface-frame" />
       </div>
       {sidebarMode === "peek" && (
-        // Floats over the sheet beside the rail, a menu's frame round the same
-        // list: the float veil wants the blur, or the transcript shows through
-        // between the rows.
+        // Floats over the sheet beside the rail, on the page's own fill and the
+        // sheet's 8px corner, so it reads as the docked strip lifted out.
         <div
           className={cn(
-            "absolute bottom-2 z-40 flex overflow-hidden rounded-xl border border-border bg-popover shadow-lg backdrop-blur-xl",
+            "absolute bottom-2 z-40 flex overflow-hidden rounded-[8px] border border-border bg-background shadow-lg",
             SIDEBAR_TOKENS,
           )}
           style={{ left: RAIL_W, top: "var(--titlebar-h)" }}
