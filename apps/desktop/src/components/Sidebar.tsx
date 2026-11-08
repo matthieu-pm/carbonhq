@@ -751,7 +751,7 @@ export function SidebarToggle({ onToggle }: { onToggle: () => void }) {
           // which, and a strength flip read backwards on a sidebar kept open.
           className="text-muted-foreground transition-colors hover:text-foreground active:not-aria-[haspopup]:translate-y-0"
         >
-          <PanelLeftIcon className="size-4.5" />
+          <PanelLeftIcon className="size-4" />
         </Button>
       </TooltipTrigger>
       <TooltipContent side="right">

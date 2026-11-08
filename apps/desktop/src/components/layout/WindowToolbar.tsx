@@ -15,8 +15,8 @@ export default function WindowToolbar({
       className={cn(
         "relative flex h-(--titlebar-h) shrink-0 items-center gap-2 overflow-hidden px-3",
         !fullscreen && "pl-(--traffic-lights-w)",
-        // Back, Forward and the sidebar toggle each take 28px, plus their gaps.
-        fullscreen ? "[--tabs-lead:7.5rem]" : "[--tabs-lead:calc(var(--traffic-lights-w)+6.75rem)]",
+        // Three adjacent 28px controls, then the header's 8px gap before the tabs.
+        fullscreen ? "[--tabs-lead:6.5rem]" : "[--tabs-lead:calc(var(--traffic-lights-w)+5.75rem)]",
         className,
       )}
       {...props}

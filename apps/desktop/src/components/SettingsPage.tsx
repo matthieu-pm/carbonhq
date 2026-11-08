@@ -1392,7 +1392,7 @@ function SettingsTabs({
       rail={rail}
       header={
         <WindowToolbar fullscreen={fullscreen}>
-          {navigation}
+          <div className="flex shrink-0 items-center">{navigation}</div>
           <span aria-hidden className="h-4 w-px shrink-0 bg-hairline" />
           <span className="truncate text-ui text-muted-foreground">Settings</span>
           <div className="ml-auto flex shrink-0 items-center">

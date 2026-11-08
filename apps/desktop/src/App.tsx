@@ -3179,8 +3179,10 @@ function App() {
         <WindowToolbar fullscreen={fullscreen}>
           {/* Always here, open or shut: the sidebar sits under this row now,
               so the toggle no longer has a strip of its own to live in. */}
-          {navigation}
-          <SidebarToggle onToggle={toggleSidebar} />
+          <div className="flex shrink-0 items-center">
+            {navigation}
+            <SidebarToggle onToggle={toggleSidebar} />
+          </div>
 
           {/* Over the sidebar's right end, out of the flow so the tabs do not
               move. It belongs to the sidebar, so it goes when the sidebar does —
