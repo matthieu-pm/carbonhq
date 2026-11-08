@@ -109,6 +109,8 @@ export function useChatColumnFloor(single: boolean, beside = 0) {
 /// drag work past the pane's edge — without it the pointer leaves this element
 /// on the first frame and every move after that is delivered to whatever is
 /// beside it.
+const WIDTH_WRITTEN = "carbon-pane-width";
+
 export function useResizable({
   storageKey,
   initial,
@@ -175,9 +177,25 @@ export function useResizable({
     };
   }, [pane, width]);
 
+  // Two panes can share a key — Spaces' sidebar takes the task sidebar's — and
+  // both stay mounted, so a write tells the other to re-read.
+  useEffect(() => {
+    const onWrite = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === storageKey) setStored(read());
+    };
+    window.addEventListener(WIDTH_WRITTEN, onWrite);
+    return () => window.removeEventListener(WIDTH_WRITTEN, onWrite);
+  // `read` closes over the key alone.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+  const save = (next: number) => {
+    writeLocalStorage(storageKey, next);
+    window.dispatchEvent(new CustomEvent(WIDTH_WRITTEN, { detail: storageKey }));
+  };
+
   const commit = (next: number) => {
     setStored(next);
-    writeLocalStorage(storageKey, next);
+    save(next);
   };
 
   // Ends a drag however it stops — released, cancelled by the OS, or capture
@@ -187,7 +205,7 @@ export function useResizable({
   const end = () => {
     if (!from.current) return;
     from.current = null;
-    writeLocalStorage(storageKey, width);
+    save(width);
   };
 
   // Arrows widen and narrow, Home resets: the pointer's three verbs, since a

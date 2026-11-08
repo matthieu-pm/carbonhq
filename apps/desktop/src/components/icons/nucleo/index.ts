@@ -29,3 +29,4 @@ export { XmarkOutline12 } from "./XmarkOutline12";
 export { SlackGlyph32 } from "./SlackGlyph32";
 export { ShapeTriangleFilledGlyph20 } from "./ShapeTriangleFilledGlyph20";
 export { House3Glyph18 } from "./House3Glyph18";
+export { FilesGlyph18 } from "./FilesGlyph18";

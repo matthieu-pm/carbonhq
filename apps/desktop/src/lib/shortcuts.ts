@@ -96,6 +96,7 @@ export const SHORTCUTS = [
   { id: "tab.reopen", label: "Reopen closed tab", group: "Panels and views", chord: k("t", { shift: true }) },
   { id: "chat.bottom", label: "Scroll chat to bottom", group: "Panels and views", chord: k("ArrowDown") },
   { id: "spaces.open", label: "Open Spaces", group: "Panels and views", chord: k("p") },
+  { id: "page.new", label: "New Page", group: "Panels and views", chord: k("p", { shift: true }) },
   { id: "issues.open", label: "Open issues", group: "Panels and views", chord: k("i") },
   { id: "issues.search", label: "Search issues", group: "Panels and views", chord: k("f", { shift: true }) },
 
@@ -106,7 +107,7 @@ export const SHORTCUTS = [
   { id: "composer.fast", label: "Toggle fast mode", group: "Composer", chord: k("f", { shift: true }) },
   { id: "harness.next", label: "Next agent", group: "Composer", chord: k("a", { shift: true }) },
   { id: "worktree.toggle", label: "Toggle worktree", group: "Composer", chord: k("t", { shift: true }) },
-  { id: "project.next", label: "Next project in picker", group: "Composer", chord: k("p", { shift: true }) },
+  { id: "project.next", label: "Next project in picker", group: "Composer", chord: k("p", { alt: true }) },
   { id: "queue.send", label: "Send queued prompts now", group: "Composer", chord: k("Enter") },
   { id: "composer.draft", label: "Save as draft", group: "Composer", chord: k("s") },
   { id: "agent.update", label: "Update the agent's CLI", group: "Composer", chord: k("u") },
@@ -146,6 +147,9 @@ export const PREVIOUS_DEFAULTS: Partial<Record<ShortcutId, Chord | null>> = {
   "tab.reopen": null,
   "mode.toggle": null,
   "agent.update": null,
+  // A new Page took ⌘⇧P, the chord beside ⌘P that opens Spaces.
+  "project.next": k("p", { shift: true }),
+  "page.new": null,
 };
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [

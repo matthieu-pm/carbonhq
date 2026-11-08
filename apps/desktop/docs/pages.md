@@ -6,6 +6,16 @@ Spaces is the document workspace on Cmd+P, opened from the rail. It fills the sh
 
 Pages and Spaces are unfinished and disabled by default. The owning server reads `pagesEnabled` from `settings.json`; an absent or false value disables Page commands, assets and Linear sync. The local flag also hides Spaces, the Page picker and Cmd+P. Profiles stays available. To test, set `{"pagesEnabled": true}` in an isolated server’s settings file and reconnect the frontend. Keep the real installation off.
 
+## Sidebar and table
+
+The sidebar lists All, Pages, Slides, Images, Google Drive and Linear, then Recents, Projects and Trash. All and Pages show the same list until a second kind exists. Slides, Images and Google Drive are empty states. Linear reads the workspace's documents live from Linear; opening one imports it as a synced Page, which is idempotent. Favorites and Recently edited (the last seven days) are tabs above the table. ⌘⇧P creates a Page from anywhere, opening Spaces first; it took the chord from the composer's next-project step, now ⌘⌥P.
+
+The sidebar shares the task sidebar's width (`ade.sidebarWidth`, synced live between the two) and its collapse switch. Wherever it is not docked on screen, hovering the rail's Spaces button floats it as a card, drawn into `.app-shell` through a portal since the Spaces page itself is hidden there; a row used from the card opens Spaces.
+
+**Tabs** (`lib/spaceTabs.ts`, CBN-33) sit in the titlebar like the issues strip. Every tab carries a list view — section, filter, project, search, layout — and may show one Page over it. Opening a Page opens a tab beside the lit one, or moves to the tab already showing it: two editors on one draft would race each other's saves. A sidebar click navigates the lit tab; + starts a fresh All that shares nothing. Each pane mounts the first time it is shown and then hides rather than unmounts. A tab leaving its Page, or closing, flushes that editor first through the flush `PageDocument` hands over, or the last keystrokes are lost. The strip persists under `ade.spaceTabs`.
+
+The table selects with a checkbox gutter, ⌘-click or shift-click. The selection bar starts a new task citing every selected Page, downloads them, and moves them to Trash, or restores them from it. Download is `save_markdown_files`, an app command that opens the save dialog in Rust, so the webview never names a path to write.
+
 ## One document and one owner
 
 `pages.rs` owns identity, metadata, exact Markdown, revisions, project links, search, favorites and Trash. Documents live under the owning server's `CARBON_HOME/pages`, outside repositories and session directories. Project links do not copy content. Frontend project paths carry their server; core paths remain owner-local.

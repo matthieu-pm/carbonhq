@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { CircleDot, Files } from "lucide-react";
+import { CircleDot } from "lucide-react";
 
-import { House3Glyph18 } from "@/components/icons/nucleo";
+import { FilesGlyph18, House3Glyph18 } from "@/components/icons/nucleo";
 
 import ShortcutKeys from "@/components/ShortcutKeys";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ export default function Rail({
   onIssues,
   onHomeHover,
   peeks,
+  onSpacesHover,
+  spacesPeeks = false,
   footer,
 }: {
   place: RailPlace;
@@ -40,6 +42,9 @@ export default function Rail({
   onHomeHover: (over: boolean) => void;
   /// Hovering Home opens the sidebar card, which its tooltip would cover.
   peeks: boolean;
+  /// Hovering Spaces peeks its own sidebar while that one is collapsed.
+  onSpacesHover?: (over: boolean) => void;
+  spacesPeeks?: boolean;
   /// Usage and Settings, pinned to the foot.
   footer: ReactNode;
 }) {
@@ -60,8 +65,8 @@ export default function Rail({
         <House3Glyph18 />
       </RailButton>
       {spaces && (
-        <RailButton label="Spaces" shortcut="spaces.open" current={place === "spaces"} onClick={onSpaces}>
-          <Files />
+        <RailButton label="Spaces" shortcut="spaces.open" current={place === "spaces"} onClick={onSpaces} onHover={onSpacesHover} tooltip={!spacesPeeks}>
+          <FilesGlyph18 />
         </RailButton>
       )}
       <RailButton label="Issues" shortcut="issues.open" current={place === "issues"} onClick={onIssues}>

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import SubscriptionUsageButton from "@/components/SubscriptionUsageButton";
 
 import "./App.css";
-import { pagePromptContext, setPageOpener, setPageTaskHandler, type LocatedPage, type Page, type PageTarget } from "@/lib/pages";
+import { pagePromptContext, setPageChatHandler, setPageOpener, setPageTaskHandler, type LocatedPage, type Page, type PageTarget } from "@/lib/pages";
 import Chat from "@/components/Chat";
 import ChatInput from "@/components/ChatInput";
 import DiffWorkerPool from "@/components/DiffWorkerPool";
@@ -120,6 +120,8 @@ import DictateControl from "@/components/composer/DictateControl";
 import AppShell from "@/components/layout/AppShell";
 import Rail, { RAIL_W } from "@/components/layout/Rail";
 import IssueTabs, { HeaderIconButton } from "@/components/layout/IssueTabs";
+import SpaceTabs from "@/components/layout/SpaceTabs";
+import { useSpaceTabs } from "@/lib/spaceTabs";
 import NavButtons from "@/components/layout/NavButtons";
 import WindowToolbar from "@/components/layout/WindowToolbar";
 import { placeKey, step as stepHistory, visit as visitPlace, type NavHistory, type Place } from "@/lib/navHistory";
@@ -582,9 +584,19 @@ function App() {
   // both the button and the card, so crossing the gap between them holds it.
   const [peek, setPeek] = useState(false);
   const peekTimer = useRef<number | undefined>(undefined);
+  // Spaces' own sidebar peeks from its own rail button, on Home's timing.
+  const [spacesPeek, setSpacesPeek] = useState(false);
+  const spacesPeekTimer = useRef<number | undefined>(undefined);
+  const hoverSpacesPeek = (over: boolean) => {
+    window.clearTimeout(spacesPeekTimer.current);
+    // One card at a time: moving from Home's button to this one would
+    // otherwise hold Home's open through its close delay.
+    if (over) { window.clearTimeout(peekTimer.current); setPeek(false); setSpacesPeek(true); }
+    else spacesPeekTimer.current = window.setTimeout(() => setSpacesPeek(false), 200);
+  };
   const hoverPeek = (over: boolean) => {
     window.clearTimeout(peekTimer.current);
-    if (over) setPeek(true);
+    if (over) { window.clearTimeout(spacesPeekTimer.current); setSpacesPeek(false); setPeek(true); }
     else peekTimer.current = window.setTimeout(() => setPeek(false), 200);
   };
   const [pagePickerOpen, setPagePickerOpen] = useState(false);
@@ -607,6 +619,11 @@ function App() {
   // The issues page's tabs. Each list tab keeps its own pane pick, so moving
   // between lists does not carry one list's open issue onto another.
   const issueTabs = useIssueTabs();
+  const spaceTabs = useSpaceTabs();
+  // The docked Spaces sidebar's width, which the tab strip lines up past.
+  const [spacesDrawn, setSpacesDrawn] = useState(0);
+  // Spaces closes its own tabs, since only it can flush an editor first.
+  const spaceTabCloser = useRef<(id: string) => void>(() => {});
   const activeIssueTab = issueTabs.tabs.find((t) => t.id === issueTabs.active) ?? issueTabs.tabs[0];
   const issueTabRefreshRef = useRef<(() => void) | null>(null);
   const [pickedByTab, setPickedByTab] = useState<Record<string, IssueRef | null>>({});
@@ -2168,6 +2185,17 @@ function App() {
   // The current composer's identity selects the prompt that receives the reference.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerKey, activeServer, pagesEnabled]);
+  const startChatWithPages = (pages: LocatedPage<Page>[]) => goToSession(() => {
+    handleNewSession();
+    appendToDraft(null, pages.map((page) => pagePromptContext(page, activeServer)).join("\n\n"));
+    focusComposerEnd();
+  });
+  useEffect(() => {
+    setPageChatHandler(pagesEnabled ? startChatWithPages : null);
+    return () => setPageChatHandler(null);
+  // The receiving server decides whether a citation carries its snapshot.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeServer, pagesEnabled]);
 
   const showNewTaskComposer = () => setViewTabs((prev) => ({ ...prev, [newTaskId]: "chat" }));
   const handleNewSession = () => {
@@ -2610,6 +2638,9 @@ function App() {
     setCollapsed((prev) => !prev);
   };
   useHotkey("sidebar.toggle", toggleSidebar);
+  // Spaces suspends the shell's chords, and its sidebar answers to the same
+  // switch, so the chord is bound again where only that page can hear it.
+  useHotkey("sidebar.toggle", toggleSidebar, { enabled: spacesOpen && !settingsOpen, page: true });
   // Takes the sidebar with it: the field lives there, and a chord that opened a
   // search nobody can see would be worse than no chord. `autoFocus` covers the
   // field this press mounts; the select covers the one already on screen, which
@@ -2622,7 +2653,7 @@ function App() {
   useHotkey("session.new", () => goToSession(handleNewSession));
   // Steps the composer's project picker, and only while that picker is on
   // screen: it is drawn for a new task alone, and `enabled` unregisters rather
-  // than no-opping, so a session's composer doesn't have ⌘⇧P eaten from it.
+  // than no-opping, so a session's composer doesn't have ⌘⌥P eaten from it.
   // Wraps, since one key with a clamp dead-ends on the last project with no way
   // back. Nothing picked yet finds no index and lands on the first, which is
   // also the answer for a project detached out from under the pick.
@@ -2898,9 +2929,18 @@ function App() {
     setPagePickerOpen(false);
     closeSettings();
     setSpacesOpen(true);
-    window.dispatchEvent(new Event("spaces-search"));
   };
   useHotkey("spaces.open", openSpaces, { enabled: pagesEnabled });
+  // A serial rather than an event: Spaces mounts on first open, after the
+  // chord that opened it, so an event fired now would land on nothing.
+  const [pageCreateSerial, setPageCreateSerial] = useState(0);
+  useHotkey("page.new", () => {
+    setPeek(false);
+    setPagePickerOpen(false);
+    closeSettings();
+    setSpacesOpen(true);
+    setPageCreateSerial((serial) => serial + 1);
+  }, { enabled: pagesEnabled });
   // Leaves Spaces too: it covers the sheet, so the page would open behind it.
   const openIssues = () => {
     setSpacesOpen(false);
@@ -2983,6 +3023,9 @@ function App() {
       onForward={() => goHistory(1)}
     />
   );
+  // Only while the sidebars are collapsed: open, each page shows its own, and a
+  // card for the other page's would cover it.
+  const spacesPeeks = pagesEnabled && !settingsOpen && collapsed;
   const rail = (
     <Rail
       place={settingsOpen ? "settings" : spacesOpen ? "spaces" : issuesOpen ? "issues" : "home"}
@@ -2990,8 +3033,10 @@ function App() {
       onHome={() => goToSession(handleNewSession)}
       onSpaces={openSpaces}
       onIssues={openIssues}
-      onHomeHover={(over) => !settingsOpen && sidebarMode !== "docked" && hoverPeek(over)}
-      peeks={!settingsOpen && sidebarMode !== "docked"}
+      onHomeHover={(over) => !settingsOpen && collapsed && hoverPeek(over)}
+      peeks={!settingsOpen && collapsed}
+      onSpacesHover={(over) => spacesPeeks && hoverSpacesPeek(over)}
+      spacesPeeks={spacesPeeks}
       footer={
         <>
           <SubscriptionUsageButton onAccounts={() => { setSettingsTab("accounts"); setSettingsOpen(true); }} />
@@ -3013,8 +3058,12 @@ function App() {
       sidebarMode={sidebarMode}
       onPeekHover={hoverPeek}
       page={pagesEnabled && (
-        <MountOnce when={spacesOpen}>
-          <SpacesView active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest}
+        <MountOnce when={spacesOpen || spacesPeek}>
+          <SpacesView active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest} createSerial={pageCreateSerial}
+            sidebarCollapsed={collapsed} onExpandSidebar={() => setCollapsed(false)}
+            peek={spacesPeek && spacesPeeks} onPeekHover={hoverSpacesPeek}
+            onNavigate={() => { window.clearTimeout(spacesPeekTimer.current); setSpacesPeek(false); openSpaces(); }}
+            onDockedWidth={setSpacesDrawn} closeTabRef={spaceTabCloser}
             visibleProjects={space ? spaceProjects.map((p) => p.path) : null}
             onClose={() => setSpacesOpen(false)} />
         </MountOnce>
@@ -3159,15 +3208,16 @@ function App() {
               continues the strip's border up through the titlebar; with no
               sidebar, or a breadcrumb taking the tabs' place, it sits in the
               row before them. */}
-          {!spacesOpen && (sidebarDrawn > 0 && !(!issuesOpen && shownSession && hiddenParent) ? (
+          {/* Spaces draws its own sidebar, so its edge is `spacesDrawn`. */}
+          {(spacesOpen ? spacesDrawn > 0 : sidebarDrawn > 0 && !(!issuesOpen && shownSession && hiddenParent)) ? (
             <span
               aria-hidden
               className="pointer-events-none absolute top-1/2 h-4 w-px -translate-y-1/2 bg-hairline"
-              style={{ left: RAIL_W + sidebarDrawn }}
+              style={{ left: RAIL_W + (spacesOpen ? spacesDrawn : sidebarDrawn) }}
             />
           ) : (
             <span aria-hidden className="h-4 w-px shrink-0 bg-hairline" />
-          ))}
+          )}
 
           {/* A hidden session has no sidebar row, so this is the way back to
               the crew it sits in. */}
@@ -3207,7 +3257,11 @@ function App() {
               alignX={hiddenParent || !sidebarDrawn ? 0 : RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR}
             />
           )}
-          {spacesOpen && <div className="min-w-0 flex-1" />}
+          {spacesOpen && (
+            <SpaceTabs state={spaceTabs} projects={projects} active={!settingsOpen}
+              onClose={(id) => spaceTabCloser.current(id)}
+              alignX={spacesDrawn ? RAIL_W + spacesDrawn + TABS_PAST_SEPARATOR : 0} />
+          )}
           {issuesOpen && !spacesOpen && (
             <IssueTabs state={issueTabs} alignX={sidebarDrawn ? RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR : 0} />
           )}

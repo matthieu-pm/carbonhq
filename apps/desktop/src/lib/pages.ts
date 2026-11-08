@@ -50,3 +50,8 @@ export function openPage(target: PageTarget) { opener?.(target); }
 let useInTask: ((page: LocatedPage<Page>) => void) | null = null;
 export function setPageTaskHandler(next: typeof useInTask) { useInTask = next; }
 export function referencePageInTask(page: LocatedPage<Page>) { useInTask?.(page); }
+
+let chatWithPages: ((pages: LocatedPage<Page>[]) => void) | null = null;
+export function setPageChatHandler(next: typeof chatWithPages) { chatWithPages = next; }
+/// Opens a new task whose prompt cites each Page, the way "Use in task" cites one.
+export function startChatWithPages(pages: LocatedPage<Page>[]) { chatWithPages?.(pages); }

@@ -46,6 +46,7 @@ const APP_WIDE: ReadonlySet<ShortcutId> = new Set([
   "settings",
   "session.new",
   "spaces.open",
+  "page.new",
   "issues.open",
   "nav.back",
   "nav.forward",
@@ -144,7 +145,7 @@ export function useHotkey(
 export function useDigitHotkey(
   id: DigitChordId,
   handler: (slot: number) => void,
-  { enabled = true }: { enabled?: boolean } = {},
+  { enabled = true, page = false }: { enabled?: boolean; page?: boolean } = {},
 ) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
@@ -155,7 +156,8 @@ export function useDigitHotkey(
     // Capture on `window`, ahead of every `useHotkey`: those take ⌃ as ⌘, so a
     // row on ⌃ would otherwise fire beside whatever ⌘ chord shares its digit.
     const onKeyDown = (e: KeyboardEvent) => {
-      if (suspended) return;
+      // A full-window page's own strip answers under it, as `useHotkey`'s `page` does.
+      if (suspended && !page) return;
       const slot = digitSlot(e.code);
       const mods = modsFor(id);
       if (slot === null || slot >= slots || !sameMods(heldMods(e), mods)) return;
@@ -166,7 +168,7 @@ export function useDigitHotkey(
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [id, enabled]);
+  }, [id, enabled, page]);
 }
 
 /// Somewhere a caret can be, and therefore somewhere the platform's own text

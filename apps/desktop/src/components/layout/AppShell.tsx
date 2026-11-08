@@ -256,7 +256,7 @@ function SlidingSidebar({
 
 /// Light rows were tuned on the bare page and sit on a darker fill here, so
 /// the same veil read as half the mark it was; keycaps likewise.
-const SIDEBAR_TOKENS = cn(
+export const SIDEBAR_TOKENS = cn(
   "not-dark:[--sidebar-accent:color-mix(in_oklab,var(--foreground)_15%,transparent)]",
   "not-dark:[&_[data-slot=kbd]]:bg-foreground/13",
 );

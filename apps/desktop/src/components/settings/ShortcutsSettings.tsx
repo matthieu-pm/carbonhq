@@ -199,7 +199,7 @@ export default function ShortcutsSettings({ onOpenIsland }: { onOpenIsland: () =
     !q || label.toLowerCase().includes(q) || group.toLowerCase().includes(q);
   const shown = SHORTCUT_GROUPS.map((group) => ({
     group,
-    rows: SHORTCUTS.filter((s) => s.group === group && (s.id !== "spaces.open" || pagesEnabled) && matches(s.label, group)),
+    rows: SHORTCUTS.filter((s) => s.group === group && ((s.id !== "spaces.open" && s.id !== "page.new") || pagesEnabled) && matches(s.label, group)),
     digits: DIGIT_CHORDS.filter((c) => c.group === group && matches(c.label, group)),
   })).filter((g) => g.rows.length + g.digits.length > 0);
   const islandShown = IS_MAC && matches("Open Carbon Island", "Carbon Island");

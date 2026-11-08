@@ -171,6 +171,7 @@ export const APP_COMMANDS = new Set([
   "upload_attachment",
   "paste_attachments",
   "read_file",
+  "save_markdown_files",
   "browser_open",
   "browser_tabs",
   "browser_history",

@@ -67,6 +67,8 @@ pub mod issues;
 #[path = "models/models.rs"]
 pub mod models;
 #[cfg(feature = "desktop")]
+pub mod markdown_export;
+#[cfg(feature = "desktop")]
 pub mod notifications;
 pub mod orchestration;
 pub mod drafts;
@@ -893,6 +895,7 @@ pub fn run() {
             // Here and not on the server: a video plays through this
             // webview's asset protocol, which only this process can widen.
             files::read_file,
+            markdown_export::save_markdown_files,
             browser_open,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_tabs,
