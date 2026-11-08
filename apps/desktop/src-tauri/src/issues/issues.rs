@@ -245,6 +245,64 @@ pub struct Issue {
     /// reuses [`IssueLabel`]. Always `None` on Linear, which has no such field.
     #[serde(default)]
     pub issue_type: Option<IssueLabel>,
+    /// Issues that block this one. Linear's `blocks` relations pointing *in*,
+    /// settled blockers included — whether one still counts is the reader's
+    /// call to draw, and the pane lists them all with their status.
+    #[serde(default)]
+    pub blocked_by: Vec<RelatedIssue>,
+    /// Issues this one blocks: the same relations pointing *out*.
+    #[serde(default)]
+    pub blocking: Vec<RelatedIssue>,
+    /// Sub-issues, counted. Zero total for an issue with none, and always on
+    /// GitHub, which this does not read.
+    #[serde(default)]
+    pub sub_issues: SubIssues,
+    /// The Linear cycle it is planned into. `None` outside one, and always on
+    /// GitHub, which has no cycles.
+    #[serde(default)]
+    pub cycle: Option<IssueCycle>,
+}
+
+/// A Linear cycle as a row draws it. Dates are RFC3339, as Linear sends them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "events.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct IssueCycle {
+    pub number: u32,
+    /// Usually `None`: Linear names cycles by number unless somebody gives one
+    /// a name, so the chip falls back to "Cycle N".
+    pub name: Option<String>,
+    pub starts_at: String,
+    pub ends_at: String,
+    /// Set once Linear closes the cycle, which can trail `ends_at`.
+    pub completed_at: Option<String>,
+}
+
+/// An issue another one is tied to, carried whole enough to draw its row in a
+/// hover card or menu and to open it: the [`IssueRef`] fields plus what those
+/// surfaces show beside the title.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "events.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct RelatedIssue {
+    pub tracker: IssueTracker,
+    pub id: String,
+    pub identifier: String,
+    pub title: String,
+    pub url: String,
+    pub state: IssueState,
+    pub priority: IssuePriority,
+    pub project: Option<String>,
+}
+
+/// How many sub-issues an issue has, and how many of them are finished
+/// (completed or cancelled), which is the pair Linear's own chip reads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "events.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct SubIssues {
+    pub done: u32,
+    pub total: u32,
 }
 
 impl Issue {

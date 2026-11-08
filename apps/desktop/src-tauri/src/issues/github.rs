@@ -25,7 +25,7 @@ use serde_json::Value;
 use super::{
     Issue, IssueComment, IssueDetail, IssueFilters, IssueGroup, IssueLabel, IssuePerson,
     IssuePriority, IssueQuery, IssueScope, IssueState, IssueStateKind, IssueTracker,
-    IssueUnavailable, TrackerAccount, optional, pr_numbers, text,
+    IssueUnavailable, SubIssues, TrackerAccount, optional, pr_numbers, text,
 };
 use crate::{git, github, projects, store::get_home_app_dir};
 
@@ -604,6 +604,10 @@ fn map_issue(node: &Value, repo: &str) -> Option<Issue> {
         created_at: text(node, "createdAt"),
         pull_requests: pull_requests(node),
         issue_type: node.get("issueType").and_then(map_issue_type),
+        blocked_by: Vec::new(),
+        blocking: Vec::new(),
+        sub_issues: SubIssues::default(),
+        cycle: None,
     })
 }
 

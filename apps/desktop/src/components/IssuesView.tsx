@@ -11,8 +11,8 @@ import {
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  Box,
   ChevronDown,
-  ChevronRight,
   GitPullRequest,
   Plus,
   RefreshCw,
@@ -24,7 +24,14 @@ import {
 
 import Avatar from "@/components/Avatar";
 import { PriorityMenu, StatusMenu } from "@/components/IssueMenus";
-import IssueLabelChip from "@/components/IssueLabelChip";
+import IssueLabelChip, { ISSUE_CHIP } from "@/components/IssueLabelChip";
+import {
+  CycleChip,
+  RelationChip,
+  SubIssuesChip,
+  UnassignedAvatar,
+} from "@/components/IssueRelations";
+import { ShapeTriangleFilledGlyph20 } from "@/components/icons/nucleo";
 import IssueStateIcon from "@/components/IssueStateIcon";
 import Segmented from "@/components/Segmented";
 import LinearIcon from "@/components/LinearIcon";
@@ -503,7 +510,7 @@ export default function IssuesView({
       {/* A container, so the rows' chips drop by the list's width rather than
           the window's: with the pane open the list is narrow in a wide window,
           and viewport breakpoints kept every chip and left the title a letter. */}
-      <div ref={listRef} className="@container min-h-0 flex-1 overflow-y-auto">
+      <div ref={listRef} className="@container min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {/* **Nothing is read until a repository is picked**, and that is the
             GitHub half's own resting state rather than a failure: an issue
             number means nothing without one, and reading every attached project
@@ -546,7 +553,9 @@ export default function IssuesView({
             )}
           </div>
         ) : (
-          <>
+          // Groups stand a little apart, Linear's spacing, so a run of
+          // collapsed headings reads as separate bands rather than one block.
+          <div className="flex flex-col gap-1">
             {/* Nothing else while the first read is out — not even the settled
                 headings, which are the one part of this list that can be drawn
                 without an answer and so were the only thing on screen. A page
@@ -650,7 +659,7 @@ export default function IssuesView({
                   </Group>
                 );
               })}
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -866,11 +875,11 @@ function Connect({
 /// progress and what is still a wish are different questions, and the tracker
 /// the reader already has open groups them exactly this way.
 ///
-/// No fill behind the header, and space between groups instead. A tinted band
-/// across the page draws a box round the quietest line on it; a gap says the
-/// same thing with nothing at all, and leaves the rows as the only marked
-/// surface. The glyph is what the row above gave up — one copy, on the heading
-/// that names the state, rather than one per row repeating it.
+/// The header sits on a faint band, as Linear's do, and groups abut with no gap
+/// between them: the band is what separates them. A foreground tint rather than
+/// a surface token, so it lifts in dark mode and sinks in light, on glass too.
+/// The glyph is what the row above gave up — one copy, on the heading that names
+/// the state, rather than one per row repeating it.
 function Group({
   kind,
   label,
@@ -891,22 +900,31 @@ function Group({
   const [collapsed, setCollapsed] = useState(collapsedByDefault);
 
   return (
-    <div className="mb-1.5 last:mb-0">
+    <div className="flex flex-col gap-0.5">
       <button
         type="button"
         onClick={() => {
           if (collapsed) onFirstOpen?.();
           setCollapsed((prev) => !prev);
         }}
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-ui text-muted-foreground transition-colors hover:text-foreground"
+        className="group/heading flex h-9 w-full items-center gap-2 rounded-md bg-foreground/[0.04] pr-4 pl-3 text-ui text-muted-foreground transition-colors hover:bg-foreground/[0.07]"
       >
-        <ChevronRight className={cn("size-3.5 transition-transform", !collapsed && "rotate-90")} />
+        {/* Drawn pointing up, so a quarter turn points it right and a half
+            turn down. Inside a 14px box so the glyph after it keeps its place. */}
+        <span className="flex size-3.5 shrink-0 items-center justify-center">
+          <ShapeTriangleFilledGlyph20
+            className={cn(
+              "size-2 opacity-50 transition-[transform,opacity] group-hover/heading:opacity-100",
+              collapsed ? "rotate-90" : "rotate-180",
+            )}
+          />
+        </span>
         <IssueStateIcon kind={kind} />
         <span className="font-medium text-foreground">{label}</span>
         {count !== null && <span className="tabular-nums">{count}</span>}
       </button>
 
-      {!collapsed && children}
+      {!collapsed && <div>{children}</div>}
     </div>
   );
 }
@@ -1221,7 +1239,10 @@ function IssueRow({
         onPick(issue);
       }}
       className={cn(
-        "group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-ui transition-colors",
+        "group flex h-11 w-full cursor-pointer items-center gap-2 rounded-md pr-4 text-left text-ui transition-colors",
+        // Under a heading the content starts where the heading's status glyph
+        // does, past its chevron. GitHub's list has no headings to line up with.
+        issue.tracker === "github" ? "pl-3" : "pl-8.5",
         "focus-visible:outline-none",
         // No ring on the selected row: the keys move focus with the selection,
         // and the fill already says which row it is.
@@ -1272,7 +1293,10 @@ function IssueRow({
         <StatusMenu issue={issue} state={issue.state} states={states} />
       )}
 
-      <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+      {/* The title takes its full width first and the chips give way before
+          it does — the cluster shrinks a thousand times faster — down to a
+          floor it never goes under: the title is what the row is read for. */}
+      <span className="min-w-40 flex-auto truncate">{issue.title}</span>
 
       {/* A span carrying `buttonVariants` rather than a `Button`. The row is a
           div with `role="button"` and this stays a span with it: the row's
@@ -1332,51 +1356,83 @@ function IssueRow({
           so a list that does not is the list asking to be clicked through.
           Capped, and dropped on a narrow pane: past three they stop being
           information and start being a second title. */}
-      {issue.labels.slice(0, 3).map((label) => (
-        <IssueLabelChip key={label.name} label={label} className="hidden @3xl:inline" />
-      ))}
+      {/* The trailing chips as one cluster, spaced tighter than the row's own
+          gap the way Linear packs them. No `min-w-0`: the label strip inside is
+          what gives way, and the cluster never goes narrower than the chips
+          that do not, or they slide over the date. */}
+      <span className="flex shrink-[1000] items-center gap-1.5">
+        {/* Labels and project wrap inside a strip one chip tall, so whatever
+            does not fit drops onto a hidden second line whole — never a chip
+            cut in half, and never the title squeezed out. Last ones go first,
+            and the relation chips after them never go at all. */}
+        <span className="hidden h-6 min-w-0 flex-wrap justify-end gap-x-1.5 overflow-hidden @3xl:flex">
+          {/* Zero width, its margin cancelling the gap after it. Flex never
+              wraps a line's first item, so without this the first label clipped
+              in half once even it no longer fit. Chip-tall, or its line is
+              zero-high and the wrapped line lands back on top of it. */}
+          <span aria-hidden className="-mr-1.5 h-6 w-0" />
+          {issue.labels.slice(0, 3).map((label) => (
+            <IssueLabelChip key={label.name} label={label} />
+          ))}
 
-      {issue.project && (
-        <span className="hidden shrink-0 rounded-full border border-border px-1.5 py-px text-muted-foreground @3xl:inline">
-          {issue.project}
+          {issue.project && (
+            <span className={cn(ISSUE_CHIP, "inline-flex")}>
+              <Box className="size-3.5" />
+              {issue.project}
+            </span>
+          )}
         </span>
-      )}
 
-      {/* Work already under way, both trackers. It is the one thing on the row
-          that is not about the issue at all but about somebody having started
-          on it, which is what the reader scanning a list is looking for — and
-          on Linear it is the only signal there, the status glyph saying In
-          Progress whether a PR exists or not.
+        {/* Work already under way, both trackers. It is the one thing on the row
+            that is not about the issue at all but about somebody having started
+            on it, which is what the reader scanning a list is looking for — and
+            on Linear it is the only signal there, the status glyph saying In
+            Progress whether a PR exists or not.
 
-          Inert, like the labels and the project chip beside it: a single number
-          could open that PR and a count could not, and a chip that is a link on
-          some rows and text on others is worse than one that is never a link.
-          ⌘-click on the row still leaves for the tracker, where they are
-          listed. */}
-      {issue.pullRequests.length > 0 && (
-        <span className="hidden shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-px text-muted-foreground @md:inline-flex">
-          <GitPullRequest className="size-3" />
-          {issue.pullRequests.length === 1
-            ? `#${issue.pullRequests[0]}`
-            : `${issue.pullRequests.length} PRs`}
-        </span>
-      )}
+            Inert, like the labels and the project chip beside it: a single number
+            could open that PR and a count could not, and a chip that is a link on
+            some rows and text on others is worse than one that is never a link.
+            ⌘-click on the row still leaves for the tracker, where they are
+            listed. */}
+        {issue.pullRequests.length > 0 && (
+          <span className={cn(ISSUE_CHIP, "hidden @md:inline-flex")}>
+            <GitPullRequest className="size-3.5" />
+            {issue.pullRequests.length === 1
+              ? `#${issue.pullRequests[0]}`
+              : `${issue.pullRequests.length} PRs`}
+          </span>
+        )}
 
-      {/* Who has it. Unassigned draws nothing rather than a placeholder head:
-          the question is "whose is this", and a row with no answer should read
-          as quiet, not as somebody with no face.
+        {/* What stands in the way and what this holds up, the reason a
+            backlog row is or is not ready to pick up. Linear-only data; a
+            GitHub row carries none and draws neither. */}
+        {/* Outside the label strip, so it never drops before a label does:
+            which cycle work is planned into says when, which a label does not. */}
+        {issue.cycle && <CycleChip cycle={issue.cycle} className="hidden @lg:inline-flex" />}
+        <RelationChip direction="blockedBy" issues={issue.blockedBy} className="hidden @md:inline-flex" />
+        <RelationChip direction="blocking" issues={issue.blocking} className="hidden @md:inline-flex" />
+        <SubIssuesChip subIssues={issue.subIssues} className="hidden @lg:inline-flex" />
+      </span>
+
+      {/* Who has it, and on Linear a dashed face for nobody, the way Linear's
+          own list says it: the column then holds one mark on every row. Not on
+          GitHub, where unassigned is the ordinary case and the face would sit
+          on nearly every row saying nothing.
 
           **And nothing at all under "Assigned to me"**, where the answer is the
           reader on every row — their own face down the edge of a list they
           asked for by name says only what the lit chip above it already does.
           The creator beside it is a different person and stays. */}
-      {!scopedToMe && issue.assignee && (
-        <Avatar
-          src={issue.assignee.avatar}
-          name={issue.assignee.name}
-          className="hidden @lg:flex"
-        />
-      )}
+      {!scopedToMe &&
+        (issue.assignee ? (
+          <Avatar
+            src={issue.assignee.avatar}
+            name={issue.assignee.name}
+            className="hidden @lg:flex"
+          />
+        ) : (
+          issue.tracker === "linear" && <UnassignedAvatar className="hidden @lg:block" />
+        ))}
 
       {/* **When it was filed, not when it last moved.** "Updated" is a fact
           about the conversation rather than about the work, and on a tracker

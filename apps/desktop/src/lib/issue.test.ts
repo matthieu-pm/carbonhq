@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyIssue,
   cutRange,
+  cycleReading,
   insertIssue,
   filterIssues,
   groupIssues,
@@ -166,7 +167,7 @@ const issue = (identifier: string, kind: IssueStateKind): Issue => ({
   project: null,
   createdAt: "2026-08-20T00:00:00Z",
   pullRequests: [],
-  issueType: null,
+  issueType: null, blockedBy: [], blocking: [], subIssues: { done: 0, total: 0 }, cycle: null,
   updatedAt: "2026-08-27T00:00:00Z",
 });
 
@@ -235,5 +236,33 @@ describe("filterIssues", () => {
 
   it("answers nothing rather than everything when nothing matches", () => {
     expect(filterIssues(rows, "zzz")).toEqual([]);
+  });
+});
+
+describe("cycleReading", () => {
+  const day = 86_400_000;
+  const cycle = {
+    number: 2,
+    name: null,
+    startsAt: new Date(10 * day).toISOString(),
+    endsAt: new Date(20 * day).toISOString(),
+    completedAt: null,
+  };
+
+  it("names a cycle by number unless it has a name", () => {
+    expect(cycleReading(cycle, 0).label).toBe("Cycle 2");
+    expect(cycleReading({ ...cycle, name: "Launch" }, 0).label).toBe("Launch");
+  });
+
+  it("reads upcoming, current and completed off the dates", () => {
+    expect(cycleReading(cycle, 5 * day).phase).toBe("Upcoming");
+    expect(cycleReading(cycle, 15 * day).phase).toBe("Current");
+    expect(cycleReading(cycle, 25 * day).phase).toBe("Completed");
+  });
+
+  // Linear can close a cycle early; its completion stamp outranks the dates.
+  it("is completed once Linear closes it, whatever the dates say", () => {
+    const closed = { ...cycle, completedAt: new Date(12 * day).toISOString() };
+    expect(cycleReading(closed, 15 * day).phase).toBe("Completed");
   });
 });

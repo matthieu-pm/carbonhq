@@ -21,7 +21,8 @@ use serde_json::{json, Value};
 use super::{
     optional, pr_numbers, text, Issue, IssueAsset, IssueComment, IssueDetail, IssueFilters,
     IssueGroup, IssueLabel, IssuePerson, IssuePriority, IssueQuery, IssueScope, IssueState,
-    IssueStateKind, IssueTracker, IssueUnavailable, TrackerAccount,
+    IssueCycle, IssueStateKind, IssueTracker, IssueUnavailable, RelatedIssue, SubIssues,
+    TrackerAccount,
 };
 
 const API: &str = "https://api.linear.app/graphql";
@@ -93,6 +94,11 @@ query{viewer{id name organization{name}}}
 
 /// Every field a row draws, and none it doesn't — no description and no
 /// comments, which are [`ISSUE`]'s and cost the better part of the payload.
+///
+/// Relations and sub-issues ride this read because a row draws both. Measured
+/// at 221 complexity points for 100 issues against 13 without them (the cycle
+/// adds one more) — Linear's
+/// budget is 3M an hour per key, so it is cheap where a per-row read would not be.
 const ISSUES: &str = r#"
 query($filter:IssueFilter,$first:Int!){
  issues(filter:$filter,first:$first,orderBy:createdAt){nodes{
@@ -104,6 +110,10 @@ query($filter:IssueFilter,$first:Int!){
   attachments(first:20){nodes{url}}
   team{key}
   project{name}
+  relations(first:20){nodes{type relatedIssue{id identifier title url priority state{id name type color} project{name}}}}
+  inverseRelations(first:20){nodes{type issue{id identifier title url priority state{id name type color} project{name}}}}
+  children(first:50){nodes{state{type}}}
+  cycle{number name startsAt endsAt completedAt}
  }}}
 "#;
 
@@ -124,6 +134,10 @@ query($id:String!){
   attachments(first:20){nodes{url}}
   team{key states(first:50){nodes{id name type color position}}}
   project{name}
+  relations(first:20){nodes{type relatedIssue{id identifier title url priority state{id name type color} project{name}}}}
+  inverseRelations(first:20){nodes{type issue{id identifier title url priority state{id name type color} project{name}}}}
+  children(first:50){nodes{state{type}}}
+  cycle{number name startsAt endsAt completedAt}
   comments(first:50){nodes{body createdAt url user{name avatarUrl}}}
  }}
 "#;
@@ -145,6 +159,10 @@ query($key:String!,$number:Float!){
   attachments(first:20){nodes{url}}
   team{key states(first:50){nodes{id name type color position}}}
   project{name}
+  relations(first:20){nodes{type relatedIssue{id identifier title url priority state{id name type color} project{name}}}}
+  inverseRelations(first:20){nodes{type issue{id identifier title url priority state{id name type color} project{name}}}}
+  children(first:50){nodes{state{type}}}
+  cycle{number name startsAt endsAt completedAt}
   comments(first:50){nodes{body createdAt url user{name avatarUrl}}}
  }}}
 "#;
@@ -626,7 +644,65 @@ fn map_issue(node: &Value) -> Option<Issue> {
         created_at: text(node, "createdAt"),
         pull_requests: pull_requests(node),
         issue_type: None,
+        blocked_by: related(node, "inverseRelations", "issue"),
+        blocking: related(node, "relations", "relatedIssue"),
+        sub_issues: sub_issues(node),
+        cycle: node.get("cycle").and_then(map_cycle),
     })
+}
+
+/// The issue's cycle, or `None` for `null` — an issue in no cycle.
+fn map_cycle(cycle: &Value) -> Option<IssueCycle> {
+    Some(IssueCycle {
+        number: cycle.get("number")?.as_f64()? as u32,
+        name: optional(cycle, "name"),
+        starts_at: text(cycle, "startsAt"),
+        ends_at: text(cycle, "endsAt"),
+        completed_at: optional(cycle, "completedAt"),
+    })
+}
+
+/// The `blocks` relations on one side of an issue, as the issues at their far
+/// end. `relations` are the issue's own (it blocks `relatedIssue`);
+/// `inverseRelations` are other issues' pointing at it (`issue` blocks it).
+/// `related`, `duplicate` and `similar` are other questions and dropped here.
+fn related(node: &Value, field: &str, end: &str) -> Vec<RelatedIssue> {
+    nodes(node, field)
+        .iter()
+        .filter(|relation| text(relation, "type") == "blocks")
+        .filter_map(|relation| {
+            let other = relation.get(end)?;
+            Some(RelatedIssue {
+                tracker: IssueTracker::Linear,
+                id: text(other, "id"),
+                identifier: optional(other, "identifier")?,
+                title: text(other, "title"),
+                url: text(other, "url"),
+                state: map_state(other.get("state")),
+                priority: IssuePriority::from_wire(
+                    other.get("priority").and_then(Value::as_f64).unwrap_or(0.0) as i64,
+                ),
+                project: other.get("project").and_then(|project| optional(project, "name")),
+            })
+        })
+        .collect()
+}
+
+/// Sub-issues counted, finished ones apart. Cancelled counts as finished, the
+/// way Linear's own progress reads it.
+fn sub_issues(node: &Value) -> SubIssues {
+    let children = nodes(node, "children");
+    let done = children
+        .iter()
+        .filter(|child| {
+            let kind = child.get("state").map(|state| text(state, "type")).unwrap_or_default();
+            kind == "completed" || kind == "canceled"
+        })
+        .count();
+    SubIssues {
+        done: done as u32,
+        total: children.len() as u32,
+    }
 }
 
 /// Linked pull requests, by number, out of the issue's attachments.
@@ -820,6 +896,70 @@ mod tests {
                   "user": { "name": "B", "avatarUrl": null } }
             ]}
         })
+    }
+
+    /// Direction is the whole risk here: a `blocks` relation reads one way from
+    /// each end, and swapping `relations` for `inverseRelations` would put every
+    /// blocker under "Blocking" with nothing failing. Relation shape from a live
+    /// read of Linear's API; `related` relations ride the same lists and must drop.
+    #[test]
+    fn blocks_relations_split_by_direction_and_sub_issues_count() {
+        let mut issue = node();
+        let other = |identifier: &str, kind: &str| {
+            json!({
+                "id": format!("uuid-{identifier}"), "identifier": identifier, "title": "t",
+                "url": "u", "priority": 3,
+                "state": { "id": "s", "name": "Backlog", "type": kind, "color": "#bec2c8" },
+                "project": null
+            })
+        };
+        issue["relations"] = json!({ "nodes": [
+            { "type": "blocks", "relatedIssue": other("DRA-60", "backlog") },
+            { "type": "related", "relatedIssue": other("DRA-61", "backlog") }
+        ]});
+        issue["inverseRelations"] = json!({ "nodes": [
+            { "type": "blocks", "issue": other("DRA-40", "started") },
+            { "type": "blocks", "issue": other("DRA-41", "completed") }
+        ]});
+        issue["children"] = json!({ "nodes": [
+            { "state": { "type": "completed" } },
+            { "state": { "type": "canceled" } },
+            { "state": { "type": "started" } }
+        ]});
+
+        let issue = map_issue(&issue).unwrap();
+        let ids = |list: &[RelatedIssue]| list.iter().map(|r| r.identifier.clone()).collect::<Vec<_>>();
+
+        assert_eq!(ids(&issue.blocking), ["DRA-60"]);
+        assert_eq!(ids(&issue.blocked_by), ["DRA-40", "DRA-41"]);
+        assert_eq!(issue.blocked_by[0].project, None);
+        assert_eq!(issue.blocked_by[1].state.kind, IssueStateKind::Completed);
+        assert_eq!(issue.sub_issues, SubIssues { done: 2, total: 3 });
+    }
+
+    /// Cycle shape from a live read: `name` null unless somebody named it,
+    /// `number` a JSON float like every Linear number.
+    #[test]
+    fn a_cycle_reads_by_number_and_null_reads_as_none() {
+        let mut issue = node();
+        issue["cycle"] = json!({
+            "number": 2.0, "name": null, "startsAt": "2026-11-15T23:00:00.000Z",
+            "endsAt": "2026-11-29T23:00:00.000Z", "completedAt": null
+        });
+        let cycle = map_issue(&issue).unwrap().cycle.unwrap();
+        assert_eq!((cycle.number, cycle.name, cycle.completed_at), (2, None, None));
+
+        issue["cycle"] = Value::Null;
+        assert_eq!(map_issue(&issue).unwrap().cycle, None);
+    }
+
+    /// An issue read without the relation fields — an older cache, a narrower
+    /// query — is an issue with none, not a failed row.
+    #[test]
+    fn missing_relations_read_as_none() {
+        let issue = map_issue(&node()).unwrap();
+        assert!(issue.blocked_by.is_empty() && issue.blocking.is_empty());
+        assert_eq!(issue.sub_issues, SubIssues::default());
     }
 
     /// The one thing standing between an attachment list and a PR chip, and it
