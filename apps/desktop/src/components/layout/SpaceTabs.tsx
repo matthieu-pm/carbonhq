@@ -15,6 +15,7 @@ import {
   type SpaceTabsState,
 } from "@/lib/spaceTabs";
 import type { Project } from "@/types/events";
+import { cn } from "@/lib/utils";
 
 const MARK = "size-3.5 shrink-0 text-muted-foreground";
 
@@ -53,7 +54,7 @@ export default function SpaceTabs({ state, projects, active, onClose, alignX = 0
     <div
       ref={drag.list}
       role="tablist"
-      className="tab-strip-motion -mx-1 flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1"
+      className={cn("-mx-1 min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1", active ? "flex" : "hidden")}
       style={{
         marginLeft:
           alignX > 0 ? `max(-0.25rem, calc(${alignX}px - 0.25rem - var(--tabs-lead)))` : "-0.25rem",

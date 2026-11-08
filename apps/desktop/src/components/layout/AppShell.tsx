@@ -86,11 +86,12 @@ export default function AppShell({
   children,
 }: AppShellProps) {
   const [sidebarPlace, setSidebarPlace] = useState(sidebarMode === "peek" ? "peek" : "docked");
-  const [previousSidebarMode, setPreviousSidebarMode] = useState(sidebarMode);
+  const [previousLayout, setPreviousLayout] = useState({ sidebarMode, pageOpen });
   const [sidebarMotion, setSidebarMotion] = useState(false);
-  if (previousSidebarMode !== sidebarMode) {
-    setPreviousSidebarMode(sidebarMode);
-    setSidebarMotion(true);
+  if (previousLayout.sidebarMode !== sidebarMode || previousLayout.pageOpen !== pageOpen) {
+    setPreviousLayout({ sidebarMode, pageOpen });
+    // Spaces replaces the task sidebar; changing pages must not animate it or the tabs.
+    setSidebarMotion(previousLayout.pageOpen === pageOpen);
     if (sidebarMode !== "hidden") setSidebarPlace(sidebarMode);
   }
   const [motionReady, setMotionReady] = useState(false);
@@ -100,7 +101,7 @@ export default function AppShell({
     // A resize must follow the pointer immediately rather than easing after every frame.
     const timer = window.setTimeout(() => setSidebarMotion(false), 220);
     return () => window.clearTimeout(timer);
-  }, [sidebarMode, sidebarMotion]);
+  }, [sidebarMode, pageOpen, sidebarMotion]);
 
   // A card of its own beside the sheet, with the frame showing between. Kept
   // mounted while shut, since the pane hides rather than unmounts.

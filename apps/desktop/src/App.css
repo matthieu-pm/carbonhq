@@ -1448,14 +1448,6 @@ body.session-drag,
 body.session-drag * {
   cursor: grabbing !important;
 }
-.tab-strip-motion {
-  @apply fade-in slide-in-from-left-3;
-  animation: enter 300ms ease-out 150ms backwards;
-}
-@media (prefers-reduced-motion: reduce) {
-  .tab-strip-motion { animation: none; }
-}
-
 /* Width reclaims the docked column; the fixed-width body slides without reflowing its rows. */
 .sidebar-docked {
   display: flex; flex-shrink: 0; min-width: 0; width: 0; overflow: hidden;

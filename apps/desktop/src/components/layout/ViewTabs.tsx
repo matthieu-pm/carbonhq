@@ -120,6 +120,7 @@ type Item = {
 /// width, the rest give way to 100px and past that to an icon — so every tab
 /// stays one click away.
 export default function ViewTabs({
+  active = true,
   sessionId,
   title,
   tab,
@@ -131,6 +132,7 @@ export default function ViewTabs({
   working = false,
   repoTabs = true,
 }: {
+  active?: boolean;
   /// Mid-turn: off Chat, the chat tab's icon says so, since the transcript
   /// that would is not on screen.
   working?: boolean;
@@ -182,7 +184,7 @@ export default function ViewTabs({
     setPendingTab(sessionId, true);
   };
   // From anywhere, whatever else is open: the chord every browser gives it.
-  useHotkey("browser.newTab", newTab);
+  useHotkey("browser.newTab", newTab, { enabled: active });
 
   const present: Item[] = [
     {
@@ -313,6 +315,7 @@ export default function ViewTabs({
   const browserUnlit =
     tab === "browser" && loadedPages !== null && !drag.shown.some((item) => item.active);
   useLayoutEffect(() => {
+    if (!active) return;
     if (!browserUnlit) {
       lastRow.current = {
         keys: drag.shown.map((item) => item.key),
@@ -328,14 +331,14 @@ export default function ViewTabs({
 
   // ⌘1–⌘8 by position and ⌘9 the last, every browser's numbering.
   const pickAt = (i: number) => items[i] && !items[i].locked && items[i].pick();
-  useDigitHotkey("tab.pick", (slot) => pickAt(slot === 8 ? items.length - 1 : slot));
+  useDigitHotkey("tab.pick", (slot) => pickAt(slot === 8 ? items.length - 1 : slot), { enabled: active });
   // ⌘⇧[ and ⌘⇧], wrapping at the ends the way a browser's do.
   const step = (delta: number) => {
     const at = items.findIndex((item) => item.active);
     pickAt((at + delta + items.length) % items.length);
   };
-  useHotkey("tab.prev", () => step(-1));
-  useHotkey("tab.next", () => step(1));
+  useHotkey("tab.prev", () => step(-1), { enabled: active });
+  useHotkey("tab.next", () => step(1), { enabled: active });
 
   // ⌘⇧T, every browser's chord. Puts the tab back and leaves the reader where
   // they are; a page comes back parked in a blank and loads when picked, so
@@ -352,7 +355,7 @@ export default function ViewTabs({
     }
     bump();
   };
-  useHotkey("tab.reopen", reopen);
+  useHotkey("tab.reopen", reopen, { enabled: active });
 
   // Closing the tab on screen moves to the one beside it in this row, as a
   // browser does, rather than to whatever its own kind would pick.
@@ -374,6 +377,7 @@ export default function ViewTabs({
   };
 
   useEffect(() => {
+    if (!active) return;
     closeActive = () => {
       const i = drag.shown.findIndex((item) => item.active && item.close && !item.locked);
       if (i === -1) return false;
@@ -419,7 +423,7 @@ export default function ViewTabs({
     <div
       ref={drag.list}
       role="tablist"
-      className="tab-strip-motion -mx-1 flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1"
+      className={cn("-mx-1 min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1", active ? "flex" : "hidden")}
       style={align}
     >
       {drag.shown.map((item, i) => (

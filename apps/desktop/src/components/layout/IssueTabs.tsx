@@ -11,6 +11,7 @@ import { useDragReorder } from "@/hooks/useDragReorder";
 import { useDigitHotkey, useHotkey } from "@/hooks/useHotkey";
 import type { ShortcutId } from "@/lib/shortcuts";
 import { readIssueTracker } from "@/lib/issueTracker";
+import { cn } from "@/lib/utils";
 import {
   activateIssueTab,
   addListTab,
@@ -29,7 +30,7 @@ const MARK = "size-3.5 shrink-0 text-muted-foreground";
 /// The issues page's titlebar strip: list tabs and issue tabs in one row the
 /// reader arranges, + at the end for another list. Lines up with the sheet the
 /// way the session's view tabs do.
-export default function IssueTabs({ state, alignX = 0 }: { state: IssueTabsState; alignX?: number }) {
+export default function IssueTabs({ state, alignX = 0, visible = true }: { state: IssueTabsState; alignX?: number; visible?: boolean }) {
   const { tabs, active } = state;
   const drag = useDragReorder(
     tabs,
@@ -40,13 +41,13 @@ export default function IssueTabs({ state, alignX = 0 }: { state: IssueTabsState
 
   const pick = (id: string) => editIssueTabs((s) => activateIssueTab(s, id));
   const pickAt = (i: number) => drag.shown[i] && pick(drag.shown[i].id);
-  useDigitHotkey("tab.pick", (slot) => pickAt(slot === 8 ? drag.shown.length - 1 : slot));
+  useDigitHotkey("tab.pick", (slot) => pickAt(slot === 8 ? drag.shown.length - 1 : slot), { enabled: visible });
   const step = (delta: number) => {
     const at = drag.shown.findIndex((tab) => tab.id === active);
     pickAt((at + delta + drag.shown.length) % drag.shown.length);
   };
-  useHotkey("tab.prev", () => step(-1));
-  useHotkey("tab.next", () => step(1));
+  useHotkey("tab.prev", () => step(-1), { enabled: visible });
+  useHotkey("tab.next", () => step(1), { enabled: visible });
 
   // On the reader's latest pick, which every list's switch writes through to.
   const newList = () => editIssueTabs((s) => addListTab(s, newListTabId(), readIssueTracker()));
@@ -56,7 +57,7 @@ export default function IssueTabs({ state, alignX = 0 }: { state: IssueTabsState
     <div
       ref={drag.list}
       role="tablist"
-      className="tab-strip-motion -mx-1 flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1"
+      className={cn("-mx-1 min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1", visible ? "flex" : "hidden")}
       // `ViewTabs`' own sum: start where the sheet does, from `--tabs-lead`.
       style={{
         marginLeft:

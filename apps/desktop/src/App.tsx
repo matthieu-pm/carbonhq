@@ -3234,39 +3234,38 @@ function App() {
               {hiddenParent.title} /
             </button>
           )}
-          {!issuesOpen && !spacesOpen && (
-            <ViewTabs
-              sessionId={browserSessionId}
-              title={viewTitle}
-              repoTabs={!!shownSession}
-              rename={
-                mainGroup || !shownSession
-                  ? undefined
-                  : {
-                      title: shownSession.title,
-                      save: (title) =>
-                        void invoke("rename_session", { sessionId: shownSession.sessionId, title }).catch(
-                          (e) => console.error("rename failed", e),
-                        ),
-                    }
-              }
-              tab={viewTab}
-              onChange={setViewTab}
-              working={busy}
-              branch={prBranch}
-              cwd={shownSession?.cwd}
-              // Not past a parent's breadcrumb, whose width the lead leaves out.
-              alignX={hiddenParent || !sidebarDrawn ? 0 : RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR}
-            />
-          )}
-          {spacesOpen && (
-            <SpaceTabs state={spaceTabs} projects={projects} active={!settingsOpen}
+          {/* Keep each strip's local state across page switches; hidden strips release their shortcuts. */}
+          <ViewTabs
+            active={!issuesOpen && !spacesOpen && !settingsOpen}
+            sessionId={browserSessionId}
+            title={viewTitle}
+            repoTabs={!!shownSession}
+            rename={
+              mainGroup || !shownSession
+                ? undefined
+                : {
+                    title: shownSession.title,
+                    save: (title) =>
+                      void invoke("rename_session", { sessionId: shownSession.sessionId, title }).catch(
+                        (e) => console.error("rename failed", e),
+                      ),
+                  }
+            }
+            tab={viewTab}
+            onChange={setViewTab}
+            working={busy}
+            branch={prBranch}
+            cwd={shownSession?.cwd}
+            // Not past a parent's breadcrumb, whose width the lead leaves out.
+            alignX={hiddenParent || !sidebarDrawn ? 0 : RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR}
+          />
+          {pagesEnabled && (
+            <SpaceTabs state={spaceTabs} projects={projects} active={spacesOpen && !settingsOpen}
               onClose={(id) => spaceTabCloser.current(id)}
               alignX={spacesDrawn ? RAIL_W + spacesDrawn + TABS_PAST_SEPARATOR : 0} />
           )}
-          {issuesOpen && !spacesOpen && (
-            <IssueTabs state={issueTabs} alignX={sidebarDrawn ? RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR : 0} />
-          )}
+          <IssueTabs state={issueTabs} visible={issuesOpen && !spacesOpen && !settingsOpen}
+            alignX={sidebarDrawn ? RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR : 0} />
 
           {spacesOpen ? null : issuesOpen
             ? (
