@@ -3,6 +3,7 @@
 // and form controls, the 12px cut wherever one exists since they draw at 14px.
 // The one micro glyph is the issues page's disclosure triangle, Linear's shape.
 export { ArrowLeftOutline12 } from "./ArrowLeftOutline12";
+export { CaretMaximizeDiagonalOutline12 } from "./CaretMaximizeDiagonalOutline12";
 export { CheckOutline12 } from "./CheckOutline12";
 export { CircleMinusGlyph12 } from "./CircleMinusGlyph12";
 export { CirclePlayOutline12 } from "./CirclePlayOutline12";
@@ -27,3 +28,4 @@ export { TrashOutline12 } from "./TrashOutline12";
 export { XmarkOutline12 } from "./XmarkOutline12";
 export { SlackGlyph32 } from "./SlackGlyph32";
 export { ShapeTriangleFilledGlyph20 } from "./ShapeTriangleFilledGlyph20";
+export { House3Glyph18 } from "./House3Glyph18";

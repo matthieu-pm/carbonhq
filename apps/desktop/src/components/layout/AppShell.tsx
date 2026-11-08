@@ -3,12 +3,25 @@ import type { ReactNode, Ref } from "react";
 import { DROP_ATTR } from "@/lib/dragSession";
 import { cn } from "@/lib/utils";
 import { EMPTY_VIEW } from "@/lib/groups";
+import { RAIL_W } from "@/components/layout/Rail";
 
 type AppShellProps = {
+  /// The always-on navigation column at the window's left edge. Without one
+  /// — the settings page — the sidebar sits on the frame instead of in the
+  /// sheet, the shell's older shape.
+  rail?: ReactNode;
   sidebar: ReactNode;
-  /// The sidebar is drawn. Shut, a strip of the frame still holds the sheet
-  /// off the window's left edge.
-  sidebarOpen?: boolean;
+  /// Where the task sidebar is: `docked` inside the sheet beside the content,
+  /// `peek` floating over it while the rail's Home is hovered, `hidden` gone.
+  sidebarMode?: "docked" | "peek" | "hidden";
+  /// The pointer entering or leaving the floating sidebar, so the peek holds
+  /// while it is over the card and not just over the button that opened it.
+  onPeekHover?: (over: boolean) => void;
+  /// A page that takes the whole sheet, sidebar included — Spaces, which has
+  /// a sidebar of its own. Mounted whenever given; `pageOpen` says whether it
+  /// is what shows.
+  page?: ReactNode;
+  pageOpen?: boolean;
   /// The sheet reaches up behind the header rather than starting under it —
   /// for pages with no tabs to sit in the strip. The header floats over the
   /// sheet's top, and the sheet's contents keep their place below it.
@@ -52,8 +65,12 @@ type AppShellProps = {
 /// the composer sits. Panes below this get height from their parent and never set
 /// their own margins, so there is one place to change the layout.
 export default function AppShell({
+  rail,
   sidebar,
-  sidebarOpen = true,
+  sidebarMode = "docked",
+  onPeekHover,
+  page,
+  pageOpen = false,
   tall = false,
   header,
   footer,
@@ -89,22 +106,10 @@ export default function AppShell({
       {/* Not `overflow-hidden`: the sheet's ring and shadow sit just outside it,
           and the top edge would be cut away. The window clips already. */}
       <div className="flex min-h-0 flex-1">
-        {/* On the titlebar's own fill, so header and sidebar are one frame
-            and the sheet beside them is the only thing raised. */}
-        <div
-          className={cn(
-            "flex shrink-0 bg-surface-frame",
-            !sidebarOpen && "w-2",
-            // The header floats over its top, so it starts below the header.
-            "pt-(--titlebar-h)",
-            // Light rows sat on the bare page and now sit on the frame's
-            // darker fill, so the same veil read as half the mark it was.
-            "not-dark:[--sidebar-accent:color-mix(in_oklab,var(--foreground)_15%,transparent)]",
-            // Keycaps too: their muted veil was tuned against the bare page.
-            "not-dark:[&_[data-slot=kbd]]:bg-foreground/13",
-          )}
-        >
-          {sidebar}
+        {/* On the titlebar's own fill, so header and rail are one frame and
+            the sheet beside them is the only thing raised. */}
+        <div className={cn("flex shrink-0 bg-surface-frame pt-(--titlebar-h)", !rail && sidebarMode !== "docked" && "w-2", !rail && SIDEBAR_TOKENS)}>
+          {rail ?? (sidebarMode === "docked" && sidebar)}
         </div>
         {/* The frame runs on round the sheet's foot and right side too, as
             strips of the same fill: the sheet is glass, so a fill behind it
@@ -114,6 +119,19 @@ export default function AppShell({
           <div className="flex min-h-0 min-w-0 flex-1">
             {panelLeft && panelCard}
             <Sheet className="flex-1" tall={tall}>
+        {page && <div className={cn("flex min-w-0 flex-1", !pageOpen && "hidden")}>{page}</div>}
+        {/* Hidden rather than unmounted under a page, for the settings page's
+            reason: transcripts, scroll pins and drafts wait here, and
+            `display: none` is what takes the browser's native view down. */}
+        <div className={cn("flex min-w-0 flex-1", pageOpen && "hidden")}>
+        {rail && sidebarMode === "docked" && (
+          // Inside the sheet, half the frame's scrim: a strip of the same
+          // card rather than a second card, so list and conversation read as
+          // one place to work with the rail outside it.
+          <div className={cn("flex shrink-0 border-r border-hairline bg-surface-frame/50", SIDEBAR_TOKENS)}>
+            {sidebar}
+          </div>
+        )}
         {/* `min-w-0` is load-bearing: without it a wide code block in the transcript
           sets the flex item's floor and pushes the sidebar off-screen. */}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -152,6 +170,7 @@ export default function AppShell({
             </div>
           )}
         </div>
+        </div>
             </Sheet>
             {!panelLeft && panelCard}
           </div>
@@ -159,9 +178,32 @@ export default function AppShell({
         </div>
         <div className="w-2 shrink-0 bg-surface-frame" />
       </div>
+      {rail && sidebarMode === "peek" && (
+        // Floats over the sheet beside the rail, a menu's frame round the same
+        // list: the float veil wants the blur, or the transcript shows through
+        // between the rows.
+        <div
+          className={cn(
+            "absolute bottom-2 z-40 flex overflow-hidden rounded-xl border border-border bg-popover shadow-lg backdrop-blur-xl",
+            SIDEBAR_TOKENS,
+          )}
+          style={{ left: RAIL_W, top: "var(--titlebar-h)" }}
+          onPointerEnter={() => onPeekHover?.(true)}
+          onPointerLeave={() => onPeekHover?.(false)}
+        >
+          {sidebar}
+        </div>
+      )}
     </div>
   );
 }
+
+/// Light rows were tuned on the bare page and sit on a darker fill here, so
+/// the same veil read as half the mark it was; keycaps likewise.
+const SIDEBAR_TOKENS = cn(
+  "not-dark:[--sidebar-accent:color-mix(in_oklab,var(--foreground)_15%,transparent)]",
+  "not-dark:[&_[data-slot=kbd]]:bg-foreground/13",
+);
 
 /// A raised card on the frame: an 8px-round ring and shadow, its contents
 /// clipped to that radius, and the frame's fill bending round each corner.

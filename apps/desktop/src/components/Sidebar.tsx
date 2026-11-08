@@ -7,9 +7,7 @@ import {
   CheckCheck,
   Circle,
   CircleDashed,
-  CircleDot,
   Ellipsis,
-  FileText,
   GitBranchPlus,
   Unlink,
   Pin,
@@ -105,6 +103,9 @@ type SidebarProps = {
   prFor: (repoPath: string, branch: string | null) => PrMark | undefined;
   selectedSessionId: string | null;
   collapsed: boolean;
+  /// Drawn as the rail's hover card over the content rather than docked
+  /// beside it: claims no width from the other panes and cannot be resized.
+  floating?: boolean;
   onSelect: (sessionId: string) => void;
   /// See `SessionRow`'s own.
   onPrefetch?: (sessionId: string) => void;
@@ -117,15 +118,6 @@ type SidebarProps = {
   /// The reader has made a group at some point, so the drag needs no teaching.
   splitLearned: boolean;
   onNewSession: () => void;
-  /// Opens the issues page in the main column. It is not a session, so it does
-  /// not move the selection — coming back from it lands on the session that was
-  /// open before.
-  onOpenIssues: () => void;
-  onOpenSpaces?: () => void;
-  /// The issues page is the thing on screen, so the row draws as the current
-  /// one. Read here rather than derived from the selection, which the page
-  /// deliberately leaves alone.
-  issuesOpen: boolean;
   /// Saved tasks not yet started, scoped by the caller like `items`. Drawn in
   /// the drafts view alone, grouped under their projects.
   drafts: Draft[];
@@ -772,20 +764,20 @@ export function SidebarToggle({ onToggle }: { onToggle: () => void }) {
 
 /// Opens the settings page.
 ///
-/// In the titlebar beside the space switcher: settings are app-wide, and every
-/// control in the sidebar scopes the list under it.
+/// At the rail's foot beside usage: settings are app-wide, and every control in
+/// the sidebar scopes the list under it.
 export function SettingsButton({ onOpen }: { onOpen: () => void }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           onClick={onOpen}
           aria-label="Settings"
-          className="text-muted-foreground transition-colors hover:text-foreground active:not-aria-[haspopup]:translate-y-0"
+          className="size-9 text-muted-foreground transition-none hover:bg-sidebar-accent/50 hover:text-foreground active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50"
         >
-          <Cog6ToothIcon className="size-4" />
+          <Cog6ToothIcon className="size-4.5" />
         </Button>
       </TooltipTrigger>
       <TooltipContent side="right">
@@ -967,15 +959,13 @@ export default function Sidebar({
   prFor,
   selectedSessionId,
   collapsed,
+  floating = false,
   onSelect,
   onPrefetch,
   groups: splits,
   onDropSession,
   splitLearned,
   onNewSession,
-  onOpenIssues,
-  onOpenSpaces,
-  issuesOpen,
   onSetFlags,
   onFork,
   onDelete,
@@ -1014,7 +1004,7 @@ export default function Sidebar({
     // `null` below with its hooks already run, so publishing on mount alone
     // left the panel taking a sidebar's width off its own cap with no sidebar
     // on screen.
-    pane: collapsed ? undefined : "sidebar",
+    pane: collapsed || floating ? undefined : "sidebar",
   });
 
   const closeSearch = () => {
@@ -1195,7 +1185,7 @@ export default function Sidebar({
       style={style}
       ref={asideRef}
     >
-      {handle}
+      {!floating && handle}
       {/* `px-1.5` on the buttons rather than `size="sm"`'s `px-2.5`, so their
           icons land on the same 12px inset as the toggle above.
 
@@ -1219,28 +1209,6 @@ export default function Sidebar({
           New Task
           <ShortcutKeys ids={["session.new"]} className="ml-auto" />
         </Button>
-
-        {/* Under New Task, because it is the other way a task starts — an
-            issue is a task somebody already wrote down. Drawn whether or not a
-            tracker is connected: the page's own empty state is where connecting
-            is offered, and a row that only appears once you have found the
-            settings page can only be found by people who did not need it. */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onOpenIssues}
-          data-active={issuesOpen || undefined}
-          className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50 data-[active]:bg-sidebar-accent data-[active]:text-sidebar-accent-foreground"
-        >
-          <CircleDot />
-          Issues
-          <ShortcutKeys ids={["issues.open"]} className="ml-auto" />
-        </Button>
-
-        {onOpenSpaces && <Button variant="ghost" size="sm" onClick={onOpenSpaces}
-          className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 dark:hover:bg-sidebar-accent/50">
-          <FileText />Spaces<ShortcutKeys ids={["spaces.open"]} className="ml-auto" />
-        </Button>}
 
         {/* The button *becomes* the field, on the same row at the same height:
             the icon holds its place, the caret lands where the label was, and

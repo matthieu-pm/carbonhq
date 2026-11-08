@@ -584,8 +584,16 @@ function useIssueList(query: IssueQuery, enabled: boolean, generation: number) {
 /// Filters live here rather than in the view so the read and the controls that
 /// change it cannot disagree about what is on screen — the page draws what this
 /// answers and owns none of it.
-export function useIssues(active: boolean, tracker: IssueQuery["tracker"] = "linear") {
-  const [query, setQuery] = useState<IssueQuery>(() => defaultQuery(tracker));
+/// `initial` is a list tab's saved query, taken only where it was saved under
+/// the tracker that is up now.
+export function useIssues(
+  active: boolean,
+  tracker: IssueQuery["tracker"] = "linear",
+  initial: IssueQuery | null = null,
+) {
+  const [query, setQuery] = useState<IssueQuery>(() =>
+    initial && initial.tracker === tracker ? initial : defaultQuery(tracker),
+  );
   const [filters, setFilters] = useState<IssueFilters | null>(null);
 
   // A tracker switch is a different workspace, so both the narrowing and the

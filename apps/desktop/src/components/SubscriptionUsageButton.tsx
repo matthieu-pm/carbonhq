@@ -92,18 +92,18 @@ export default function SubscriptionUsageButton({ onAccounts }: { onAccounts: ()
         <TooltipTrigger asChild>
           <Popover.Trigger asChild>
             <Button
-              variant="ghost" size="icon-sm" aria-label={`Subscription usage: ${summary}`}
-              className={cn("transition-[color,background-color] duration-150 ease-out", shown === null ? "text-muted-foreground" : usageColor(percent))}
+              variant="ghost" size="icon" aria-label={`Subscription usage: ${summary}`}
+              className={cn("size-9 transition-[color,background-color] duration-150 ease-out hover:bg-sidebar-accent/50 active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50", shown === null ? "text-muted-foreground" : usageColor(percent))}
             >
               <UsageRing percent={percent} partial={count > 0 && count < 3} />
             </Button>
           </Popover.Trigger>
         </TooltipTrigger>
-        <TooltipContent side="bottom">{loading && !rows.length ? "Checking subscription usage…" : `Combined • ${shown === null ? "—" : `${shown}%`}`}</TooltipContent>
+        <TooltipContent side="right">{loading && !rows.length ? "Checking subscription usage…" : `Combined • ${shown === null ? "—" : `${shown}%`}`}</TooltipContent>
       </Tooltip>
       <Popover.Portal>
         <Popover.Content
-          align="start" side="bottom" sideOffset={10} collisionPadding={12}
+          align="end" side="right" sideOffset={10} collisionPadding={12}
           aria-labelledby={heading}
           className="z-50 flex max-h-(--radix-popover-content-available-height) w-80 max-w-[calc(100vw-24px)] origin-(--radix-popover-content-transform-origin) flex-col overflow-y-auto rounded-xl border border-border bg-popover text-popover-foreground shadow-md outline-none backdrop-blur-xl"
         >

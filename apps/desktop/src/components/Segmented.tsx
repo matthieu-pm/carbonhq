@@ -84,7 +84,10 @@ export default function Segmented<T extends string>({
             // `relative` alone lifts it over the thumb — no `z-10`, since the
             // thumb is an earlier sibling and both are positioned.
             "relative flex items-center justify-center whitespace-nowrap rounded-full",
-            "px-2 py-1 text-ui transition-colors",
+            // A fixed height, not `py-1`: an icon is shorter than a line of
+            // text, so a pair of glyphs stood 4px lower than a pair of words
+            // and the issues row jumped when GitHub's Open/Closed joined it.
+            "h-[22px] px-2 text-ui transition-colors",
             value === option.value
               ? "text-foreground"
               : "text-muted-foreground hover:text-foreground",

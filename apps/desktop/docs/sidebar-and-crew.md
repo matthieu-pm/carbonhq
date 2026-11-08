@@ -1,3 +1,15 @@
+# The rail
+
+**An always-on column at the window's left edge** ([Rail.tsx](../src/components/layout/Rail.tsx)) — Home, Spaces (only while `pagesEnabled`), Issues, and usage and Settings at the foot. It names *where* you are; the sidebar names *what* is in it. Home is the new task page, so it goes through `goToSession` like every other way into a task. Issues and Spaces left the sidebar for it: each is a page, and a row for one in a list of tasks read as a task.
+
+**The sidebar sits in the sheet, not on the frame.** A strip of the same card at half the frame's scrim, so list and conversation read as one place to work with the rail outside it. ⌘B hides the strip; the rail stays. **Spaces takes the whole sheet, sidebar included** (`AppShell`'s `page`), since it brings a sidebar of its own — the task shell stays mounted and hidden under it, the settings page's bargain. Settings itself still draws its list on the frame: a shell given no `rail` keeps the older shape.
+
+**Hovering Home peeks the sidebar wherever it is not docked** — collapsed, or under Spaces. It floats as a card over the sheet, publishes no width (`floating`), and closes 200ms after the pointer leaves both button and card, so crossing the gap holds it. Home's tooltip is withheld while it peeks, or it lands on the card's first row. Anything that goes to a session closes the peek.
+
+**Back and forward sit before the sidebar toggle** ([NavButtons](../src/components/layout/NavButtons.tsx), rules in [navHistory.ts](../src/lib/navHistory.ts), tested), on ⌘[ and ⌘]. A place is the page and, on the task page alone, the session; Issues and Spaces keep whatever was selected under them, so it is not part of where the reader is. History is recorded off what lands on screen, never at each route in, so no route can forget to; a step marks where it is going so its own arrival is not recorded. A deleted session is stepped over. In memory, 50 deep. `--tabs-lead` counts all three buttons.
+
+**`RAIL_W` comes off the window before any pane bids for width** (`useResizable`), and the crew's fit counts it — the rail is drawn whatever else is open. The titlebar's tabs line up with the conversation's edge, past the sidebar.
+
 # The sidebar
 
 **`session_created` carries an index item, never a `SessionSnapshot`.** The frontend's `agent_event` listener writes into sessions it already holds and *drops* events for ids it doesn't, so a snapshot would start a transcript in memory that later events could miss. An index item leaves the transcript unread until the row is clicked. `session_status` and `session_title` still land, since both write by id into maps the sidebar reads. **The row appears and is deliberately not selected** — the user is mid-conversation in the session that spawned it. The listener sits in a `[]` effect, so it needs `showArchivedRef`.

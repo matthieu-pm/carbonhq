@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { RAIL_W } from "@/components/layout/Rail";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 import { channel } from "@/lib/channel";
 import { paneBounds, snapWidth, takenBy } from "@/lib/resize";
@@ -151,7 +152,8 @@ export function useResizable({
   // CSS drew the pane at its share while the clamp here still answered its own
   // minimum.
   const columnFloor = useChatFloor();
-  const bounds = paneBounds(min, useViewportWidth(), useSeniorPanes(pane), floor ?? columnFloor);
+  // The rail is drawn whatever else is open, so no pane can bid for its width.
+  const bounds = paneBounds(min, useViewportWidth() - RAIL_W, useSeniorPanes(pane), floor ?? columnFloor);
   const clamp = useCallback(
     (raw: number) => snapWidth(raw, bounds.min, bounds.max, initial),
     [bounds.min, bounds.max, initial],

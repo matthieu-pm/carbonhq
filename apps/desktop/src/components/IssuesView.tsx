@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -55,10 +56,12 @@ import { issueErrorText, useIssues } from "@/hooks/useIssues";
 import { GROUPS, groupIssues, shortIdentifier } from "@/lib/issue";
 import {
   readIssueTracker,
+  setIssueTracker,
   subscribeIssueTracker,
   type Connected,
 } from "@/lib/issueTracker";
 import { calendarDay } from "@/lib/format";
+import { listTabLabel } from "@/lib/issueTabs";
 import { cn } from "@/lib/utils";
 import type {
   Issue,
@@ -80,7 +83,6 @@ import type {
 /// **Shifted, where the sidebar's is not.** ⌘F belongs to the sidebar and is
 /// bound app-wide, so a second field claiming it would take the one search that
 /// works from anywhere and make it depend on which view is up.
-const ISSUE_SEARCH_INPUT_ID = "issues-search";
 
 /// Where a personal API key is made. Linked rather than described, because the
 /// path through Linear's own settings is theirs to change and a stale sentence
@@ -161,6 +163,10 @@ export default function IssuesView({
   onPick,
   onWorkOn,
   refreshRef,
+  initialQuery = null,
+  onQueryChange,
+  tracker: tabTracker,
+  onTrackerChange,
 }: {
   /// The page is the thing on screen. Hidden pages do not read, for the reason
   /// the right panel's own `active` exists.
@@ -188,6 +194,14 @@ export default function IssuesView({
   /// chord — it has to pick between this page and the right panel, and only it
   /// knows which one the reader is looking at.
   refreshRef?: MutableRefObject<(() => void) | null>;
+  /// The list tab's saved query, read once on mount.
+  initialQuery?: IssueQuery | null;
+  /// Hands the query and the name it gives the tab up to the tab strip, which
+  /// stores both.
+  onQueryChange?: (query: IssueQuery, label: string) => void;
+  /// The list tab's own tracker. Absent, the page follows the app-wide pick.
+  tracker?: IssueTracker;
+  onTrackerChange?: (tracker: IssueTracker) => void;
 }) {
   // **The pick is honoured, connected or not**, where this used to be resolved
   // against what was actually behind it. The switch below is drawn either way
@@ -196,7 +210,17 @@ export default function IssuesView({
   // neither — and a switch whose press is silently undone is worse than none.
   // What a disconnected pick draws is that tracker's own connect pane, which is
   // where the press was going anyway.
-  const tracker = useSyncExternalStore(subscribeIssueTracker, readIssueTracker);
+  const storedTracker = useSyncExternalStore(subscribeIssueTracker, readIssueTracker);
+  const tracker = tabTracker ?? storedTracker;
+  // The store still moves, so a new tab and the composer's `#` menu open on
+  // the reader's latest pick; other tabs hold their own and do not follow.
+  const pickTracker = (next: IssueTracker) => {
+    onTrackerChange?.(next);
+    setIssueTracker(next);
+  };
+  // One per list: several are mounted at once, one per tab, and a shared id
+  // sent ⌘⇧F and the typing after it to whichever list came first.
+  const searchId = useId();
 
   /// Whether the tracker on screen has nothing behind it. Asked of the *picked*
   /// one alone: what the other half has says nothing about what this list can
@@ -204,7 +228,13 @@ export default function IssuesView({
   const needsConnecting = !connected[tracker];
 
   const { issues, settled, filters, query, setQuery, loading, loaded, unavailable, refresh } =
-    useIssues(active && !needsConnecting, tracker);
+    useIssues(active && !needsConnecting, tracker, initialQuery);
+
+  const reportQuery = useRef(onQueryChange);
+  reportQuery.current = onQueryChange;
+  useEffect(() => {
+    reportQuery.current?.(query, listTabLabel(query, filters));
+  }, [query, filters]);
 
   // Kept current rather than set once: `refresh` is re-made whenever the hook
   // re-runs, and a handle captured at mount would close over a stale one.
@@ -225,7 +255,7 @@ export default function IssuesView({
   // `select` rather than `focus`, so pressing it on a query replaces it.
   useHotkey(
     "issues.search",
-    () => document.querySelector<HTMLInputElement>(`#${ISSUE_SEARCH_INPUT_ID}`)?.select(),
+    () => (document.getElementById(searchId) as HTMLInputElement | null)?.select(),
     { enabled: active && !needsConnecting },
   );
 
@@ -321,8 +351,11 @@ export default function IssuesView({
             anything: everything else there narrows a list nothing is reading.
             Its place is what keeps the two states one page rather than two —
             the switch does not move when a press lands on it. */}
-        <div className="flex shrink-0 items-center px-3 pt-3">
-          <IssueTrackerChips tracker={tracker} />
+        {/* The connected row's height, so the switch holds still across a
+            press between a connected tracker and one that is not: that row
+            holds 28px buttons, this one only the 26px switch. */}
+        <div className="flex min-h-10 shrink-0 items-center px-3 pt-3">
+          <IssueTrackerChips tracker={tracker} onPick={pickTracker} />
         </div>
 
         <Connect
@@ -352,7 +385,7 @@ export default function IssuesView({
             **Always drawn**, the disconnected half included — it is the only
             place the app says a second tracker exists, and pressing it is how
             somebody finds that out. */}
-        <IssueTrackerChips tracker={tracker} className="mr-1" />
+        <IssueTrackerChips tracker={tracker} onPick={pickTracker} className="mr-1" />
 
         {SCOPES[tracker].map((scope) => (
           // Chips rather than a menu, because these are the two questions worth
@@ -469,7 +502,7 @@ export default function IssuesView({
       <div className="group flex h-11 shrink-0 items-center gap-2 px-3">
         <Search className="size-4 shrink-0 text-muted-foreground" />
         <Input
-          id={ISSUE_SEARCH_INPUT_ID}
+          id={searchId}
           value={query.text ?? ""}
           placeholder="Search issues"
           spellCheck={false}

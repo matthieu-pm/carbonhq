@@ -2,7 +2,7 @@ import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 
 import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { CircleDashed, Plus } from "lucide-react";
+import { CircleDashed, ExternalLink, Plus, RefreshCw } from "lucide-react";
 import PrStateIcon from "@/components/PrStateIcon";
 
 import { Button } from "@/components/ui/button";
@@ -32,10 +32,15 @@ const ChangesView = lazy(() => import("@/components/changes/ChangesView"));
 const FilesView = lazy(() => import("@/components/files/FilesView"));
 const DocsPanel = lazy(() => import("@/components/DocsPanel"));
 const SettingsPage = lazy(() => import("@/components/SettingsPage"));
+
+/// How far the titlebar's tabs start past the separator over the sidebar's
+/// edge. Flush, the lit tab's pill was drawn over the line and hid it.
+const TABS_PAST_SEPARATOR = 8;
 const IssuePanel = lazy(() => import("@/components/IssuePanel"));
 const PageMentionPicker = lazy(() => import("@/components/spaces/PageMentionPicker"));
 const SpacesView = lazy(() => import("@/components/spaces/SpacesView"));
 const IssuesView = lazy(() => import("@/components/IssuesView"));
+const IssueTabView = lazy(() => import("@/components/IssueTabView"));
 const PrPanel = lazy(() => import("@/components/PrPanel"));
 const BrowserPane = lazy(() => import("@/components/browser/BrowserPane"));
 import {
@@ -113,6 +118,12 @@ import {
 import ComposerToolbar from "@/components/composer/ComposerToolbar";
 import DictateControl from "@/components/composer/DictateControl";
 import AppShell from "@/components/layout/AppShell";
+import Rail, { RAIL_W } from "@/components/layout/Rail";
+import IssueTabs, { HeaderIconButton } from "@/components/layout/IssueTabs";
+import NavButtons from "@/components/layout/NavButtons";
+import { placeKey, step as stepHistory, visit as visitPlace, type NavHistory, type Place } from "@/lib/navHistory";
+import { closeIssueTab, editIssueTabs, openIssueTab, updateListTab, useIssueTabs } from "@/lib/issueTabs";
+import { CaretMaximizeDiagonalOutline12 } from "@/components/icons/nucleo";
 import { offersFast } from "@/lib/fastMode";
 import { lockedMidTurn } from "@/lib/liveControls";
 import { nextEffort } from "@/components/composer/ModelSelector";
@@ -565,6 +576,16 @@ function App() {
   // session they were in is still there when they do.
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [spacesOpen, setSpacesOpen] = useState(false);
+  // The task sidebar floating over the content while the rail's Home is
+  // hovered, wherever it is not docked. Closed a beat after the pointer leaves
+  // both the button and the card, so crossing the gap between them holds it.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<number | undefined>(undefined);
+  const hoverPeek = (over: boolean) => {
+    window.clearTimeout(peekTimer.current);
+    if (over) setPeek(true);
+    else peekTimer.current = window.setTimeout(() => setPeek(false), 200);
+  };
   const [pagePickerOpen, setPagePickerOpen] = useState(false);
   const [pageRequest, setPageRequest] = useState<{ target: PageTarget; serial: number } | null>(null);
 
@@ -582,7 +603,15 @@ function App() {
   /// links. A *link* rather than an `Issue`, since a tag clicked in a prompt
   /// carries one of those and nothing more, and every field this holds for is
   /// on it.
-  const [pickedIssue, setPickedIssue] = useState<IssueRef | null>(null);
+  // The issues page's tabs. Each list tab keeps its own pane pick, so moving
+  // between lists does not carry one list's open issue onto another.
+  const issueTabs = useIssueTabs();
+  const activeIssueTab = issueTabs.tabs.find((t) => t.id === issueTabs.active) ?? issueTabs.tabs[0];
+  const issueTabRefreshRef = useRef<(() => void) | null>(null);
+  const [pickedByTab, setPickedByTab] = useState<Record<string, IssueRef | null>>({});
+  const setPickedFor = (tabId: string, issue: IssueRef | null) =>
+    setPickedByTab((prev) => ({ ...prev, [tabId]: issue }));
+  const pickedIssue = activeIssueTab.kind === "list" ? (pickedByTab[activeIssueTab.id] ?? null) : null;
 
   const browserSessionId = selectedSessionId ?? newTaskId;
   const savedViewTab = viewTabs[browserSessionId] ?? "chat";
@@ -595,6 +624,13 @@ function App() {
   const pickedIssueRefs = useMemo(() => (pickedIssue ? [pickedIssue] : []), [pickedIssue]);
 
   const pickedIssueData = useSessionIssues(pickedIssueRefs, issuesOpen && !!pickedIssue);
+  /// "Re-read what I am looking at": an issue tab, else the open pane, else
+  /// the list.
+  const refreshIssues = () => {
+    if (activeIssueTab.kind === "issue") return issueTabRefreshRef.current?.();
+    if (pickedIssue) return pickedIssueData.refresh();
+    return issuesRefreshRef.current?.();
+  };
 
   // Owned here rather than by any one surface: the settings row, the issues
   // page's own connect form and the composer's placeholder all read it, and a
@@ -996,12 +1032,13 @@ function App() {
   // That case still starts shown — it fits, it is only drawn somewhere else.
   const crewPanelOpen = !!(crewAnchorId && panelOpens[crewAnchorId]) && !issuesOpen;
   const sidebarW = Math.max(SIDEBAR_MIN, usePaneWidth("sidebar"));
-  // What the sidebar is drawn at, 0 while shut: where the sheet starts.
+  // What the sidebar is drawn at, 0 while shut or floating: past the rail,
+  // where the content column starts.
   const sidebarDrawn = usePaneWidth("sidebar");
   const viewportW = useViewportWidth();
   const crewFits =
     viewportW >=
-    CHAT_MIN + CREW_W + (collapsed ? 0 : sidebarW) + (crewPanelOpen ? PANEL_MIN : 0);
+    RAIL_W + CHAT_MIN + CREW_W + (collapsed ? 0 : sidebarW) + (crewPanelOpen ? PANEL_MIN : 0);
   const crewBeside = crewFits && !(crewPanelOpen && viewportW <= CREW_STACK_WITH_PANEL_W);
   const [crewHiddenBy, setCrewHiddenBy] = useState<Record<string, boolean>>({});
   const crewHidden = !!crewAnchorId && (crewHiddenBy[crewAnchorId] ?? !crewFits);
@@ -2025,8 +2062,11 @@ function App() {
   // page keeps it — the session stays selected and is still there on the way
   // back.
   useEffect(() => {
+    // In a tab of its own, full width: the store answers at the call, where
+    // a pane pick would need the active tab this once-installed closure
+    // cannot see.
     setIssueOpener((issue) => {
-      setPickedIssue(issue);
+      editIssueTabs((s) => openIssueTab(s, issue));
       setIssuesOpen(true);
     });
     return () => setIssueOpener(null);
@@ -2091,6 +2131,7 @@ function App() {
   // back with it — so this is a navigation, not a dismissal. Settings cover the
   // whole window, so they close too.
   const goToSession = (go: () => void) => {
+    setPeek(false);
     setSpacesOpen(false);
     setIssuesOpen(false);
     closeSettings();
@@ -2133,6 +2174,50 @@ function App() {
     resetSession();
     showNewTaskComposer();
   };
+
+  // Back and forward over pages and sessions. Every move is recorded off what
+  // ends up on screen, so no route in has to remember to; a step marks where
+  // it is going so its own arrival is not recorded as a new visit.
+  const place: Place = {
+    page: spacesOpen ? "spaces" : issuesOpen ? "issues" : "tasks",
+    sessionId: selectedSessionId,
+  };
+  const [navHistory, setNavHistory] = useState<NavHistory>(() => ({ stack: [place], index: 0 }));
+  const arrivingRef = useRef<string | null>(null);
+  const hereKey = placeKey(place);
+  useEffect(() => {
+    if (arrivingRef.current === hereKey) {
+      arrivingRef.current = null;
+      return;
+    }
+    arrivingRef.current = null;
+    setNavHistory((h) => visitPlace(h, place));
+  // `place` is rebuilt every render; its key is the whole of what it says.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hereKey]);
+  const placeUsable = (p: Place) =>
+    p.page === "spaces"
+      ? pagesEnabled
+      : p.page !== "tasks" || !p.sessionId || sessionIndexItems.some((i) => i.sessionId === p.sessionId);
+  const goHistory = (delta: -1 | 1) => {
+    const next = stepHistory(navHistory, delta, placeUsable);
+    if (!next) return;
+    const target = next.place;
+    arrivingRef.current = placeKey(target);
+    setNavHistory(next.history);
+    setPeek(false);
+    closeSettings();
+    setSpacesOpen(target.page === "spaces");
+    setIssuesOpen(target.page === "issues");
+    if (target.page !== "tasks" || target.sessionId === selectedSessionId) return;
+    setOpenDraftId(null);
+    if (target.sessionId) void selectAndLeaveCrew(target.sessionId);
+    else handleNewSession();
+  };
+  const canBack = stepHistory(navHistory, -1, placeUsable) !== null;
+  const canForward = stepHistory(navHistory, 1, placeUsable) !== null;
+  useHotkey("nav.back", () => goHistory(-1), { enabled: canBack });
+  useHotkey("nav.forward", () => goHistory(1), { enabled: canForward });
 
   /// The new-task composer, carrying a draft's text and picks.
   const openDraft = (id: string) => {
@@ -2616,9 +2701,11 @@ function App() {
   // `gridShown` both hold `!issuesOpen`, and `panelShown` is the pane the
   // page hides.
   const fileShown = !issuesOpen && viewTab === "files" && !!activeFile;
+  const issueTabClosable = issuesOpen && !spacesOpen && issueTabs.tabs.length > 1;
   const rowTabOnScreen =
     fullBrowserOpen || (!issuesOpen && !!selectedSessionId && (viewTab === "files" || viewTab === "changes"));
   const closeTabOrPane = () => {
+    if (issueTabClosable) return editIssueTabs((s) => closeIssueTab(s, s.active));
     // The row's own close, so the chord lands where the cross would — and
     // reaches the Files and Diff tabs themselves once nothing is open in them.
     if (rowTabOnScreen && closeActiveTab()) return;
@@ -2632,6 +2719,7 @@ function App() {
   // it matches, and a ⌘W that eats the key and does nothing is worse than one
   // the app never had.
   const hasCloseTarget =
+    issueTabClosable ||
     rowTabOnScreen ||
     fileShown ||
     ((fullBrowserOpen || (panelShown && activeTab === "browser")) &&
@@ -2677,10 +2765,7 @@ function App() {
   useHotkey("panel.refresh", () => {
     // "Re-read what I am looking at", the same rule the session case follows:
     // the pane wins where one is open, and the list has it otherwise.
-    if (issuesOpen) {
-      if (pickedIssue) return pickedIssueData.refresh();
-      return issuesRefreshRef.current?.();
-    }
+    if (issuesOpen) return refreshIssues();
     if (browserShown) {
       if (!pendingBrowserTab && browserTabs?.some((tab) => tab.active)) {
         void navigate(browserSessionId, "reload");
@@ -2802,13 +2887,24 @@ function App() {
   // nothing on that page opens the pane either (⌘E closes only there), and a
   // chord that closed it would have to pick somewhere to land, which is the
   // guess `goToSession` exists so nothing has to make.
-  useHotkey("spaces.open", () => {
+  const openSpaces = () => {
+    setPeek(false);
     setPagePickerOpen(false);
     closeSettings();
     setSpacesOpen(true);
     window.dispatchEvent(new Event("spaces-search"));
-  }, { enabled: pagesEnabled });
-  useHotkey("issues.open", () => setIssuesOpen(true));
+  };
+  useHotkey("spaces.open", openSpaces, { enabled: pagesEnabled });
+  // Leaves Spaces too: it covers the sheet, so the page would open behind it.
+  const openIssues = () => {
+    setSpacesOpen(false);
+    closeSettings();
+    setIssuesOpen(true);
+  };
+  useHotkey("issues.open", openIssues);
+  // Docked beside the content unless ⌘B put it away or Spaces, which brings
+  // a sidebar of its own, holds the sheet.
+  const sidebarMode = !collapsed && !spacesOpen ? "docked" : peek ? "peek" : "hidden";
   const fullscreen = useFullscreen();
   useGlass(fullscreen);
 
@@ -2879,10 +2975,35 @@ function App() {
     {/* Hidden, not unmounted, while settings take the window: transcripts,
         scroll pins and drafts wait here. `display: none` is also what takes
         the browser's native view down, its pane measuring zero. */}
-    <div className={cn("h-full w-full", ((settingsOpen && settingsReady) || spacesOpen) && "hidden")}>
+    <div className={cn("h-full w-full", settingsOpen && settingsReady && "hidden")}>
     <AppShell
-      sidebarOpen={!collapsed}
-      tall={issuesOpen}
+      rail={
+        <Rail
+          place={spacesOpen ? "spaces" : issuesOpen ? "issues" : "home"}
+          spaces={pagesEnabled}
+          onHome={() => goToSession(handleNewSession)}
+          onSpaces={openSpaces}
+          onIssues={openIssues}
+          onHomeHover={(over) => sidebarMode !== "docked" && hoverPeek(over)}
+          peeks={sidebarMode !== "docked"}
+          footer={
+            <>
+              <SubscriptionUsageButton onAccounts={() => { setSettingsTab("accounts"); setSettingsOpen(true); }} />
+              <SettingsButton onOpen={() => setSettingsOpen(true)} />
+            </>
+          }
+        />
+      }
+      sidebarMode={sidebarMode}
+      onPeekHover={hoverPeek}
+      page={pagesEnabled && (
+        <MountOnce when={spacesOpen}>
+          <SpacesView active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest}
+            visibleProjects={space ? spaceProjects.map((p) => p.path) : null}
+            onClose={() => setSpacesOpen(false)} />
+        </MountOnce>
+      )}
+      pageOpen={spacesOpen}
       // The issues page fills the column, so the centred empty-composer state
       // is wrong there even with no session selected.
       centered={!shownSession && !issuesOpen && viewTab === "chat"}
@@ -2935,8 +3056,9 @@ function App() {
           // Cleared while the page is up. The column is showing issues, so a
           // lit row would name a session that is nowhere on screen — and the
           // selection itself is kept, which is what makes coming back free.
-          selectedSessionId={issuesOpen ? null : selectedSessionId}
-          collapsed={collapsed}
+          selectedSessionId={issuesOpen || spacesOpen ? null : selectedSessionId}
+          collapsed={sidebarMode === "hidden"}
+          floating={sidebarMode === "peek"}
           // The sidebar is the reader leaving the crew, and it has to say so
           // outright rather than lean on the selection moving. A row already
           // selected — the crew member they are reading — moves nothing, so
@@ -2956,9 +3078,6 @@ function App() {
               handleNewSession();
             })
           }
-          onOpenSpaces={pagesEnabled ? () => setSpacesOpen(true) : undefined}
-          onOpenIssues={() => setIssuesOpen(true)}
-          issuesOpen={issuesOpen}
           drafts={sidebarDrafts}
           openDraftId={issuesOpen ? null : openDraftId}
           onOpenDraft={openDraft}
@@ -3007,9 +3126,10 @@ function App() {
             // the sheet is what gives this row its colour.
             "relative flex h-(--titlebar-h) shrink-0 items-center gap-2 overflow-hidden px-3",
             !fullscreen && "pl-(--traffic-lights-w)",
-            // What sits before the tab row: this padding, the 28px sidebar
-            // toggle and one gap. `ViewTabs` lines its row up from it.
-            fullscreen ? "[--tabs-lead:3rem]" : "[--tabs-lead:calc(var(--traffic-lights-w)+2.25rem)]",
+            // What sits before the tab row: this padding, back, forward and
+            // the sidebar toggle at 28px, a gap after each. `ViewTabs` lines
+            // its row up from it.
+            fullscreen ? "[--tabs-lead:7.5rem]" : "[--tabs-lead:calc(var(--traffic-lights-w)+6.75rem)]",
           )}
           // `deep`, not bare: bare drags only on direct hits, so every label
           // inside this row was a dead strip in a titlebar that looks uniform.
@@ -3019,20 +3139,24 @@ function App() {
         >
           {/* Always here, open or shut: the sidebar sits under this row now,
               so the toggle no longer has a strip of its own to live in. */}
+          <NavButtons
+            canBack={canBack}
+            canForward={canForward}
+            onBack={() => goHistory(-1)}
+            onForward={() => goHistory(1)}
+          />
           <SidebarToggle onToggle={toggleSidebar} />
 
           {/* Over the sidebar's right end, out of the flow so the tabs do not
               move. It belongs to the sidebar, so it goes when the sidebar does —
               and on a hidden session, whose way back to its parent runs
-              through this same strip. ⌘, still opens settings there. */}
-          {sidebarDrawn > 0 && !(!issuesOpen && shownSession && hiddenParent) && (
-          <div
-            className="absolute top-1/2 flex shrink-0 -translate-y-1/2 items-center gap-1"
-            style={{ right: `calc(100% - ${sidebarDrawn}px + 0.5rem)` }}
-          >
-            {/* Only once a space exists — before that the switcher has nothing
-                to switch, and New space lives in Settings. */}
-            {spaces.length > 0 && (
+              through this same strip. Only once a space exists: before that
+              it has nothing to switch, and New space lives in Settings. */}
+          {sidebarDrawn > 0 && spaces.length > 0 && !(!issuesOpen && shownSession && hiddenParent) && (
+            <div
+              className="absolute top-1/2 flex shrink-0 -translate-y-1/2 items-center gap-1"
+              style={{ right: `calc(100% - ${RAIL_W + sidebarDrawn}px + 0.5rem)` }}
+            >
               <SpaceSwitcher
                 spaces={spaces}
                 value={space}
@@ -3042,15 +3166,26 @@ function App() {
                 onChange={changeSpace}
                 onNew={openNewSpace}
               />
-            )}
-            <SubscriptionUsageButton onAccounts={() => { setSettingsTab("accounts"); setSettingsOpen(true); }} />
-            <SettingsButton onOpen={() => setSettingsOpen(true)} />
-          </div>
+            </div>
           )}
+
+          {/* Divides the buttons from the tabs. Over the sidebar's edge it
+              continues the strip's border up through the titlebar; with no
+              sidebar, or a breadcrumb taking the tabs' place, it sits in the
+              row before them. */}
+          {!spacesOpen && (sidebarDrawn > 0 && !(!issuesOpen && shownSession && hiddenParent) ? (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-1/2 h-4 w-px -translate-y-1/2 bg-hairline"
+              style={{ left: RAIL_W + sidebarDrawn }}
+            />
+          ) : (
+            <span aria-hidden className="h-4 w-px shrink-0 bg-hairline" />
+          ))}
 
           {/* A hidden session has no sidebar row, so this is the way back to
               the crew it sits in. */}
-          {!issuesOpen && shownSession && hiddenParent && (
+          {!issuesOpen && !spacesOpen && shownSession && hiddenParent && (
             <button
               type="button"
               onClick={() =>
@@ -3061,7 +3196,7 @@ function App() {
               {hiddenParent.title} /
             </button>
           )}
-          {!issuesOpen && (
+          {!issuesOpen && !spacesOpen && (
             <ViewTabs
               sessionId={browserSessionId}
               title={viewTitle}
@@ -3083,19 +3218,37 @@ function App() {
               branch={prBranch}
               cwd={shownSession?.cwd}
               // Not past a parent's breadcrumb, whose width the lead leaves out.
-              alignX={hiddenParent ? 0 : sidebarDrawn}
+              alignX={hiddenParent || !sidebarDrawn ? 0 : RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR}
             />
           )}
-          {/* Issues has no title-bar tabs to take up the remaining width. */}
-          {issuesOpen && <div className="min-w-0 flex-1" />}
+          {spacesOpen && <div className="min-w-0 flex-1" />}
+          {issuesOpen && !spacesOpen && (
+            <IssueTabs state={issueTabs} alignX={sidebarDrawn ? RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR : 0} />
+          )}
 
-
-          {issuesOpen
-            ? // Only once something is open to close. Nothing on this page can
-              // *open* the pane — a row does that — so a toggle drawn at rest
-              // would be a control with one dead state.
-              pickedIssue && (
-                <PanelToggle onToggle={() => setPickedIssue(null)} />
+          {spacesOpen ? null : issuesOpen
+            ? (
+                <>
+                  <HeaderIconButton
+                    label="Refresh"
+                    shortcut="panel.refresh"
+                    onClick={refreshIssues}
+                  >
+                    <RefreshCw className="size-3.5" />
+                  </HeaderIconButton>
+                  {activeIssueTab.kind === "issue" && (
+                    <HeaderIconButton
+                      label={`Open in ${activeIssueTab.ref.tracker === "github" ? "GitHub" : "Linear"}`}
+                      onClick={() => void openUrl(activeIssueTab.ref.url)}
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </HeaderIconButton>
+                  )}
+                  {/* Only once something is open to close. Nothing on this page
+                      can *open* the pane — a row does that — so a toggle drawn
+                      at rest would be a control with one dead state. */}
+                  {pickedIssue && <PanelToggle onToggle={() => setPickedFor(activeIssueTab.id, null)} />}
+                </>
               )
             : shownSession ? (
                 <>
@@ -3162,10 +3315,25 @@ function App() {
             // whole subject — the same slot Open takes for a session.
             actions={
               pickedIssue && (
-                <Button variant="secondary" size="xs" onClick={() => workOnIssue(pickedIssue)}>
-                  Work on it
-                  <Plus data-icon="inline-end" />
-                </Button>
+                <>
+                  <Button variant="secondary" size="xs" onClick={() => workOnIssue(pickedIssue)}>
+                    Work on it
+                    <Plus data-icon="inline-end" />
+                  </Button>
+                  {/* Moves the issue out of the pane into a tab of its own,
+                      so the pane closes behind it. */}
+                  <HeaderIconButton
+                    label="Open full view"
+                    size="icon-xs"
+                    onClick={() => {
+                      const issue = pickedIssue;
+                      setPickedFor(activeIssueTab.id, null);
+                      editIssueTabs((s) => openIssueTab(s, issue));
+                    }}
+                  >
+                    <CaretMaximizeDiagonalOutline12 className="size-3" />
+                  </HeaderIconButton>
+                </>
               )
             }
           >
@@ -3455,18 +3623,43 @@ function App() {
           back, which is the trip this page exists to make. */}
       <TabBody active={issuesOpen}>
         <MountOnce when={issuesOpen}>
-        <IssuesView
-          active={issuesOpen}
-          picked={pickedIssue}
-          onPick={setPickedIssue}
-          onWorkOn={workOnIssue}
-          refreshRef={issuesRefreshRef}
-          connected={integrations.connected}
-          onConnect={integrations.connect}
-          connecting={integrations.busy}
-          connectError={integrations.error}
-          onRecheckGithub={integrations.recheckGithub}
-        />
+        {/* Every tab stays mounted and hides, so each list keeps its query
+            and scroll and each issue its place. */}
+        {issueTabs.tabs.map((tab) => {
+          const shown = tab.id === issueTabs.active;
+          return (
+            <div key={tab.id} className={cn("min-h-0 min-w-0 flex-1 flex-col", shown ? "flex" : "hidden")}>
+              {tab.kind === "list" ? (
+                <IssuesView
+                  active={issuesOpen && shown}
+                  picked={pickedByTab[tab.id] ?? null}
+                  onPick={(issue) => setPickedFor(tab.id, issue)}
+                  onWorkOn={workOnIssue}
+                  // The shown list alone answers ⌘R and the toolbar's Refresh.
+                  refreshRef={shown ? issuesRefreshRef : undefined}
+                  initialQuery={tab.query}
+                  tracker={tab.tracker}
+                  onTrackerChange={(tracker) => editIssueTabs((s) => updateListTab(s, tab.id, { tracker }))}
+                  onQueryChange={(query, label) =>
+                    editIssueTabs((s) => updateListTab(s, tab.id, { query, label }))
+                  }
+                  connected={integrations.connected}
+                  onConnect={integrations.connect}
+                  connecting={integrations.busy}
+                  connectError={integrations.error}
+                  onRecheckGithub={integrations.recheckGithub}
+                />
+              ) : (
+                <IssueTabView
+                  issue={tab.ref}
+                  active={issuesOpen && shown}
+                  refreshRef={issueTabRefreshRef}
+                  onWorkOn={workOnIssue}
+                />
+              )}
+            </div>
+          );
+        })}
         </MountOnce>
       </TabBody>
 
@@ -3610,11 +3803,6 @@ function App() {
         onView={() => closeWhatsNew(true)}
       />
     )}
-    {pagesEnabled && <MountOnce when={spacesOpen}>
-      <SpacesView active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest}
-        visibleProjects={space ? spaceProjects.map((p) => p.path) : null}
-        onClose={() => setSpacesOpen(false)} onSettings={() => setSettingsOpen(true)} />
-    </MountOnce>}
     {pagesEnabled && <MountOnce when={pagePickerOpen}>
       <PageMentionPicker contextKey={`${composerKey ?? "new"}:${activeServer}`} open={pagePickerOpen} onOpenChange={setPagePickerOpen}
         visibleProjects={space ? spaceProjects.map((p) => p.path) : null} onSelect={referencePage} />

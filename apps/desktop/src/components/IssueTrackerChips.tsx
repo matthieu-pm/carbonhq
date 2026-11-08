@@ -37,16 +37,20 @@ const OPTIONS = [
 /// pair.
 export default function IssueTrackerChips({
   tracker,
+  onPick = setIssueTracker,
   className,
 }: {
   tracker: IssueTracker;
+  /// The issues page's list tabs each hold their own pick; the store is the
+  /// default for everything else.
+  onPick?: (tracker: IssueTracker) => void;
   className?: string;
 }) {
   return (
     <Segmented
       value={tracker}
       options={OPTIONS}
-      onPick={setIssueTracker}
+      onPick={onPick}
       label="Tracker"
       className={className}
     />

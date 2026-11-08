@@ -1,6 +1,6 @@
 # Spaces and Markdown Pages
 
-Spaces is the document workspace on Cmd+P. Pages are Markdown documents. Profiles is the previous Spaces feature; its serialized project field and local storage keys keep their old spellings so no migration can lose grouping settings.
+Spaces is the document workspace on Cmd+P, opened from the rail. It fills the shell's sheet, its own sidebar included, beside the shared rail. Pages are Markdown documents. Profiles is the previous Spaces feature; its serialized project field and local storage keys keep their old spellings so no migration can lose grouping settings.
 
 ## Feature flag
 

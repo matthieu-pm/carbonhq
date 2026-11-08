@@ -1,8 +1,7 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronDown, Clock3, Columns3, FileText, Folder, Home, LayoutGrid, List, Loader2, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Clock3, Columns3, FileText, Folder, LayoutGrid, List, Loader2, Plus, Search, Star, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import ShortcutKeys from "@/components/ShortcutKeys";
 import PageDocument from "./PageDocument";
 import PageSnapshot from "./PageSnapshot";
@@ -25,14 +24,14 @@ const FILTERS = [
   { id: "recent", label: "Recent", Icon: Clock3 },
 ] as const;
 
-/// Spaces owns document navigation while the session shell keeps its place underneath.
-export default function SpacesView({ active, projects, visibleProjects, request, onClose, onSettings }: {
+/// Spaces fills the shell's sheet beside the rail, its own sidebar included,
+/// while the task shell keeps its place hidden underneath.
+export default function SpacesView({ active, projects, visibleProjects, request, onClose }: {
   active: boolean;
   projects: Project[];
   visibleProjects: string[] | null;
   request?: { target: PageTarget; serial: number } | null;
   onClose: () => void;
-  onSettings: () => void;
 }) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
@@ -147,14 +146,7 @@ export default function SpacesView({ active, projects, visibleProjects, request,
   useHotkey("tab.close", () => target ? back() : onClose(), { enabled: active, page: true });
 
   return <div className={cn("spaces-workspace", !active && "hidden")}>
-    <div className="spaces-titlebar" data-tauri-drag-region="deep"><span>Spaces</span></div>
     <div className="spaces-body">
-      <nav className="spaces-rail" aria-label="Workspace navigation">
-        <RailButton label="Back to tasks" Icon={Home} onClick={() => { if (leave()) onClose(); }} />
-        <RailButton label="Spaces" Icon={FileText} selected onClick={() => chooseFilter("all")} />
-        <div className="flex-1" />
-        <RailButton label="Settings" Icon={Settings2} onClick={onSettings} />
-      </nav>
       <aside className="spaces-sidebar">
         <div className="mb-5 flex items-center justify-between px-2"><h1 className="text-base font-semibold">Spaces</h1><ShortcutKeys ids={["spaces.open"]} /></div>
         <button className="spaces-nav mb-3" onClick={() => void create()} disabled={creating}><Plus />Create</button>
@@ -198,6 +190,3 @@ export default function SpacesView({ active, projects, visibleProjects, request,
   </div>;
 }
 
-function RailButton({ label, Icon, selected, onClick }: { label: string; Icon: typeof Home; selected?: boolean; onClick: () => void }) {
-  return <Tooltip><TooltipTrigger asChild><button className="spaces-rail-button" aria-label={label} aria-current={selected ? "page" : undefined} onClick={onClick}><Icon /></button></TooltipTrigger><TooltipContent side="right">{label}</TooltipContent></Tooltip>;
-}

@@ -1,6 +1,6 @@
 # Subscription usage
 
-The circle beside Settings shows remaining subscription allowance across Codex,
+The circle above Settings, at the rail's foot, shows remaining subscription allowance across Codex,
 Claude Code and Grok. It drains clockwise from a full ring to an empty one, with
 the diamond from the design reference in its centre. Clicking it opens the usage
 card. This is account usage on the local machine, independent of the selected
