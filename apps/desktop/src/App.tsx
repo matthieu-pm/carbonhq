@@ -2,7 +2,7 @@ import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 
 import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { CircleDashed, ExternalLink, Plus, RefreshCw } from "lucide-react";
+import { CircleDashed, ExternalLink, Plus } from "lucide-react";
 import PrStateIcon from "@/components/PrStateIcon";
 
 import { Button } from "@/components/ui/button";
@@ -3229,13 +3229,6 @@ function App() {
           {spacesOpen ? null : issuesOpen
             ? (
                 <>
-                  <HeaderIconButton
-                    label="Refresh"
-                    shortcut="panel.refresh"
-                    onClick={refreshIssues}
-                  >
-                    <RefreshCw className="size-3.5" />
-                  </HeaderIconButton>
                   {activeIssueTab.kind === "issue" && (
                     <HeaderIconButton
                       label={`Open in ${activeIssueTab.ref.tracker === "github" ? "GitHub" : "Linear"}`}

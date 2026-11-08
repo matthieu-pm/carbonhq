@@ -1136,7 +1136,8 @@
        against the window edge. `trafficLightPosition.y` in tauri.conf.json (and the
        dev conf, whose window list replaces it whole) is
        half of this plus 2 (the lights are 14pt, laid 9pt up from the inset's
-       floor), so the two move together or the lights leave the row's centre. */
+       floor), so the two move together or the lights leave the row's centre.
+       Its `x` is 13, the same inset the lights get from the top. */
     --titlebar-h: 40px;
     /* Horizontal clearance for those same lights, needed only when a pane
        reaches the window's left edge — i.e. with the sidebar collapsed. */
