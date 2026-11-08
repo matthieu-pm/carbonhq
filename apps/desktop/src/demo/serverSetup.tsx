@@ -12,7 +12,10 @@ import React, { useState, useSyncExternalStore } from "react";
 import ReactDOM from "react-dom/client";
 
 import AttachProjectDialog from "@/components/composer/AttachProjectDialog";
-import SettingsPage from "@/components/SettingsPage";
+import SettingsPage, { type SettingsTab } from "@/components/SettingsPage";
+import { SettingsButton } from "@/components/Sidebar";
+import Rail from "@/components/layout/Rail";
+import NavButtons from "@/components/layout/NavButtons";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import DemoThemeBar from "@/demo/ThemeBar";
 import { useIntegrations } from "@/hooks/useIntegrations";
@@ -866,6 +869,7 @@ function useFailNext(): boolean {
 
 function Demo() {
   const [picked, setPicked] = useState<{ scenario: Scenario; run: number }>({ scenario: SCENARIOS[0], run: 0 });
+  const [tab, setTab] = useState<SettingsTab>(SCENARIOS[0].tab);
   const fail = useFailNext();
   const integrations = useIntegrations(false);
   // Remembered across reloads, since every edit reloads the page.
@@ -876,6 +880,7 @@ function Demo() {
   };
   const pick = (scenario: Scenario) => {
     start(scenario);
+    setTab(scenario.tab);
     setPicked((prev) => ({ scenario, run: prev.run + 1 }));
   };
 
@@ -940,7 +945,12 @@ function Demo() {
             key={picked.run}
             open
             onClose={() => {}}
-            initialTab={picked.scenario.tab}
+            tab={tab}
+            onTabChange={setTab}
+            fullscreen
+            rail={<Rail place="settings" spaces={false} onHome={() => {}} onSpaces={() => {}} onIssues={() => {}}
+              onHomeHover={() => {}} peeks={false} footer={<SettingsButton current onOpen={() => {}} />} />}
+            navigation={<NavButtons canBack={false} canForward={false} onBack={() => {}} onForward={() => {}} />}
             projects={[]}
             spaces={[]}
             onSetProjectSpace={() => {}}

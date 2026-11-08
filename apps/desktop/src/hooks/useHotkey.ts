@@ -44,7 +44,11 @@ type HotkeyOptions = {
 /// a whole, where everything else acts on a session, a view or the composer.
 const APP_WIDE: ReadonlySet<ShortcutId> = new Set([
   "settings",
+  "session.new",
   "spaces.open",
+  "issues.open",
+  "nav.back",
+  "nav.forward",
   "theme.next",
   "mode.toggle",
   "panel.side",

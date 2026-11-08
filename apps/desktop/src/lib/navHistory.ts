@@ -1,7 +1,10 @@
 /// Back and forward over where the reader has been: the new task page, a
-/// session, Issues, Spaces. A browser's history, minus the URL.
+/// session, Issues, Spaces and Settings. A browser's history, minus the URL.
 
-export type Place = { page: "tasks" | "issues" | "spaces"; sessionId: string | null };
+import type { SettingsTab } from "@/components/SettingsPage";
+
+type PagePlace = { page: "tasks" | "issues" | "spaces"; sessionId: string | null };
+export type Place = PagePlace | { page: "settings"; tab: SettingsTab; returnTo: PagePlace };
 
 export type NavHistory = { stack: Place[]; index: number };
 
@@ -11,7 +14,8 @@ const DEPTH = 50;
 /// What makes two places one. Issues and Spaces keep whichever session was
 /// selected under them, so it says nothing about where the reader is.
 export const placeKey = (place: Place) =>
-  place.page === "tasks" ? `tasks:${place.sessionId ?? ""}` : place.page;
+  place.page === "settings" ? `settings:${place.tab}`
+    : place.page === "tasks" ? `tasks:${place.sessionId ?? ""}` : place.page;
 
 /// Arriving somewhere new drops whatever was ahead, as a browser does.
 export function visit(history: NavHistory, place: Place): NavHistory {

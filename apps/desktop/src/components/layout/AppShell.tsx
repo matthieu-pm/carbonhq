@@ -6,10 +6,8 @@ import { EMPTY_VIEW } from "@/lib/groups";
 import { RAIL_W } from "@/components/layout/Rail";
 
 type AppShellProps = {
-  /// The always-on navigation column at the window's left edge. Without one
-  /// — the settings page — the sidebar sits on the frame instead of in the
-  /// sheet, the shell's older shape.
-  rail?: ReactNode;
+  /// The always-on navigation column at the window's left edge.
+  rail: ReactNode;
   sidebar: ReactNode;
   /// Where the task sidebar is: `docked` inside the sheet beside the content,
   /// `peek` floating over it while the rail's Home is hovered, `hidden` gone.
@@ -108,8 +106,8 @@ export default function AppShell({
       <div className="flex min-h-0 flex-1">
         {/* On the titlebar's own fill, so header and rail are one frame and
             the sheet beside them is the only thing raised. */}
-        <div className={cn("flex shrink-0 bg-surface-frame pt-(--titlebar-h)", !rail && sidebarMode !== "docked" && "w-2", !rail && SIDEBAR_TOKENS)}>
-          {rail ?? (sidebarMode === "docked" && sidebar)}
+        <div className="flex shrink-0 bg-surface-frame pt-(--titlebar-h)">
+          {rail}
         </div>
         {/* The frame runs on round the sheet's foot and right side too, as
             strips of the same fill: the sheet is glass, so a fill behind it
@@ -124,7 +122,7 @@ export default function AppShell({
             reason: transcripts, scroll pins and drafts wait here, and
             `display: none` is what takes the browser's native view down. */}
         <div className={cn("flex min-w-0 flex-1", pageOpen && "hidden")}>
-        {rail && sidebarMode === "docked" && (
+        {sidebarMode === "docked" && (
           // Inside the sheet, half the frame's scrim: a strip of the same
           // card rather than a second card, so list and conversation read as
           // one place to work with the rail outside it.
@@ -178,7 +176,7 @@ export default function AppShell({
         </div>
         <div className="w-2 shrink-0 bg-surface-frame" />
       </div>
-      {rail && sidebarMode === "peek" && (
+      {sidebarMode === "peek" && (
         // Floats over the sheet beside the rail, a menu's frame round the same
         // list: the float veil wants the blur, or the transcript shows through
         // between the rows.

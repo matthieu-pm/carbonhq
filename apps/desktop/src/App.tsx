@@ -121,6 +121,7 @@ import AppShell from "@/components/layout/AppShell";
 import Rail, { RAIL_W } from "@/components/layout/Rail";
 import IssueTabs, { HeaderIconButton } from "@/components/layout/IssueTabs";
 import NavButtons from "@/components/layout/NavButtons";
+import WindowToolbar from "@/components/layout/WindowToolbar";
 import { placeKey, step as stepHistory, visit as visitPlace, type NavHistory, type Place } from "@/lib/navHistory";
 import { closeIssueTab, editIssueTabs, openIssueTab, updateListTab, useIssueTabs } from "@/lib/issueTabs";
 import { CaretMaximizeDiagonalOutline12 } from "@/components/icons/nucleo";
@@ -662,9 +663,8 @@ function App() {
     const id = setTimeout(warm, 2000);
     return () => clearTimeout(id);
   }, []);
-  // Which tab the *next* open lands on. Reset to Appearance as settings close,
-  // so a mic press that sent the reader to Transcription does not leave every
-  // later ⌘, opening there too.
+  // The visible section also belongs to history. Closing resets the next
+  // open to Appearance; Back and Forward restore their own section instead.
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("appearance");
   // Whether that open should land with the new-space field already up. Same
   // reset as the tab, and for the same reason: it describes the way in, not the
@@ -2178,10 +2178,11 @@ function App() {
   // Back and forward over pages and sessions. Every move is recorded off what
   // ends up on screen, so no route in has to remember to; a step marks where
   // it is going so its own arrival is not recorded as a new visit.
-  const place: Place = {
+  const pagePlace = {
     page: spacesOpen ? "spaces" : issuesOpen ? "issues" : "tasks",
     sessionId: selectedSessionId,
-  };
+  } as const;
+  const place: Place = settingsOpen ? { page: "settings", tab: settingsTab, returnTo: pagePlace } : pagePlace;
   const [navHistory, setNavHistory] = useState<NavHistory>(() => ({ stack: [place], index: 0 }));
   const arrivingRef = useRef<string | null>(null);
   const hereKey = placeKey(place);
@@ -2206,12 +2207,17 @@ function App() {
     arrivingRef.current = placeKey(target);
     setNavHistory(next.history);
     setPeek(false);
-    closeSettings();
-    setSpacesOpen(target.page === "spaces");
-    setIssuesOpen(target.page === "issues");
-    if (target.page !== "tasks" || target.sessionId === selectedSessionId) return;
+    if (target.page === "settings") {
+      setSettingsTab(target.tab);
+      setSettingsOpen(true);
+      setNamingSpace(false);
+    } else closeSettings();
+    const page = target.page === "settings" ? target.returnTo : target;
+    setSpacesOpen(page.page === "spaces");
+    setIssuesOpen(page.page === "issues");
+    if (page.page !== "tasks" || page.sessionId === selectedSessionId) return;
     setOpenDraftId(null);
-    if (target.sessionId) void selectAndLeaveCrew(target.sessionId);
+    if (page.sessionId) void selectAndLeaveCrew(page.sessionId);
     else handleNewSession();
   };
   const canBack = stepHistory(navHistory, -1, placeUsable) !== null;
@@ -2969,6 +2975,32 @@ function App() {
     />
   );
 
+  const navigation = (
+    <NavButtons
+      canBack={canBack}
+      canForward={canForward}
+      onBack={() => goHistory(-1)}
+      onForward={() => goHistory(1)}
+    />
+  );
+  const rail = (
+    <Rail
+      place={settingsOpen ? "settings" : spacesOpen ? "spaces" : issuesOpen ? "issues" : "home"}
+      spaces={pagesEnabled}
+      onHome={() => goToSession(handleNewSession)}
+      onSpaces={openSpaces}
+      onIssues={openIssues}
+      onHomeHover={(over) => !settingsOpen && sidebarMode !== "docked" && hoverPeek(over)}
+      peeks={!settingsOpen && sidebarMode !== "docked"}
+      footer={
+        <>
+          <SubscriptionUsageButton onAccounts={() => { setSettingsTab("accounts"); setSettingsOpen(true); }} />
+          <SettingsButton current={settingsOpen} onOpen={() => setSettingsOpen(true)} />
+        </>
+      }
+    />
+  );
+
   return (
     <TooltipProvider>
     <DiffWorkerPool pair={codeThemePair}>
@@ -2977,23 +3009,7 @@ function App() {
         the browser's native view down, its pane measuring zero. */}
     <div className={cn("h-full w-full", settingsOpen && settingsReady && "hidden")}>
     <AppShell
-      rail={
-        <Rail
-          place={spacesOpen ? "spaces" : issuesOpen ? "issues" : "home"}
-          spaces={pagesEnabled}
-          onHome={() => goToSession(handleNewSession)}
-          onSpaces={openSpaces}
-          onIssues={openIssues}
-          onHomeHover={(over) => sidebarMode !== "docked" && hoverPeek(over)}
-          peeks={sidebarMode !== "docked"}
-          footer={
-            <>
-              <SubscriptionUsageButton onAccounts={() => { setSettingsTab("accounts"); setSettingsOpen(true); }} />
-              <SettingsButton onOpen={() => setSettingsOpen(true)} />
-            </>
-          }
-        />
-      }
+      rail={rail}
       sidebarMode={sidebarMode}
       onPeekHover={hoverPeek}
       page={pagesEnabled && (
@@ -3111,40 +3127,10 @@ function App() {
         />
       }
       header={
-        <header
-          // `overflow-hidden` is the containment: whatever runs out of room in
-          // here must clip at the column's edge, never spill over the pane
-          // beside it. Every child below decides how it gives up width; this
-          // decides that it has to.
-          //
-          // It spans the window, sidebar and panes below it, so it is the row
-          // that clears the traffic lights — fullscreen has none. A step darker
-          // than the window, so the active tab can stand out of it the way a
-          // browser's does.
-          className={cn(
-            // No fill of its own: it floats over the frame, whose strip above
-            // the sheet is what gives this row its colour.
-            "relative flex h-(--titlebar-h) shrink-0 items-center gap-2 overflow-hidden px-3",
-            !fullscreen && "pl-(--traffic-lights-w)",
-            // What sits before the tab row: this padding, back, forward and
-            // the sidebar toggle at 28px, a gap after each. `ViewTabs` lines
-            // its row up from it.
-            fullscreen ? "[--tabs-lead:7.5rem]" : "[--tabs-lead:calc(var(--traffic-lights-w)+6.75rem)]",
-          )}
-          // `deep`, not bare: bare drags only on direct hits, so every label
-          // inside this row was a dead strip in a titlebar that looks uniform.
-          // Buttons still block on their own — Tauri stops walking up at any
-          // clickable element that carries no attribute of its own.
-          data-tauri-drag-region="deep"
-        >
+        <WindowToolbar fullscreen={fullscreen}>
           {/* Always here, open or shut: the sidebar sits under this row now,
               so the toggle no longer has a strip of its own to live in. */}
-          <NavButtons
-            canBack={canBack}
-            canForward={canForward}
-            onBack={() => goHistory(-1)}
-            onForward={() => goHistory(1)}
-          />
+          {navigation}
           <SidebarToggle onToggle={toggleSidebar} />
 
           {/* Over the sidebar's right end, out of the flow so the tabs do not
@@ -3281,7 +3267,7 @@ function App() {
                   )}
                 </>
               ) : null}
-        </header>
+        </WindowToolbar>
       }
       panel={
         // The pane describes whatever the main column is showing. On the issues
@@ -3810,7 +3796,11 @@ function App() {
     <SettingsPage
       open={settingsOpen}
       onClose={closeSettings}
-      initialTab={settingsTab}
+      tab={settingsTab}
+      onTabChange={setSettingsTab}
+      rail={rail}
+      navigation={navigation}
+      fullscreen={fullscreen}
       // Every project, not the active space's: this is where a project is filed
       // into one, and a list narrowed by the space would hide exactly the rows
       // somebody opens it to move.

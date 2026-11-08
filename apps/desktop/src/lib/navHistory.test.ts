@@ -23,13 +23,31 @@ describe("nav history", () => {
     h = back.history;
     expect(step(h, 1, all)!.place).toEqual(issues);
     h = visit(h, tasks("b"));
-    expect(h.stack.map((p) => p.sessionId)).toEqual([null, "a", "b"]);
+    expect(h.stack).toEqual([tasks(null), tasks("a"), tasks("b")]);
     expect(step(h, 1, all)).toBeNull();
   });
 
   it("steps over places that can no longer be shown", () => {
     const h = walk(tasks("gone"), tasks("b"));
-    expect(step(h, -1, (p) => p.sessionId !== "gone")!.place).toEqual(tasks(null));
-    expect(step(walk(tasks("gone")), -1, (p) => p.sessionId === "gone")).toBeNull();
+    const usable = (p: Place) => p.page !== "tasks" || p.sessionId !== "gone";
+    expect(step(h, -1, usable)!.place).toEqual(tasks(null));
+    expect(step(walk(tasks("gone")), -1, (p) => !usable(p))).toBeNull();
+  });
+
+  it("restores Settings sections and the page they covered", () => {
+    const appearance: Place = { page: "settings", tab: "appearance", returnTo: issues };
+    const skills: Place = { ...appearance, tab: "skills" };
+    const h = walk(issues, appearance, skills);
+    const back = step(h, -1, all)!;
+    expect(back.place).toEqual(appearance);
+    expect(step(back.history, -1, all)!.place).toEqual(issues);
+    expect(step(back.history, 1, all)!.place).toEqual(skills);
+  });
+
+  it("keeps one visit to a Settings section despite changes underneath it", () => {
+    const appearance: Place = { page: "settings", tab: "appearance", returnTo: issues };
+    const h = walk(appearance, { ...appearance, returnTo: { page: "spaces", sessionId: null } });
+    expect(h.stack).toHaveLength(2);
+    expect(step(h, -1, all)!.place).toEqual(tasks(null));
   });
 });

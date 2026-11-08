@@ -766,7 +766,7 @@ export function SidebarToggle({ onToggle }: { onToggle: () => void }) {
 ///
 /// At the rail's foot beside usage: settings are app-wide, and every control in
 /// the sidebar scopes the list under it.
-export function SettingsButton({ onOpen }: { onOpen: () => void }) {
+export function SettingsButton({ onOpen, current = false }: { onOpen: () => void; current?: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -775,7 +775,11 @@ export function SettingsButton({ onOpen }: { onOpen: () => void }) {
           size="icon"
           onClick={onOpen}
           aria-label="Settings"
-          className="size-9 text-muted-foreground transition-none hover:bg-sidebar-accent/50 hover:text-foreground active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50"
+          aria-current={current ? "page" : undefined}
+          className={cn(
+            "size-9 text-muted-foreground transition-none hover:bg-sidebar-accent/50 hover:text-foreground active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50",
+            current && "bg-sidebar-accent text-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent",
+          )}
         >
           <Cog6ToothIcon className="size-4.5" />
         </Button>

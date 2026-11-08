@@ -12,7 +12,7 @@ import {
   NewspaperIcon,
   ServerStackIcon,
 } from "@heroicons/react/16/solid";
-import { ArrowLeft, Check, ChevronDown, RotateCcw, Star } from "lucide-react";
+import { Check, ChevronDown, RotateCcw, Star, X } from "lucide-react";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -57,6 +57,7 @@ import McpSettings from "@/components/settings/McpSettings";
 import SkillsSettings from "@/components/settings/SkillsSettings";
 import { CubesGlyph18, Plug2Glyph18 } from "@/components/icons/nucleo";
 import AppShell from "@/components/layout/AppShell";
+import WindowToolbar from "@/components/layout/WindowToolbar";
 import { SettingsHeaderSlot } from "@/components/settings/headerAction";
 import ServersSettings from "@/components/settings/ServersSettings";
 import HandoffSettings from "@/components/settings/HandoffSettings";
@@ -98,7 +99,11 @@ const ISSUES_URL = `${REPO_URL}/issues/new`;
 export default function SettingsPage({
   open,
   onClose,
-  initialTab,
+  tab,
+  onTabChange,
+  rail,
+  navigation,
+  fullscreen,
   projects,
   spaces,
   startNamingSpace,
@@ -125,10 +130,12 @@ export default function SettingsPage({
 }: {
   open: boolean;
   onClose: () => void;
-  /// Which tab to open on. The composer's mic button sends the reader straight
-  /// to Transcription when no model is downloaded, which is the whole reason
-  /// this is a prop rather than internal state.
-  initialTab: SettingsTab;
+  /// Owned by App so direct links and Back/Forward restore the same section.
+  tab: SettingsTab;
+  onTabChange: (tab: SettingsTab) => void;
+  rail: ReactNode;
+  navigation: ReactNode;
+  fullscreen: boolean;
   /// Every attached project, not the active space's — this is where one is
   /// filed into a space, so a narrowed list would hide the rows to move.
   projects: Project[];
@@ -174,7 +181,7 @@ export default function SettingsPage({
   if (!open) return null;
 
   return (
-    <SettingsTabs initialTab={initialTab} onClose={onClose}>
+    <SettingsTabs tab={tab} onTabChange={onTabChange} onClose={onClose} rail={rail} navigation={navigation} fullscreen={fullscreen}>
       {(goTo) => ({
         appearance: (
           <>
@@ -1324,8 +1331,7 @@ const TAB_SUBTITLES: Partial<Record<SettingsTab, string>> = {
   island: "Right-click the island to change these from the island itself.",
 };
 
-/// The page's groups as a list down the left, standing where the sidebar
-/// stands, with the picked group filling the rest of the window.
+/// The page's groups share the task sidebar's inset strip beside the content.
 ///
 /// **About holds privacy and feedback**, which is the one grouping worth
 /// arguing about. Both answer what the app does with you rather than what it
@@ -1335,22 +1341,26 @@ const TAB_SUBTITLES: Partial<Record<SettingsTab, string>> = {
 /// Bodies are switched, not hidden, unlike the right panel's. There is no
 /// scroll position or expensive render to preserve here, and mounting them all
 /// would have the external-app scan run on every open whichever tab the reader
-/// wanted. The pick resets on close, since this only mounts while open.
+/// wanted. App owns the pick so section visits also belong to navigation history.
 function SettingsTabs({
-  initialTab,
+  tab,
+  onTabChange: setTab,
   onClose,
+  rail,
+  navigation,
+  fullscreen,
   children,
 }: {
-  initialTab: SettingsTab;
+  tab: SettingsTab;
+  onTabChange: (tab: SettingsTab) => void;
   onClose: () => void;
+  rail: ReactNode;
+  navigation: ReactNode;
+  fullscreen: boolean;
   /// Handed a way to switch tab, which About's link to the changelog needs.
   children: (goTo: (tab: SettingsTab) => void) => Record<SettingsTab, ReactNode>;
 }) {
   const id = useId();
-  const [tab, setTab] = useState<SettingsTab>(initialTab);
-  // A route in from outside — the What's new card's View all, the mic's
-  // missing model — can land while the page is already open.
-  useEffect(() => setTab(initialTab), [initialTab]);
   // State rather than a ref, since a portal needs the node during render and a
   // ref holds nothing on the first one.
   const [slot, setSlot] = useState<HTMLElement | null>(null);
@@ -1377,39 +1387,37 @@ function SettingsTabs({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // The main window's own shell, so the list sits on the frame where the
-  // sidebar does and the page is the raised sheet beside it.
   return (
     <AppShell
-      // Up to the window's top: with no tab row there is nothing for the
-      // header to hold over the sheet.
-      tall
+      rail={rail}
       header={
-        <header className="relative h-(--titlebar-h)" data-tauri-drag-region="deep">
-          {/* Where the gear that opened this sits: the sidebar's right end. */}
-          <div className="absolute top-1/2 right-[calc(100%-15rem+0.5rem)] -translate-y-1/2">
+        <WindowToolbar fullscreen={fullscreen}>
+          {navigation}
+          <span aria-hidden className="h-4 w-px shrink-0 bg-hairline" />
+          <span className="truncate text-ui text-muted-foreground">Settings</span>
+          <div className="ml-auto flex shrink-0 items-center">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="Back"
+                  aria-label="Close Settings"
                   onClick={onClose}
                   className="opacity-80 transition-opacity hover:opacity-100 active:not-aria-[haspopup]:translate-y-0"
                 >
-                  <ArrowLeft className="size-4" />
+                  <X className="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right">
-                Back
+              <TooltipContent side="bottom">
+                Close Settings
                 <Kbd>Esc</Kbd>
               </TooltipContent>
             </Tooltip>
           </div>
-        </header>
+        </WindowToolbar>
       }
       sidebar={
-        <aside className="flex w-60 shrink-0 flex-col px-2">
+        <aside className="flex min-h-0 w-60 shrink-0 flex-col overflow-y-auto px-2 py-2" aria-label="Settings navigation">
           <div
             role="tablist"
             aria-label="Settings"
@@ -1430,7 +1438,7 @@ function SettingsTabs({
                 tabIndex={tab === value ? 0 : -1}
                 active={tab === value}
                 onClick={() => setTab(value)}
-                className="flex h-7 cursor-pointer items-center gap-1.5 px-1.5 text-left"
+                className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 px-1.5 text-left aria-[selected=false]:hover:bg-sidebar-accent/50"
               >
                 <Icon className="size-3.5 shrink-0" />
                 {label}
@@ -1447,7 +1455,7 @@ function SettingsTabs({
           since a column flex item shrinks toward its content before the
           container agrees to scroll. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex w-full max-w-160 flex-col gap-7 px-8 pt-2 pb-16 [&>*]:shrink-0">
+        <div className="flex w-full max-w-160 flex-col gap-7 px-8 pt-5 pb-16 [&>*]:shrink-0">
           {/* A tab hangs a header action here through a portal. The slot is
               `contents`, so what lands in it lays out in this row — an action
               takes `ml-auto` to the far end, a back arrow `-order-1` to lead

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 /// off first, since the rail is drawn whatever else is open.
 export const RAIL_W = 52;
 
-export type RailPlace = "home" | "spaces" | "issues";
+export type RailPlace = "home" | "spaces" | "issues" | "settings";
 
 /// The always-on column at the window's left edge: where you are, and the
 /// app-wide controls that belong to no list. Sits on the frame, under the
