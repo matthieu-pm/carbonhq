@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 
 import { DROP_ATTR } from "@/lib/dragSession";
 import { cn } from "@/lib/utils";
@@ -85,6 +85,23 @@ export default function AppShell({
   summaryLayoutRef,
   children,
 }: AppShellProps) {
+  const [sidebarPlace, setSidebarPlace] = useState(sidebarMode === "peek" ? "peek" : "docked");
+  const [previousSidebarMode, setPreviousSidebarMode] = useState(sidebarMode);
+  const [sidebarMotion, setSidebarMotion] = useState(false);
+  if (previousSidebarMode !== sidebarMode) {
+    setPreviousSidebarMode(sidebarMode);
+    setSidebarMotion(true);
+    if (sidebarMode !== "hidden") setSidebarPlace(sidebarMode);
+  }
+  const [motionReady, setMotionReady] = useState(false);
+  useEffect(() => setMotionReady(true), []);
+  useEffect(() => {
+    if (!sidebarMotion) return;
+    // A resize must follow the pointer immediately rather than easing after every frame.
+    const timer = window.setTimeout(() => setSidebarMotion(false), 220);
+    return () => window.clearTimeout(timer);
+  }, [sidebarMode, sidebarMotion]);
+
   // A card of its own beside the sheet, with the frame showing between. Kept
   // mounted while shut, since the pane hides rather than unmounts.
   const gap = <div className="w-1.5 shrink-0 bg-surface-frame" />;
@@ -98,7 +115,7 @@ export default function AppShell({
   return (
     // The header spans the window and everything else sits under it, the way a
     // browser's tab strip sits over its pages.
-    <div className="relative flex h-full w-full flex-col overflow-hidden">
+    <div className="app-shell relative flex h-full w-full flex-col overflow-hidden" data-sidebar-motion={sidebarMotion && motionReady}>
       {/* The sheet can start behind the header or below it. */}
       <div className="absolute inset-x-0 top-0 z-30">{header}</div>
       {/* Not `overflow-hidden`: the sheet's ring and shadow sit just outside it,
@@ -122,13 +139,15 @@ export default function AppShell({
             reason: transcripts, scroll pins and drafts wait here, and
             `display: none` is what takes the browser's native view down. */}
         <div className={cn("flex min-w-0 flex-1", pageOpen && "hidden")}>
-        {sidebarMode === "docked" && (
+        {sidebarPlace === "docked" && (
           // Inside the sheet, half the frame's scrim: a strip of the same
           // card rather than a second card, so list and conversation read as
           // one place to work with the rail outside it.
-          <div className={cn("flex shrink-0 border-r border-hairline bg-surface-frame/50", SIDEBAR_TOKENS)}>
+          <SlidingSidebar open={sidebarMode === "docked"} ready={motionReady}>
+          <div className={cn("flex h-full shrink-0 border-r border-hairline bg-surface-frame/50", SIDEBAR_TOKENS)}>
             {sidebar}
           </div>
+          </SlidingSidebar>
         )}
         {/* `min-w-0` is load-bearing: without it a wide code block in the transcript
           sets the flex item's floor and pushes the sidebar off-screen. */}
@@ -176,21 +195,61 @@ export default function AppShell({
         </div>
         <div className="w-2 shrink-0 bg-surface-frame" />
       </div>
-      {sidebarMode === "peek" && (
+      {sidebarPlace === "peek" && (
         // Floats over the sheet beside the rail, on the page's own fill and the
         // sheet's 8px corner, so it reads as the docked strip lifted out.
-        <div
+        <SlidingSidebar
+          floating
+          open={sidebarMode === "peek"}
+          ready={motionReady}
           className={cn(
-            "absolute bottom-2 z-40 flex overflow-hidden rounded-[8px] border border-border bg-background shadow-lg",
+            "absolute bottom-2.5 z-40 flex overflow-hidden rounded-[8px] border border-edge-surface bg-background shadow-(--shadow-surface)",
             SIDEBAR_TOKENS,
           )}
-          style={{ left: RAIL_W, top: "var(--titlebar-h)" }}
-          onPointerEnter={() => onPeekHover?.(true)}
+          style={{ left: RAIL_W + 2, top: "calc(var(--titlebar-h) + 0.125rem)" }}
+          onPointerEnter={() => sidebarMode === "peek" && onPeekHover?.(true)}
           onPointerLeave={() => onPeekHover?.(false)}
         >
           {sidebar}
-        </div>
+        </SlidingSidebar>
       )}
+    </div>
+  );
+}
+
+/// Keeps the body mounted through an exit so a reversal continues from its current position.
+function SlidingSidebar({
+  open,
+  ready,
+  floating = false,
+  className,
+  style,
+  children,
+  ...props
+}: React.ComponentProps<"div"> & { open: boolean; ready: boolean; floating?: boolean }) {
+  const body = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(240);
+  useLayoutEffect(() => {
+    const node = body.current;
+    if (!node) return;
+    const measure = () => setWidth(node.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      {...props}
+      className={cn(floating ? "sidebar-floating" : "sidebar-docked", className)}
+      style={{ ...style, "--sidebar-width": `${width}px` } as CSSProperties}
+      data-open={open}
+      data-ready={ready}
+      aria-hidden={!open}
+      inert={!open}
+    >
+      <div ref={body} className="sidebar-slide-body">{children}</div>
     </div>
   );
 }

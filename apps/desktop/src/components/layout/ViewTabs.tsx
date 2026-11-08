@@ -301,10 +301,7 @@ export default function ViewTabs({
   const align = {
     marginLeft:
       alignX > 0 ? `max(-0.25rem, calc(${alignX}px - 0.25rem - var(--tabs-lead)))` : "-0.25rem",
-    // No transition on the margin: a sidebar drag moves it every frame, and
-    // an ease restarted each frame left the row trailing the edge until the
-    // drag stopped.
-    animation: "enter 300ms ease-out 150ms backwards",
+    // AppShell transitions this only when toggling the sidebar, so a drag never trails the pointer.
   };
 
   // The browser view with nothing in the row lit for it — its tab shut by ⌘W
@@ -422,7 +419,7 @@ export default function ViewTabs({
     <div
       ref={drag.list}
       role="tablist"
-      className="-mx-1 flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1 fade-in slide-in-from-left-3"
+      className="tab-strip-motion -mx-1 flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1"
       style={align}
     >
       {drag.shown.map((item, i) => (

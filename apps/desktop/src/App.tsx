@@ -3073,8 +3073,8 @@ function App() {
           // lit row would name a session that is nowhere on screen — and the
           // selection itself is kept, which is what makes coming back free.
           selectedSessionId={issuesOpen || spacesOpen ? null : selectedSessionId}
-          collapsed={sidebarMode === "hidden"}
-          floating={sidebarMode === "peek"}
+          collapsed={false}
+          floating={sidebarMode !== "docked"}
           // The sidebar is the reader leaving the crew, and it has to say so
           // outright rather than lean on the selection moving. A row already
           // selected — the crew member they are reading — moves nothing, so

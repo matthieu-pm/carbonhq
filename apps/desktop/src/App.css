@@ -1448,6 +1448,50 @@ body.session-drag,
 body.session-drag * {
   cursor: grabbing !important;
 }
+.tab-strip-motion {
+  @apply fade-in slide-in-from-left-3;
+  animation: enter 300ms ease-out 150ms backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-strip-motion { animation: none; }
+}
+
+/* Width reclaims the docked column; the fixed-width body slides without reflowing its rows. */
+.sidebar-docked {
+  display: flex; flex-shrink: 0; min-width: 0; width: 0; overflow: hidden;
+  visibility: hidden; pointer-events: none; transition: none; --sidebar-hide-delay: 180ms;
+}
+.sidebar-slide-body { display: flex; flex-shrink: 0; width: max-content; height: 100%; min-height: 0; }
+.sidebar-docked > .sidebar-slide-body { transform: translateX(-100%); transition: none; }
+.app-shell[data-sidebar-motion="true"] .sidebar-docked[data-ready="true"] {
+  transition: width 180ms cubic-bezier(0.32, 0.72, 0, 1), visibility 0s var(--sidebar-hide-delay);
+}
+.app-shell[data-sidebar-motion="true"] .sidebar-docked[data-ready="true"] > .sidebar-slide-body { transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1); }
+.app-shell[data-sidebar-motion="true"] header [role="tablist"] { transition: margin-left 180ms cubic-bezier(0.32, 0.72, 0, 1); }
+.sidebar-docked[data-open="true"] { width: var(--sidebar-width); visibility: visible; pointer-events: auto; --sidebar-hide-delay: 0s; }
+.sidebar-docked[data-open="true"] > .sidebar-slide-body { transform: none; }
+.sidebar-floating {
+  opacity: 0; transform: translateX(-12px); visibility: hidden; pointer-events: none;
+  transition: transform 140ms cubic-bezier(0.32, 0.72, 0, 1), opacity 140ms ease-out, visibility 0s 140ms;
+}
+.sidebar-floating[data-open="true"] {
+  opacity: 1; transform: none; visibility: visible; pointer-events: auto;
+  transition-duration: 180ms, 180ms, 0s; transition-delay: 0s;
+}
+@starting-style {
+  .sidebar-docked[data-ready="true"][data-open="true"] { width: 0; }
+  .sidebar-docked[data-ready="true"][data-open="true"] > .sidebar-slide-body { transform: translateX(-100%); }
+  .sidebar-floating[data-open="true"] { opacity: 0; transform: translateX(-12px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-sidebar-motion="true"] .sidebar-docked[data-ready="true"],
+  .app-shell[data-sidebar-motion="true"] .sidebar-docked[data-ready="true"] > .sidebar-slide-body,
+  .app-shell[data-sidebar-motion="true"] header [role="tablist"] { transition: none; }
+  .sidebar-floating { transform: none; transition: opacity 80ms ease-out, visibility 0s 80ms; }
+  .sidebar-floating[data-open="true"] { transition-duration: 80ms, 0s; }
+  @starting-style { .sidebar-floating[data-open="true"] { transform: none; } }
+}
+
 /* Reserve a chat lane only while the pinned summary is open. */
 .conversation-column { --pinned-summary-lane: 364px; }
 .conversation-content { display: flex; height: 100%; min-height: 0; }

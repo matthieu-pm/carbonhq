@@ -56,7 +56,7 @@ export default function IssueTabs({ state, alignX = 0 }: { state: IssueTabsState
     <div
       ref={drag.list}
       role="tablist"
-      className="-mx-1 flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1"
+      className="tab-strip-motion -mx-1 flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden px-1"
       // `ViewTabs`' own sum: start where the sheet does, from `--tabs-lead`.
       style={{
         marginLeft:
