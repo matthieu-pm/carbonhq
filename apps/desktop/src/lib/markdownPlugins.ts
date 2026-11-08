@@ -2,6 +2,7 @@ import { defaultRehypePlugins, type StreamdownProps } from "streamdown";
 
 import { findPromptPaths, isFilePath, isRelativePath, splitLocator } from "@/lib/filePath";
 import { findBareUrls } from "@/lib/highlight";
+import { parsePageUrl } from "@/lib/pageLinks";
 
 // `rehype-harden` drops the href of any link it cannot resolve, which is right,
 // and then writes " [blocked]" into the prose beside it, which is not: two
@@ -105,11 +106,25 @@ export function linkBareUrls(node: HastNode) {
 /// sanitize, which would otherwise strip the block it adds; harden stays last.
 export const REHYPE_PLUGINS = [
   defaultRehypePlugins.raw,
+  rehypePageLinks,
   defaultRehypePlugins.sanitize,
   rehypeTableCells,
   rehypeBareUrls,
   HARDEN,
 ] as StreamdownProps["rehypePlugins"];
+
+function rehypePageLinks() {
+  return (tree: HastNode) => linkPages(tree);
+}
+
+/// Only validated document identities pass through the renderer's protocol sanitizer.
+export function linkPages(node: HastNode) {
+  const href = node.properties?.href;
+  if (node.tagName === "a" && typeof href === "string" && href.startsWith("carbon-page:") && parsePageUrl(href)) {
+    node.properties = { ...node.properties, href: `#carbon-page=${encodeURIComponent(href)}` };
+  }
+  for (const child of node.children ?? []) linkPages(child);
+}
 
 /// The marker `rehypeFilePaths` leaves on a run it picked out, and what tells
 /// `Markdown`'s `span` override which spans are its own.
@@ -274,6 +289,7 @@ export function walk(node: HastNode) {
 /// open files the reader does not have.
 export const REHYPE_PLUGINS_WITH_FILE_PATHS = [
   defaultRehypePlugins.raw,
+  rehypePageLinks,
   defaultRehypePlugins.sanitize,
   rehypeTableCells,
   rehypeBareUrls,

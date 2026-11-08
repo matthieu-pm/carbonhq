@@ -412,6 +412,16 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
     }
     sweep_browser_profiles().await;
     crate::auto_continue::rearm(&sink).await;
+    let page_sync_sink = sink.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            if !crate::settings::get_feature_flags().await.pages_enabled { continue; }
+            if let Err(error) = crate::pages_sync::sync_linked_pages(page_sync_sink.clone()).await {
+                eprintln!("[page sync err] {error}");
+            }
+        }
+    });
 
     // Agents this server spawns reach it through `carbon`, so it serves the
     // socket the desktop app does — under `CARBON_HOME` where that is set.
@@ -901,7 +911,7 @@ async fn file(stream: TcpStream, token: &str) -> Result<()> {
     let mut body = tokio::fs::File::open(&path).await?;
     let len = body.metadata().await?.len();
     let head = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nAccess-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n",
         content_type(&path)
     );
     stream.write_all(head.as_bytes()).await?;
@@ -914,10 +924,14 @@ async fn file(stream: TcpStream, token: &str) -> Result<()> {
 /// — absent and forbidden answer alike, so the route does not say which files
 /// exist outside them.
 async fn servable(path: &str) -> Option<PathBuf> {
-    if let Some(real) = servable_under(&store::get_home_app_dir().await.ok()?, path).await {
+    let home = store::get_home_app_dir().await.ok()?;
+    let real = tokio::fs::canonicalize(path).await.ok()?;
+    if let Ok(pages) = tokio::fs::canonicalize(home.join("attachments/pages")).await {
+        if real.starts_with(pages) && !crate::settings::get_feature_flags().await.pages_enabled { return None; }
+    }
+    if let Some(real) = servable_under(&home, path).await {
         return Some(real);
     }
-    let real = tokio::fs::canonicalize(path).await.ok()?;
     let opened = OPENED_VIDEOS.lock().unwrap_or_else(|e| e.into_inner());
     opened.contains(&real).then_some(real)
 }
@@ -967,6 +981,17 @@ fn content_type(path: &std::path::Path) -> &'static str {
         Some("mp4" | "m4v") => "video/mp4",
         Some("mov") => "video/quicktime",
         Some("webm") => "video/webm",
+        Some("wav") => "audio/wav",
+        Some("mp3") => "audio/mpeg",
+        Some("m4a") => "audio/mp4",
+        Some("ogg") => "audio/ogg",
+        Some("flac") => "audio/flac",
+        Some("aac") => "audio/aac",
+        Some("opus") => "audio/opus",
+        Some("html" | "htm") => "text/plain; charset=utf-8",
+        Some("pdf") => "application/pdf",
+        Some("txt" | "md" | "markdown") => "text/plain; charset=utf-8",
+        Some("csv") => "text/csv; charset=utf-8",
         _ => "application/octet-stream",
     }
 }
@@ -1248,6 +1273,9 @@ async fn dispatch_mac(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value
 /// server's own desktop: opening apps and terminals, and the pasteboard.
 /// Mac-only modules are not compiled here.
 async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
+    if crate::pages::owns_command(cmd) {
+        crate::settings::require_pages_enabled().await.map_err(|error| json!(error))?;
+    }
     #[cfg(feature = "desktop")]
     if matches!(
         cmd,
@@ -1286,6 +1314,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         // not yet listening when it connected — `carbon-serve` included, which
         // an app installed after it meets as This Mac.
         live_state() => ok(HUB.live.lock().unwrap_or_else(|e| e.into_inner()).payload());
+        get_feature_flags() => ok(crate::settings::get_feature_flags().await);
         // Sessions.
         send_msg(
             session_id: String, prompt: String, attachment_paths: Vec<String>,
@@ -1417,6 +1446,23 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         };
         delete_draft(id: String) => crate::drafts::delete_draft(id).await;
         read_doc(path: String) => crate::docs::read_doc(path).await;
+        list_pages(query: Option<String>, project_path: Option<String>, trashed: Option<bool>) => crate::pages::list_pages(query, project_path, trashed).await;
+        read_page(id: String) => crate::pages::read_page(id).await;
+        list_linear_documents(query: Option<String>, after: Option<String>) => crate::pages_sync::list_linear_documents(query, after).await;
+        read_linear_document(document_id: String) => crate::pages_sync::read_linear_document(document_id).await;
+        import_linear_document(document_id: String, project_paths: Vec<String>) => crate::pages_sync::import_linear_document(sink.clone(), document_id, project_paths).await;
+        page_sync_status(id: String) => crate::pages_sync::page_sync_status(id).await;
+        sync_linear_page(id: String, revision: u64, resolution: Option<String>, expected_remote_updated_at: Option<String>) => crate::pages_sync::sync_linear_page(sink.clone(), id, revision, resolution, expected_remote_updated_at).await;
+        unlink_linear_page(id: String, revision: u64) => crate::pages_sync::unlink_linear_page(id, revision).await;
+        page_backlinks(id: String, owner: Option<String>, source_owner: Option<String>) => crate::pages::page_backlinks(id, owner, source_owner).await;
+        list_page_assets(id: String) => crate::pages::list_page_assets(id).await;
+        write_page_asset(id: String, name: String, asset_id: String, offset: u64, data: String, complete: bool) => crate::pages::write_page_asset(sink.clone(), id, name, asset_id, offset, data, complete).await;
+        page_history(id: String) => crate::pages::page_history(id).await;
+        read_page_version(id: String, version: u64) => crate::pages::read_page_version(id, version).await;
+        restore_page_version(id: String, revision: u64, version: u64) => crate::pages::restore_page_version(sink.clone(), id, revision, version).await;
+        create_page(title: String, markdown: String, project_paths: Vec<String>) => crate::pages::create_page(sink.clone(), title, markdown, project_paths).await;
+        update_page(id: String, revision: u64, title: Option<String>, markdown: Option<String>, project_paths: Option<Vec<String>>, favorite: Option<bool>) => crate::pages::update_page(sink.clone(), id, revision, title, markdown, project_paths, favorite).await;
+        set_page_trashed(id: String, revision: u64, trashed: bool) => crate::pages::set_page_trashed(sink.clone(), id, revision, trashed).await;
         save_doc(path: String, text: String, expect: Option<String>) => crate::docs::save_doc(path, text, expect).await;
         watch_docs(scope: String, paths: Vec<String>) => {
             let sink = sink.clone();
@@ -1473,6 +1519,32 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert_ne!(token_at(&path).unwrap(), first, "deleting the file rotates");
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn attachment_http_types_keep_html_inert_and_audio_playable() {
+        for extension in ["html", "htm"] {
+            assert_eq!(content_type(std::path::Path::new(&format!("preview.{extension}"))), "text/plain; charset=utf-8");
+        }
+        for (extension, mime) in [("wav", "audio/wav"), ("mp3", "audio/mpeg"), ("m4a", "audio/mp4"), ("ogg", "audio/ogg"), ("flac", "audio/flac"), ("aac", "audio/aac"), ("opus", "audio/opus")] {
+            assert_eq!(content_type(std::path::Path::new(&format!("audio.{extension}"))), mime);
+        }
+        assert_eq!(content_type(std::path::Path::new("active.svg")), "application/octet-stream");
+    }
+
+    #[test]
+    fn every_registered_pages_command_is_behind_the_release_gate() {
+        let source = include_str!("serve.rs");
+        let mut count = 0;
+        for line in source.lines() {
+            let Some((declaration, implementation)) = line.split_once("=>") else { continue };
+            if !implementation.trim().starts_with("crate::pages::") && !implementation.trim().starts_with("crate::pages_sync::") { continue; }
+            let command = declaration.split_once('(').unwrap().0.trim();
+            assert!(crate::pages::owns_command(command), "{command} bypasses the Pages feature flag");
+            count += 1;
+        }
+        assert!(count > 10);
+        assert!(!crate::pages::owns_command("get_feature_flags"));
     }
 
     #[test]

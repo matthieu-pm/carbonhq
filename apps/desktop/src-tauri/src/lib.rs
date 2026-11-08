@@ -49,6 +49,9 @@ pub mod headless;
 pub mod recording;
 mod local_servers;
 pub mod docs;
+pub mod pages;
+pub mod pages_linear;
+pub mod pages_sync;
 pub mod download;
 #[path = "events/events.rs"]
 pub mod events;
@@ -846,6 +849,8 @@ pub fn run() {
                 let response = match servers::fetch_file(&server, &path).await {
                     Ok((kind, body)) => tauri::http::Response::builder()
                         .header("Content-Type", kind)
+                        .header("Access-Control-Allow-Origin", "*")
+                        .header("X-Content-Type-Options", "nosniff")
                         .body(body),
                     Err(e) => {
                         eprintln!("[carbonserver {server}] {path}: {e}");

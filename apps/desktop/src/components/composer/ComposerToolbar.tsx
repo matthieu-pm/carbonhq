@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 
 import BranchSelector from "@/components/composer/BranchSelector";
 import BranchSwitchDialog from "@/components/composer/BranchSwitchDialog";
@@ -9,6 +9,7 @@ import PermissionSelector, {
 } from "@/components/composer/PermissionSelector";
 import ProjectSelector from "@/components/composer/ProjectSelector";
 import WorktreeToggle from "@/components/composer/WorktreeToggle";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import type { ServerId } from "@/lib/transport";
 import ShortcutKeys from "@/components/ShortcutKeys";
@@ -73,6 +74,7 @@ type ComposerToolbarProps = {
   /// module-level store keyed by session, not passed through here — this row is
   /// handed to `ChatInput` as an opaque node, so the two cannot share props.
   onAttach: () => void;
+  onMentionPage?: () => void;
 
   /// How full the model's context is, or `null` before any turn has reported
   /// it. Sits at the far end of the row rather than among the pickers: it
@@ -125,6 +127,7 @@ export default function ComposerToolbar({
   useWorktree,
   onToggleWorktree,
   onAttach,
+  onMentionPage,
   contextUsage,
   isNewSession,
   busy,
@@ -133,24 +136,29 @@ export default function ComposerToolbar({
     <div className="flex min-w-0 items-center gap-0.5 px-1">
       {/* No radius override: `icon-sm` already carries the app's rounded-square,
           and a circle here would be the one round control in a row of them. */}
+      {onMentionPage ? <DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
+          <DropdownMenuTrigger asChild><Button
             type="button"
             variant="ghost"
             size="icon-sm"
-            onClick={onAttach}
-            aria-label="Attach files"
+            aria-label="Add context"
             className="text-muted-foreground"
           >
             <Plus />
-          </Button>
+          </Button></DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent side="top">
-          Attach files
+          Add context
           <ShortcutKeys ids={["attach"]} />
         </TooltipContent>
       </Tooltip>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem onSelect={onAttach}><Plus />Attach files<ShortcutKeys ids={["attach"]} className="ml-auto" /></DropdownMenuItem>
+        <DropdownMenuItem onSelect={onMentionPage}><FileText />Reference a Page</DropdownMenuItem>
+      </DropdownMenuContent>
+      </DropdownMenu> : <Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon-sm" aria-label="Attach files" className="text-muted-foreground" onClick={onAttach}><Plus /></Button></TooltipTrigger><TooltipContent side="top">Attach files<ShortcutKeys ids={["attach"]} /></TooltipContent></Tooltip>}
 
       <ModelSelector
         server={server}

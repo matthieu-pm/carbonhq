@@ -1,3 +1,5 @@
+import { parsePageUrl } from "@/lib/pageLinks";
+
 /// Splits a prompt into the runs that get a colour — the leading slash command,
 /// every `@file` mention, issue tag and URL — and the inline marks a sentence
 /// carries: bold, italic, code, strikethrough and links.
@@ -445,7 +447,7 @@ function linkAt(text: string, i: number, exhausted: Exhausted): Segment | null {
   if (close === -1 || close === label + 2) return spent();
 
   const href = text.slice(label + 2, close);
-  if (!/^https?:\/\//i.test(href)) return spent();
+  if (!/^https?:\/\//i.test(href) && !parsePageUrl(href)) return spent();
 
   // Last, and never memoized: the empty label is the one test that reads the
   // opener's own position rather than the label and href both.

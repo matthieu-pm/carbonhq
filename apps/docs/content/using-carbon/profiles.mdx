@@ -1,0 +1,58 @@
+---
+title: Profiles
+description: Group projects into profiles, like work and personal, switch between them in the sidebar, and keep other profiles' sessions and notifications out of sight.
+sidebar:
+  order: 6
+---
+
+A profile is a named set of projects. Switch to one and Carbon shows only its projects and their sessions. Use profiles to keep work and personal projects apart, or to share your screen without showing everything else you have running.
+
+A profile only changes what you see. Every session in every profile keeps running.
+
+## Create a profile
+
+Open Settings (`⌘,`) → **Profiles** and click **New profile**. Type a name and click **Create**, or press `⏎`.
+
+Before you have any profiles, the sidebar's profile switcher also offers **New profile**; clicking it opens the same field.
+
+## File a project into a profile
+
+In Settings → **Profiles**, the **Projects** list shows every attached project. Each row has a menu reading **No profile** or the profile's name. Pick a profile from it. A project belongs to one profile at most.
+
+A project you attach starts with no profile. It shows under **All Profiles** until you file it. So attach new projects from **All Profiles**, then file them: attached while a profile is up, the project is not in that profile, and the composer drops it at once.
+
+## Switch profiles
+
+The switcher sits at the top of the sidebar, next to the settings gear, and shows the current profile's name. Click it to step to the next profile. The list wraps, and **All Profiles** comes first. Hover it to see a dot per profile.
+
+When you switch:
+
+- The sidebar lists only sessions in that profile's projects.
+- The project filter goes back to **All Projects**, and the composer's project picker lists only that profile's projects.
+- If the composer's project is outside the profile, it moves to one inside it.
+- If the open session is outside the profile, it closes.
+- `⌘⇧↑` / `⌘⇧↓` and the `&` session picker see only that profile's sessions.
+
+**All Profiles** shows everything, including projects with no profile.
+
+## Rename, reorder or remove a profile
+
+All in Settings → **Profiles**:
+
+- **Rename**: click the pencil, type the new name, click **Save**. Projects in the profile move with it.
+- **Reorder**: drag a profile by its grip, or focus the grip and use `↑` / `↓`. The switcher steps through profiles in this order.
+- **Remove**: click the bin, then confirm. Its projects go back to no profile.
+
+Removing or renaming a profile never touches projects or sessions.
+
+## Notifications
+
+While a profile is up, sessions outside it stay quiet. They raise no in-app card and no macOS notification when they finish or ask for something. Switch to their profile, or to **All Profiles**, to see them.
+
+The Dock badge is the exception: it counts sessions in every profile, since it names none of them.
+
+## Limits
+
+- The list of profiles you made is kept on this Mac. A project's profile is stored with the project.
+- A profile switch does not pause anything. An agent in a hidden profile can still ask for permission and wait there until you come back.
+- `⌘,` can be changed in Settings → Shortcuts.

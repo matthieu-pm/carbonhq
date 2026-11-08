@@ -9,6 +9,7 @@ import {
   CircleDashed,
   CircleDot,
   Ellipsis,
+  FileText,
   GitBranchPlus,
   Unlink,
   Pin,
@@ -120,6 +121,7 @@ type SidebarProps = {
   /// not move the selection — coming back from it lands on the session that was
   /// open before.
   onOpenIssues: () => void;
+  onOpenSpaces?: () => void;
   /// The issues page is the thing on screen, so the row draws as the current
   /// one. Read here rather than derived from the selection, which the page
   /// deliberately leaves alone.
@@ -851,7 +853,7 @@ export function SpaceSwitcher({
   const activeIndex = offersNew ? (naming ? 1 : 0) : found === -1 ? 0 : found;
 
   const label = (i: number) =>
-    offersNew && i === 1 ? "New space" : (entries[i] ?? "All Spaces");
+    offersNew && i === 1 ? "New profile" : (entries[i] ?? "All Profiles");
 
   // Wraps: a click has no direction and no dot to slide, so a dead end at the
   // last space would just look broken. With nothing made yet there is only the
@@ -894,7 +896,7 @@ export function SpaceSwitcher({
               i !== activeIndex && "invisible",
             )}
           >
-            {/* "All Spaces", not "All", to match the project filter's own
+            {/* "All Profiles", not "All", to match the project filter's own
                 first entry — and it is the longest label a one-space app has,
                 which is what stops the box being narrower than the word beside
                 it. */}
@@ -972,6 +974,7 @@ export default function Sidebar({
   splitLearned,
   onNewSession,
   onOpenIssues,
+  onOpenSpaces,
   issuesOpen,
   onSetFlags,
   onFork,
@@ -1233,6 +1236,11 @@ export default function Sidebar({
           Issues
           <ShortcutKeys ids={["issues.open"]} className="ml-auto" />
         </Button>
+
+        {onOpenSpaces && <Button variant="ghost" size="sm" onClick={onOpenSpaces}
+          className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 dark:hover:bg-sidebar-accent/50">
+          <FileText />Spaces<ShortcutKeys ids={["spaces.open"]} className="ml-auto" />
+        </Button>}
 
         {/* The button *becomes* the field, on the same row at the same height:
             the icon holds its place, the caret lands where the label was, and

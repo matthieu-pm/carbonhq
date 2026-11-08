@@ -4,6 +4,7 @@ import {
   FILE_LINK_CLASS,
   FILE_PATH_CLASS,
   linkBareUrls,
+  linkPages,
   REHYPE_PLUGINS,
   TABLE_CELL_CLASS,
   walk,
@@ -463,5 +464,25 @@ describe("linkBareUrls", () => {
     ]);
     expect(tree.children?.[1].properties?.href).toBe("https://carbonhq.com");
     expect(tree.children?.[3].children?.[0].value).toBe("carbonhq.com");
+  });
+});
+
+
+describe("Page links", () => {
+  it("passes validated document links through the sanitizer once", () => {
+    const href = "carbon-page://local/019a1234-abcd-7000-8000-123456789abc?revision=2";
+    const node: Hast = { type: "element", tagName: "a", properties: { href }, children: [{ type: "text", value: "Plan" }] };
+    linkPages(node);
+    const marker = node.properties?.href;
+    expect(marker).toBe(`#carbon-page=${encodeURIComponent(href)}`);
+    linkPages(node);
+    expect(node.properties?.href).toBe(marker);
+  });
+  it("leaves executable and malformed URLs to the existing sanitizer", () => {
+    for (const href of ["javascript:alert(1)", "carbon-page://local/not-a-page"]) {
+      const node: Hast = { type: "element", tagName: "a", properties: { href } };
+      linkPages(node);
+      expect(node.properties?.href).toBe(href);
+    }
   });
 });

@@ -61,6 +61,34 @@ pub struct AppSettings {
     /// Rust starts it at launch, before any webview exists to ask.
     #[serde(default)]
     pub remote_access: bool,
+    // The server must gate agent commands and background sync even with no frontend open.
+    #[serde(default)]
+    pub pages_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "events.ts")]
+pub struct FeatureFlags {
+    pub pages_enabled: bool,
+}
+
+/// Exposes feature availability without sending accounts or other settings to the client.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn get_feature_flags() -> FeatureFlags {
+    FeatureFlags {
+        pages_enabled: read().await.pages_enabled,
+    }
+}
+
+/// Every Pages entry point must fail closed when its release flag is absent or unreadable.
+pub async fn require_pages_enabled() -> Result<(), String> {
+    if !read().await.pages_enabled {
+        return Err(
+            "Pages are disabled. Enable pagesEnabled in settings.json to use Spaces.".into(),
+        );
+    }
+    Ok(())
 }
 
 /// The transcription picks. Model and device mean "not chosen" when absent.
@@ -108,6 +136,7 @@ impl Default for AppSettings {
             linear_account: None,
             transcription: TranscriptionSettings::default(),
             remote_access: false,
+            pages_enabled: false,
         }
     }
 }
@@ -270,6 +299,7 @@ mod tests {
         let dir = tempdir();
         let off = AppSettings {
             analytics_enabled: false,
+            pages_enabled: false,
             install_id: Some("2f1c…".into()),
             linear_account: None,
             transcription: TranscriptionSettings::default(),
@@ -328,6 +358,24 @@ mod tests {
 
         assert!(settings.analytics_enabled);
         assert_eq!(settings.install_id, None);
+        assert!(!settings.pages_enabled);
+    }
+
+    #[tokio::test]
+    async fn pages_are_off_unless_the_server_configuration_explicitly_enables_them() {
+        let dir = tempdir();
+        assert!(!AppSettings::default().pages_enabled);
+        std::fs::write(path_in(&dir), r#"{"pagesEnabled":true}"#).unwrap();
+        let enabled = read_from(&dir).await.unwrap();
+        assert!(enabled.pages_enabled);
+        assert_eq!(
+            serde_json::to_value(FeatureFlags {
+                pages_enabled: enabled.pages_enabled
+            })
+            .unwrap(),
+            serde_json::json!({ "pagesEnabled": true })
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// An unknown field must not fail the read, or a file written by a newer

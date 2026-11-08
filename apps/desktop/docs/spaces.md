@@ -1,4 +1,6 @@
-# Spaces
+# Profiles
+
+Formerly called Spaces. The UI now says Profiles; the `space` project field and `ade.space` storage keys retain their existing spellings for compatibility. The document workspace is [Spaces](pages.md).
 
 **Membership is a tag on the project and that is the whole record** — `Project.space` in [projects.rs](../src-tauri/src/projects.rs), no spaces file, no id, no ordering. `#[serde(default)]` is load-bearing: the projects file is rewritten whole, so an entry written before the field existed failing to parse is *every* project gone.
 

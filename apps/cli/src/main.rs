@@ -11,6 +11,7 @@
 use clap::{Args, CommandFactory, Parser, Subcommand};
 
 mod draft;
+mod pages;
 mod machine;
 mod setup;
 use carbon_proto::{
@@ -65,6 +66,9 @@ enum Command {
     /// Save tasks for later, list them, and start or remove them.
     #[command(subcommand, arg_required_else_help = true)]
     Draft(DraftCommand),
+    /// Search and edit Markdown Pages in Spaces.
+    #[command(subcommand, arg_required_else_help = true)]
+    Pages(pages::PagesCommand),
     /// Drive this session's browser: open pages, read them, click and type.
     Browser(BrowserCommand),
     /// Publish one of this session's dev servers as a public link, list the
@@ -418,13 +422,14 @@ fn run() -> Result<(), String> {
             Command::Session(_)
                 | Command::Issue(_)
                 | Command::Draft(_)
+                | Command::Pages(_)
                 | Command::Browser(_)
                 | Command::Share(_)
                 | Command::New(_)
                 | Command::Ls(_)
                 | Command::Send(_)
         ) {
-            return Err("--machine takes session, draft, issue, browser and share commands".into());
+            return Err("--machine takes session, draft, issue, pages, browser and share commands".into());
         }
         let _ = MACHINE.set(machine);
     }
@@ -447,6 +452,7 @@ fn run() -> Result<(), String> {
             }))
         }
         Command::Draft(command) => draft::run(command),
+        Command::Pages(command) => pages::run(command),
         Command::Browser(args) => browser(args),
         Command::Share(args) => share(args),
         Command::Machine(command) => machine::run(command),

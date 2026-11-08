@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import SubscriptionUsageButton from "@/components/SubscriptionUsageButton";
 
 import "./App.css";
+import { pagePromptContext, setPageOpener, setPageTaskHandler, type LocatedPage, type Page, type PageTarget } from "@/lib/pages";
 import Chat from "@/components/Chat";
 import ChatInput from "@/components/ChatInput";
 import DiffWorkerPool from "@/components/DiffWorkerPool";
@@ -32,6 +33,8 @@ const FilesView = lazy(() => import("@/components/files/FilesView"));
 const DocsPanel = lazy(() => import("@/components/DocsPanel"));
 const SettingsPage = lazy(() => import("@/components/SettingsPage"));
 const IssuePanel = lazy(() => import("@/components/IssuePanel"));
+const PageMentionPicker = lazy(() => import("@/components/spaces/PageMentionPicker"));
+const SpacesView = lazy(() => import("@/components/spaces/SpacesView"));
 const IssuesView = lazy(() => import("@/components/IssuesView"));
 const PrPanel = lazy(() => import("@/components/PrPanel"));
 const BrowserPane = lazy(() => import("@/components/browser/BrowserPane"));
@@ -146,6 +149,7 @@ import {
 import { dismissNotice, getNotices, pushNotice } from "@/hooks/useNotices";
 import { checkChangelog, markChangelogSeen, type Release } from "@/lib/changelog";
 import WhatsNewCard from "@/components/WhatsNewCard";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { useSessionIssues } from "@/hooks/useIssues";
 import { useSessions } from "@/hooks/useSessions";
@@ -560,6 +564,9 @@ function App() {
   // selection: it is a place the reader goes and comes back from, and the
   // session they were in is still there when they do.
   const [issuesOpen, setIssuesOpen] = useState(false);
+  const [spacesOpen, setSpacesOpen] = useState(false);
+  const [pagePickerOpen, setPagePickerOpen] = useState(false);
+  const [pageRequest, setPageRequest] = useState<{ target: PageTarget; serial: number } | null>(null);
 
   /// The issues page's own refresh, so ⌘R can reach it. A ref rather than
   /// state: the page owns the read and hands its handle up, and re-rendering
@@ -593,6 +600,7 @@ function App() {
   // page's own connect form and the composer's placeholder all read it, and a
   // hook per surface is a second answer to "are we connected" free to disagree
   // with the first.
+  const { pagesEnabled } = useFeatureFlags();
   const integrations = useIntegrations(true);
   // Either one is enough to draw the page and open the picker: the two are
   // alternatives rather than halves of one connection, and a reader with only
@@ -648,7 +656,7 @@ function App() {
   };
   // Layout, not ordinary: the switch must be down before the page paints, or a
   // keystroke in that frame reaches a shell nobody can see.
-  useLayoutEffect(() => setHotkeysSuspended(settingsOpen), [settingsOpen]);
+  useLayoutEffect(() => setHotkeysSuspended(settingsOpen || spacesOpen), [settingsOpen, spacesOpen]);
 
   // Dictation writes into the composer's draft through the module-level store,
   // not through a prop: the controls reach `ChatInput` as an opaque node, so
@@ -2083,11 +2091,42 @@ function App() {
   // back with it — so this is a navigation, not a dismissal. Settings cover the
   // whole window, so they close too.
   const goToSession = (go: () => void) => {
+    setSpacesOpen(false);
     setIssuesOpen(false);
     closeSettings();
     setOpenDraftId(null);
     go();
   };
+
+  const referencePage = (page: LocatedPage<Page>) => {
+    appendToDraft(composerKey, pagePromptContext(page, activeServer));
+    setSpacesOpen(false);
+    setIssuesOpen(false);
+    closeSettings();
+    setViewTab("chat");
+    focusComposerEnd();
+  };
+  useEffect(() => {
+    if (!pagesEnabled) {
+      setSpacesOpen(false);
+      setPagePickerOpen(false);
+      setPageOpener(null);
+      return;
+    }
+    setPageOpener((target) => {
+      setPageRequest((previous) => ({ target, serial: (previous?.serial ?? 0) + 1 }));
+      setPagePickerOpen(false);
+      setSpacesOpen(true);
+      setSettingsOpen(false);
+    });
+    return () => setPageOpener(null);
+  }, [pagesEnabled]);
+  useEffect(() => {
+    setPageTaskHandler(pagesEnabled ? referencePage : null);
+    return () => setPageTaskHandler(null);
+  // The current composer's identity selects the prompt that receives the reference.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerKey, activeServer, pagesEnabled]);
 
   const showNewTaskComposer = () => setViewTabs((prev) => ({ ...prev, [newTaskId]: "chat" }));
   const handleNewSession = () => {
@@ -2763,6 +2802,12 @@ function App() {
   // nothing on that page opens the pane either (⌘E closes only there), and a
   // chord that closed it would have to pick somewhere to land, which is the
   // guess `goToSession` exists so nothing has to make.
+  useHotkey("spaces.open", () => {
+    setPagePickerOpen(false);
+    closeSettings();
+    setSpacesOpen(true);
+    window.dispatchEvent(new Event("spaces-search"));
+  }, { enabled: pagesEnabled });
   useHotkey("issues.open", () => setIssuesOpen(true));
   const fullscreen = useFullscreen();
   useGlass(fullscreen);
@@ -2834,7 +2879,7 @@ function App() {
     {/* Hidden, not unmounted, while settings take the window: transcripts,
         scroll pins and drafts wait here. `display: none` is also what takes
         the browser's native view down, its pane measuring zero. */}
-    <div className={cn("h-full w-full", settingsOpen && settingsReady && "hidden")}>
+    <div className={cn("h-full w-full", ((settingsOpen && settingsReady) || spacesOpen) && "hidden")}>
     <AppShell
       sidebarOpen={!collapsed}
       tall={issuesOpen}
@@ -2911,6 +2956,7 @@ function App() {
               handleNewSession();
             })
           }
+          onOpenSpaces={pagesEnabled ? () => setSpacesOpen(true) : undefined}
           onOpenIssues={() => setIssuesOpen(true)}
           issuesOpen={issuesOpen}
           drafts={sidebarDrafts}
@@ -3393,6 +3439,7 @@ function App() {
               onCancelBranchSwitch={() => setPendingBranch(null)}
               useWorktree={useWorktree}
               onToggleWorktree={() => setUseWorktree((v) => !v)}
+              onMentionPage={pagesEnabled ? () => setPagePickerOpen(true) : undefined}
               onAttach={() => void pickAttachments(attachmentKey(composerKey, composerCwd))}
               contextUsage={contextUsage}
               isNewSession={!selectedSessionId}
@@ -3563,6 +3610,15 @@ function App() {
         onView={() => closeWhatsNew(true)}
       />
     )}
+    {pagesEnabled && <MountOnce when={spacesOpen}>
+      <SpacesView active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest}
+        visibleProjects={space ? spaceProjects.map((p) => p.path) : null}
+        onClose={() => setSpacesOpen(false)} onSettings={() => setSettingsOpen(true)} />
+    </MountOnce>}
+    {pagesEnabled && <MountOnce when={pagePickerOpen}>
+      <PageMentionPicker contextKey={`${composerKey ?? "new"}:${activeServer}`} open={pagePickerOpen} onOpenChange={setPagePickerOpen}
+        visibleProjects={space ? spaceProjects.map((p) => p.path) : null} onSelect={referencePage} />
+    </MountOnce>}
     <DragGhost />
     <QuitDialog />
     <LinkDialog />

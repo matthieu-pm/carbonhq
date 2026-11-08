@@ -93,6 +93,7 @@ export const SHORTCUTS = [
   { id: "tab.next", label: "Next tab", group: "Panels and views", chord: k("}", { shift: true, code: "BracketRight" }) },
   { id: "tab.reopen", label: "Reopen closed tab", group: "Panels and views", chord: k("t", { shift: true }) },
   { id: "chat.bottom", label: "Scroll chat to bottom", group: "Panels and views", chord: k("ArrowDown") },
+  { id: "spaces.open", label: "Open Spaces", group: "Panels and views", chord: k("p") },
   { id: "issues.open", label: "Open issues", group: "Panels and views", chord: k("i") },
   { id: "issues.search", label: "Search issues", group: "Panels and views", chord: k("f", { shift: true }) },
 

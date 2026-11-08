@@ -39,7 +39,7 @@ export default function SpacesSettings({
 }: {
   projects: Project[];
   spaces: string[];
-  /// Opens with the new-space field already up. The sidebar's own "New space"
+  /// Opens with the new-space field already up. The sidebar's own "New profile"
   /// lands here, and it would otherwise leave the reader on a tab to find the
   /// button they just pressed.
   startNaming?: boolean;
@@ -86,7 +86,7 @@ export default function SpacesSettings({
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-ui font-medium text-foreground">Spaces</h2>
+          <h2 className="text-ui font-medium text-foreground">Profiles</h2>
           {/* On the heading's own row: it acts on the list under it, and a
               button at the bottom of a list that grows moves every time one is
               added. */}
@@ -100,19 +100,19 @@ export default function SpacesSettings({
             className="h-7 gap-1 px-2 text-ui text-muted-foreground hover:text-foreground"
           >
             <Plus className="size-3.5" />
-            New space
+            New profile
           </Button>
         </div>
 
         <p className="text-ui text-muted-foreground">
-          Switching space in the sidebar shows that set of projects alone.
+          Switching profile in the sidebar shows that set of projects alone.
           Everything else keeps running, out of sight and quiet. Drag to
-          reorder; the switcher steps through spaces in this order.
+          reorder; the switcher steps through profiles in this order.
         </p>
 
         {naming === "" && (
           <SpaceNameField
-            label="New space"
+            label="New profile"
             initial=""
             action="Create"
             onCommit={(value) => commit("", value)}
@@ -121,7 +121,7 @@ export default function SpacesSettings({
         )}
 
         {spaces.length === 0 && naming === null && (
-          <p className="text-ui text-muted-foreground">No spaces yet.</p>
+          <p className="text-ui text-muted-foreground">No profiles yet.</p>
         )}
 
         <div ref={spaceDrag.list} className="flex flex-col gap-1">
@@ -208,7 +208,7 @@ export default function SpacesSettings({
         {projects.length === 0 ? (
           <p className="text-ui text-muted-foreground">
             No projects attached yet. Attach one from the composer, then file it
-            into a space here.
+            into a profile here.
           </p>
         ) : (
           <div ref={projectDrag.list} className="flex flex-col gap-1">
@@ -251,18 +251,18 @@ export default function SpacesSettings({
                         variant="ghost"
                         size="sm"
                         // Hugs its label: a fixed width holds a column of air
-                        // open beside "No space" to fit a name nobody has
+                        // open beside "No profile" to fit a name nobody has
                         // typed yet.
                         className="max-w-40 shrink-0 gap-1 px-2 text-ui"
                       >
-                        <span className="truncate">{project.space ?? "No space"}</span>
+                        <span className="truncate">{project.space ?? "No profile"}</span>
                         <ChevronDown className="size-3 shrink-0 opacity-60" />
                       </Button>
                     </DropdownMenuTrigger>
 
                     <DropdownMenuContent align="end">
                       <DropdownMenuRadioGroup
-                        // No space rides on the empty string, which no space
+                        // No profile rides on the empty string, which no space
                         // can be named — the same bargain the sidebar's
                         // switcher makes.
                         value={project.space ?? ""}
@@ -271,7 +271,7 @@ export default function SpacesSettings({
                         }
                       >
                         <DropdownMenuRadioItem value="" className="text-ui">
-                          No space
+                          No profile
                         </DropdownMenuRadioItem>
                         {spaces.map((name) => (
                           <DropdownMenuRadioItem
@@ -316,7 +316,7 @@ export function SpaceNameField({
   label,
   initial,
   action,
-  placeholder = "Space name",
+  placeholder = "Profile name",
   allowEmpty = false,
   onCommit,
   onCancel,

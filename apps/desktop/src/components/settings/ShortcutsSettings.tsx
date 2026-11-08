@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { RotateCcw } from "lucide-react";
 
 import ShortcutKeys, { DigitKeys } from "@/components/ShortcutKeys";
@@ -186,6 +187,7 @@ function DigitRow({ id, label, slots }: { id: DigitChordId; label: string; slots
 /// noise down a column of keycaps; the recorder already owns "what is this
 /// key", so emptying it lives there, named in its own prompt.
 export default function ShortcutsSettings({ onOpenIsland }: { onOpenIsland: () => void }) {
+  const { pagesEnabled } = useFeatureFlags();
   const overrides = useShortcutOverrides();
   const [recording, setRecording] = useState<ShortcutId | null>(null);
   const [refused, setRefused] = useState<{ id: ShortcutId; reason: string } | null>(null);
@@ -197,7 +199,7 @@ export default function ShortcutsSettings({ onOpenIsland }: { onOpenIsland: () =
     !q || label.toLowerCase().includes(q) || group.toLowerCase().includes(q);
   const shown = SHORTCUT_GROUPS.map((group) => ({
     group,
-    rows: SHORTCUTS.filter((s) => s.group === group && matches(s.label, group)),
+    rows: SHORTCUTS.filter((s) => s.group === group && (s.id !== "spaces.open" || pagesEnabled) && matches(s.label, group)),
     digits: DIGIT_CHORDS.filter((c) => c.group === group && matches(c.label, group)),
   })).filter((g) => g.rows.length + g.digits.length > 0);
   const islandShown = IS_MAC && matches("Open Carbon Island", "Carbon Island");

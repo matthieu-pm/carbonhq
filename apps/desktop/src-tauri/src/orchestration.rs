@@ -628,6 +628,9 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
         Request::SendMessage(send) => send_message(send, None, app).await,
         Request::LinkIssues(link) => link_issues(link, app).await,
         Request::WriteIssue(write) => write_issue(write, app).await,
+        Request::Pages(request) => Ok(Response::Pages {
+            data: crate::pages::request(request, app).await.map_err(anyhow::Error::msg)?,
+        }),
         Request::CreateDraft(create) => create_draft(create, None, app).await,
         Request::ListDrafts(list) => list_drafts(list).await,
         Request::RemoveDraft(draft) => remove_draft(&draft.id, app).await,

@@ -134,7 +134,7 @@ export default function SettingsPage({
   projects: Project[];
   spaces: string[];
   /// Opens the Spaces tab with its new-space field already up, which is where
-  /// the sidebar's own "New space" lands.
+  /// the sidebar's own "New profile" lands.
   startNamingSpace?: boolean;
   onSetProjectSpace: (path: string, space: string | null) => void;
   onRemoveProject: (path: string) => void;
@@ -1292,7 +1292,7 @@ function Section({ title, children }: { title?: string; children: ReactNode }) {
 /// Skills take Nucleo's filled UI glyphs, which sit at the same weight.
 const ALL_TABS = [
   { id: "appearance", label: "Appearance", Icon: PaintBrushIcon },
-  { id: "spaces", label: "Spaces", Icon: Square3Stack3DIcon },
+  { id: "spaces", label: "Profiles", Icon: Square3Stack3DIcon },
   { id: "servers", label: "Servers", Icon: ServerStackIcon },
   { id: "accounts", label: "Accounts", Icon: KeyIcon },
   { id: "mcp", label: "MCP", Icon: Plug2Glyph18 },

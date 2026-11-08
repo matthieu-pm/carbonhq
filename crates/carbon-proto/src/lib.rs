@@ -44,8 +44,8 @@ use std::path::PathBuf;
 /// request here, a create meant for a VPS starting on the Mac as if it had
 /// gone where it was sent. v13 added `write_issue`: an older app cannot parse
 /// it, and a failed parse answers "could not parse the request" where the
-/// reader needs "update the Carbon app".
-pub const PROTOCOL_VERSION: u32 = 13;
+/// reader needs "update the Carbon app". v14 added managed Markdown Pages.
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// The oldest envelope the app still answers. Rises only when a shape is
 /// *renamed*, never for an addition: v4 renamed `LinkIssues.identifiers` to
@@ -122,6 +122,7 @@ impl Request {
             | Request::ListShares(_) => 10,
             Request::SetRemoteAccess(_) => 11,
             Request::WriteIssue(_) => 13,
+            Request::Pages(_) => 14,
             // v12 is when the wrapper itself arrived. A newer request inside it
             // has to stamp its own version, or a v12 app parses the wrapper and
             // then says it could not parse the line instead of naming the update.
@@ -155,7 +156,32 @@ pub enum Request {
     ListShares(ListSessions),
     SetRemoteAccess(SetRemoteAccess),
     WriteIssue(WriteIssue),
+    Pages(PageRequest),
     OnMachine(OnMachine),
+}
+
+/// Managed Markdown operations carry revisions so agents cannot overwrite unseen edits.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum PageRequest {
+    List { query: Option<String>, project_path: Option<String>, #[serde(default)] trashed: bool },
+    Read { id: String },
+    Backlinks { id: String, owner: Option<String>, source_owner: Option<String> },
+    Assets { id: String },
+    WriteAsset { id: String, name: String, asset_id: String, offset: u64, data: String, complete: bool },
+    LinearList { query: Option<String>, after: Option<String> },
+    LinearRead { document_id: String },
+    ImportLinear { document_id: String, #[serde(default)] project_paths: Vec<String> },
+    SyncStatus { id: String },
+    SyncLinear { id: String, revision: u64, resolution: Option<String>, expected_remote_updated_at: Option<String> },
+    UnlinkLinear { id: String, revision: u64 },
+    History { id: String },
+    ReadVersion { id: String, version: u64 },
+    RestoreVersion { id: String, revision: u64, version: u64 },
+    Create { title: String, markdown: String, #[serde(default)] project_paths: Vec<String> },
+    Update { id: String, revision: u64, title: Option<String>, markdown: Option<String>, project_paths: Option<Vec<String>>, favorite: Option<bool> },
+    Patch { id: String, revision: u64, old_text: String, new_text: String },
+    Trash { id: String, revision: u64, trashed: bool },
 }
 
 /// Any other request, run on a machine the app connects to rather than here.
@@ -787,6 +813,9 @@ pub enum Response {
     Drafts {
         drafts: Vec<DraftSummary>,
     },
+    Pages {
+        data: serde_json::Value,
+    },
     /// Every issue the session carries *after* the change, so the caller sees
     /// the result rather than a diff it has to apply to what it believed.
     Linked {
@@ -1177,13 +1206,24 @@ mod tests {
             request: Box::new(write.clone()),
         });
         assert_eq!(Envelope::new(written_there).v, 13);
+        let pages = Request::Pages(PageRequest::Read { id: "page".into() });
+        assert_eq!(Envelope::new(pages.clone()).v, 14);
+        let patch = Envelope::new(Request::Pages(PageRequest::Patch {
+            id: "page".into(), revision: 42, old_text: "old\ntext".into(), new_text: "new\ntext".into(),
+        }));
+        let decoded: Envelope = serde_json::from_str(&encode_line(&patch).unwrap()).unwrap();
+        assert!(matches!(decoded.request, Request::Pages(PageRequest::Patch { revision: 42, old_text, .. }) if old_text == "old\ntext"));
+        let page_elsewhere = Request::OnMachine(OnMachine {
+            machine: "vps".into(), request: Box::new(pages.clone()),
+        });
+        assert_eq!(Envelope::new(page_elsewhere).v, 14);
         let newest = old
             .iter()
             .chain(&drafts)
             .chain([&share])
             .chain(&servers)
             .chain(&sessions)
-            .chain([&remote, &elsewhere, &write])
+            .chain([&remote, &elsewhere, &write, &pages])
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));

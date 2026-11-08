@@ -416,7 +416,7 @@ transcription: TranscriptionSettings,
  * Whether this Mac serves itself through a quick tunnel. Here because
  * Rust starts it at launch, before any webview exists to ask.
  */
-remoteAccess: boolean, };
+remoteAccess: boolean, pagesEnabled: boolean, };
 
 /**
  * Permission stance a session *runs under*, in roughly increasing order of
@@ -697,6 +697,8 @@ icon: string | null, };
 export type ExternalAppKind = "editor" | "terminal" | "files";
 
 export type Failure = { message: string, fix: Fix | null, };
+
+export type FeatureFlags = { pagesEnabled: boolean, };
 
 /**
  * What the viewer draws, or the sentence saying why it draws nothing.
@@ -1130,6 +1132,16 @@ export type IssuesChangedEvent = { sessionId: string, issues: Array<IssueRef>, }
  */
 export type KeyValue = { name: string, value: string, };
 
+export type LinearDocument = { markdown: string, id: string, title: string, url: string, updatedAt: string, trashed: boolean, project: LinearProject | null, };
+
+export type LinearDocumentList = { documents: Array<LinearDocumentSummary>, nextCursor: string | null, };
+
+export type LinearDocumentSummary = { id: string, title: string, url: string, updatedAt: string, trashed: boolean, project: LinearProject | null, };
+
+export type LinearPageLink = { documentId: string, url: string, lastSyncedAt: string, remoteUpdatedAt: string, };
+
+export type LinearProject = { id: string, name: string, };
+
 /**
  * Where a server is written, which is also what decides who reads it.
  */
@@ -1347,6 +1359,20 @@ model: string, inputTokens: number | null, outputTokens: number | null, cachedIn
  * against — see `context_window` in the Claude Code mapper.
  */
 contextWindow: number | null, maxOutputTokens: number | null, };
+
+export type Page = { id: string, title: string, markdown: string, projectPaths: Array<string>, revision: number, created: string, modified: string, trashed: boolean, favorite: boolean, };
+
+export type PageAsset = { id: string, name: string, path: string, mimeType: string, size: number, url: string, };
+
+export type PageAssetWrite = { written: number, asset: PageAsset | null, };
+
+export type PageSummary = { id: string, title: string, projectPaths: Array<string>, revision: number, created: string, modified: string, trashed: boolean, favorite: boolean, excerpt: string, };
+
+export type PageSyncConflict = { baseTitle: string, localRevision: number, remote: LinearDocumentSummary, remotePreview: string, remoteBytes: number, };
+
+export type PageSyncState = { page: Page, link: LinearPageLink | null, status: PageSyncStatus, error: string | null, conflict: PageSyncConflict | null, };
+
+export type PageSyncStatus = "synced" | "local_changes" | "conflict" | "missing" | "error" | "unlinked";
 
 export type PermissionBehavior = "allow" | "deny";
 

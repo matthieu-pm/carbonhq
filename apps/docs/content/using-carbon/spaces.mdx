@@ -1,58 +1,61 @@
 ---
-title: Spaces
-description: Group projects into spaces, like work and personal, switch between them in the sidebar, and keep other spaces' sessions and notifications out of sight.
+title: Spaces and Pages
+description: Write Markdown Pages, link them to projects, and work on them with agents.
 sidebar:
   order: 6
 ---
 
-A space is a named set of projects. Switch to one and Carbon shows only its projects and their sessions. Use spaces to keep work and personal projects apart, or to share your screen without showing everything else you have running.
+Spaces and Pages are currently behind a feature flag and **off by default**. The instructions below apply when Pages is enabled for testing. Profiles remains available.
 
-A space only changes what you see. Every session in every space keeps running.
+Open **Spaces** from the sidebar or press `⌘P`. Spaces is Carbon's document workspace. Its documents are called **Pages**.
 
-## Create a space
+Project and session grouping is now called [Profiles](/docs/using-carbon/profiles). Existing groups and settings are kept.
 
-Open Settings (`⌘,`) → **Spaces** and click **New space**. Type a name and click **Create**, or press `⏎`.
+## Create and organize Pages
 
-Before you have any spaces, the sidebar's space switcher also offers **New space**; clicking it opens the same field.
+Click **Create** to write a Page. Use **Link project** to associate it with one or several projects. Every project link points to the same document. A Page can also stand on its own.
 
-## File a project into a space
+Search finds words in titles and document bodies. Use Favorites, Recent, project filters, or the list and grid controls to find your work. Trash keeps deleted Pages available to restore.
 
-In Settings → **Spaces**, the **Projects** list shows every attached project. Each row has a menu reading **No space** or the space's name. Pick a space from it. A project belongs to one space at most.
+Pages belong to their Carbon server. A remote Page remains on its server; linking it to a project does not copy it into a repository or worktree.
 
-A project you attach starts with no space. It shows under **All Spaces** until you file it. So attach new projects from **All Spaces**, then file them: attached while a space is up, the project is not in that space, and the composer drops it at once.
+## Write Markdown
 
-## Switch spaces
+The rich editor supports headings, formatting, nested lists and checklists, links, images, tables, code blocks, and formulas. Type `/` to insert a block. Select text to format it. Code blocks retain their language, including Mermaid diagram source.
 
-The switcher sits at the top of the sidebar, next to the settings gear, and shows the current space's name. Click it to step to the next space. The list wraps, and **All Spaces** comes first. Hover it to see a dot per space.
+Use **Markdown source** to edit the underlying text and **Preview Page** to read it. Source mode preserves constructs outside the rich editor's schema, including HTML, frontmatter, footnotes, reference links, and callouts. Pages larger than 32 KiB open in source mode to keep editing responsive. A Page body can hold up to 256 KiB.
 
-When you switch:
+Changes save automatically. `⌘S` saves immediately. If another writer changes the Page, Carbon keeps your draft and offers a comparison. Saving your version requires the revision you reviewed; another intervening edit raises another conflict.
 
-- The sidebar lists only sessions in that space's projects.
-- The project filter goes back to **All Projects**, and the composer's project picker lists only that space's projects.
-- If the composer's project is outside the space, it moves to one inside it.
-- If the open session is outside the space, it closes.
-- `⌘⇧↑` / `⌘⇧↓` and the `&` session picker see only that space's sessions.
+## History and references
 
-**All Spaces** shows everything, including projects with no space.
+Open **Version history** to inspect earlier revisions. Restore writes a new revision and retains the Page's current project links, favorite, and Trash state.
 
-## Rename, reorder or remove a space
+**Use in task** adds a saved Page reference to the composer. You can also choose **Reference a Page** from the composer's context menu. Conversation references cite a specific revision. Opening one shows that saved content, with an action to open the current Page.
 
-All in Settings → **Spaces**:
+Use **Link another Page** inside a document for a live link. **Linked from** lists Pages that refer to the document.
 
-- **Rename**: click the pencil, type the new name, click **Save**. Projects in the space move with it.
-- **Reorder**: drag a space by its grip, or focus the grip and use `↑` / `↓`. The switcher steps through spaces in this order.
-- **Remove**: click the bin, then confirm. Its projects go back to no space.
+## Attachments and previews
 
-Removing or renaming a space never touches projects or sessions.
+Attach files from the Page toolbar. Images can appear inline; file links open a preview where the file type supports it. Preview renders formulas and Mermaid diagrams. Attachments can be up to 20 MiB and stay available independently of sessions and worktrees.
 
-## Notifications
+## Agent access
 
-While a space is up, sessions outside it stay quiet. They raise no in-app card and no macOS notification when they finish or ask for something. Switch to their space, or to **All Spaces**, to see them.
+Agents use the same managed documents and revision checks as the editor:
 
-The Dock badge is the exception: it counts sessions in every space, since it names none of them.
+```sh
+carbon pages list --project /path/to/project
+carbon pages search "release plan"
+carbon pages read <page-id>
+carbon pages read <page-id> --version 3
+carbon pages update <page-id> --revision 3 --file plan.md
+carbon pages history <page-id>
+```
 
-## Limits
+Use `carbon pages --help` for attachment, backlink, history, and sync commands. Reads return the revision needed by a write. A stale write leaves the document unchanged.
 
-- The list of spaces you made is kept on this Mac. A project's space is stored with the project.
-- A space switch does not pause anything. An agent in a hidden space can still ask for permission and wait there until you come back.
-- `⌘,` can be changed in Settings → Shortcuts.
+## Linear documents
+
+Choose **Create → Import from Linear** to link a Linear document as a Page. The Page's source controls show its sync status and let you open the original or unlink it while retaining the Carbon Page.
+
+Linked documents sync in both directions. Page links and attachments stay in Carbon; syncing their Markdown does not upload their files to Linear. If both sides changed, Carbon preserves both versions and asks which to keep. Linear does not provide an atomic conditional document update, so a write checks the remote version immediately before sending; this cannot eliminate a remote edit in the narrow interval between that check and the update.

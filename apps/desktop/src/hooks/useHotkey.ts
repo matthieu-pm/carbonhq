@@ -14,6 +14,8 @@ import { IS_MAC } from "@/lib/platform";
 import type { ShortcutId } from "@/lib/shortcuts";
 
 type HotkeyOptions = {
+  /// A full-window page owns its shortcuts while the session shell is suspended.
+  page?: boolean;
   /// False unregisters the listener outright rather than making the handler a
   /// no-op. The difference is `preventDefault`: this claims every chord it
   /// matches, so a binding left registered while its view is hidden would eat
@@ -42,6 +44,7 @@ type HotkeyOptions = {
 /// a whole, where everything else acts on a session, a view or the composer.
 const APP_WIDE: ReadonlySet<ShortcutId> = new Set([
   "settings",
+  "spaces.open",
   "theme.next",
   "mode.toggle",
   "panel.side",
@@ -82,7 +85,7 @@ const UNBOUND = { key: "", meta: false, shift: false, alt: false, code: undefine
 export function useHotkey(
   id: ShortcutId,
   handler: () => void,
-  { enabled = true, platformOnly = false, skipInTextField = false }: HotkeyOptions = {},
+  { enabled = true, platformOnly = false, skipInTextField = false, page = false }: HotkeyOptions = {},
 ) {
   // An unbound row answers no chord, and the listener is left unregistered for
   // the same reason `enabled: false` does: this claims every chord it matches,
@@ -95,7 +98,7 @@ export function useHotkey(
     if (!enabled || !key) return;
     const onKeyDown = (e: KeyboardEvent) => {
       // Before matching, so a suspended chord is left to the page entirely.
-      if (suspended && !APP_WIDE.has(id)) return;
+      if (suspended && !page && !APP_WIDE.has(id)) return;
       // `code` is only consulted for an Option chord, and only for a letter.
       // macOS applies the Option layout to `key` — ⌥O can arrive as "ø" — so a
       // binding that reads `key` alone silently never fires. The narrowness is
@@ -128,7 +131,7 @@ export function useHotkey(
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [id, key, meta, shift, alt, code, enabled, platformOnly, skipInTextField]);
+  }, [id, key, meta, shift, alt, code, enabled, platformOnly, skipInTextField, page]);
 }
 
 /// Binds a modifier set over a run of digits — one listener for a whole row of

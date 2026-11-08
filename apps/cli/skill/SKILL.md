@@ -251,6 +251,79 @@ in the crew beside this session, and that they can have you record a preference
 in `CLAUDE.md`, `AGENTS.md` or memory. Every other session stays in the sidebar
 unless the user asks.
 
+## Markdown Pages
+
+Pages requires the owning server’s `pagesEnabled` feature flag, which defaults to false.
+
+Pages is behind a release flag and is off by default. For an explicit test,
+set `"pagesEnabled": true` in Carbon's configuration `settings.json`; preserve
+the file's other fields. An isolated server reads this from
+`<CARBON_HOME>/settings.json`. Removing the flag disables Page reads, writes,
+attachments and background sync without deleting any documents.
+
+Spaces holds Markdown documents independently of sessions and worktrees. A Page
+can link to several projects; each link names the same document. Existing project
+groups are called Profiles.
+
+```bash
+carbon pages list
+carbon pages search "release plan" --project /absolute/project/path
+carbon pages read <page-id>                  # JSON, including revision
+carbon pages read <page-id> --markdown       # Markdown body alone
+carbon pages create --title "Release plan" --file plan.md --project /absolute/project/path
+carbon pages update <page-id> --revision 1 --file updated.md
+carbon pages patch <page-id> --revision 2 --old-text "old sentence" --new-text "new sentence"
+carbon pages trash <page-id> --revision 3
+carbon pages list --trashed
+carbon pages restore <page-id> --revision 4
+carbon pages history <page-id>             # latest 100 committed versions
+carbon pages read-version <page-id> 2 --markdown
+carbon pages restore-version <page-id> 2 --revision 5
+carbon pages attach <page-id> --file diagram.png
+carbon pages assets <page-id>
+carbon pages backlinks <page-id>
+carbon --machine vps pages list
+```
+
+Read before editing and pass the returned `revision`. A conflict means another
+writer changed the Page: read again, reconcile that change, and retry against the
+new revision. Never replace their work by blindly refreshing the revision. A
+patch must match exactly once. `--file -` reads Markdown from stdin. Repeat
+`--project` on create/update for several projects; updating links replaces the
+whole list and `--clear-projects` removes them all. Paths name projects on the
+owning server. Every operation returns JSON except `read --markdown`.
+`restore-version` restores title and Markdown as a new revision and preserves the
+Page's current project links, favorite and Trash state. It never rewrites history. Older revisions outside the latest 100 remain
+readable and restorable by number.
+
+Attachments can reach 20 MiB and upload in chunks. `attach` returns a stable
+`carbon-asset://` URL; insert it as an ordinary Markdown link or image using a
+guarded Page edit. Uploading alone leaves the document unchanged. Assets belong
+to the Page and survive session/worktree deletion. `backlinks --owner <target-server-id>
+--source-owner <scanned-server-id>` scans references to a Page owned by another
+server without requiring a local copy. Both default to `local`. A URL naming
+`local` is relative to its source server; `this-mac` names the desktop's local
+server explicitly. Code, images and trashed source Pages do not count as backlinks.
+
+Linear documents can be explicitly imported and linked. Discovery and reads do
+not link anything. Only linked documents participate in background sync.
+
+```bash
+carbon pages linear-list --query "release plan"
+carbon pages linear-read <linear-document-id>
+carbon pages import-linear <linear-document-id> --project /absolute/project/path
+carbon pages sync-status <page-id>
+carbon pages sync <page-id> --revision 3
+carbon pages sync <page-id> --revision 3 --resolution carbon --expected-remote-updated-at <shown-timestamp>
+carbon pages unlink-linear <page-id> --revision 4
+```
+
+A conflict retains both originals. Read the conflict state and remote document
+before choosing `carbon` or `linear`, then pass the displayed local revision and
+remote timestamp together. Unlink removes only the connection, keeping the Carbon
+Page, revision history and Linear document. The background server checks linked
+documents every minute, with bounded work and retries.
+
 ## Listing sessions
 
 ```bash

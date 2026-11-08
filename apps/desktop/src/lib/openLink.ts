@@ -1,4 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { parsePageUrl } from "@/lib/pageLinks";
+import { openPage } from "@/lib/pages";
 import { useSyncExternalStore } from "react";
 
 import { channel } from "@/lib/channel";
@@ -34,6 +36,8 @@ export function usePendingLink(): string | null {
 /// strip. `LinkDialog` is left mounted but nothing raises it: `askLink` is its
 /// way back in.
 export function openLink(url: string, event?: { metaKey: boolean; ctrlKey: boolean }) {
+  const page = parsePageUrl(url);
+  if (page) { openPage(page); return; }
   opener(url, { external: !!(event?.metaKey || event?.ctrlKey) });
 }
 
