@@ -30,3 +30,7 @@ export { SlackGlyph32 } from "./SlackGlyph32";
 export { ShapeTriangleFilledGlyph20 } from "./ShapeTriangleFilledGlyph20";
 export { House3Glyph18 } from "./House3Glyph18";
 export { FilesGlyph18 } from "./FilesGlyph18";
+export { Hand2Glyph18 } from "./Hand2Glyph18";
+export { ShieldCheckGlyph18 } from "./ShieldCheckGlyph18";
+export { ShieldSlashGlyph18 } from "./ShieldSlashGlyph18";
+export { TasksGlyph18 } from "./TasksGlyph18";

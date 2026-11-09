@@ -1,5 +1,10 @@
-import { useState } from "react";
-import { Hand, ListChecks, ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
+import { useState, type ComponentType, type SVGProps } from "react";
+import {
+  Hand2Glyph18,
+  ShieldCheckGlyph18,
+  ShieldSlashGlyph18,
+  TasksGlyph18,
+} from "@/components/icons/nucleo";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -25,11 +30,11 @@ import type { ApprovalPolicy, Harness } from "@/types/events";
 /// invites picking the wrong one; and `acceptEdits`, which was here and was
 /// removed — it applied edits without asking while still asking about
 /// commands, a promise too narrow to fit on a button beside `auto`.
-const MODES: { id: ApprovalPolicy; label: string; icon: LucideIcon }[] = [
-  { id: "bypassPermissions", label: "Bypass permissions", icon: ShieldOff },
-  { id: "manual", label: "Ask every time", icon: Hand },
-  { id: "plan", label: "Plan", icon: ListChecks },
-  { id: "auto", label: "Auto", icon: ShieldCheck },
+const MODES: { id: ApprovalPolicy; label: string; icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
+  { id: "bypassPermissions", label: "Bypass permissions", icon: ShieldSlashGlyph18 },
+  { id: "manual", label: "Ask every time", icon: Hand2Glyph18 },
+  { id: "plan", label: "Plan", icon: TasksGlyph18 },
+  { id: "auto", label: "Auto", icon: ShieldCheckGlyph18 },
 ];
 
 /// Whether this harness has a stance worth picking between.
@@ -94,7 +99,7 @@ export default function PermissionSelector({
               )}
               aria-label="Switch permission"
             >
-              {selected && <selected.icon />}
+              {selected && <selected.icon aria-hidden />}
               {selected?.label ?? "Permissions"}
             </Button>
           </DropdownMenuTrigger>
@@ -124,7 +129,7 @@ export default function PermissionSelector({
                   "text-destructive focus:text-destructive focus:**:text-destructive",
               )}
             >
-              <mode.icon className="size-3.5" />
+              <mode.icon className="size-3.5" aria-hidden />
               {mode.label}
             </DropdownMenuRadioItem>
           ))}
