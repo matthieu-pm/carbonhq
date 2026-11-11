@@ -1205,9 +1205,9 @@ export default function ChatInput({
                       setCaret(at.start + 1);
                     }
                   }}
-                  // Three lines tall on a new task, and the height is the
+                  // Room for three lines on a new task, and the height is the
                   // editor's own so a click anywhere in that space lands in it.
-                  className={cn("px-1 py-1 text-prompt", isNewTask && "min-h-[4.5lh]")}
+                  className={cn("px-1 py-1 text-prompt", isNewTask && "min-h-[3.5lh]")}
                 />
               </div>
 
