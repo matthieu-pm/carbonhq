@@ -16,9 +16,9 @@ import type { Todo } from "@/lib/todos";
 /// reader, so an item merely being worked on wore the colour of a problem.
 /// Clipped to the box's own rounding rather than drawn as a second rounded
 /// shape, or the half's corners would read as a smaller box inside the first.
-function TodoMark({ status }: { status: Todo["status"] }) {
+function TodoMark({ status, dense }: { status: Todo["status"]; dense: boolean }) {
   return (
-    <svg viewBox="0 0 16 16" className="mt-0.5 size-4 shrink-0" aria-hidden>
+    <svg viewBox="0 0 16 16" className={cn("size-4 shrink-0", !dense && "mt-0.5")} aria-hidden>
       <rect
         width="16"
         height="16"
@@ -59,8 +59,11 @@ function TodoMark({ status }: { status: Todo["status"] }) {
 export default function TodoList({
   todos,
   live = false,
+  dense = false,
 }: {
   todos: Todo[];
+  /// The pinned summary's size: its rows are chrome type, not transcript type.
+  dense?: boolean;
   /// Whether an `in_progress` item is being worked on *now*, which is the only
   /// thing that earns the shimmer. Two ways it can be false and both matter: a
   /// transcript row is what the agent wrote at that moment rather than the
@@ -72,8 +75,8 @@ export default function TodoList({
   return (
     <ul className="flex flex-col gap-1.5">
       {todos.map((todo, i) => (
-        <li key={todo.id ?? i} className="flex items-start gap-2 text-chat leading-snug">
-          <TodoMark status={todo.status} />
+        <li key={todo.id ?? i} className={cn("flex items-start leading-snug", dense ? "gap-2.5 text-xs" : "gap-2 text-chat")}>
+          <TodoMark status={todo.status} dense={dense} />
           <span
             className={cn(
               // Dimmed and not struck through: the tick beside it already says

@@ -27,6 +27,12 @@ Object.assign(window, { __TAURI_INTERNALS__: {
 localStorage.setItem("ade.pinnedSummaryItems", JSON.stringify({ workspace: false }));
 localStorage.removeItem("ade.pinnedSummarySessions");
 
+const TODOS = [
+  { content: "Look at how the summary rail is laid out", status: "completed" as const },
+  { content: "Move the chat scrollbar for the rail, which takes the canvas's right margin", status: "in_progress" as const },
+  { content: "Check it in the summary-rail demo", status: "pending" as const },
+];
+
 function Demo() {
   const [panelOpen, setPanelOpen] = useState(false);
   const summary = usePinnedSummary("demo", true, true);
@@ -34,7 +40,8 @@ function Demo() {
   const card = (
     <PinnedSummary sessionId="demo" project="carbon" cwd="/Users/me/carbon" environment="This Mac"
       branch="main" worktree={null} harness="claude_code" changes={null} changesLoading={false} changesError={null}
-      prs={[]} prsLoading={false} prsError={null} subagents={[]} busy={false} liveTaskIds={new Set()} sources={[]}
+      prs={[]} prsLoading={false} prsError={null} subagents={[]} busy liveTaskIds={new Set()} sources={[]}
+      todos={TODOS}
       context={{ used: BREAKDOWN.usedTokens, max: BREAKDOWN.maxTokens }} open={summary.open} docked={docked}
       onOpen={() => {}} onHide={() => summary.setOpen(false)} />
   );

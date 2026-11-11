@@ -3005,6 +3005,7 @@ function App() {
       prsLoading={pullRequests.loading}
       prsError={pullRequests.error}
       subagents={subagents}
+      todos={sessionTodos}
       busy={busy}
       liveTaskIds={liveTaskIds}
       sources={sources}

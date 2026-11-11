@@ -25,6 +25,7 @@ export const SUMMARY_ITEMS = [
   { id: "branch", label: "Branch", defaultVisible: true },
   { id: "changes", label: "Changes", defaultVisible: true },
   { id: "prs", label: "Pull requests", defaultVisible: true },
+  { id: "tasks", label: "Tasks", defaultVisible: true },
   { id: "subagents", label: "Subagents", defaultVisible: true },
   { id: "sources", label: "Sources", defaultVisible: true },
   { id: "context", label: "Context window", defaultVisible: true },

@@ -286,6 +286,7 @@ Tests use `include_str!` against real captured CLI output under `harness/<name>/
 - `compaction.jsonl` — the only capture of `compact_boundary`, of a `result` with null `stop_reason`, and of `isReplay`/`isSynthetic` user lines.
 - `image_read.jsonl` — the only capture of an `image` block in a tool result and of the same bytes riding the `tool_use_result` sidecar as `file.base64`.
 - `context_usage.jsonl` — the `control_response` to `get_context_usage` from a child with no conversation, trimmed of `gridRows` and the per-file lists. Pins the category ids and `kind`s the pinned summary's context section reads. No MCP rows in it; those ids came from the CLI bundle.
+- `task_list.jsonl` — the only capture of `TaskCreate`/`TaskUpdate` (v2.1.322, spawned with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`), trimmed to `init`, `assistant`, `user` and `result` lines. Pins that a create's id rides `tool_use_result.task.id`, which is what an update names.
 - `file_write.jsonl` — the only capture of a tool call whose arguments take real time to stream (60 fragments over 39.5s), and what pin the key ordering the streaming preview depends on. Read by `pnpm test`, not `cargo test`.
 - `codex/fixtures/rollout.jsonl` — a session *replay* log, not live protocol. **Do not write the Codex parser against this.** `live_simple.jsonl` and `live_tools.jsonl` are real `codex exec --json` output and are what it must target.
 

@@ -1445,6 +1445,48 @@ mod tests {
         assert!(completions.iter().any(|(_, r)| r.structured.is_some()));
     }
 
+    /// `TaskUpdate` names a task by an id that exists only in `TaskCreate`'s
+    /// result, so the frontend's task list joins on this sidecar. Lose it and
+    /// every update misses its task.
+    #[test]
+    fn task_creates_answer_with_the_id_updates_name() {
+        let mut mapper = Mapper::default();
+        let events = map_fixture(&mut mapper, include_str!("fixtures/task_list.jsonl"));
+
+        let creates: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match &event.payload {
+                AgentEventPayload::ToolCallStarted { call_id, name, .. } if name == "TaskCreate" => {
+                    Some(call_id.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        let ids: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match &event.payload {
+                AgentEventPayload::ToolCallCompleted { call_id, result }
+                    if creates.contains(&call_id.as_str()) =>
+                {
+                    result.structured.as_ref()?.pointer("/task/id")?.as_str()
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, ["1", "2", "3"]);
+
+        let updated: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match &event.payload {
+                AgentEventPayload::ToolCallStarted { name, input, .. } if name == "TaskUpdate" => {
+                    input.get("taskId")?.as_str()
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(updated, ["1", "1", "2", "2", "3", "3"]);
+    }
+
     /// A `Read` of a `.png` answers in pictures, not in text: the result's only
     /// block is an `image`, so `text` is empty and the row has nothing to draw
     /// unless the image reaches it. The same bytes arrive twice on that line,

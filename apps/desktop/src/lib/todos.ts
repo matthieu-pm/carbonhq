@@ -9,33 +9,45 @@ export type Todo = {
 };
 
 /// Whether a call is a task list write at all. Claude Code's `TodoWrite` and
-/// grok's `todo_write` are the same tool under two spellings.
+/// grok's `todo_write` are the same tool under two spellings, and Codex's
+/// `update_plan` is the same act under its own keys (`plan`, `step`).
+///
+/// Claude Code's `TaskCreate`/`TaskUpdate` are deliberately absent: each names
+/// one task, so no single call draws a list and their rows keep their arguments.
 ///
 /// Asked separately from reading the list, because a *merge* update carries no
 /// item text at all — so "is this a todo call" and "does this call draw a
 /// checklist" are two questions, and the row's arguments have to be dropped on
 /// the first rather than the second or a merge expands onto its own JSON.
 export function isTodoCall(toolName: string): boolean {
-  return toolName === "TodoWrite" || toolName === "todo_write";
+  return toolName === "TodoWrite" || toolName === "todo_write" || toolName === "update_plan";
 }
 
 type Written = { merge: boolean; items: { id?: string; content?: string; status: Todo["status"] }[] };
 
-/// What a `todo_write` call says, without deciding what it means for the list.
+/// Codex's live protocol spells it `inProgress` where its own rollout log and
+/// every other harness spell it `in_progress`.
+function statusOf(raw: unknown): Todo["status"] {
+  if (raw === "completed") return "completed";
+  return raw === "in_progress" || raw === "inProgress" ? "in_progress" : "pending";
+}
+
+/// What a list-writing call says, without deciding what it means for the list.
 function written(input: unknown): Written | null {
   if (!input || typeof input !== "object") return null;
   const call = input as Record<string, unknown>;
-  if (!Array.isArray(call.todos)) return null;
+  const rows = Array.isArray(call.todos) ? call.todos : call.plan;
+  if (!Array.isArray(rows)) return null;
 
-  const items = call.todos.flatMap((raw): Written["items"] => {
+  const items = rows.flatMap((raw): Written["items"] => {
     if (!raw || typeof raw !== "object") return [];
     const item = raw as Record<string, unknown>;
-    const status = item.status;
+    const text = item.content ?? item.step;
     return [
       {
         id: typeof item.id === "string" ? item.id : undefined,
-        content: typeof item.content === "string" && item.content ? item.content : undefined,
-        status: status === "completed" || status === "in_progress" ? status : "pending",
+        content: typeof text === "string" && text ? text : undefined,
+        status: statusOf(item.status),
       },
     ];
   });
@@ -126,8 +138,16 @@ export function startsNewList(previous: Todo[] | null, next: Todo[]): boolean {
 ///
 /// A finished list is **kept**, not retired. It is the record of what the turn
 /// actually did, which is worth as much as the list of what is left.
+///
+/// **Claude Code's `TaskCreate`/`TaskUpdate` build the list one task a call**
+/// (v2.1.322), and the id an update names exists only in the create's *result*
+/// (`tool_use_result.task.id`, echoed as "Task #1 created"), so this walk reads
+/// completions too. A create landing on a list with nothing left open starts a
+/// new one: the CLI numbers tasks for the whole session and never retires
+/// them, so without that every plan the session ever made stacks up here.
 export function currentTodos(events: AgentEvent[]): Todo[] | null {
   let list: Todo[] | null = null;
+  const creating = new Map<string, Todo>();
   for (const event of events) {
     // A child runs its own context and keeps its own list, so folding its
     // writes in here lets a subagent replace what the conversation is tracking
@@ -135,10 +155,43 @@ export function currentTodos(events: AgentEvent[]): Todo[] | null {
     // somebody else's work. `subagent` is `null` for the main thread.
     if (event.subagent) continue;
     const payload = event.payload;
+    if (payload.type === "tool_call_completed") {
+      const created = creating.get(payload.callId);
+      if (!created || !list) continue;
+      creating.delete(payload.callId);
+      const id = payload.result.isError ? null : createdTaskId(payload.result);
+      // A create that failed, or answered with no id an update could name, made no task.
+      list = id ? list.map((todo) => (todo === created ? { ...todo, id } : todo)) : list.filter((todo) => todo !== created);
+      continue;
+    }
     if (payload.type !== "tool_call_started") continue;
-    if (!isTodoCall(payload.name)) continue;
-    const call = written(payload.input);
-    if (call) list = fold(list, call);
+    const input = (payload.input ?? {}) as Record<string, unknown>;
+    if (payload.name === "TaskCreate") {
+      if (typeof input.subject !== "string" || !input.subject) continue;
+      const todo: Todo = { content: input.subject, status: "pending" };
+      const open: Todo[] = list?.some((item) => item.status !== "completed") ? list : [];
+      list = [...open, todo];
+      creating.set(payload.callId, todo);
+    } else if (payload.name === "TaskUpdate") {
+      if (!list || typeof input.taskId !== "string") continue;
+      const { taskId, status, subject } = input;
+      list = status === "deleted"
+        ? list.filter((todo) => todo.id !== taskId)
+        : list.map((todo) => todo.id !== taskId ? todo : {
+            ...todo,
+            status: typeof status === "string" ? statusOf(status) : todo.status,
+            content: typeof subject === "string" && subject ? subject : todo.content,
+          });
+    } else if (isTodoCall(payload.name)) {
+      const call = written(payload.input);
+      if (call) list = fold(list, call);
+    }
   }
-  return list;
+  return list && list.length > 0 ? list : null;
+}
+
+function createdTaskId(result: { text: string; structured?: unknown }): string | null {
+  const task = (result.structured as { task?: { id?: unknown } } | null | undefined)?.task;
+  if (typeof task?.id === "string" && task.id) return task.id;
+  return /Task #(\S+) created/.exec(result.text)?.[1] ?? null;
 }

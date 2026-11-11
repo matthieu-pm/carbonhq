@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, FileDiff, FileText, GitBranch, Globe, Image, Li
 import AgentIcon from "@/components/AgentIcon";
 import ContextDetails from "@/components/ContextDetails";
 import ImageLightbox, { Thumb, type LightboxImage } from "@/components/chat/ImageLightbox";
+import TodoList from "@/components/chat/TodoList";
 import OpenInButton from "@/components/OpenInButton";
 import PrStateIcon from "@/components/PrStateIcon";
 import McpLogo from "@/components/settings/McpLogo";
@@ -20,6 +21,7 @@ import { openPath } from "@/hooks/useDocs";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { openLink } from "@/lib/openLink";
 import { SUMMARY_ITEMS, setSummaryItem, summaryItemVisible, type SummaryItems, type SummarySource } from "@/lib/pinnedSummary";
+import type { Todo } from "@/lib/todos";
 import type { SubagentRun } from "@/lib/transcript";
 import { fileSrc, qualify, serverOfPath } from "@/lib/transport";
 import { cn } from "@/lib/utils";
@@ -76,6 +78,8 @@ type Props = {
   prsLoading: boolean;
   prsError: PrUnavailable | null;
   subagents: SubagentRun[];
+  /// The agent's current task list, `null` where it keeps none.
+  todos?: Todo[] | null;
   busy: boolean;
   liveTaskIds: ReadonlySet<string>;
   sources: readonly SummarySource[];
@@ -116,7 +120,7 @@ function SummarySection({ title, action, children }: { title?: string; action?: 
 /// Details follow the conversation's real data; empty sections take no space.
 export default function PinnedSummary({
   sessionId, project, cwd, environment, branch, worktree, harness, changes, changesLoading, changesError,
-  prs, prsLoading, prsError, subagents, busy, liveTaskIds, sources, context, open, docked = false,
+  prs, prsLoading, prsError, subagents, todos = null, busy, liveTaskIds, sources, context, open, docked = false,
   onOpen, onManageSources, onHide,
 }: Props) {
   const [allSources, setAllSources] = useState(false);
@@ -137,7 +141,8 @@ export default function PinnedSummary({
   // A turn ending moves the window; so does a child starting, which `busy` marks.
   const breakdown = useContextBreakdown(sessionId, open && harness === "claude_code" && visible("context"), `${context?.used}:${busy}`);
   const showContext = visible("context") && (context !== null || breakdown !== null);
-  const empty = !showWorkspace && !showGit && !showPrs && !(visible("subagents") && subagents.length) && !showSources && !showContext;
+  const tasks = visible("tasks") && todos?.length ? todos : null;
+  const empty = !showWorkspace && !showGit && !showPrs && !tasks && !(visible("subagents") && subagents.length) && !showSources && !showContext;
   const hide = () => {
     onHide();
     requestAnimationFrame(() => document.getElementById("pinned-summary-toggle")?.focus());
@@ -206,6 +211,12 @@ export default function PinnedSummary({
           {prs.length > 1 && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => setAllPrs((value) => !value)} aria-expanded={allPrs}>
             {allPrs ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}{allPrs ? "Show less" : `Show ${prs.length - 1} more`}
           </button>}
+        </SummarySection>}
+
+        {tasks && <SummarySection title="Tasks" action={<span className="text-xs tabular-nums text-muted-foreground">
+          {tasks.filter((todo) => todo.status === "completed").length}/{tasks.length}
+        </span>}>
+          <div className="px-2.5 py-1"><TodoList todos={tasks} live={busy} dense /></div>
         </SummarySection>}
 
         {visible("subagents") && subagents.length > 0 && <SummarySection title="Subagents">

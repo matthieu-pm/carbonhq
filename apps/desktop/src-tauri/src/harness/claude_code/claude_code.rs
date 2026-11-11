@@ -155,6 +155,10 @@ pub async fn init(
         // How the CLI knows which session is calling it, which is what links a
         // spawned session to its parent and what the depth cap reads.
         .env("CARBON_SESSION_ID", session_id)
+        // The CLI withholds `TaskCreate`/`TaskUpdate` on every current model
+        // unless asked (v2.1.322), and with them the task list the pinned
+        // summary draws. Read off the bundle, undocumented.
+        .env("CLAUDE_CODE_ENABLE_TODO_TOOLS", "1")
         .env("PATH", crate::harness::agent_path(&bin))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

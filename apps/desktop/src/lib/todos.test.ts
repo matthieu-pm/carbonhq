@@ -36,6 +36,85 @@ describe("todoList", () => {
   });
 });
 
+function result(callId: string, text: string, structured: unknown = null, isError = false): AgentEvent {
+  return {
+    payload: { type: "tool_call_completed", callId, result: { text, structured, isError } },
+  } as unknown as AgentEvent;
+}
+
+function create(callId: string, subject: string, id: string): AgentEvent[] {
+  return [
+    { payload: { type: "tool_call_started", callId, name: "TaskCreate", input: { subject } } } as unknown as AgentEvent,
+    result(callId, `Task #${id} created successfully: ${subject}`, { task: { id, subject } }),
+  ];
+}
+
+describe("Codex's update_plan", () => {
+  it("reads steps and the live protocol's camelCase status", () => {
+    const plan = { explanation: null, plan: [{ step: "Read", status: "completed" }, { step: "Fix", status: "inProgress" }] };
+    expect(isTodoCall("update_plan")).toBe(true);
+    expect(todoList("update_plan", plan)?.map((todo) => [todo.content, todo.status])).toEqual([
+      ["Read", "completed"],
+      ["Fix", "in_progress"],
+    ]);
+    expect(currentTodos([toolCall("update_plan", plan)])).toHaveLength(2);
+  });
+});
+
+// Shapes from fixtures/task_list.jsonl (v2.1.322), as the mapper hands them on.
+describe("Claude Code's TaskCreate and TaskUpdate", () => {
+  it("builds the list a task at a time and joins updates on the result's id", () => {
+    const events = [
+      ...create("a", "Think", "1"),
+      ...create("b", "Count", "2"),
+      toolCall("TaskUpdate", { taskId: "1", status: "completed" }),
+      toolCall("TaskUpdate", { taskId: "2", status: "in_progress" }),
+    ];
+    expect(currentTodos(events)).toEqual([
+      { content: "Think", status: "completed", id: "1" },
+      { content: "Count", status: "in_progress", id: "2" },
+    ]);
+  });
+
+  it("joins parallel creates to their own results", () => {
+    const [startA, doneA] = create("a", "Think", "1");
+    const [startB, doneB] = create("b", "Count", "2");
+    const events = [startA, startB, doneB, doneA, toolCall("TaskUpdate", { taskId: "2", status: "completed" })];
+    expect(currentTodos(events)?.map((todo) => todo.status)).toEqual(["pending", "completed"]);
+  });
+
+  it("falls back to the result's sentence for the id", () => {
+    const [start] = create("a", "Think", "7");
+    const events = [start, result("a", "Task #7 created successfully: Think"), toolCall("TaskUpdate", { taskId: "7", status: "completed" })];
+    expect(currentTodos(events)?.[0]).toEqual({ content: "Think", status: "completed", id: "7" });
+  });
+
+  it("shows a task before its create answers, and drops one that failed", () => {
+    const [start] = create("a", "Think", "1");
+    expect(currentTodos([start])).toEqual([{ content: "Think", status: "pending" }]);
+    expect(currentTodos([start, result("a", "nope", null, true)])).toBeNull();
+  });
+
+  it("starts a new list once the old one has nothing left open", () => {
+    const events = [
+      ...create("a", "Think", "1"),
+      toolCall("TaskUpdate", { taskId: "1", status: "completed" }),
+      ...create("b", "Next job", "2"),
+    ];
+    expect(currentTodos(events)?.map((todo) => todo.content)).toEqual(["Next job"]);
+  });
+
+  it("removes a deleted task and renames on a new subject", () => {
+    const events = [
+      ...create("a", "Think", "1"),
+      ...create("b", "Count", "2"),
+      toolCall("TaskUpdate", { taskId: "1", status: "deleted" }),
+      toolCall("TaskUpdate", { taskId: "2", subject: "Count to 3" }),
+    ];
+    expect(currentTodos(events)).toEqual([{ content: "Count to 3", status: "pending", id: "2" }]);
+  });
+});
+
 describe("currentTodos", () => {
   const pending = [{ content: "Fix it", status: "pending" }];
   const done = [{ content: "Fix it", status: "completed" }];

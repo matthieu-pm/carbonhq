@@ -83,7 +83,8 @@ const SKILL_FIELDS = [...SUMMARY_FIELDS, "skill", "args"];
 
 // The checklist above the body is the whole call, and `merge` is grok's own
 // bookkeeping about how it wrote the list rather than anything in it.
-const TODO_FIELDS = [...SUMMARY_FIELDS, "todos", "merge"];
+// `plan` and `explanation` are Codex's spelling of the list and of the row's title.
+const TODO_FIELDS = [...SUMMARY_FIELDS, "todos", "merge", "plan", "explanation"];
 
 // Long results are the norm — reads come back in the thousands of characters —
 // so expanding shows a head and the rest scrolls rather than pushing the
