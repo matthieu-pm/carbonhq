@@ -225,7 +225,9 @@ Hover delay symmetric (150ms): keep cursor merely passing through from popping r
 
 **The hovered day reads out in the card's footer, not a tooltip.** 182 cells would each mount one, and the footer is where the totals already are — the eye is going there anyway.
 
-**This week compares with last week through the same weekday.** A Wednesday against a whole week reads as a collapse every Wednesday. The delta is muted, never red or green: fewer sessions than last week is a fact, not a failure, and red and green here mean diff lines and PR state.
+**The grid is 26 weeks, a column per week, and its footer names it: totals for the whole grid and its month range.** Two other shapes were tried and dropped the same day. Thirty days as three rows of ten lost the week columns, which is what makes it read as an activity map. The 26-week grid over totals for the last 30 days put two windows in one card, and the label under a grid reads as the grid's.
+
+**This week compares with last week through the same weekday.** A Wednesday against a whole week reads as a collapse every Wednesday. **The delta is drawn as a diff draws a line**: `+3` in `--accent-add`, `−2` in `--destructive`, the pair the transcript's diffs use, with "vs last week" muted after it and no change said in words. Muted throughout was the first version, on the reading that fewer sessions is a fact and not a failure; it also made the one figure that moves the hardest to find.
 
 **Recent sessions and Pull requests leave settled sessions out; Activity counts them.** The first two are ways back into work, the third is history. Pull requests orders open, draft, merged, and names each by its session's title — the mark carries a number and a state, not GitHub's title, and the title the reader knows is the session's.
 

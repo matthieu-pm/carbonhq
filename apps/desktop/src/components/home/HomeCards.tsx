@@ -16,9 +16,9 @@ import { basename, relativeTime } from "@/lib/format";
 import {
   buildHeatmap,
   buildWeekStats,
-  deltaLabel,
   recentSessions,
   sessionPrs,
+  signedDelta,
   type DayCell,
 } from "@/lib/home";
 import {
@@ -78,7 +78,7 @@ export default function HomeCards({
     <div className="@container mx-auto w-full max-w-5xl px-4">
       <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-12">
         <Card icon={CalendarDays} title="Activity" className="col-span-2 @3xl:col-span-6">
-          <ActivityHeatmap weeks={heatmap.weeks} total={heatmap.total} activeDays={heatmap.activeDays} />
+          <ActivityHeatmap {...heatmap} />
         </Card>
 
         <Card icon={History} title="Recent sessions" className="col-span-2 @3xl:col-span-6">
@@ -435,15 +435,26 @@ function WeekActivity({
   );
 }
 
-/// The delta is muted, never red or green: fewer sessions than last week is a
-/// fact, not a failure.
+/// The delta is drawn as a diff draws a line: green up, red down, in the pair
+/// the transcript's own diffs use. No change is said in words and left muted.
 function Stat({ label, value, delta }: { label: string; value: number; delta: number }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="flex items-baseline gap-2">
         <span className="text-lg leading-tight font-medium tabular-nums">{value}</span>
-        <span className="truncate text-xs text-muted-foreground tabular-nums">{deltaLabel(delta)}</span>
+        <span className="truncate text-xs text-muted-foreground tabular-nums">
+          {delta === 0 ? (
+            "same as last week"
+          ) : (
+            <>
+              <span className={delta > 0 ? "text-accent-add" : "text-destructive"}>
+                {signedDelta(delta)}
+              </span>{" "}
+              vs last week
+            </>
+          )}
+        </span>
       </dd>
     </div>
   );

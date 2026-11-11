@@ -181,8 +181,7 @@ export function sessionPrs<T extends PrSession>(
   return rows.sort((a, b) => rank(a.pr) - rank(b.pr));
 }
 
-/// "+3", "−2" or "same" — a delta against last week, signed in words.
-export function deltaLabel(delta: number): string {
-  if (delta === 0) return "same as last week";
-  return `${delta > 0 ? "+" : "−"}${Math.abs(delta)} vs last week`;
+/// "+3" or "−2": a delta against last week, signed the way a diff signs a line.
+export function signedDelta(delta: number): string {
+  return `${delta < 0 ? "−" : "+"}${Math.abs(delta)}`;
 }

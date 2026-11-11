@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHeatmap, buildWeekStats, deltaLabel, recentSessions, sessionPrs } from "@/lib/home";
+import { buildHeatmap, buildWeekStats, recentSessions, sessionPrs, signedDelta } from "@/lib/home";
 import type { PrMark } from "@/types/events";
 
 /// Wednesday 11 November 2026, mid-afternoon local time.
@@ -141,10 +141,9 @@ describe("sessionPrs", () => {
   });
 });
 
-describe("deltaLabel", () => {
+describe("signedDelta", () => {
   it("signs the difference", () => {
-    expect(deltaLabel(3)).toBe("+3 vs last week");
-    expect(deltaLabel(-2)).toBe("−2 vs last week");
-    expect(deltaLabel(0)).toBe("same as last week");
+    expect(signedDelta(3)).toBe("+3");
+    expect(signedDelta(-2)).toBe("−2");
   });
 });
