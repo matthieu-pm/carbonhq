@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 
 import { readLocalStorage, useLocalStorage } from "@/hooks/useLocalStorage";
-import { summaryPresentation } from "@/lib/pinnedSummary";
+import { summaryDocks, summaryPresentation } from "@/lib/pinnedSummary";
 
 /// Pin choices survive per conversation; popovers close on navigation and layout changes.
 export function usePinnedSummary(sessionId: string | null, eligible: boolean, canPin: boolean) {
@@ -32,5 +32,5 @@ export function usePinnedSummary(sessionId: string | null, eligible: boolean, ca
     if (mode === "pinned") setChoices((prev) => ({ ...prev, [sessionId]: next }));
     else setPopoverSession(next ? sessionId : null);
   };
-  return { ref: setElement, mode, open, setOpen, toggle: () => setOpen(!open), closePopover: () => setPopoverSession(null) };
+  return { ref: setElement, canvas: element, docks: mode === "pinned" && summaryDocks(size.width), mode, open, setOpen, toggle: () => setOpen(!open), closePopover: () => setPopoverSession(null) };
 }

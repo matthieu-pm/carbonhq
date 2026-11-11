@@ -26,11 +26,14 @@ import { cn } from "@/lib/utils";
 import type { ChangeSet, Harness, PrUnavailable, PullRequest } from "@/types/events";
 
 /// The same toolbar control pins on a roomy canvas and opens a popover otherwise.
-export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange }: {
+export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange, boundary }: {
   open: boolean;
   onToggle: () => void;
   popover?: ReactNode;
   onOpenChange?: (open: boolean) => void;
+  /// The chat canvas: the button sits at the window's edge, over the right panel when one is open.
+  /// `sticky="always"` goes with it, since Radix otherwise keeps the content touching its trigger.
+  boundary?: Element | null;
 }) {
   const button = (
     <Button id="pinned-summary-toggle" variant="ghost" size="icon-sm"
@@ -49,7 +52,7 @@ export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange }: {
         <TooltipContent>Toggle pinned summary</TooltipContent>
       </Tooltip>
       {popover && <Popover.Portal>
-        <Popover.Content align="end" side="bottom" sideOffset={12} collisionPadding={12}
+        <Popover.Content align="end" side="bottom" sideOffset={12} collisionPadding={12} collisionBoundary={boundary ?? undefined} sticky="always"
           aria-label="Conversation details" className="summary-popover z-50 flex flex-col outline-none">
           {popover}
         </Popover.Content>
@@ -79,6 +82,8 @@ type Props = {
   context: { used: number; max: number } | null;
   /// A closed card stays mounted for its exit and must not keep asking the child.
   open: boolean;
+  /// The rail supplies the surface, so the card's own fill and corners go.
+  docked?: boolean;
   onOpen: (tab: "changes" | "pr" | "more") => void;
   onManageSources?: () => void;
   onHide: () => void;
@@ -111,7 +116,7 @@ function SummarySection({ title, action, children }: { title?: string; action?: 
 /// Details follow the conversation's real data; empty sections take no space.
 export default function PinnedSummary({
   sessionId, project, cwd, environment, branch, worktree, harness, changes, changesLoading, changesError,
-  prs, prsLoading, prsError, subagents, busy, liveTaskIds, sources, context, open,
+  prs, prsLoading, prsError, subagents, busy, liveTaskIds, sources, context, open, docked = false,
   onOpen, onManageSources, onHide,
 }: Props) {
   const [allSources, setAllSources] = useState(false);
@@ -139,7 +144,7 @@ export default function PinnedSummary({
   };
   return (
     <section id="pinned-summary" aria-label="Pinned summary"
-      className="min-h-0 overflow-y-auto rounded-2xl bg-background"
+      className={cn("min-h-0 overflow-y-auto", docked ? "flex-1" : "rounded-2xl bg-background")}
       onContextMenu={(event) => {
         if (!event.currentTarget.contains(event.target as Node) || window.getSelection()?.toString()) return;
         event.preventDefault();

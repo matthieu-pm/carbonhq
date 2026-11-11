@@ -56,6 +56,8 @@ type AppShellProps = {
   summaryOpen?: boolean;
   summaryKey?: string;
   summaryLayoutRef?: Ref<HTMLDivElement>;
+  /// A full-height strip over the canvas's right margin instead of a card over the transcript.
+  summaryDocked?: boolean;
   children: ReactNode;
 };
 
@@ -83,6 +85,7 @@ export default function AppShell({
   summaryOpen = true,
   summaryKey,
   summaryLayoutRef,
+  summaryDocked = false,
   children,
 }: AppShellProps) {
   const [sidebarPlace, setSidebarPlace] = useState(sidebarMode === "peek" ? "peek" : "docked");
@@ -169,7 +172,7 @@ export default function AppShell({
             // The crew runs the full height beside both, so its rows get the
             // composer's band too rather than stopping short of it at a line
             // nothing else on screen is drawn to.
-            <div className="flex min-h-0 flex-1">
+            <div className="relative flex min-h-0 flex-1">
               <div className="conversation-column flex min-w-0 flex-1 flex-col">
                 {/* `flex flex-col` so the view tabs' bodies, which size themselves
                   with `flex-1` the way the right panel's do, have a column to
@@ -177,7 +180,7 @@ export default function AppShell({
                 <div ref={summaryLayoutRef} className="conversation-layout relative min-h-0 flex-1 overflow-hidden">
                   <div className="conversation-content">
                     <div className="conversation-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
-                    {summary && <aside key={summaryKey} className="conversation-summary" data-state={summaryOpen ? "open" : "closed"}
+                    {summary && !summaryDocked && <aside key={summaryKey} className="conversation-summary" data-state={summaryOpen ? "open" : "closed"}
                       aria-label="Conversation summary" aria-hidden={!summaryOpen} inert={!summaryOpen}>{summary}</aside>}
                   </div>
                 </div>
@@ -185,6 +188,11 @@ export default function AppShell({
                 <div className="conversation-footer shrink-0">{footer}</div>
               </div>
               {!crewStacked && crew}
+              {summary && summaryDocked && <aside key={summaryKey} className="conversation-rail" data-state={summaryOpen ? "open" : "closed"}
+                aria-label="Conversation summary" aria-hidden={!summaryOpen} inert={!summaryOpen}>
+                {/* Stands where the panel would, as the sidebar's strip mirrored: same fill, a hairline toward the chat. */}
+                <div className="conversation-rail-body border-l border-hairline bg-surface-frame/50">{summary}</div>
+              </aside>}
             </div>
           )}
         </div>

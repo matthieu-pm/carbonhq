@@ -3010,6 +3010,7 @@ function App() {
       sources={sources}
       context={contextUsage}
       open={summary.open}
+      docked={summary.docks && !panelShown}
       onOpen={(tab) => { summary.closePopover(); showPanel(tab); }}
       onManageSources={serverOfPath(selectedSession.cwd) === LOCAL ? () => { summary.closePopover(); setSettingsTab("mcp"); setSettingsOpen(true); } : undefined}
       onHide={() => summary.setOpen(false)}
@@ -3076,6 +3077,7 @@ function App() {
       panelLeft={panelSide === "left"}
       panelOpen={issuesOpen ? !!pickedIssue : panelShown}
       summaryLayoutRef={summary.ref}
+      summaryDocked={summary.docks && !panelShown}
       summary={summary.mode === "pinned" && !issuesOpen && viewTab === "chat" ? summaryCard : null}
       summaryOpen={summaryShown}
       summaryKey={selectedSessionId ?? undefined}
@@ -3298,6 +3300,7 @@ function App() {
                     onToggle={summary.toggle}
                     popover={summary.mode === "popover" ? summaryCard : undefined}
                     onOpenChange={summary.setOpen}
+                    boundary={summary.canvas}
                   />}
                   {/* A pull request, open or merged, stands in for the toggle and opens
                       the pane on itself; the pane's own tabs are inside it. */}

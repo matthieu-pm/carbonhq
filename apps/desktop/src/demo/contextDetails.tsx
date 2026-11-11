@@ -35,9 +35,8 @@ Object.assign(window, { __TAURI_INTERNALS__: {
   invoke: async (command: string, args?: { cmd?: string }) =>
     (command === "server_invoke" ? args?.cmd : command) === "context_breakdown" ? SCENARIOS[scenario] : null,
 } });
-// The section is off by default. Workspace is hidden since its open-in button
-// wants the app list this page does not fake.
-localStorage.setItem("ade.pinnedSummaryItems", JSON.stringify({ context: true, workspace: false }));
+// Workspace is hidden since its open-in button wants the app list this page does not fake.
+localStorage.setItem("ade.pinnedSummaryItems", JSON.stringify({ workspace: false }));
 
 function Demo() {
   const [pick, setPick] = useState(scenario);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { setSummaryItem, summaryItemVisible, summaryPresentation, summarySources } from "@/lib/pinnedSummary";
+import { setSummaryItem, summaryDocks, summaryItemVisible, summaryPresentation, summarySources } from "@/lib/pinnedSummary";
 import type { AgentEvent, AgentEventPayload, ImageRef } from "@/types/events";
 
 function event(payload: AgentEventPayload, scope: Partial<AgentEvent> = {}): AgentEvent {
@@ -98,11 +98,16 @@ it("uses a popover before pinning would squeeze the chat or leave an unusable ca
   expect(summaryPresentation(1400, 600, false)).toBe("popover");
 });
 
+it("docks only where the rail clears the centred chat column", () => {
+  expect(summaryDocks(1407)).toBe(false);
+  expect(summaryDocks(1408)).toBe(true);
+});
+
 it("forgets an override when a detail returns to its default without losing other choices", () => {
-  const items = { workspace: false, context: true };
+  const items = { workspace: false, context: false };
   const restored = setSummaryItem(items, "workspace", true);
-  expect(restored).toEqual({ context: true });
+  expect(restored).toEqual({ context: false });
   expect(summaryItemVisible(restored, "workspace")).toBe(true);
-  expect(summaryItemVisible(restored, "context")).toBe(true);
-  expect(setSummaryItem(restored, "context", false)).toEqual({});
+  expect(summaryItemVisible(restored, "context")).toBe(false);
+  expect(setSummaryItem(restored, "context", true)).toEqual({});
 });

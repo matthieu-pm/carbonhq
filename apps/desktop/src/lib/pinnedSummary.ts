@@ -7,11 +7,17 @@ export const SUMMARY_WIDTH = 320;
 export const SUMMARY_GAP = 12;
 export const SUMMARY_CLEARANCE = 32;
 
-/// A pinned card must leave a readable chat lane and room for its own controls.
+/// A pinned card lies over the transcript's right side, so it wants a readable lane left beside it and room for its own controls.
 export function summaryPresentation(width: number, height: number, canPin = true): "pinned" | "popover" {
   return canPin && width >= SUMMARY_WIDTH + SUMMARY_GAP + SUMMARY_CLEARANCE + 48 + 640 && height >= 184
     ? "pinned"
     : "popover";
+}
+
+/// A rail takes the canvas's right margin and never the chat column's own
+/// width, so it needs that margin on both sides of the centred 768px column.
+export function summaryDocks(width: number): boolean {
+  return width >= 768 + 2 * SUMMARY_WIDTH;
 }
 
 export const SUMMARY_ITEMS = [
@@ -21,7 +27,7 @@ export const SUMMARY_ITEMS = [
   { id: "prs", label: "Pull requests", defaultVisible: true },
   { id: "subagents", label: "Subagents", defaultVisible: true },
   { id: "sources", label: "Sources", defaultVisible: true },
-  { id: "context", label: "Context window", defaultVisible: false },
+  { id: "context", label: "Context window", defaultVisible: true },
 ] as const;
 export type SummaryItemId = (typeof SUMMARY_ITEMS)[number]["id"];
 export type SummaryItems = Partial<Record<SummaryItemId, boolean>>;

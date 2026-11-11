@@ -1478,8 +1478,7 @@ body.session-drag * {
   .app-shell[data-sidebar-motion="true"] header [role="tablist"] { transition: none; }
 }
 
-/* Reserve a chat lane only while the pinned summary is open. */
-.conversation-column { --pinned-summary-lane: 364px; }
+/* The summary lies over the canvas and reserves nothing: opening it must not move the chat. */
 .conversation-content { display: flex; height: 100%; min-height: 0; }
 .conversation-summary {
   position: absolute; z-index: 20; inset: 8px 8px 12px auto; display: flex; flex-direction: column; width: 320px; pointer-events: none;
@@ -1492,8 +1491,13 @@ body.session-drag * {
 }
 .conversation-summary > * { pointer-events: auto; }
 .conversation-summary[data-state="closed"] > * { pointer-events: none; }
-.conversation-content:has(.conversation-summary[data-state="open"]) .chat-scroll { padding-right: var(--pinned-summary-lane); }
-.conversation-column:has(.conversation-summary[data-state="open"]) > .conversation-footer { padding-right: var(--pinned-summary-lane); }
+/* Docked over the right margin while the right panel is shut; the clipped width is its slide. */
+.conversation-rail {
+  position: absolute; z-index: 20; inset: 0 0 0 auto; display: flex; width: 0; overflow: hidden; visibility: hidden;
+  transition: width 160ms ease-out, visibility 0s 160ms;
+}
+.conversation-rail[data-state="open"] { width: 320px; visibility: visible; transition-duration: 220ms, 0s; transition-delay: 0s; }
+.conversation-rail-body { display: flex; flex-direction: column; flex-shrink: 0; width: 320px; min-height: 0; }
 .chat-scroll::-webkit-scrollbar,
 #pinned-summary::-webkit-scrollbar { width: 5px; }
 .summary-popover {
@@ -1514,6 +1518,7 @@ body.session-drag * {
 @media (prefers-reduced-motion: reduce) {
   .conversation-summary { transform: none; transition: opacity 80ms ease-out, visibility 0s 80ms; }
   .conversation-summary[data-state="open"] { transition-duration: 80ms, 0s; transition-delay: 0s; }
+  .conversation-rail, .conversation-rail[data-state="open"] { transition: none; }
   .summary-popover[data-state="open"] { animation: summary-fade-in 80ms ease-out; }
   .summary-popover[data-state="closed"] { animation: summary-fade-out 80ms ease-out; }
 }
