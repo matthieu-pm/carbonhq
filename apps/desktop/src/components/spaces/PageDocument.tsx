@@ -1,8 +1,8 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Check, Code2, Eye, FileText, Folder, History, Loader2, Link2, MessageSquarePlus, Paperclip, Plus, Star, Trash2, Undo2, X, type LucideIcon } from "lucide-react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Check, Code2, Eye, FileText, Folder, History, Loader2, Link2, ListTree, MessageSquarePlus, MoreHorizontal, PanelTop, Paperclip, SlidersHorizontal, Star, Trash2, Undo2, type LucideIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useHotkey } from "@/hooks/useHotkey";
 import { editPageDraft, markPageDraftPending, pageDraft, persistPageDraft, refreshPageDraft, resolvePageDraft, savePageDraft, usePageDocument } from "@/hooks/usePageDocument";
@@ -19,6 +19,7 @@ import PageMentionPicker from "./PageMentionPicker";
 import PagePreview, { resolvePageImage } from "./PagePreview";
 import { uploadPageAsset, usePageAssets } from "@/hooks/usePageAssets";
 import LinearSyncPanel from "./LinearSyncPanel";
+import DocumentOutline from "./DocumentOutline";
 
 const RichPageEditor = lazy(() => import("./RichPageEditor"));
 type Mode = "rich" | "source" | "preview";
@@ -38,6 +39,34 @@ export default function PageDocument({ page, active, projects, visibleProjects, 
   const [mode, setMode] = useState<Mode>(() => reason ? "source" : "rich");
   const [editorPending, setEditorPending] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [wide, setWide] = useState(false);
+  const [formatting, setFormatting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const scroll = useRef<HTMLDivElement>(null);
+  const title = useRef<HTMLTextAreaElement>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
+  useLayoutEffect(() => {
+    const field = title.current;
+    if (!field) return;
+    let width = field.getBoundingClientRect().width;
+    let frame = 0;
+    const fit = () => {
+      if (!field.getBoundingClientRect().width) return;
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight}px`;
+    };
+    fit();
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width === width) return;
+      width = entry.contentRect.width;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    });
+    observer.observe(field);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, [draft.title]);
   const [conflictOpen, setConflictOpen] = useState(false);
   const [remote, setRemote] = useState<LocatedPage<Page> | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -139,41 +168,71 @@ export default function PageDocument({ page, active, projects, visibleProjects, 
     setConflictOpen(false);
   };
 
-  return <div className="spaces-document">
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(pageUrl({ id: page.id, server: page.server }));
+      setCopied(true);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+    } catch { setActionError("The link could not be copied. Try again."); }
+  };
+  const status = draft.saving ? "Saving…" : draft.conflict ? "Draft kept" : isDirty ? "Unsaved changes" : "Saved";
+  const projectOptions = [...new Map([
+    ...draft.projectPaths.map((path) => ({ path, name: path.split("/").pop() || path })),
+    ...projects.filter((project) => serverOfPath(project.path) === page.server),
+  ].map((project) => [project.path, project])).values()];
+
+  return <div className="spaces-document" data-wide={wide}>
     <div className="spaces-document-tools">
-      <span role="status" className="text-xs text-muted-foreground">{serverName(page.server)}<span className="mx-2">·</span>{draft.saving ? "Saving…" : draft.conflict ? "Draft kept" : isDirty ? "Unsaved changes" : "Saved"}</span>
-      <div className="ml-auto flex items-center gap-1">
-        <DocumentTool label={draft.favorite ? "Remove from favorites" : "Add to favorites"} Icon={Star} selected={draft.favorite} disabled={draft.base.trashed} onClick={() => editPageDraft(page, { favorite: !draft.favorite })} />
-        <Button size="sm" variant="ghost" aria-pressed={mode === "rich"} disabled={!!reason || draft.base.trashed} onClick={() => switchMode("rich")}>Edit</Button>
-        <DocumentTool label="Markdown source" Icon={Code2} selected={mode === "source"} onClick={() => switchMode("source")} />
-        <DocumentTool label="Preview Page" Icon={Eye} selected={mode === "preview"} onClick={() => switchMode("preview")} />
-        <DocumentTool label="Version history" Icon={History} selected={historyOpen} onClick={() => { flush(); setHistoryOpen((v) => !v); }} />
-        <DocumentTool label="Link another Page" Icon={Link2} disabled={draft.base.trashed} onClick={() => setLinkPickerOpen(true)} />
-        <DocumentTool label="Attach a file" Icon={Paperclip} disabled={draft.base.trashed || uploading !== null} onClick={() => fileInput.current?.click()} />
-        <Button size="sm" variant="ghost" onClick={() => void referenceInTask()}><MessageSquarePlus />Use in task</Button>
-        {isDirty && <Button size="sm" onClick={() => void save()} disabled={draft.saving || draft.conflict}>Save</Button>}
-        <Button size="sm" variant="ghost" onClick={() => void trash()}>{draft.base.trashed ? <Undo2 /> : <Trash2 />}{draft.base.trashed ? "Restore" : "Trash"}</Button>
+      <div className="spaces-document-crumb"><FileText aria-hidden="true" /><span>{draft.title || "Untitled"}</span></div>
+      <DocumentTool label={draft.favorite ? "Remove from favorites" : "Add to favorites"} Icon={Star} selected={draft.favorite} disabled={draft.base.trashed} onClick={() => editPageDraft(page, { favorite: !draft.favorite })} />
+      <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label="Document options"><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent className="w-56">
+        <DropdownMenuLabel>Document</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => void copyLink()}><Link2 />Copy document link</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => { flush(); setOutlineOpen(false); setHistoryOpen((v) => !v); }}><History />Version history</DropdownMenuItem>
+        <DropdownMenuItem disabled={draft.base.trashed} onSelect={() => setLinkPickerOpen(true)}><Link2 />Link another Page</DropdownMenuItem>
+        <DropdownMenuItem disabled={draft.base.trashed || uploading !== null} onSelect={() => fileInput.current?.click()}><Paperclip />Attach files…</DropdownMenuItem>
+        <DropdownMenuItem disabled={draft.base.trashed} onSelect={() => void referenceInTask()}><MessageSquarePlus />Use in task</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem checked={mode === "rich"} disabled={!!reason || draft.base.trashed} onCheckedChange={() => switchMode("rich")}>Edit document</DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={mode === "source"} onCheckedChange={() => switchMode("source")}><Code2 />Markdown source</DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={mode === "preview"} onCheckedChange={() => switchMode("preview")}><Eye />Preview</DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant={draft.base.trashed ? "default" : "destructive"} onSelect={() => void trash()}>{draft.base.trashed ? <Undo2 /> : <Trash2 />}{draft.base.trashed ? "Restore document" : "Move to trash"}</DropdownMenuItem>
+      </DropdownMenuContent></DropdownMenu>
+      <div className="spaces-document-meta">
+        <span role="status" className="spaces-document-status">{status}</span>
+        {isDirty && <Button size="sm" variant="ghost" onClick={() => void save()} disabled={draft.saving || draft.conflict}>Save</Button>}
+        <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="ghost" aria-label="Document display options and metadata"><SlidersHorizontal /><span className="spaces-document-edited">Edited {new Date(draft.base.modified).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuLabel>Display options</DropdownMenuLabel>
+          <DropdownMenuCheckboxItem checked={wide} onCheckedChange={setWide}>Full width</DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem checked={formatting} disabled={mode !== "rich" || draft.base.trashed} onCheckedChange={setFormatting}><PanelTop />Formatting toolbar</DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Linked projects</DropdownMenuLabel>
+          {projectOptions.map((p) => <DropdownMenuCheckboxItem key={p.path} checked={draft.projectPaths.includes(p.path)} disabled={draft.base.trashed} onSelect={(e) => e.preventDefault()} onCheckedChange={(checked) => editPageDraft(page, { projectPaths: checked ? [...draft.projectPaths, p.path] : draft.projectPaths.filter((path) => path !== p.path) })}><Folder />{p.name}</DropdownMenuCheckboxItem>)}
+          {!projectOptions.length && <DropdownMenuItem disabled>No projects on this server</DropdownMenuItem>}
+          <DropdownMenuSeparator /><DropdownMenuLabel>{serverName(page.server)} · Revision {draft.base.revision}</DropdownMenuLabel>
+        </DropdownMenuContent></DropdownMenu>
+        <DocumentTool label={copied ? "Link copied" : "Copy document link"} Icon={copied ? Check : Link2} onClick={() => void copyLink()} />
+        <DocumentTool label={outlineOpen ? "Close outline" : "Open outline"} Icon={ListTree} selected={outlineOpen} disabled={mode === "source"} onClick={() => { setHistoryOpen(false); setOutlineOpen((v) => !v); }} />
       </div>
     </div>
     {(draft.error || actionError || assetError) && <div className="spaces-error" role="alert">{actionError || draft.error || assetError}<button onClick={() => draft.conflict ? void compare() : void save()}>{draft.conflict ? "Review changes" : "Retry"}</button></div>}
     <input ref={fileInput} type="file" multiple className="hidden" aria-label="Attach files to Page" onChange={(event) => void upload(event.target.files)} />
     {uploading !== null && <div className="px-[5.5%] py-2 text-xs text-muted-foreground" role="status">Uploading attachment… {Math.round(uploading * 100)}%</div>}
-    <div className="flex min-h-0 flex-1">
-      <div className="spaces-document-scroll"><article className="spaces-document-content">
-        <FileText className="mb-5 size-9 text-muted-foreground/60" />
-        <input className="spaces-document-title" value={draft.title} onChange={(e) => editPageDraft(page, { title: e.target.value })} placeholder="Untitled" aria-label="Page title" readOnly={draft.base.trashed} />
-        <div className="mb-8 mt-4 flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">Projects</span>
-          {draft.projectPaths.map((path) => <span key={path} className="spaces-project-chip"><Folder className="size-3" />{projects.find((p) => p.path === path)?.name ?? path.split("/").pop()}<button aria-label={`Unlink ${path}`} disabled={draft.base.trashed} onClick={() => editPageDraft(page, { projectPaths: draft.projectPaths.filter((p) => p !== path) })}><X className="size-3" /></button></span>)}
-          <DropdownMenu><DropdownMenuTrigger asChild><button className="spaces-project-chip" disabled={draft.base.trashed}><Plus className="size-3" />Link project</button></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuLabel>Linked projects</DropdownMenuLabel><DropdownMenuSeparator />{projects.filter((p) => serverOfPath(p.path) === page.server).map((p) => <DropdownMenuCheckboxItem key={p.path} checked={draft.projectPaths.includes(p.path)} onSelect={(e) => e.preventDefault()} onCheckedChange={(checked) => editPageDraft(page, { projectPaths: checked ? [...draft.projectPaths, p.path] : draft.projectPaths.filter((path) => path !== p.path) })}>{p.name}</DropdownMenuCheckboxItem>)}</DropdownMenuContent></DropdownMenu>
-        </div>
+    <div className="spaces-document-body">
+      <div ref={scroll} className="spaces-document-scroll"><article className="spaces-document-content">
+        <div className="spaces-document-icon"><FileText aria-hidden="true" /></div>
+        <textarea ref={title} rows={1} className="spaces-document-title" value={draft.title} onChange={(e) => editPageDraft(page, { title: e.target.value.replace(/\n/g, " ") })} placeholder="Untitled" aria-label="Page title" readOnly={draft.base.trashed} />
         {mode === "source" && reason && <p className="mb-5 text-xs text-muted-foreground">{reason}</p>}
         {mode === "preview" || draft.base.trashed ? <PagePreview markdown={draft.markdown || "*This Page is empty.*"} server={page.server} assets={assets} onOpenPage={openPage} /> : mode === "source" ?
           <textarea ref={source} className="spaces-source" value={draft.markdown} onChange={(e) => editPageDraft(page, { markdown: e.target.value })} aria-label="Page Markdown" placeholder="Start writing in Markdown…" spellCheck={false} /> :
-          <Suspense fallback={<div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Opening editor…</div>}><RichPageEditor key={editorGeneration} ref={editor} markdown={draft.markdown} resolveImage={(src) => resolvePageImage(src, page.server, assets)} onAttach={() => fileInput.current?.click()} onOpenPage={(target) => openPage({ ...target, server: target.relative ? page.server : target.server })} onEdit={() => { richEdited.current = true; markPageDraftPending(page); setEditorPending(true); }} onChange={(markdown) => { editPageDraft(page, { markdown }); persistPageDraft(page); richEdited.current = false; setEditorPending(false); }} /></Suspense>}
+          <Suspense fallback={<div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Opening editor…</div>}><RichPageEditor key={editorGeneration} ref={editor} showToolbar={formatting} markdown={draft.markdown} resolveImage={(src) => resolvePageImage(src, page.server, assets)} onAttach={() => fileInput.current?.click()} onOpenPage={(target) => openPage({ ...target, server: target.relative ? page.server : target.server })} onEdit={() => { richEdited.current = true; markPageDraftPending(page); setEditorPending(true); }} onChange={(markdown) => { editPageDraft(page, { markdown }); persistPageDraft(page); richEdited.current = false; setEditorPending(false); }} /></Suspense>}
         <LinearSyncPanel page={draft.base} dirty={isDirty} active={active} onPageUpdated={() => { void refreshPageDraft(page); }} />
         <PageBacklinks page={page} active={active} visibleProjects={visibleProjects} />
         <div className="mt-12 flex items-center gap-1 text-xs text-muted-foreground"><Check className="size-3" />Markdown document<span className="mx-2">·</span>Revision {draft.base.revision}</div>
       </article></div>
+      <DocumentOutline containerRef={scroll} contentKey={page.server + ":" + page.id + ":" + mode} open={outlineOpen && mode !== "source"} onOpenChange={setOutlineOpen} />
       {historyOpen && <PageHistory page={draft.base} assets={assets} dirty={isDirty} onClose={() => setHistoryOpen(false)} onRestored={() => { void resolvePageDraft(page, "saved"); bodyGeneration.current++; setEditorGeneration(bodyGeneration.current); }} />}
     </div>
     <PageMentionPicker contextKey={`${page.server}:${page.id}`} open={linkPickerOpen} onOpenChange={setLinkPickerOpen} visibleProjects={visibleProjects} onSelect={(linked) => {

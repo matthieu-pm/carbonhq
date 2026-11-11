@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CheckCheck, CircleDashed, CircleDot, Plus, Search } from "lucide-react";
+import { CheckCheck, ChevronDown, CircleDashed, Plus, Search } from "lucide-react";
 
 import { cx } from "./Window";
 
@@ -37,15 +37,12 @@ export function Keys({ caps, className }: { caps: ReactNode[]; className?: strin
 /// default fill makes a hint the loudest thing in the list.
 const HINT_KEYS = "[&_kbd]:bg-muted/40 [&_kbd]:text-muted-foreground/60";
 
-/// The three strip buttons are drawn as session rows — `/80` text, the same
+/// The strip buttons are drawn as session rows — `/80` text, the same
 /// inset — since the pane is otherwise one list.
 const STRIP_BUTTON =
   "flex h-7 w-full shrink-0 cursor-default items-center justify-start gap-1 rounded-[min(var(--radius-md),12px)] border border-transparent px-1.5 text-ui font-medium whitespace-nowrap text-sidebar-foreground/80 [&_svg]:size-3.5 [&_svg]:shrink-0";
 
-/// The sidebar column: the three ways a task starts, the project filter, then
-/// the list. It sits on the frame's own fill under the titlebar, which spans
-/// the window now, so it has no strip of its own and no edge — the sheet
-/// beside it is the only thing raised.
+/// The task list sits inside the sheet; app-wide navigation lives on the rail.
 export default function Sidebar({
   children,
   onNewTask,
@@ -80,11 +77,6 @@ export default function Sidebar({
           </div>
         )}
         <div className={STRIP_BUTTON}>
-          <CircleDot />
-          Issues
-          <Keys caps={["⌘", "I"]} className="ml-auto" />
-        </div>
-        <div className={STRIP_BUTTON}>
           <Search />
           Search
           <Keys caps={["⌘", "F"]} className="ml-auto" />
@@ -94,7 +86,7 @@ export default function Sidebar({
       {/* The filter is where project grouping went; drafts and the settled
           list are the two glyphs beside it. */}
       <div className="mt-4 flex items-start justify-between py-1 pr-2 pl-3">
-        <span className="flex items-center gap-1 pl-1 text-ui text-muted-foreground">All Projects</span>
+        <span className="flex items-center gap-1 pl-1 text-ui text-muted-foreground">All Projects<ChevronDown className="size-3" /></span>
         <span className="flex items-center gap-0.5 text-muted-foreground">
           <span className="grid size-6 place-items-center">
             <CircleDashed className="size-3" />

@@ -38,8 +38,8 @@ import { MiniHome } from "@/components/home/MiniHome";
 import { ScaledWindow } from "./ScaledWindow";
 import s from "./Hero.module.css";
 
-const WIDTH = 1128;
-const HEIGHT = 720;
+const WIDTH = 1200;
+const HEIGHT = 760;
 
 /// The four sessions that were there before the visitor arrived. The rest of
 /// the list is scenery.
@@ -113,6 +113,9 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
   const [selected, setSelected] = useState<string>("background");
   const [view, setView] = useState<"chat" | "browser">("chat");
   const [panelTab, setPanelTab] = useState("PR");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [panelShown, setPanelShown] = useState(true);
+  const [history, setHistory] = useState({ ids: ["background"], index: 0 });
   const [speedrunRead, setSpeedrunRead] = useState(false);
   const [checksPassed, setChecksPassed] = useState(false);
   const [merge, setMerge] = useState<MergeState>("open");
@@ -130,12 +133,25 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
     return () => clearTimeout(t);
   }, []);
 
-  const open = (id: string) => {
+  const select = (id: string) => {
     selectedRef.current = id;
     setSelected(id);
     setStarted((list) => list.map((t) => (t.id === id ? { ...t, unread: false } : t)));
     setView("chat");
     if (id === "speedrun") setSpeedrunRead(true);
+  };
+
+  const open = (id: string) => {
+    if (id !== selected) setHistory((h) => ({ ids: [...h.ids.slice(0, h.index + 1), id], index: h.index + 1 }));
+    select(id);
+  };
+
+  const step = (delta: number) => {
+    const index = history.index + delta;
+    const id = history.ids[index];
+    if (!id) return;
+    setHistory({ ...history, index });
+    select(id);
   };
 
   const answerQuestion = (label: string | null) => {
@@ -152,8 +168,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
     const prompt = draft.trim();
     if (!prompt) return;
     const id = `task-${Date.now()}`;
-    // Newest three kept, so the list never runs past the sidebar's
-    // foot and takes the scripted sessions with it; scroll it if more matter.
+    // Keep earlier tasks reachable through the titlebar history.
     const task = {
       id,
       prompt,
@@ -162,7 +177,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
       done: false,
       unread: false,
     };
-    setStarted((list) => [task, ...list].slice(0, 3));
+    setStarted((list) => [task, ...list]);
     setDraft("");
     open(id);
     setTimeout(
@@ -179,16 +194,21 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
   const hasPr = selected === "background";
   // The dev server's tab wants the width, so the pane steps aside for it and
   // comes back with the chat.
-  const panelOpen = hasPr && view === "chat";
+  const panelOpen = hasPr && view === "chat" && panelShown;
   const isNew = selected === "new";
   const task = started.find((t) => t.id === selected);
   const title = task?.prompt ?? TITLES[selected as Fixed];
   const linearWorking = answer !== undefined && !tagged;
 
   return (
-    <ScaledWindow width={WIDTH} height={HEIGHT} minScale={0.7} startX={startX} className={`${s.scene} ${className ?? ""}`}>
+    <ScaledWindow width={WIDTH} height={HEIGHT} minScale={0.48} startX={startX} className={`${s.scene} ${className ?? ""}`}>
       <Window
         interactive
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((open) => !open)}
+        onHome={() => open("new")}
+        onBack={history.index > 0 ? () => step(-1) : undefined}
+        onForward={history.index < history.ids.length - 1 ? () => step(1) : undefined}
         className="h-full w-full"
         sidebar={
           // The live list runs by stage, workspace-wide, with no headings:
@@ -210,7 +230,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
               onClick={() => open("speedrun")}
             />
             <GroupBreak />
-            {started.map((t) => (
+            {started.slice(0, 3).map((t) => (
               <SessionRow
                 key={t.id}
                 title={t.prompt}
@@ -269,7 +289,6 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
                 active={view === "browser"}
                 onClick={() => setView("browser")}
               />
-              <ItemTab icon={<VercelMark className="size-3.5" />} label="carbon – Deployments – Vercel" />
               <ItemTab
                 icon={<GitHubGlyph className="size-3.5 shrink-0" />}
                 label="Stop background tasks · Pull Request #44"
@@ -286,7 +305,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
             {!isNew && <BranchButton name={task?.branch ?? BRANCHES[selected as Fixed]} />}
             {/* The pull request stands in for the panel toggle, lit while the
                 pane is open on it. */}
-            {hasPr ? <ItemTab icon={pr} label="#44" active={panelOpen} fixed /> : <PanelToggle />}
+            {hasPr ? <ItemTab icon={pr} label="#44" active={panelOpen} fixed onClick={() => setPanelShown((shown) => !shown)} /> : <PanelToggle />}
           </>
         }
         main={
@@ -333,7 +352,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
                 )}
               </Transcript>
               <Composer
-                placeholder="Follow-up. @files. /skills. &tasks. #issues."
+                placeholder="Follow-up. @files. /skills."
                 mic
                 agent={<ClaudeGlyph className="size-3.5" />}
                 model="Opus 5.5"
@@ -346,7 +365,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
         }
         panel={
           panelOpen && (
-            <Panel tabs={["PR", "Changes", "Browser", "More"]} active={panelTab} onSelect={setPanelTab} width={410}>
+            <Panel tabs={["PR", "Changes", "Browser", "More"]} active={panelTab} onSelect={setPanelTab} width={350}>
               {panelTab === "PR" && (
                 <PrBody
                   checksPassed={checksPassed}

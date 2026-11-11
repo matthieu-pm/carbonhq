@@ -1,18 +1,9 @@
 import type { ReactNode } from "react";
-import { Settings } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChartNoAxesColumn, CircleDot, Settings } from "lucide-react";
 
 import { SIDEBAR_WIDTH } from "./Sidebar";
 
-/// The app's window, drawn as a picture of it: `AppShell`'s geometry, copied
-/// rather than imported, since no code crosses between the two apps.
-///
-/// A frame with raised sheets on it. One titlebar row spans the whole window,
-/// the way a browser's tab strip sits over its pages; the sidebar sits on the
-/// frame's own fill under it, and the chat and the right panel are each a
-/// card of their own, with the frame showing between.
-///
-/// Decoration unless `interactive`: a still drawing is `aria-hidden` whole,
-/// where the hero's buttons have to be reachable.
+/// Keeps the website preview on the desktop's rail, inset sidebar and sheet geometry.
 export default function Window({
   sidebar,
   tabs,
@@ -22,6 +13,11 @@ export default function Window({
   panel,
   sidebarWidth = SIDEBAR_WIDTH,
   interactive = false,
+  sidebarOpen = true,
+  onToggleSidebar,
+  onHome,
+  onBack,
+  onForward,
   className,
 }: {
   sidebar: ReactNode;
@@ -37,6 +33,11 @@ export default function Window({
   panel?: ReactNode;
   sidebarWidth?: number;
   interactive?: boolean;
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+  onHome?: () => void;
+  onBack?: () => void;
+  onForward?: () => void;
   className?: string;
 }) {
   return (
@@ -49,30 +50,51 @@ export default function Window({
       )}
     >
       <header className="flex h-(--titlebar-h) shrink-0 items-center pr-3">
-        {/* Over the sidebar: the traffic lights, the toggle beside them, and
-            the gear at the sidebar's far end. */}
-        <div className="flex shrink-0 items-center" style={{ width: sidebarWidth }}>
-          <TrafficLights className="w-[78px] pl-[19px]" />
-          <span className="grid size-7 place-items-center opacity-80">
+        <div className="flex shrink-0 items-center" style={{ width: sidebarOpen ? sidebarWidth + 52 : 172 }}>
+          <TrafficLights className="w-[84px] shrink-0 pl-[19px]" />
+          <ChromeControl label="Go back" onClick={onBack} disabled={!onBack}>
+            <ArrowLeft className="size-4" />
+          </ChromeControl>
+          <ChromeControl label="Go forward" onClick={onForward} disabled={!onForward}>
+            <ArrowRight className="size-4" />
+          </ChromeControl>
+          <ChromeControl label="Toggle sidebar" onClick={onToggleSidebar} pressed={sidebarOpen}>
             <PanelLeftIcon className="size-4.5" />
-          </span>
-          <span className="ml-auto mr-2 grid size-7 place-items-center opacity-80">
-            <Settings className="size-4" />
-          </span>
+          </ChromeControl>
+          {sidebarOpen && (
+            <span className="ml-auto mr-2 flex items-center gap-1 text-ui text-muted-foreground">
+              All Profiles
+            </span>
+          )}
         </div>
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden">
+        <span aria-hidden className="h-4 w-px shrink-0 bg-hairline" />
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden pl-2">
           {tabs}
         </div>
         {headerEnd && <div className="flex shrink-0 items-center gap-3 pl-3">{headerEnd}</div>}
       </header>
 
       <div className="flex min-h-0 flex-1 pr-2 pb-2">
-        {sidebar}
+        <nav aria-label="App preview navigation" className="flex w-[52px] shrink-0 flex-col items-center gap-1 pt-1">
+          <ChromeControl label="New task" onClick={onHome} className="size-9 bg-sidebar-accent text-foreground">
+            <svg viewBox="0 0 18 18" className="size-4.5" aria-hidden fill="currentColor">
+              <path d="M10.059 1.363a1.75 1.75 0 0 0-2.118 0l-5.25 3.99A1.75 1.75 0 0 0 2 6.746v7.504A2.75 2.75 0 0 0 4.75 17h2.5v-3.5a1.75 1.75 0 0 1 3.5 0V17h2.5A2.75 2.75 0 0 0 16 14.25V6.746c0-.546-.255-1.062-.691-1.393Z" />
+            </svg>
+          </ChromeControl>
+          <span role="img" aria-label="Spaces" className="group/spaces relative grid size-9 place-items-center text-muted-foreground">
+            <svg viewBox="0 0 18 18" className="size-4.5" aria-hidden>
+              <path d="M5.25,14h-1c-1.517,0-2.75-1.233-2.75-2.75V3.25C1.5,1.733,2.733,.5,4.25,.5h5c1.517,0,2.75,1.233,2.75,2.75v1.052c0,.414-.336,.75-.75,.75s-.75-.336-.75-.75v-1.052c0-.689-.561-1.25-1.25-1.25H4.25c-.689,0-1.25,.561-1.25,1.25V11.25c0,.689,.561,1.25,1.25,1.25h1c.414,0,.75,.336,.75,.75s-.336,.75-.75,.75Z" fill="currentColor"></path><path d="M15.487,6.927l-2.914-2.914c-.331-.331-.77-.513-1.237-.513H7.25c-1.517,0-2.75,1.233-2.75,2.75V14.25c0,1.517,1.233,2.75,2.75,2.75h6c1.517,0,2.75-1.233,2.75-2.75v-6.086c0-.467-.182-.907-.513-1.237Zm-1.053,1.068l-.002,.005h-2.432c-.275,0-.5-.225-.5-.5v-2.432l.005-.002,2.929,2.929Z" fill="currentColor"></path>
+            </svg>
+            <span role="tooltip" className="pointer-events-none absolute top-full left-0 z-50 mt-1 hidden whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-ui text-foreground shadow-lg group-hover/spaces:block">Spaces</span>
+          </span>
+          <span aria-hidden className="grid size-9 place-items-center text-muted-foreground"><CircleDot className="size-4.5" /></span>
+          <div className="flex-1" />
+          <span aria-hidden className="grid size-9 place-items-center text-muted-foreground"><ChartNoAxesColumn className="size-4.5" /></span>
+          <span aria-hidden className="grid size-9 place-items-center text-muted-foreground"><Settings className="size-4.5" /></span>
+        </nav>
         <div className="flex min-w-0 flex-1 gap-1.5">
-          {/* `min-w-0` is load-bearing: without it a wide row in the
-              transcript sets the flex item's floor and pushes the sidebar
-              off-screen. */}
           <Sheet className="flex-1">
+            {sidebarOpen && <div className="flex shrink-0 border-r border-hairline bg-surface-frame/50">{sidebar}</div>}
             <div className="flex min-w-0 flex-1 flex-col">{main}</div>
             {crew}
           </Sheet>
@@ -80,6 +102,32 @@ export default function Window({
         </div>
       </div>
     </div>
+  );
+}
+
+/// Gives working preview controls a keyboard label and a real tooltip.
+function ChromeControl({ label, children, onClick, disabled, pressed, className }: {
+  label: string;
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  pressed?: boolean;
+  className?: string;
+}) {
+  return (
+    <span className="group/control relative flex shrink-0">
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={pressed}
+        disabled={disabled}
+        onClick={onClick}
+        className={cx("grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-30 disabled:hover:bg-transparent", className)}
+      >
+        {children}
+      </button>
+      <span role="tooltip" className="pointer-events-none absolute top-full left-0 z-50 mt-1 hidden whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-ui text-foreground shadow-lg group-hover/control:block group-focus-within/control:block">{label}</span>
+    </span>
   );
 }
 

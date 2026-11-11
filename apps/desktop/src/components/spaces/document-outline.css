@@ -1,0 +1,39 @@
+.spaces-document-outline {
+  position: absolute;
+  z-index: 20;
+  top: 12px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 24px);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: var(--shadow-surface);
+  backdrop-filter: blur(20px);
+}
+.spaces-document-outline header { display: flex; align-items: center; gap: 7px; padding: 4px 5px 7px 8px; }
+.spaces-document-outline header > svg { width: 14px; height: 14px; color: var(--muted-foreground); }
+.spaces-document-outline h2 { flex: 1; font-size: 12px; font-weight: 500; }
+.spaces-document-outline nav { overflow-y: auto; min-height: 0; }
+.spaces-document-outline ol { margin: 0; padding: 0; list-style: none; }
+.spaces-document-outline li > button {
+  display: block;
+  width: 100%;
+  padding: 7px 9px 7px calc(9px + var(--outline-depth) * 12px);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.spaces-document-outline li > button:hover { background: var(--muted); color: var(--foreground); }
+.spaces-document-outline li > button[aria-current] { background: var(--muted); color: var(--foreground); font-weight: 500; }
+.spaces-document-outline li > button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.spaces-document-outline > p { margin: 0; padding: 10px 9px 14px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }

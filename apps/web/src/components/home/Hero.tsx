@@ -41,17 +41,17 @@ export function Hero() {
               nothing. */}
           <img
             src="/hero-mobile.webp"
-            alt="The Carbon window: sessions in the sidebar, an agent's report in the chat, and its pull request's checks in the side panel."
-            width={1200}
-            height={786}
+            alt="Carbon's desktop: navigation rail, task sidebar, agent conversation and pull request checks."
+            width={960}
+            height={608}
             loading="lazy"
             className="h-auto w-full rounded-[6px] sm:hidden light:hidden"
           />
           <img
             src="/hero-mobile-light.webp"
-            alt="The Carbon window: sessions in the sidebar, an agent's report in the chat, and its pull request's checks in the side panel."
-            width={1440}
-            height={920}
+            alt="Carbon's desktop: navigation rail, task sidebar, agent conversation and pull request checks."
+            width={960}
+            height={608}
             loading="lazy"
             className="hidden h-auto w-full rounded-[6px] shadow-[0_0_0_1px_#00000014] light:block light:sm:hidden"
           />

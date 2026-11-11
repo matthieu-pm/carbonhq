@@ -10,7 +10,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Image from "@tiptap/extension-image";
 import { Mathematics } from "@tiptap/extension-mathematics";
-import { Bold, CheckSquare, Code, Columns3, ImagePlus, Italic, Link2, List, ListOrdered, Paperclip, SquareCode, Quote, Redo2, Rows3, Sigma, Strikethrough, Table2, Trash2, Undo2, type LucideIcon } from "lucide-react";
+import { Bold, CheckSquare, Code, Columns3, Heading1, Heading2, Heading3, ImagePlus, Italic, Link2, List, ListOrdered, Minus, Paperclip, SquareCode, Quote, Redo2, Rows3, Sigma, Strikethrough, Table2, Trash2, Type, Undo2, Workflow, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -32,12 +32,13 @@ type Props = {
   onEdit: () => void;
   onOpenPage?: (target: PageTarget) => void;
   onAttach?: () => void;
+  showToolbar?: boolean;
   resolveImage?: (src: string) => string | undefined | Promise<string | undefined>;
 };
 type InputKind = "link" | "image" | "inlineMath" | "blockMath";
 type InputState = { kind: InputKind; value: string; from: number; to: number; position?: number };
-type SlashItem = { label: string; hint: string; run: (editor: Editor) => void };
-type SlashState = { from: number; to: number; query: string; index: number; left: number; top: number };
+type SlashItem = { label: string; hint: string; Icon: LucideIcon; group: string; shortcut?: string; run: (editor: Editor) => void };
+type SlashState = { from: number; to: number; query: string; index: number; left: number; top: number; above: boolean; maxHeight: number };
 type Floating = { left: number; top: number };
 
 function Tool({ label, Icon, active, disabled, onClick }: {
@@ -54,13 +55,15 @@ function FormatTools({ editor }: { editor: Editor }) {
 }
 
 /// Toolbar subscriptions stay here so typing cannot redraw the Spaces list or Page shell.
-function Toolbar({ editor, input, attach }: { editor: Editor; input: (kind: InputKind) => void; attach?: () => void }) {
+function Toolbar({ editor, input, attach, expanded }: { editor: Editor; input: (kind: InputKind) => void; attach?: () => void; expanded: boolean }) {
   const state = useEditorState({ editor, selector: ({ editor: current }) => ({
     heading: current.getAttributes("heading").level as number | undefined,
     bullets: current.isActive("bulletList"), ordered: current.isActive("orderedList"), tasks: current.isActive("taskList"), quote: current.isActive("blockquote"), table: current.isActive("table"), codeBlock: current.isActive("codeBlock"), language: (current.getAttributes("codeBlock").language ?? "") as string,
     undo: current.can().undo(), redo: current.can().redo(),
   }) });
-  return <div className="spaces-rich-toolbar" role="toolbar" aria-label="Page formatting">
+  if (!expanded && !state.table && !state.codeBlock) return null;
+  return <div className="spaces-rich-toolbar" data-contextual={!expanded} role="toolbar" aria-label="Page formatting">
+    {expanded && <>
     <label className="spaces-rich-block-select"><span className="sr-only">Text style</span><select aria-label="Text style" disabled={state.table} value={state.heading ?? "paragraph"} onChange={(event) => {
       const value = event.target.value;
       if (value === "paragraph") editor.chain().focus().setParagraph().run();
@@ -82,9 +85,12 @@ function Toolbar({ editor, input, attach }: { editor: Editor; input: (kind: Inpu
     <span className="spaces-rich-divider" />
     <Tool label="Undo" Icon={Undo2} disabled={!state.undo} onClick={() => editor.chain().focus().undo().run()} />
     <Tool label="Redo" Icon={Redo2} disabled={!state.redo} onClick={() => editor.chain().focus().redo().run()} />
+    </>}
     {state.codeBlock && <label className="spaces-rich-code-language">Language<input aria-label="Code language" placeholder="plain text" value={state.language} onChange={(event) => editor.commands.updateAttributes("codeBlock", { language: event.target.value.replace(/\s/g, "") || null })} /></label>}
     {state.table && <div className="spaces-rich-table-tools" role="group" aria-label="Table actions">
+      <TableAction onClick={() => editor.chain().focus().addRowBefore().run()}>Row above</TableAction>
       <Tool label="Add row below" Icon={Rows3} onClick={() => editor.chain().focus().addRowAfter().run()} />
+      <TableAction onClick={() => editor.chain().focus().addColumnBefore().run()}>Column before</TableAction>
       <Tool label="Add column after" Icon={Columns3} onClick={() => editor.chain().focus().addColumnAfter().run()} />
       <TableAction onClick={() => editor.chain().focus().deleteRow().run()}>Remove row</TableAction>
       <TableAction onClick={() => editor.chain().focus().deleteColumn().run()}>Remove column</TableAction>
@@ -211,11 +217,22 @@ const RichPageEditor = memo(forwardRef<PageEditorHandle, Props>(function RichPag
     const { $from } = selection;
     const before = $from.parent.textBetween(0, $from.parentOffset, "\n", "\ufffc");
     const match = $from.parent.type.name === "paragraph" && selection.empty && !current.isActive("table") ? /^\/([\w ]{0,30})$/.exec(before) : null;
+    if (!match) dismissedSlash.current = null;
     if (match && before !== dismissedSlash.current) {
       try {
         const at = current.view.coordsAtPos(selection.from);
         const box = host.getBoundingClientRect();
-        setSlash((previous) => ({ from: $from.start(), to: selection.from, query: match[1], index: previous?.query === match[1] ? previous.index : 0, left: Math.max(0, Math.min(at.left - box.left, box.width - 280)), top: at.bottom - box.top + 6 }));
+        const viewport = host.closest(".spaces-document-scroll")?.getBoundingClientRect();
+        const bottom = Math.min(window.innerHeight, viewport?.bottom ?? window.innerHeight) - 12;
+        const top = Math.max(0, viewport?.top ?? 0) + 12;
+        if (at.bottom < top || at.top > bottom) setSlash(null);
+        else {
+          const below = bottom - at.bottom - 6;
+          const above = at.top - top - 6;
+          const upwards = below < 240 && above > below;
+          const maxHeight = Math.max(48, Math.min(440, upwards ? above : below));
+          setSlash((previous) => ({ from: $from.start(), to: selection.from, query: match[1], index: previous?.query === match[1] ? previous.index : 0, left: Math.max(0, Math.min(at.left - box.left, box.width - 272)), top: (upwards ? at.top - 6 : at.bottom + 6) - box.top, above: upwards, maxHeight }));
+        }
       } catch { setSlash(null); }
     } else setSlash(null);
     if (!selection.empty && current.isFocused && !current.isActive("codeBlock") && !input) {
@@ -231,6 +248,8 @@ const RichPageEditor = memo(forwardRef<PageEditorHandle, Props>(function RichPag
 
   const editor = useEditor({
     extensions,
+    // Lazy mounts can suspend before commit; editor callbacks must start after React mounts.
+    immediatelyRender: false,
     content: initial.current,
     contentType: "markdown",
     shouldRerenderOnTransaction: false,
@@ -242,7 +261,7 @@ const RichPageEditor = memo(forwardRef<PageEditorHandle, Props>(function RichPag
         if (!active) return false;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
-          setSlash((previous) => previous ? { ...previous, index: Math.max(0, previous.index + (event.key === "ArrowDown" ? 1 : -1)) } : null);
+          setSlash((previous) => previous ? { ...previous, index: previous.index + (event.key === "ArrowDown" ? 1 : -1) } : null);
           return true;
         }
         if (event.key === "Enter" || event.key === "Tab") {
@@ -298,6 +317,13 @@ const RichPageEditor = memo(forwardRef<PageEditorHandle, Props>(function RichPag
     onBlur: () => { setFloating(null); setSlash(null); },
   });
   editorRef.current = editor;
+  useEffect(() => {
+    const scroll = root.current?.closest(".spaces-document-scroll");
+    const reposition = () => { if (editor && (editor.isFocused || slashRef.current || !editor.state.selection.empty)) menuUpdater.current(editor); };
+    scroll?.addEventListener("scroll", reposition, { passive: true });
+    window.addEventListener("resize", reposition);
+    return () => { scroll?.removeEventListener("scroll", reposition); window.removeEventListener("resize", reposition); };
+  }, [editor]);
 
   useImperativeHandle(ref, () => ({
     getMarkdown,
@@ -327,27 +353,28 @@ const RichPageEditor = memo(forwardRef<PageEditorHandle, Props>(function RichPag
     else { editor.view.dom.removeAttribute("aria-controls"); editor.view.dom.removeAttribute("aria-expanded"); editor.view.dom.removeAttribute("aria-activedescendant"); }
   }, [editor, slash, listId, viewReady]);
 
+  const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl ";
   const commands: SlashItem[] = useMemo(() => [
-    { label: "Text", hint: "Plain paragraph", run: (current) => { current.chain().focus().setParagraph().run(); } },
-    ...([1, 2, 3] as const).map((level) => ({ label: `Heading ${level}`, hint: level === 1 ? "Large heading" : level === 2 ? "Medium heading" : "Small heading", run: (current: Editor) => { current.chain().focus().setHeading({ level }).run(); } })),
-    { label: "Bullet list", hint: "A simple list", run: (current) => { current.chain().focus().toggleBulletList().run(); } },
-    { label: "Numbered list", hint: "An ordered list", run: (current) => { current.chain().focus().toggleOrderedList().run(); } },
-    { label: "Checklist", hint: "Track a few tasks", run: (current) => { current.chain().focus().toggleTaskList().run(); } },
-    { label: "Quote", hint: "A quoted passage", run: (current) => { current.chain().focus().toggleBlockquote().run(); } },
-    { label: "Code", hint: "A fenced code block", run: (current) => { current.chain().focus().toggleCodeBlock().run(); } },
-    { label: "Diagram", hint: "Mermaid diagram source", run: (current) => { current.chain().focus().setCodeBlock({ language: "mermaid" }).run(); } },
-    { label: "Table", hint: "Rows and columns", run: (current) => { current.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); } },
-    { label: "Divider", hint: "A horizontal rule", run: (current) => { current.chain().focus().setHorizontalRule().run(); } },
-    { label: "Image", hint: "Insert an image link", run: () => openInput("image") },
-    { label: "Math", hint: "An inline formula", run: () => openInput("inlineMath") },
-    { label: "Equation", hint: "A block formula", run: () => openInput("blockMath") },
-    ...(props.onAttach ? [{ label: "File", hint: "Attach a file", run: () => callbacks.current.onAttach?.() }] : []),
-  ], [openInput, props.onAttach]);
+    ...([1, 2, 3] as const).map((level) => ({ label: `Heading ${level}`, hint: "Section title", Icon: [Heading1, Heading2, Heading3][level - 1], group: "headings", shortcut: `${modifier}⌥${level}`, run: (current: Editor) => { current.chain().focus().setHeading({ level }).run(); } })),
+    { label: "Bulleted list", hint: "Bullet list", Icon: List, group: "lists", shortcut: `${modifier}⇧8`, run: (current) => { current.chain().focus().toggleBulletList().run(); } },
+    { label: "Numbered list", hint: "Ordered list", Icon: ListOrdered, group: "lists", shortcut: `${modifier}⇧7`, run: (current) => { current.chain().focus().toggleOrderedList().run(); } },
+    { label: "Checklist", hint: "Tasks and todos", Icon: CheckSquare, group: "lists", shortcut: `${modifier}⇧9`, run: (current) => { current.chain().focus().toggleTaskList().run(); } },
+    { label: "Insert image…", hint: "Image URL media", Icon: ImagePlus, group: "media", run: () => openInput("image") },
+    ...(props.onAttach ? [{ label: "Attach files…", hint: "Upload image or file", Icon: Paperclip, group: "media", run: () => callbacks.current.onAttach?.() }] : []),
+    { label: "Code block", hint: "Fenced code source", Icon: SquareCode, group: "blocks", shortcut: `${modifier}⌥C`, run: (current) => { current.chain().focus().toggleCodeBlock().run(); } },
+    { label: "Diagram", hint: "Mermaid diagram source", Icon: Workflow, group: "blocks", run: (current) => { current.chain().focus().setCodeBlock({ language: "mermaid" }).run(); } },
+    { label: "LaTeX math block", hint: "Equation block formula", Icon: Sigma, group: "blocks", run: () => openInput("blockMath") },
+    { label: "Table", hint: "Rows and columns", Icon: Table2, group: "blocks", run: (current) => { current.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); } },
+    { label: "Blockquote", hint: "Quote a passage", Icon: Quote, group: "blocks", run: (current) => { current.chain().focus().toggleBlockquote().run(); } },
+    { label: "Divider", hint: "Horizontal rule", Icon: Minus, group: "blocks", run: (current) => { current.chain().focus().setHorizontalRule().run(); } },
+    { label: "Text", hint: "Plain paragraph", Icon: Type, group: "other", shortcut: `${modifier}⌥0`, run: (current) => { current.chain().focus().setParagraph().run(); } },
+    { label: "Inline math", hint: "Inline formula", Icon: Sigma, group: "other", run: () => openInput("inlineMath") },
+  ], [openInput, props.onAttach, modifier]);
   const filtered = commands.filter((command) => `${command.label} ${command.hint}`.toLowerCase().includes(slash?.query.toLowerCase() ?? ""));
-  const activeIndex = filtered.length ? (slash?.index ?? 0) % filtered.length : 0;
+  const activeIndex = filtered.length ? ((slash?.index ?? 0) % filtered.length + filtered.length) % filtered.length : 0;
   const runSlash = (index: number) => {
     const active = slashRef.current;
-    const command = filtered[index % filtered.length];
+    const command = filtered[((index % filtered.length) + filtered.length) % filtered.length];
     if (!editor || !active || !command) return false;
     setSlash(null);
     editor.chain().focus().deleteRange({ from: active.from, to: active.to }).run();
@@ -376,13 +403,12 @@ const RichPageEditor = memo(forwardRef<PageEditorHandle, Props>(function RichPag
   };
 
   return <div className="spaces-rich-editor" ref={root} data-ready="false">
-    {editor && <Toolbar editor={editor} input={openInput} attach={props.onAttach} />}
+    {editor && <div className={props.showToolbar ? undefined : "spaces-rich-toolbar-anchor"}><Toolbar editor={editor} input={openInput} attach={props.onAttach} expanded={props.showToolbar ?? false} /></div>}
     {pasteMessage && <p className="spaces-rich-paste-message" role="status">{pasteMessage}</p>}
     <EditorContent editor={editor} />
     {editor && floating && !input && <div className="spaces-rich-floating" role="toolbar" aria-label="Selected text formatting" style={{ left: floating.left, top: floating.top }}><FormatTools editor={editor} /><Tool label="Link selected text" Icon={Link2} onClick={() => openInput("link")} /></div>}
-    {slash && <div className="spaces-rich-slash" id={listId} role="listbox" aria-label="Insert block" style={{ left: slash.left, top: slash.top }}>
-      <div className="spaces-rich-slash-title">Insert block</div>
-      {filtered.length ? filtered.map((command, index) => <button type="button" key={command.label} id={`${listId}-${index}`} role="option" aria-selected={index === activeIndex} onMouseDown={(event) => event.preventDefault()} onClick={() => runSlash(index)}><span>{command.label}</span><small>{command.hint}</small></button>) : <p>No matching blocks</p>}
+    {slash && <div className="spaces-rich-slash" id={listId} role="listbox" aria-label="Insert block" style={{ left: slash.left, top: slash.top, maxHeight: slash.maxHeight, transform: slash.above ? "translateY(-100%)" : undefined }}>
+      {filtered.length ? filtered.map((command, index) => <button type="button" key={command.label} id={`${listId}-${index}`} role="option" aria-selected={index === activeIndex} className={!slash.query && index > 0 && command.group !== filtered[index - 1].group ? "spaces-rich-slash-group" : undefined} onMouseDown={(event) => event.preventDefault()} onMouseMove={() => setSlash((previous) => previous?.index === index ? previous : previous ? { ...previous, index } : null)} onClick={() => runSlash(index)}><command.Icon aria-hidden="true" /><span>{command.label}</span>{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>) : <p>No matching blocks</p>}
     </div>}
     <Dialog open={input !== null} onOpenChange={(open) => { if (!open) { setInput(null); editor?.commands.focus(); } }}>
       <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); editor?.commands.focus(); }}><div className="spaces-rich-editor"><DialogHeader><DialogTitle>{input ? INPUT_LABELS[input.kind] : "Insert"}</DialogTitle><DialogDescription>{input?.kind === "link" ? "Enter a URL. Leave it empty to remove the link." : input?.kind === "image" ? "Use an image URL, or attach an image from the Page toolbar." : "Write the formula in LaTeX."}</DialogDescription></DialogHeader>

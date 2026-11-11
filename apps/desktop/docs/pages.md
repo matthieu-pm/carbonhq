@@ -30,6 +30,8 @@ Restore copies historical title and body into a new revision. Current identity, 
 
 Tiptap loads only for an open rich document. Its internal tree is transient. Untouched Markdown never saves a normalized copy. Actual edits mark the draft pending immediately, serialize after a 300ms pause, and autosave after a further pause. Navigation flushes pending rich text before changing documents.
 
+The document header keeps favorites, link copying, display options and the outline in reach. The document menu holds source/preview switching, history, Page links, attachments, task references and Trash. Display options offer full width, the optional formatting toolbar and project links. Titles wrap and resize with the available column. Selecting text opens inline formatting; tables and code blocks expose their own controls without shifting the document. The grouped slash menu has icons, installed-editor shortcuts, search and wrapping arrow navigation, and opens above the caret when space below is tight. The outline follows rendered headings in both rich and preview modes without changing Markdown.
+
 Pages over 32 KiB and unsupported constructs use source mode. The source guard is conservative around HTML, frontmatter, footnotes, reference links, directives and callouts. Table cells accept one paragraph because GFM cannot represent arbitrary block children. Block actions and unsafe paste are refused inside cells. Rich images retain canonical source attributes while a DOM-only view resolves authenticated display URLs.
 
 The user's Milkdown performance rejection and the Notion/Linear investigation are recorded in [editor research](pages-editor-research.md). That research distinguishes shipped-artifact observations from editor design choices.
