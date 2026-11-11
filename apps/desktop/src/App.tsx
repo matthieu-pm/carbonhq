@@ -3076,18 +3076,14 @@ function App() {
       // The issues page fills the column, so the centred empty-composer state
       // is wrong there even with no session selected.
       centered={!shownSession && !issuesOpen && viewTab === "chat"}
-      // Nothing with no sessions in scope, so a first run keeps the composer
-      // alone at the shell's own centring.
       home={
-        visibleSessions.length > 0 && (
-          <HomeCards
-            sessions={visibleSessions}
-            statusBySession={statusBySession}
-            asking={askingSessions}
-            prFor={prMarks.prFor}
-            onOpenSession={(sessionId) => goToSession(() => void selectAndLeaveCrew(sessionId))}
-          />
-        )
+        <HomeCards
+          sessions={visibleSessions}
+          statusBySession={statusBySession}
+          asking={askingSessions}
+          prFor={prMarks.prFor}
+          onOpenSession={(sessionId) => goToSession(() => void selectAndLeaveCrew(sessionId))}
+        />
       }
       panelLeft={panelSide === "left"}
       panelOpen={issuesOpen ? !!pickedIssue : panelShown}

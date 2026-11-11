@@ -51,8 +51,9 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /// session index, the sidebar's PR marks and subscription usage — so the page
 /// costs no read of its own beyond the usage poll.
 ///
-/// Draws nothing with no sessions in scope: five empty cards under a first
-/// prompt are chrome about work that has not happened yet.
+/// Drawn with no sessions in scope too, each card in its empty state: a
+/// profile or project with nothing in it is still the same page, and hiding
+/// the cards there read as the page being broken for that one scope.
 export default function HomeCards({
   sessions,
   statusBySession,
@@ -70,8 +71,6 @@ export default function HomeCards({
   const live = useMemo(() => sessions.filter((s) => !s.archived && !s.aside), [sessions]);
   const recent = useMemo(() => recentSessions(live, RECENT_ROWS), [live]);
   const prs = useMemo(() => sessionPrs(live, prFor), [live, prFor]);
-
-  if (sessions.length === 0) return null;
 
   return (
     // A container, so the grid follows the column it is given rather than the
@@ -102,7 +101,7 @@ export default function HomeCards({
               ))}
             </ul>
           ) : (
-            <Empty>No open sessions.</Empty>
+            <Empty>{sessions.length ? "No open sessions." : "No sessions yet."}</Empty>
           )}
         </Card>
 
@@ -137,7 +136,9 @@ export default function HomeCards({
               </p>
             </>
           ) : (
-            <Empty>No pull requests on these sessions' branches.</Empty>
+            <Empty>
+              {live.length ? "No pull requests on these sessions' branches." : "No pull requests yet."}
+            </Empty>
           )}
         </Card>
 
