@@ -765,11 +765,48 @@ fn browser_open(session_id: String, url: String, new_tab: bool) -> Result<(), St
 }
 
 #[cfg(feature = "desktop")]
+/// Runs only the installation notice, so the normal frontend cannot start helpers from a temporary copy.
+fn show_install_notice(mut context: tauri::Context<tauri::Wry>, message: String) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    context.config_mut().app.windows.clear();
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .setup(move |app| {
+            let window = tauri::WebviewWindowBuilder::new(app, "install", tauri::WebviewUrl::External("about:blank".parse()?))
+                .title("Install Carbon")
+                .inner_size(480.0, 200.0)
+                .resizable(false)
+                .build()?;
+            let handle = app.handle().clone();
+            app.dialog()
+                .message(message)
+                .title("Move Carbon to Applications")
+                .parent(&window)
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCustom("Quit".into()))
+                .show(move |_| handle.exit(0));
+            Ok(())
+        })
+        .build(context)
+        .expect("error while showing installation notice")
+        .run(|_, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                unsafe { libc::_exit(0) }
+            }
+        });
+}
+
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before the builder, so a panic while the app is still coming up — the
     // window nobody could report from — is covered like any other.
     analytics::install_panic_hook();
+    let context = tauri::generate_context!();
+    if let Err(error) = launchd::check_install_location() {
+        show_install_notice(context, error.to_string());
+        return;
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_macos_permissions::init())
@@ -964,7 +1001,7 @@ pub fn run() {
             transcription::retry_transcription,
             transcription::cancel_transcription,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|_app, event| {
             // The record of what the output was before a dictation muted it

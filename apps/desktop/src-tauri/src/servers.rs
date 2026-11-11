@@ -458,6 +458,8 @@ async fn run(id: String) {
             // launchd brings it back within seconds; a dev build has to ask.
             if crate::is_dev() {
                 let _ = crate::launchd::ensure().await;
+            } else if let Err(e) = crate::launchd::recover_if_stopped().await {
+                eprintln!("[launchd] could not recover the stopped agent: {e:#}");
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
             continue;
