@@ -3634,7 +3634,7 @@ function App() {
               projects={spaceProjects}
               projectPath={projectPath}
               onSelectProject={handleSelectProject}
-              onAttachProject={handleAttachProject}
+              onAttachProject={(server, list) => handleAttachProject(server, list, space)}
               branches={branches}
               branch={branch}
               onSelectBranch={handleSelectBranch}

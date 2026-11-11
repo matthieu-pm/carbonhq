@@ -523,9 +523,23 @@ const setUseWorktree = (next: boolean | ((prev: boolean) => boolean)) => {
 // attached stamped newest. Attaching a known project just selects it, so this
 // doubles as "switch to one I already have" without the picker growing
 // duplicates.
-const handleAttachProject = (server: ServerId, list: Project[]) => {
-  setProjects((prev) => mergeFrom(prev, server, list, pathOfProject));
-  setProjectPath(lastSelected(list)?.path ?? null);
+//
+// `space` is the profile the reader attached it from, and the project is filed
+// there before it is selected: `add_project` tags nothing, and a pick outside
+// the active profile is cleared at once, which read as the attach doing
+// nothing (CBN-43). A project filed elsewhere moves, since it carries one tag.
+const handleAttachProject = async (server: ServerId, list: Project[], space: string | null = null) => {
+  const attached = lastSelected(list);
+  let filed = list;
+  if (space && attached && attached.space !== space) {
+    try {
+      filed = await invoke<Project[]>("set_project_space", { path: attached.path, space });
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+  setProjects((prev) => mergeFrom(prev, server, filed, pathOfProject));
+  setProjectPath(attached?.path ?? null);
 };
 
 // Detaches a project. Sessions that ran in it keep their own recorded paths and

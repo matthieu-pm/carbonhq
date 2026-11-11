@@ -49,6 +49,10 @@ export function useDragReorder<T>(
     // delta, so one measured against an unconfirmed order lands wrong if that
     // write fails.
     if (e.button !== 0 || !list.current || pending.current) return;
+    // A press inside a portal (a row's open menu) bubbles here through React's
+    // tree, not the DOM's. Capturing it took the release away from the menu
+    // item, so a pick in a row's dropdown did nothing (CBN-43).
+    if (!e.currentTarget.contains(e.target as Node)) return;
     // The item's own controls and fields answer their own presses.
     if ((e.target as Element).closest("button:not([data-grip]), input, textarea")) return;
     // Keeps the press from starting a text selection across the items.
