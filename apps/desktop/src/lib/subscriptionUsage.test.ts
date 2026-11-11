@@ -34,5 +34,6 @@ describe("subscription allowance", () => {
     expect(resetLabel("bad date", NOW)).toBe("Reset time unavailable");
     expect(resetLabel(new Date(NOW - 1).toISOString(), NOW)).toBe("Reset reached · refresh usage");
     expect(resetLabel(new Date(NOW + 61 * 60_000).toISOString(), NOW)).toBe("Resets in 1h 1m");
+    expect(resetLabel(new Date(NOW + 262 * 60_000).toISOString(), NOW, "Updates")).toBe("Updates in 4h 22m");
   });
 });

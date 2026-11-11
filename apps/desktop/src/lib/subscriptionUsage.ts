@@ -39,15 +39,17 @@ export function combinedRemaining(rows: SubscriptionUsage[], now: number): { per
   };
 }
 
-export function resetLabel(reset: string | null, now: number): string {
+/// `verb` is "Updates" on the home card, whose one line sits under a combined
+/// figure that moves at the soonest reset without going back to full.
+export function resetLabel(reset: string | null, now: number, verb = "Resets"): string {
   if (!reset) return "Reset time unavailable";
   const time = Date.parse(reset);
   if (!Number.isFinite(time)) return "Reset time unavailable";
   const minutes = Math.ceil((time - now) / 60_000);
   if (minutes <= 0) return "Reset reached · refresh usage";
-  if (minutes < 60) return `Resets in ${minutes}m`;
-  if (minutes < 24 * 60) return `Resets in ${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`;
-  return `Resets ${new Date(time).toLocaleDateString(undefined, {
+  if (minutes < 60) return `${verb} in ${minutes}m`;
+  if (minutes < 24 * 60) return `${verb} in ${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`;
+  return `${verb} ${new Date(time).toLocaleDateString(undefined, {
     ...(minutes < 7 * 24 * 60 ? { weekday: "short" as const } : { month: "short" as const, day: "numeric" as const }),
     hour: "numeric", minute: "2-digit",
   })}`;

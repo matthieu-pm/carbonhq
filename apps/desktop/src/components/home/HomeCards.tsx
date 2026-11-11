@@ -364,7 +364,7 @@ function UsageRecap() {
       </ul>
 
       <p className="truncate text-xs text-muted-foreground">
-        {resets.length ? resetLabel(resets[0], now) : " "}
+        {resets.length ? resetLabel(resets[0], now, "Updates") : " "}
       </p>
     </div>
   );
