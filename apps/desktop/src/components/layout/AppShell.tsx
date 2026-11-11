@@ -48,6 +48,10 @@ type AppShellProps = {
   /// against, so pinning it to the bottom leaves the one usable control as far
   /// from the eye as the window allows. `children` is not rendered in this state.
   centered?: boolean;
+  /// Drawn under the composer in the centered state: the new-task home's
+  /// cards. The pair is centered as one block, and scrolls where it runs past
+  /// the window.
+  home?: ReactNode;
   /// Drawn over the centered column — the drop zone, since a sidebar row let
   /// go on the empty state opens the session whole and the zone has to say so
   /// where the pointer is.
@@ -80,6 +84,7 @@ export default function AppShell({
   crew,
   crewStacked = false,
   centered = false,
+  home,
   overlay,
   summary,
   summaryOpen = true,
@@ -164,8 +169,12 @@ export default function AppShell({
               {...{ [DROP_ATTR]: EMPTY_VIEW }}
             >
               {/* `children` is deliberately dropped: there is no transcript to
-                show, and the composer is the whole state. */}
-              <div className="my-auto w-full shrink-0 pt-2 pb-22">{footer}</div>
+                show. Alone, the composer sits a little above centre; with the
+                home cards under it the block is centred whole. */}
+              <div className={cn("my-auto w-full shrink-0", home ? "py-8" : "pt-2 pb-22")}>
+                {footer}
+                {home && <div className="pt-8">{home}</div>}
+              </div>
               {overlay}
             </div>
           ) : (

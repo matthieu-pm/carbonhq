@@ -211,6 +211,26 @@ Icon for `pr` = same one sidebar row and panel toggle draw, so mark and thing it
 
 Hover delay symmetric (150ms): keep cursor merely passing through from popping row open, and let one overshooting on way out come back without it having closed.
 
+## New task home
+
+**The new task page is a home: logo, composer, then five cards.** A bare composer in an empty window said nothing about what was going on. The cards are Activity, Recent sessions, Usage, Pull requests and This week ([HomeCards](src/components/home/HomeCards.tsx)). **No sessions in scope draws none of them**: five empty cards under a first prompt are chrome about work that has not happened.
+
+**Every figure is one the app already holds.** Session index, the sidebar's PR marks, subscription usage. So the page reads nothing of its own, and it also means what is absent is absent on purpose: no lines changed, no merged-PR count, since neither is recorded anywhere and a number guessed from partial marks is worse than no number. The list is the sidebar's own (`visibleSessions`), so a profile or project filter narrows the page with it.
+
+**The composer is the narrower block, the grid the wider one.** `max-w-3xl` over `max-w-5xl`, both centred. Same width read as one tall form; the step in is what makes the composer the page's subject and the cards its footnotes. The grid is a container query, not a media query: sidebar and panel both take width from the column, and the window knows about neither.
+
+**Cards take `--card`, the composer takes `--composer`.** Cards sit *in* the page, the composer is the one thing floating on it — the veil split above, applied as written. No background image behind them: the window is glass and the theme owns what is behind it.
+
+**The heatmap is `--primary` at four strengths, not green.** `--accent-add` means added line, open PR, unread session; a contribution-graph green would be a fourth meaning. Primary is near-white on dark palettes and the palette's own mark on Default light, so the map follows the theme. Empty days are `foreground/7`, days after today are not drawn. Levels are against the busiest day *shown*, so one large day does not flatten a quiet half-year into a single shade more than it has to.
+
+**The hovered day reads out in the card's footer, not a tooltip.** 182 cells would each mount one, and the footer is where the totals already are — the eye is going there anyway.
+
+**This week compares with last week through the same weekday.** A Wednesday against a whole week reads as a collapse every Wednesday. The delta is muted, never red or green: fewer sessions than last week is a fact, not a failure, and red and green here mean diff lines and PR state.
+
+**Recent sessions and Pull requests leave settled sessions out; Activity counts them.** The first two are ways back into work, the third is history. Pull requests orders open, draft, merged, and names each by its session's title — the mark carries a number and a state, not GitHub's title, and the title the reader knows is the session's.
+
+**Nothing on the page animates in.** It is what ⌘N lands on, many times a day; an entrance there is a delay with decoration.
+
 ## Worktree notice and confirm dialog
 
 **Two ways in, and shape follow who asked.** Settle raise **notice**, settled bar's button raise **dialog**. Settling, reader doing something else and being *offered* something, so safe answer must cost zero click: card expire into "keep it" after 15s and therefore carry no Keep button, since doing nothing already is keeping. Pressing "Delete worktree" = reader asking, and they owed confirm naming cost. Both read copy from [worktree.ts](src/lib/worktree.ts), so two route cannot drift into describing same deletion differently.

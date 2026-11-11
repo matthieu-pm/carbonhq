@@ -16,13 +16,13 @@ export default function FileMentionMenu({
   activeIndex,
   onPick,
   onHover,
-  bare = false,
+  below = false,
 }: {
   files: FileMatch[];
   activeIndex: number;
   onPick: (file: FileMatch) => void;
   onHover: (index: number) => void;
-  bare?: boolean;
+  below?: boolean;
 }) {
   return (
     <PickerMenu
@@ -32,7 +32,7 @@ export default function FileMentionMenu({
       activeIndex={activeIndex}
       onPick={onPick}
       onHover={onHover}
-      bare={bare}
+      below={below}
       renderItem={(file) => (
         <>
           {/* The one place in this menu that carries colour, and the reason the
