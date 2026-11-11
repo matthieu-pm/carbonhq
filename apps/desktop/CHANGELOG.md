@@ -22,6 +22,20 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.30.0-beta.4 · 2026-11-11 · notify
+
+### Fixed
+
+- **Mac connection after installation.** Carbon asks you to move it to Applications
+  before running from an installer or temporary macOS location. Its background
+  server no longer gets registered to a disk image that disappears after ejecting.
+- **Background server recovery.** A stopped login job pointing to an old app can
+  be replaced without waiting for a connection it cannot answer. Initial
+  registration and reloads retry if launchd is still unloading the old job.
+- **Older CLI installations.** A previous CLI server sharing the app’s data
+  folder is retired after it exits idle, so the two services cannot compete.
+  Headless servers configured with their own data folder stay separate.
+
 ## 0.30.0-beta.3 · 2026-11-11 · notify
 
 ### New
