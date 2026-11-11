@@ -3,6 +3,7 @@ import { Popover } from "radix-ui";
 import { ChevronDown, ChevronUp, FileDiff, FileText, GitBranch, Globe, Image, Link, Monitor, MoreHorizontal, Plus, Search, SlidersHorizontal } from "lucide-react";
 
 import AgentIcon from "@/components/AgentIcon";
+import ContextDetails from "@/components/ContextDetails";
 import ImageLightbox, { Thumb, type LightboxImage } from "@/components/chat/ImageLightbox";
 import OpenInButton from "@/components/OpenInButton";
 import PrStateIcon from "@/components/PrStateIcon";
@@ -14,6 +15,7 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useContextBreakdown } from "@/hooks/useContextBreakdown";
 import { openPath } from "@/hooks/useDocs";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { openLink } from "@/lib/openLink";
@@ -75,6 +77,8 @@ type Props = {
   liveTaskIds: ReadonlySet<string>;
   sources: readonly SummarySource[];
   context: { used: number; max: number } | null;
+  /// A closed card stays mounted for its exit and must not keep asking the child.
+  open: boolean;
   onOpen: (tab: "changes" | "pr" | "more") => void;
   onManageSources?: () => void;
   onHide: () => void;
@@ -107,7 +111,7 @@ function SummarySection({ title, action, children }: { title?: string; action?: 
 /// Details follow the conversation's real data; empty sections take no space.
 export default function PinnedSummary({
   sessionId, project, cwd, environment, branch, worktree, harness, changes, changesLoading, changesError,
-  prs, prsLoading, prsError, subagents, busy, liveTaskIds, sources, context,
+  prs, prsLoading, prsError, subagents, busy, liveTaskIds, sources, context, open,
   onOpen, onManageSources, onHide,
 }: Props) {
   const [allSources, setAllSources] = useState(false);
@@ -125,7 +129,10 @@ export default function PinnedSummary({
   const showGit = (visible("branch") && branch) || visible("changes");
   const showPrs = visible("prs") && (prs.length > 0 || prsLoading || prsError !== null);
   const showSources = visible("sources") && sources.length > 0;
-  const empty = !showWorkspace && !showGit && !showPrs && !(visible("subagents") && subagents.length) && !showSources && !(visible("context") && context);
+  // A turn ending moves the window; so does a child starting, which `busy` marks.
+  const breakdown = useContextBreakdown(sessionId, open && harness === "claude_code" && visible("context"), `${context?.used}:${busy}`);
+  const showContext = visible("context") && (context !== null || breakdown !== null);
+  const empty = !showWorkspace && !showGit && !showPrs && !(visible("subagents") && subagents.length) && !showSources && !showContext;
   const hide = () => {
     onHide();
     requestAnimationFrame(() => document.getElementById("pinned-summary-toggle")?.focus());
@@ -248,11 +255,8 @@ export default function PinnedSummary({
             }} />}
         </SummarySection>}
 
-        {visible("context") && context && <SummarySection title="Context window">
-          <div className="flex items-center justify-between px-2.5 py-1 text-xs text-muted-foreground">
-            <span>{context.used.toLocaleString()} / {context.max.toLocaleString()} tokens</span>
-            <span className="tabular-nums">{Math.round(context.used / Math.max(1, context.max) * 100)}%</span>
-          </div>
+        {showContext && <SummarySection title="Context window">
+          <ContextDetails breakdown={breakdown} total={context} />
         </SummarySection>}
         {empty && <div className="p-2"><button type="button" className={row} onClick={() => setMenuOpen(true)}><SlidersHorizontal className="size-4" />Choose what to show</button></div>}
       </div>

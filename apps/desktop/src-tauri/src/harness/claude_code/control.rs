@@ -57,6 +57,9 @@ pub enum ControlRequest<'a> {
     ApplyFlagSettings {
         settings: FlagSettings,
     },
+    /// What fills the context window, by category. Answered by the session's
+    /// own child with no model call; see [`context`](super::context).
+    GetContextUsage,
     /// Asked of a throwaway child rather than a session's, and answered without
     /// a model call. See [`commands`](super::commands).
     Initialize,

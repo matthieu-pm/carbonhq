@@ -613,6 +613,18 @@ authorEmail: string,
  */
 authoredAt: string, };
 
+export type ContextBreakdown = { categories: Array<ContextCategory>, 
+/**
+ * The `used` categories summed; the buffer and deferred tools are outside it.
+ */
+usedTokens: number, maxTokens: number, };
+
+/**
+ * One slice of the window. `kind` is the CLI's own word — `used`, `deferred`,
+ * `buffer` or `free` — kept a string so one it adds later costs nothing here.
+ */
+export type ContextCategory = { id: string, name: string, tokens: number, kind: string, };
+
 export type ContextWindow = { usedTokens: number, maxTokens: number, };
 
 /**

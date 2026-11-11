@@ -1800,6 +1800,39 @@ impl SessionManager {
         live(&mut guard, session_id)?.stop_task(task_id).await
     }
 
+    /// Asks a session's running child what fills its context window. `None`
+    /// where nothing can answer: no child, another harness, or no reply in 5s.
+    pub async fn context_breakdown(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<crate::harness::claude_code::context::ContextBreakdown>> {
+        use crate::harness::claude_code::context;
+
+        let Some(slot) = self.existing(session_id).await else { return Ok(None) };
+        let line = ControlLine::new(ControlRequest::GetContextUsage);
+        let reply = {
+            let guard = slot.lock().await;
+            let Some(Session { stdin: Transport::Lines(stdin), .. }) = guard.as_ref() else {
+                return Ok(None);
+            };
+            let reply = context::wait_for(&line.request_id);
+            if let Err(err) = write_line(stdin, &line).await {
+                context::forget(&line.request_id);
+                return Err(err);
+            }
+            reply
+        };
+
+        // Awaited with the slot released: a send must not queue behind a read.
+        match tokio::time::timeout(std::time::Duration::from_secs(5), reply).await {
+            Ok(Ok(response)) => Ok(context::parse(&response)),
+            _ => {
+                context::forget(&line.request_id);
+                Ok(None)
+            }
+        }
+    }
+
     /// Takes back the newest prompt still waiting on a boundary, returning it
     /// so the composer can put the text back where the user left it.
     ///

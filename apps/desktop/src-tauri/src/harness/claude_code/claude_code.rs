@@ -16,6 +16,7 @@ use tokio::{
 pub mod parser;
 pub use parser::ClaudeCodeEvent;
 pub mod commands;
+pub mod context;
 pub mod control;
 pub mod mapper;
 pub mod models;
@@ -304,6 +305,13 @@ async fn read_stdout(
             if let Err(err) = crate::session::write_line(&stdin, &denial).await {
                 eprintln!("[claude auto-deny err] {err}");
             }
+            continue;
+        }
+
+        // A reply to a request of ours. Most are acks; one asked for by
+        // `context_breakdown` has a caller waiting on it.
+        if let ClaudeCodeEvent::ControlResponse { response } = &claude_event {
+            context::deliver(response);
             continue;
         }
 

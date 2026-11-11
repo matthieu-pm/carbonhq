@@ -22,6 +22,15 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## Unreleased
+
+### Improved
+
+- **Context breakdown.** The pinned summary's Context window section now shows
+  what fills a Claude Code session's context: messages, tools, system prompt,
+  skills, memory files, the compaction reserve and the room left. Turn it on
+  from the summary's options menu.
+
 ## 0.30.0-beta.2 · 2026-11-07 · notify
 
 ### New

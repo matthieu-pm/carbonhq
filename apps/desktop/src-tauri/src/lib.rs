@@ -669,6 +669,15 @@ async fn stop_task(
     Ok(manager().stop_task(session_id, task_id).await?)
 }
 
+/// What fills a session's context window, by category. `None` when no
+/// running Claude Code child can say.
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn context_breakdown(
+    session_id: &str,
+) -> Result<Option<harness::claude_code::context::ContextBreakdown>, Fail> {
+    Ok(manager().context_breakdown(session_id).await?)
+}
+
 /// Takes back the newest prompt still held for a running turn, returning its
 /// text so the composer can restore it. `None` once the flush has written it —
 /// past that point the CLI owns the prompt and there is no way to retract it.

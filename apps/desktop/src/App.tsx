@@ -3009,6 +3009,7 @@ function App() {
       liveTaskIds={liveTaskIds}
       sources={sources}
       context={contextUsage}
+      open={summary.open}
       onOpen={(tab) => { summary.closePopover(); showPanel(tab); }}
       onManageSources={serverOfPath(selectedSession.cwd) === LOCAL ? () => { summary.closePopover(); setSettingsTab("mcp"); setSettingsOpen(true); } : undefined}
       onHide={() => summary.setOpen(false)}
