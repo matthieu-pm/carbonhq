@@ -1498,6 +1498,10 @@ body.session-drag * {
 }
 .conversation-rail[data-state="open"] { width: 320px; visibility: visible; transition-duration: 220ms, 0s; transition-delay: 0s; }
 .conversation-rail-body { display: flex; flex-direction: column; flex-shrink: 0; width: 320px; min-height: 0; }
+/* The transcript's scrollbar stops at the rail instead of running under it. The same width
+   padded on the left keeps the centred column where it was, which the rail's own threshold
+   (768px plus its width on each side) always leaves room for. */
+.conversation-column:has(~ .conversation-rail[data-state="open"]) .chat-scroll { margin-right: 320px; padding-left: 320px; }
 .chat-scroll::-webkit-scrollbar,
 #pinned-summary::-webkit-scrollbar { width: 5px; }
 .summary-popover {

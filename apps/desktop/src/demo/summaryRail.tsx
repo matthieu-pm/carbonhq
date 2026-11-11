@@ -58,7 +58,7 @@ function Demo() {
           summaryLayoutRef={summary.ref} summaryDocked={docked}
           summary={summary.mode === "pinned" ? card : null} summaryOpen={summary.open} summaryKey="demo"
         >
-          <div className="chat-scroll flex-1 overflow-y-auto p-6 text-sm text-muted-foreground">
+          <div className="chat-scroll flex-1 overflow-y-auto py-6 text-sm text-muted-foreground">
             <div className="mx-auto max-w-3xl px-6">
               <p id="mode" data-mode={summary.mode}>With the right panel shut and room beside this column, the summary docks as a rail. An open panel or a tighter window floats it as a card over the transcript, and a narrow one makes it a popover. This column must not move as it opens and closes.</p>
             </div>
