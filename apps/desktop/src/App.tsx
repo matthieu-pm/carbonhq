@@ -67,6 +67,7 @@ import { usePrMarks } from "@/hooks/usePrMarks";
 import { usePrReady } from "@/hooks/usePrReady";
 import { useWorkStatus } from "@/hooks/useWorkStatus";
 import HandoffRow from "@/components/composer/HandoffRow";
+import HomeCards from "@/components/home/HomeCards";
 import { trackFeature } from "@/lib/analytics";
 import { handoffActions } from "@/lib/handoff";
 import { prTabVisible, usePullRequest } from "@/hooks/usePullRequest";
@@ -3075,6 +3076,19 @@ function App() {
       // The issues page fills the column, so the centred empty-composer state
       // is wrong there even with no session selected.
       centered={!shownSession && !issuesOpen && viewTab === "chat"}
+      // Nothing with no sessions in scope, so a first run keeps the composer
+      // alone at the shell's own centring.
+      home={
+        visibleSessions.length > 0 && (
+          <HomeCards
+            sessions={visibleSessions}
+            statusBySession={statusBySession}
+            asking={askingSessions}
+            prFor={prMarks.prFor}
+            onOpenSession={(sessionId) => goToSession(() => void selectAndLeaveCrew(sessionId))}
+          />
+        )
+      }
       panelLeft={panelSide === "left"}
       panelOpen={issuesOpen ? !!pickedIssue : panelShown}
       summaryLayoutRef={summary.ref}
@@ -3651,6 +3665,7 @@ function App() {
               contextUsage={contextUsage}
               isNewSession={!selectedSessionId}
               busy={busy}
+              modelLast={!shownSession}
             />
           }
         />

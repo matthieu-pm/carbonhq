@@ -89,6 +89,12 @@ type ComposerToolbarProps = {
   /// reads it — it is the one control here that moves the child on the click
   /// rather than at the next send.
   busy: boolean;
+
+  /// Puts the model picker at the row's right end instead of its start. The
+  /// new-task card shares this row with dictation and Send, and the row reads
+  /// as two groups: where the task runs on the left, what runs it and the
+  /// button that starts it on the right.
+  modelLast?: boolean;
 };
 
 /// The composer's control row. Model and permission change a running session in
@@ -131,7 +137,29 @@ export default function ComposerToolbar({
   contextUsage,
   isNewSession,
   busy,
+  modelLast = false,
 }: ComposerToolbarProps) {
+  const model = (
+    <ModelSelector
+      server={server}
+      harness={harness}
+      onHarnessChange={onHarnessChange}
+      models={models}
+      modelId={modelId}
+      effort={effort}
+      fast={fast}
+      fastNote={fastNote}
+      onFastChange={onFastChange}
+      isNewSession={isNewSession}
+      busy={busy}
+      onChange={onModelChange}
+      onRefreshModels={onRefreshModels}
+      onReloadModels={onReloadModels}
+      onSeedProvider={onSeedProvider}
+      loadingModels={loadingModels}
+    />
+  );
+
   return (
     <div className="flex min-w-0 items-center gap-0.5 px-1">
       {/* No radius override: `icon-sm` already carries the app's rounded-square,
@@ -160,24 +188,7 @@ export default function ComposerToolbar({
       </DropdownMenuContent>
       </DropdownMenu> : <Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon-sm" aria-label="Attach files" className="text-muted-foreground" onClick={onAttach}><Plus /></Button></TooltipTrigger><TooltipContent side="top">Attach files<ShortcutKeys ids={["attach"]} /></TooltipContent></Tooltip>}
 
-      <ModelSelector
-        server={server}
-        harness={harness}
-        onHarnessChange={onHarnessChange}
-        models={models}
-        modelId={modelId}
-        effort={effort}
-        fast={fast}
-        fastNote={fastNote}
-        onFastChange={onFastChange}
-        isNewSession={isNewSession}
-        busy={busy}
-        onChange={onModelChange}
-        onRefreshModels={onRefreshModels}
-        onReloadModels={onReloadModels}
-        onSeedProvider={onSeedProvider}
-        loadingModels={loadingModels}
-      />
+      {!modelLast && model}
 
       {isNewSession && (
         <>
@@ -245,6 +256,8 @@ export default function ComposerToolbar({
           <ContextMeter used={contextUsage.used} max={contextUsage.max} />
         </div>
       )}
+
+      {modelLast && <div className="ml-auto flex min-w-0 items-center">{model}</div>}
     </div>
   );
 }

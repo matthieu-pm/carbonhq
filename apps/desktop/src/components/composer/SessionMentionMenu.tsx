@@ -23,7 +23,7 @@ export default function SessionMentionMenu({
   onPick,
   onHover,
   emptyNote,
-  bare = false,
+  below = false,
 }: {
   sessions: SessionIndexItem[];
   /// Drawn where this project holds no other task. A query matching nothing
@@ -33,7 +33,7 @@ export default function SessionMentionMenu({
   activeIndex: number;
   onPick: (session: SessionIndexItem) => void;
   onHover: (index: number) => void;
-  bare?: boolean;
+  below?: boolean;
 }) {
   const ambiguous = ambiguousTitles(sessions);
 
@@ -47,7 +47,7 @@ export default function SessionMentionMenu({
       activeIndex={activeIndex}
       onPick={onPick}
       onHover={onHover}
-      bare={bare}
+      below={below}
       emptyNote={emptyNote}
       renderItem={(session) => (
         <>

@@ -12,13 +12,13 @@ export default function McpMentionMenu({
   activeIndex,
   onPick,
   onHover,
-  bare = false,
+  below = false,
 }: {
   servers: McpMention[];
   activeIndex: number;
   onPick: (server: McpMention) => void;
   onHover: (index: number) => void;
-  bare?: boolean;
+  below?: boolean;
 }) {
   return (
     <PickerMenu
@@ -28,7 +28,7 @@ export default function McpMentionMenu({
       activeIndex={activeIndex}
       onPick={onPick}
       onHover={onHover}
-      bare={bare}
+      below={below}
       renderItem={(server) => (
         <>
           <span className="min-w-0 truncate font-medium">{server.name}</span>

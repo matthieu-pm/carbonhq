@@ -119,9 +119,9 @@ type ChatInputProps = {
   /// How many prompts are waiting. Only decides whether Esc is bound — the rows
   /// themselves are drawn by the transcript, above this component.
   queuedCount?: number;
-  /// Rendered outside the card — below it normally, above it on a new task. A
-  /// node rather than the controls' own props, so this component keeps owning
-  /// layout and measurement and nothing else.
+  /// Rendered below the card in a session, and inside it as the bottom row on
+  /// a new task. A node rather than the controls' own props, so this component
+  /// keeps owning layout and measurement and nothing else.
   toolbar?: ReactNode;
   /// The dictate button and, while recording, the level and its two buttons.
   ///
@@ -171,10 +171,10 @@ type ChatInputProps = {
   /// when the user switches. `null` is the new task's own draft, not the
   /// absence of one.
   sessionId?: string | null;
-  /// No session yet, so the composer stands alone mid-window. Nothing sits
-  /// behind it to separate it from: the card drops its fill, border, and
-  /// padding, the toolbar moves above — reading order runs settings first, then
-  /// the box they apply to — and the send button gives way to a keyboard hint.
+  /// No session yet, so the composer leads the new-task home. The card grows a
+  /// control row of its own: the text sits on top with room for a few lines,
+  /// and the toolbar, dictation and Send share the row under it — in a session
+  /// the toolbar sits below the card and Send rides the text's line.
   isNewTask?: boolean;
   /// The title of the session this box sends into, named in the placeholder.
   /// Only while a split view is up: one composer under several transcripts is
@@ -201,11 +201,8 @@ type ChatInputProps = {
 };
 
 const MAX_ROWS = 10;
-// The empty state has no transcript above it to crowd, so the box can take a lot
-// more of the window before it starts scrolling. Capped rather than unbounded
-// because this composer is centered: past the window's height it would overflow
-// off both ends at once, putting the wordmark past the top edge with nothing to
-// scroll it back.
+// The new task has no transcript above it to crowd, so the box can take more of
+// the window before it starts scrolling.
 const NEW_TASK_MAX_ROWS = 20;
 
 // The file is the source, so editing the logo needs no change here — but an
@@ -289,7 +286,8 @@ export default function ChatInput({
   useLayoutEffect(() => {
     const box = editorRef.current;
     const controlsBox = controlsRef.current;
-    if (!box || !controlsBox) return;
+    // A new task's controls sit in the card's own bottom row, never beside the text.
+    if (isNewTask || !box || !controlsBox) return;
     const check = () => {
       if (!message) {
         swappedFor.current = null;
@@ -318,7 +316,7 @@ export default function ChatInput({
     const observer = new ResizeObserver(check);
     observer.observe(box);
     return () => observer.disconnect();
-  }, [message, sessionId]);
+  }, [message, sessionId, isNewTask]);
   // Read by the session-switch effect below, which must stay keyed on the
   // session alone: the draft it wants is the one that arrived *with* that
   // switch, and depending on `message` would rerun it on every keystroke and
@@ -753,11 +751,9 @@ export default function ChatInput({
           pressing it can't also submit.
 
           Enter-to-send lives in `onKeyDown`, not in this button being the form's
-          submitter, so the empty state can drop it for the hint below without
-          losing the keyboard path. Neither `busy` nor a queue is reachable
-          there — nothing runs before a session exists. */}
-      {!isNewTask &&
-        !dictating &&
+          submitter. On a new task it only ever sends: neither `busy` nor a
+          queue is reachable before a session exists. */}
+      {!dictating &&
         (() => {
           const stopping = busy && !canSend;
 
@@ -894,7 +890,9 @@ export default function ChatInput({
           <div
             aria-hidden
             style={WORDMARK_MASK}
-            className="mb-4 h-10 w-full max-w-30 bg-current text-foreground/10"
+            // `ml-1`: the card's corner is round, so a mark flush with its edge
+            // reads as hanging off it.
+            className="mb-4 ml-1 h-7 w-26 bg-current text-foreground"
           />
         )}
 
@@ -925,11 +923,6 @@ export default function ChatInput({
           </div>
         )}
 
-        {/* Pulled left by the toolbar's own `px-1` plus the ghost button's 6px
-            icon inset, so the `+` glyph — not the button box — lands on the
-            same edge as the text below it. */}
-        {isNewTask && <div className="-ml-2.5 pb-1.5">{toolbar}</div>}
-
         {/* Directly above the card and with no gap: the row runs on past its own
             reserve and behind the card, which is the opaque thing that hides it.
             Anything between the two would show the buttons through the gap and
@@ -958,12 +951,10 @@ export default function ChatInput({
             when it hid the handoff row by being opaque; [HandoffRow] clips
             itself now, which is what freed it. */}
         <div className="relative">
-          {/* Two separate consequences of the empty state, passed separately
-              because they are separate things that happen to coincide. The
-              toolbar sits above the input there and the window is empty below
-              it, so the list opens downward — upward it would cover the controls
-              it sits next to. And the card behind it has no fill or border, so
-              the list drops its own to match. */}
+          {/* On a new task the list opens downward: the composer sits near the
+              top of its column with the logo just above, so upward it would run
+              off the scroller's top edge. It covers the home cards instead,
+              which is why it keeps its frame there. */}
           {menuOpen &&
             (mention ? (
               <FileMentionMenu
@@ -971,7 +962,7 @@ export default function ChatInput({
                 activeIndex={active}
                 onPick={pickFile}
                 onHover={setActiveIndex}
-                bare={isNewTask}
+                below={isNewTask}
               />
             ) : issue ? (
               <IssueMentionMenu
@@ -980,7 +971,7 @@ export default function ChatInput({
                 onPick={pickIssue}
                 tagged={new Set(taggedIssues.map((tag) => tag.identifier))}
                 onHover={setActiveIndex}
-                bare={isNewTask}
+                below={isNewTask}
                 loading={issuesLoading}
                 emptyNote={issuesNote}
                 tracker={tracker}
@@ -993,7 +984,7 @@ export default function ChatInput({
                 activeIndex={active}
                 onPick={pickSession}
                 onHover={setActiveIndex}
-                bare={isNewTask}
+                below={isNewTask}
               />
             ) : mcp ? (
               <McpMentionMenu
@@ -1001,7 +992,7 @@ export default function ChatInput({
                 activeIndex={active}
                 onPick={pickMcp}
                 onHover={setActiveIndex}
-                bare={isNewTask}
+                below={isNewTask}
               />
             ) : (
               <SlashCommandMenu
@@ -1009,7 +1000,7 @@ export default function ChatInput({
                 activeIndex={active}
                 onPick={pickCommand}
                 onHover={setActiveIndex}
-                bare={isNewTask}
+                below={isNewTask}
                 emptyNote={noCommands ? NO_COMMANDS_NOTE : undefined}
               />
             ))}
@@ -1024,8 +1015,7 @@ export default function ChatInput({
               // shadow: a shadow under a dark card falls on something already
               // darker than itself, and the card is glass there, so being lighter
               // than the page does not draw the box on its own.
-              !isNewTask &&
-                "border border-edge-surface bg-composer shadow-(--shadow-surface) backdrop-blur-xl",
+              "border border-edge-surface bg-composer shadow-(--shadow-surface) backdrop-blur-xl",
             )}
           >
             {/* Covers the card rather than replacing anything, so the text and
@@ -1043,7 +1033,7 @@ export default function ChatInput({
                 of the message being composed rather than as a separate control.
                 Padded on the same edges as the textarea below it. */}
             {attachments.length > 0 && (
-              <div className={cn("pt-3", isNewTask ? "px-0" : "px-3")}>
+              <div className="px-3 pt-3">
                 <AttachmentTray
                   attachments={attachments}
                   server={server}
@@ -1056,16 +1046,17 @@ export default function ChatInput({
               </div>
             )}
 
-            {/* Controls ride the text's row at one line and wrap under it past
-                that — see `stacked`. */}
+            {/* In a session the controls ride the text's row at one line and
+                wrap under it past that — see `stacked`. A new task's sit in the
+                card's bottom row instead, so the text always has the full width. */}
             <div
               className={cn(
-                "flex items-end gap-1 py-3",
-                stacked && "flex-wrap",
-                isNewTask ? "px-0" : "px-3",
+                "flex items-end gap-1 px-3",
+                isNewTask ? "pt-3" : "py-3",
+                stacked && !isNewTask && "flex-wrap",
               )}
             >
-              <div className={cn("relative min-w-0 flex-1", stacked && "basis-full")}>
+              <div className={cn("relative min-w-0 flex-1", stacked && !isNewTask && "basis-full")}>
                 <RichInput
                   // **One editor per session, because the undo stack lives in
                   // the editor.** Kept across a session switch, ⌘Z in the
@@ -1207,40 +1198,57 @@ export default function ChatInput({
                       setCaret(at.start + 1);
                     }
                   }}
-                  className={cn("py-1 text-prompt", isNewTask ? "px-0" : "px-1")}
+                  // Three lines tall on a new task, and the height is the
+                  // editor's own so a click anywhere in that space lands in it.
+                  className={cn("px-1 py-1 text-prompt", isNewTask && "min-h-[4.5lh]")}
                 />
               </div>
 
-              {controls}
+              {!isNewTask && controls}
             </div>
+
+            {/* The toolbar's own `px-1` plus this row's 6px puts its buttons
+                10px inside the card: their 8px corner plus that is the card's
+                18px, so the two curves are concentric. */}
+            {isNewTask && (
+              <div className="flex items-center gap-1 pt-1 pr-2.5 pb-2.5 pl-1.5">
+                <div className="min-w-0 flex-1">{toolbar}</div>
+                {controls}
+              </div>
+            )}
           </div>
         </div>
 
         {isNewTask ? (
-          // Gone while a picker is open, and the list sitting over this row is
+          // Hidden while a picker is open, and the list sitting over this row is
           // the smaller half of why: Enter completes the highlighted row there
           // rather than sending, and the picker draws its own ↵ hint saying so.
           // Two Enter legends at once, one of them untrue.
           //
           // The menu, not its rows — including while it is still placeholders.
-          // Enter does send there, so the legend would be *true*; it is dropped
+          // Enter does send there, so the legend would be *true*; it is hidden
           // anyway, because a send hint under an open picker reads as belonging
-          // to the list and there is nothing in the list to send. Omitting a
-          // hint costs less than drawing one that looks like it means the row
-          // above it.
-          !menuOpen && (
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <div className="flex shrink-0 items-center gap-1 text-ui text-muted-foreground/60">
-                {held ?? (
-                  <>
-                    Press <CornerDownLeft className="size-3" strokeWidth={2} /> to send
-                    {draftHint && <span className="flex items-center gap-1">· {draftHint}</span>}
-                  </>
-                )}
-              </div>
-              {agentUpdate}
+          // to the list and there is nothing in the list to send.
+          //
+          // `invisible`, not unmounted: the home is centred as one block, so a
+          // row that came and went moved the composer and every card under it
+          // on each `/`.
+          <div
+            className={cn(
+              "flex items-center justify-between gap-3 px-1 pt-2",
+              menuOpen && "invisible",
+            )}
+          >
+            <div className="flex shrink-0 items-center gap-1 text-ui text-muted-foreground/60">
+              {held ?? (
+                <>
+                  <CornerDownLeft className="size-3" strokeWidth={2} /> to send
+                  {draftHint && <span className="flex items-center gap-1">· {draftHint}</span>}
+                </>
+              )}
             </div>
-          )
+            {agentUpdate}
+          </div>
         ) : (
           <div className="pt-1.5">{toolbar}</div>
         )}

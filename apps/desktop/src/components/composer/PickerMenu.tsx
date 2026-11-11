@@ -61,7 +61,7 @@ export default function PickerMenu<T>({
   activeIndex,
   onPick,
   onHover,
-  bare = false,
+  below = false,
   loading = false,
   emptyNote,
   header,
@@ -81,13 +81,11 @@ export default function PickerMenu<T>({
   /// Two independently lit rows would leave Enter and the click landing on
   /// different items, which is the one thing this list must never do.
   onHover: (index: number) => void;
-  /// Follows the composer's own empty state, where the card drops its fill and
-  /// border: the list drops them too and sits directly on the page. It also
-  /// opens *below* there, where the toolbar sits above the input and the empty
-  /// half of the window is underneath it — above otherwise, where the
-  /// transcript is the only thing covered. The hint row swaps ends to match, so
-  /// the list always stays the half nearer the input.
-  bare?: boolean;
+  /// Opens under the composer rather than over it. The new-task composer
+  /// sits near the top of its column, so a list opening upward would run off
+  /// the scroller; in a session the transcript above is the room there is. The
+  /// hint row swaps ends to match, staying on the far side from the input.
+  below?: boolean;
   /// Whether an answer is still being waited on. Only read where there are no
   /// rows: a list already holding something paints that, since replacing rows
   /// somebody is reading with placeholders is the flicker a cache exists to
@@ -174,7 +172,6 @@ export default function PickerMenu<T>({
   // Runs across the whole list rather than restarting per group, so it lines up
   // with the flat index the composer navigates by.
   let row = -1;
-  const below = bare;
 
   /* Outside the box: nothing about a list that never holds focus says it is
      navigable, but the hint is chrome about the list rather than part of it.
@@ -184,12 +181,11 @@ export default function PickerMenu<T>({
      sat on whatever happened to be there. Body's own colour, so it reads as a
      gap in the page rather than as another surface, and the padding is the
      row's own, since the fill has to cover the text and not just sit under the
-     box. Dropped with `bare` for the same reason the list drops its own. */
+     box. */
   const hint = (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-lg px-1.5 py-1 text-ui text-muted-foreground/50",
-        !bare && "bg-background",
+        "flex items-center gap-3 rounded-lg bg-background px-1.5 py-1 text-ui text-muted-foreground/50",
         below ? "mt-1.5" : "mb-1.5",
       )}
     >
@@ -220,17 +216,10 @@ export default function PickerMenu<T>({
     // Anchored to the card and lifted clear on whichever side it opens, so the
     // list grows into empty space rather than pushing the composer around as it
     // filters.
-    //
-    // `top-full`/`bottom-full` clear the card's own `py-3`, so the gap is really
-    // 12px of that plus this margin. With a border to separate them that reads
-    // as one box beside another; with `bare` there is no edge, so the same gap
-    // reads as the list having drifted away from the input — hence the pull
-    // back, sized to leave the 6px the bordered state shows.
     <div
       className={cn(
         "absolute left-0 z-50 w-full",
-        below && (bare ? "top-full -mt-1.5" : "top-full mt-1.5"),
-        !below && (bare ? "bottom-full -mb-1.5" : "bottom-full mb-1.5"),
+        below ? "top-full mt-1.5" : "bottom-full mb-1.5",
       )}
     >
       {/* Dropped while the list is still placeholders: naming the keys that
@@ -262,35 +251,19 @@ export default function PickerMenu<T>({
           enough to need the heavier blur to hide a strip of page; this surface
           already spends the heavier wash, so only a quarter of the backdrop is
           left to hide and 24px of blur on it read as a smear of the transcript
-          rather than as glass over it.
-
-          `bare` drops the fill along with the border, the radius and the
-          shadow, and they do go together: it is only ever the empty state,
-          where the composer stands alone and the transcript is not rendered at
-          all, so there is nothing behind the list to mask and a fill can only
-          be a slab of colour laid on the page. That read as free once the page
-          was opaque and the slab was its exact colour — under vibrancy the page
-          is glass and no fill can match it, since painting one only stacks a
-          second layer over the body's own. So the list has no surface here: the
-          selected row is what marks it, and with no edge there is nothing for a
-          radius to round or a shadow to lift. Rows keep their own radius either
-          way — that one is the shape of the highlight, not of the box. */}
+          rather than as glass over it. */}
       <div
         className={cn(
-          "overflow-hidden",
-          bare
-            ? "text-foreground"
-            : "rounded-xl border border-hairline-strong bg-picker backdrop-blur-lg text-popover-foreground shadow-md",
+          "overflow-hidden rounded-xl border border-hairline-strong bg-picker text-popover-foreground shadow-md backdrop-blur-lg",
         )}
       >
         {/* Outside the scroller, so it does not slide away as the list is
             walked. **No rule under it**: the only header here is a switch on
             its own track, which already reads as a control rather than as a
             row — so a line beneath it cut a menu this small into two panels
-            over a distinction the shapes make on their own. The framed state
-            insets it to match the list's own `p-1`; the bare one has no box to
-            be held away from. */}
-        {header && <div className={cn(!bare && "p-1 pb-0")}>{header}</div>}
+            over a distinction the shapes make on their own. Inset to match the
+            list's own `p-1`. */}
+        {header && <div className="p-1 pb-0">{header}</div>}
 
         <div
           ref={listRef}
@@ -305,15 +278,10 @@ export default function PickerMenu<T>({
           // the first row is the gap beside it. Uneven, the top read as a band
           // of empty surface above the list while the sides read as an edge.
           //
-          // Seven rows either way, and that is why there are two heights: 7 ×
-          // the row's own `h-8` is 14rem, and the bordered state adds the
-          // 0.25rem of `p-1` at each end. Written out rather than computed, so
-          // it costs nothing at render — but it does mean these numbers, `h-8`
-          // and `p-1` have to move together.
-          //
-          // `bare` drops the inset with the box it was insetting from: with no
-          // border there is nothing for the rows to be held away from, and the
-          // gap only reads as the list sitting oddly short of its own edge.
+          // Seven rows: 7 × the row's own `h-8` is 14rem, plus the 0.25rem of
+          // `p-1` at each end. Written out rather than computed, so it costs
+          // nothing at render — but these numbers, `h-8` and `p-1` have to move
+          // together.
           //
           // No scrollbar at all, and that is the one place this list departs
           // from every other scrolling box in the app. A picker is walked with
@@ -323,10 +291,7 @@ export default function PickerMenu<T>({
           // space, so the thumb sat on the highlighted row's rounded end: the
           // gutter that used to be reserved for it goes with it, and `p-1` is
           // now an even inset again.
-          className={cn(
-            "scrollbar-none overflow-x-hidden overflow-y-auto overscroll-contain",
-            bare ? "max-h-[14rem]" : "max-h-[14.5rem] p-1",
-          )}
+          className="scrollbar-none max-h-[14.5rem] overflow-x-hidden overflow-y-auto overscroll-contain p-1"
         >
           {/* A row's height and inset, so the box is the size one row makes and
               the sentence sits where a name would. */}
@@ -370,25 +335,10 @@ export default function PickerMenu<T>({
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseMove={(e) => handleMove(e, index)}
                     onClick={(e) => onPick(item, e.metaKey || e.ctrlKey)}
-                    // The highlight is a veil in the bare state and a fill in
-                    // the framed one, for the same reason the box around it is:
-                    // bare has no surface, so this lands straight on the page,
-                    // and `--accent`'s flat grey is a slab there once that page
-                    // is glass. `--veil-strong` composites to `--accent`'s own
-                    // colour over an opaque page, so the two states match
-                    // outside vibrancy. Framed keeps the fill — it sits on the
-                    // popover, which is opaque by design.
-                    //
-                    // The token, not the 11.5% white it was written as. The two
-                    // are the same value in dark, and in light a white veil on a
-                    // white page is no highlight at all — the row the arrow keys
-                    // were sitting on simply stopped being marked.
                     className={cn(
                       "flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-ui",
                       index === activeIndex
-                        ? bare
-                          ? "bg-veil-strong text-accent-foreground"
-                          : "bg-accent text-accent-foreground"
+                        ? "bg-accent text-accent-foreground"
                         : "text-foreground",
                     )}
                   >

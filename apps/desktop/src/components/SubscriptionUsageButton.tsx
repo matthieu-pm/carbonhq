@@ -7,19 +7,9 @@ import AgentIcon from "@/components/AgentIcon";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSubscriptionUsage } from "@/hooks/useSubscriptionUsage";
-import { combinedRemaining, resetLabel, subscriptionRemaining } from "@/lib/subscriptionUsage";
+import { combinedRemaining, PROVIDERS, resetLabel, subscriptionRemaining, usageColor } from "@/lib/subscriptionUsage";
 import { cn } from "@/lib/utils";
 import type { Harness, SubscriptionUsage } from "@/types/events";
-
-const PROVIDERS: { harness: Harness; label: string }[] = [
-  { harness: "codex", label: "Codex" },
-  { harness: "claude_code", label: "Claude Code" },
-  { harness: "grok", label: "Grok" },
-];
-
-function usageColor(percent: number | null): string {
-  return percent !== null && percent <= 10 ? "text-destructive" : percent !== null && percent <= 25 ? "text-accent-command" : "text-foreground";
-}
 
 function UsageRing({ percent, partial, className }: { percent: number | null; partial: boolean; className?: string }) {
   return (

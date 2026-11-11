@@ -1,6 +1,18 @@
-import type { SubscriptionUsage } from "@/types/events";
+import type { Harness, SubscriptionUsage } from "@/types/events";
 
 export const USAGE_FRESH_MS = 2 * 60_000;
+
+/// The agents whose subscriptions report usage, in the order they are listed.
+export const PROVIDERS: { harness: Harness; label: string }[] = [
+  { harness: "codex", label: "Codex" },
+  { harness: "claude_code", label: "Claude Code" },
+  { harness: "grok", label: "Grok" },
+];
+
+/// The text colour for a remaining share: red at 10% or under, yellow at 25%.
+export function usageColor(percent: number | null): string {
+  return percent !== null && percent <= 10 ? "text-destructive" : percent !== null && percent <= 25 ? "text-accent-command" : "text-foreground";
+}
 
 /// An expired window needs a new provider reading; the last value cannot predict its replacement.
 export function subscriptionRemaining(row: SubscriptionUsage, now: number): number | null {

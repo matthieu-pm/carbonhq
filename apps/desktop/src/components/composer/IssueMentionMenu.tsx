@@ -23,7 +23,7 @@ export default function IssueMentionMenu({
   onPick,
   tagged,
   onHover,
-  bare = false,
+  below = false,
   loading = false,
   emptyNote,
   tracker,
@@ -36,7 +36,7 @@ export default function IssueMentionMenu({
   /// removes it.
   tagged: Set<string>;
   onHover: (index: number) => void;
-  bare?: boolean;
+  below?: boolean;
   /// Whether the tracker is still being waited on. The one picker of the three
   /// that needs it: the other two read memory, where this reads the network on
   /// a query nothing has cached yet.
@@ -58,7 +58,7 @@ export default function IssueMentionMenu({
       activeIndex={activeIndex}
       onPick={onPick}
       onHover={onHover}
-      bare={bare}
+      below={below}
       loading={loading}
       emptyNote={emptyNote}
       keepOpenHint
