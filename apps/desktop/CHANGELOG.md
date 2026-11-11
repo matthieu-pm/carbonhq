@@ -22,16 +22,35 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
-## Unreleased
+## 0.30.0-beta.3 · 2026-11-11 · notify
+
+### New
+
+- **Navigation rail.** Home, Issues, usage and Settings have their own rail.
+  Move between views with Back and Forward, and keep issue tabs open beside
+  your sessions.
+- **Remote MCP servers.** Add and manage remote MCP servers from Settings.
 
 ### Improved
 
+- **Issue details.** Linear issues show relations, sub-issues and cycles.
+- **Profiles.** File a project into a profile from the project controls.
+- **Appearance.** Set interface and code font sizes separately. Permission
+  choices use clearer icons and keep Bypass visibly red.
+- **Task progress.** The pinned summary shows the agent's current task list.
 - **Context breakdown.** The pinned summary's Context window section now shows
   what fills a Claude Code session's context: messages, tools, system prompt,
   skills, memory files, the compaction reserve and the room left.
 - **Pinned summary rail.** With the right panel closed and room beside the
   chat, the pinned summary docks on the right as a full-height rail. Otherwise
   it floats over the chat. Opening or closing it no longer moves the chat.
+
+### Fixed
+
+- Tabs keep their state when switching views.
+- Floating sidebar rows stay mounted while the sidebar is hidden.
+- The transcript scrollbar stops at the summary rail.
+- Browser tabs use the Carbon logomark when a page has no favicon.
 
 ## 0.30.0-beta.2 · 2026-11-07 · notify
 
