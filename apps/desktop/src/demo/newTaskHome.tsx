@@ -25,7 +25,7 @@ import "../App.css";
 /// a faked session index, PR marks and subscription usage. **Sidebar** narrows
 /// the column, which is what the cards' container query answers to, and
 /// **Sessions** switches between a busy index, a thin one and none — the last
-/// being a first run, where the cards are not drawn at all.
+/// being a first run or an empty profile, where every card draws its empty state.
 
 const DAY = 86_400_000;
 const now = Date.now();
@@ -202,15 +202,13 @@ function Demo() {
             </div>
           }
           home={
-            list.length > 0 && (
-              <HomeCards
-                sessions={list}
-                statusBySession={STATUS}
-                asking={ASKING}
-                prFor={(_repo, name) => (name ? MARKS[name] : undefined)}
-                onOpenSession={(id) => setSent(`open ${id}`)}
-              />
-            )
+            <HomeCards
+              sessions={list}
+              statusBySession={STATUS}
+              asking={ASKING}
+              prFor={(_repo, name) => (name ? MARKS[name] : undefined)}
+              onOpenSession={(id) => setSent(`open ${id}`)}
+            />
           }
           footer={
             <ChatInput

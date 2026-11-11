@@ -1015,7 +1015,14 @@ export default function ChatInput({
               // shadow: a shadow under a dark card falls on something already
               // darker than itself, and the card is glass there, so being lighter
               // than the page does not draw the box on its own.
-              "border border-edge-surface bg-composer shadow-(--shadow-surface) backdrop-blur-xl",
+              //
+              // A new task's card takes the home cards' surface whole instead —
+              // fill, edge and shadow. Nothing scrolls under it there, so it sits
+              // in the page as they do, and a float veil beside five card veils
+              // read as a sixth card in the wrong colour.
+              isNewTask
+                ? "border border-hairline bg-card shadow-(--shadow-card)"
+                : "border border-edge-surface bg-composer shadow-(--shadow-surface) backdrop-blur-xl",
             )}
           >
             {/* Covers the card rather than replacing anything, so the text and
