@@ -2239,7 +2239,16 @@ locked: string | null,
  * A link to a folder elsewhere. Editing writes through to it; removing
  * takes the link alone.
  */
-linked: boolean, };
+linked: boolean, 
+/**
+ * One folder of [`EVERYONE`] linked into the other, so every agent loads
+ * it. True of both rows it draws.
+ */
+shared: boolean, 
+/**
+ * Whether [`share_skill`] can link this one into the other folder.
+ */
+shareable: boolean, };
 
 export type SkillRoot = { id: string, path: string, project: string | null, readers: Array<Harness>, 
 /**
@@ -2250,7 +2259,12 @@ label: string | null, skills: Array<SkillEntry>, error: string | null,
 /**
  * Whether new skills can be made or imported here.
  */
-writable: boolean, };
+writable: boolean, 
+/**
+ * On a target alone: the second folder a skill made here is linked into,
+ * which is what makes this the "every agent" choice.
+ */
+sharedWith: string | null, };
 
 export type SkillsListing = { roots: Array<SkillRoot>, 
 /**
