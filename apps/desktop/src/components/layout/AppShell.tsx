@@ -160,7 +160,7 @@ export default function AppShell({
         )}
         {/* `min-w-0` is load-bearing: without it a wide code block in the transcript
           sets the flex item's floor and pushes the sidebar off-screen. */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="content-backdrop flex min-w-0 flex-1 flex-col">
           {centered ? (
             // Auto margins center the composer when it fits and collapse when
             // it does not, keeping the top reachable in a short window.
@@ -181,7 +181,7 @@ export default function AppShell({
             // The crew runs the full height beside both, so its rows get the
             // composer's band too rather than stopping short of it at a line
             // nothing else on screen is drawn to.
-            <div className="relative flex min-h-0 flex-1">
+            <div className="content-veil relative flex min-h-0 flex-1">
               <div className="conversation-column flex min-w-0 flex-1 flex-col">
                 {/* `flex flex-col` so the view tabs' bodies, which size themselves
                   with `flex-1` the way the right panel's do, have a column to
