@@ -3362,6 +3362,36 @@ pub struct Ingest<'a> {
     pub flush_transport: &'a Transport,
 }
 
+/// Moves the index's branch to the one the session now works on, where
+/// [`crate::store::adopts_branch`] says it has one.
+///
+/// One `rev-parse` for a session still where it was recorded, which is nearly
+/// every call; the default branch is asked only once HEAD has moved.
+async fn follow_branch(ctx: &Ingest<'_>, app: &Sink) {
+    let Some(head) = crate::git::head_branch(ctx.session_cwd).await else {
+        return;
+    };
+    let Ok(Some(item)) = crate::store::get_session_index_item(ctx.session_id).await else {
+        return;
+    };
+    if item.branch.as_deref() == Some(head.as_str()) {
+        return;
+    }
+
+    let default = crate::git::default_branch(ctx.session_cwd).await;
+    if !crate::store::adopts_branch(&item, &head, default.as_deref()) {
+        return;
+    }
+
+    match crate::store::set_session_branch(ctx.session_id, &head).await {
+        Ok(Some(item)) => {
+            app.emit(crate::orchestration::SESSION_CHANGED, &item).ok();
+        }
+        Ok(None) => {}
+        Err(e) => eprintln!("[branch write err] {e:#}"),
+    }
+}
+
 /// Everything that happens to a mapped event, from the snapshot on a closing
 /// turn to the queued flush at a boundary.
 ///
@@ -3485,6 +3515,16 @@ async fn ingest_event(ctx: &Ingest<'_>, mut agent_event: AgentEvent, app: &Sink,
     }
     if let Some(at) = limit_reset {
         crate::auto_continue::schedule(ctx.session_id, &at, app).await;
+    }
+
+    // The two moments a session is known to have just worked on HEAD: its turn
+    // ending, and the harness's own word of a commit, push or pull request,
+    // which Claude Code gives minutes ahead of that.
+    if matches!(
+        agent_event.payload,
+        AgentEventPayload::TurnCompleted { .. } | AgentEventPayload::RepoChanged { .. }
+    ) {
+        follow_branch(ctx, app).await;
     }
 
     // Live-view only, never retained. Deltas are superseded by the

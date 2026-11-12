@@ -44,6 +44,9 @@ pub struct SessionIndexItem {
     /// Repo root — the grouping key, so worktree sessions still list under
     /// their project rather than each becoming a project of their own.
     pub project_path: String,
+    /// Where the session's work lands: the branch checked out at creation, then
+    /// whichever one off the default branch a turn last ended on. See
+    /// [`adopts_branch`].
     pub branch: Option<String>,
     /// `Some` marks this a worktree session; Claude Code names the branch
     /// `worktree-<name>`.
@@ -922,17 +925,26 @@ pub async fn resolve_unclaimed_worktree_name(
 /// reader's own editor, so HEAD there answers "what is this checkout on" and
 /// never "where did this session's work land".
 ///
+/// The default branch loses too, where there is a record to keep: HEAD back on
+/// it means the session's branch was merged and tidied away, not that its work
+/// moved there. See [`adopts_branch`], which keeps that record current.
+///
 /// The guess itself is just `branch`, with no `worktree-<name>` rebuild beside
 /// it: [`SessionIndexItem::new`] and [`SessionIndexItem::fork`] both write that
 /// name into the field at creation, so the record already holds it. `pr.ts`
 /// rebuilds it because a frontend session object can predate that write.
-pub fn session_branch(item: &SessionIndexItem, observed: Option<&str>) -> Option<String> {
+pub fn session_branch(
+    item: &SessionIndexItem,
+    observed: Option<&str>,
+    default_branch: Option<&str>,
+) -> Option<String> {
     if item.worktree_removed {
         return item.branch.clone();
     }
 
     observed
         .filter(|b| !b.is_empty())
+        .filter(|b| !(item.branch.is_some() && default_branch == Some(*b)))
         .map(str::to_string)
         .or_else(|| item.branch.clone())
 }
@@ -1332,6 +1344,38 @@ pub async fn set_session_status(
         if status != SessionStatus::Idle {
             item.modified = now_rfc3339();
         }
+        item.clone()
+    })
+    .await
+}
+
+/// Whether a session recorded on one branch takes `head`, the branch its turn
+/// just ended on, as where its work lands.
+///
+/// The record was written once, at creation, so a session started on `main`
+/// that branched and opened a pull request kept naming `main` — and the sidebar
+/// mark, the crew and the home card, which have no HEAD of their own to ask,
+/// found no PR on it (CBN-56).
+///
+/// The default branch never takes the record back: "merge it and switch to
+/// main" is how such a session usually ends, which is exactly when its mark has
+/// to stay. A worktree session is left alone, `pr.ts` rebuilding its branch from
+/// the worktree name, and so is a relocated one, whose checkout is not its own.
+pub fn adopts_branch(item: &SessionIndexItem, head: &str, default_branch: Option<&str>) -> bool {
+    item.worktree_name.is_none()
+        && !item.worktree_removed
+        && item.branch.as_deref() != Some(head)
+        && default_branch != Some(head)
+}
+
+/// Records the branch a session's work moved to. See [`adopts_branch`], which
+/// the caller has already asked.
+pub async fn set_session_branch(
+    session_id: &str,
+    branch: &str,
+) -> Result<Option<SessionIndexItem>> {
+    update_item(session_id, |item| {
+        item.branch = Some(branch.to_string());
         item.clone()
     })
     .await
@@ -2809,13 +2853,13 @@ mod tests {
         );
         // The name the CLI mints, which `new` already wrote into the field.
         assert_eq!(
-            session_branch(&worktree, None).as_deref(),
+            session_branch(&worktree, None, None).as_deref(),
             Some("worktree-calm-owl")
         );
         // Git's own reading outranks the guess: anything checking out another
         // branch inside the tree leaves the record describing one it left.
         assert_eq!(
-            session_branch(&worktree, Some("fix/thing")).as_deref(),
+            session_branch(&worktree, Some("fix/thing"), Some("main")).as_deref(),
             Some("fix/thing")
         );
 
@@ -2833,7 +2877,7 @@ mod tests {
             false,
             None,
         );
-        assert_eq!(session_branch(&plain, None).as_deref(), Some("feature"));
+        assert_eq!(session_branch(&plain, None, None).as_deref(), Some("feature"));
 
         // Relocated: `cwd` is the shared project root, so HEAD there answers
         // what that checkout is on and never where this session's work landed.
@@ -2842,9 +2886,59 @@ mod tests {
         settled.cwd = settled.project_path.clone();
         settled.worktree_removed = true;
         assert_eq!(
-            session_branch(&settled, Some("main")).as_deref(),
+            session_branch(&settled, Some("main"), Some("main")).as_deref(),
             Some("worktree-calm-owl")
         );
+
+        // Merged, branch deleted, HEAD back on the default one: the record is
+        // still where the work landed. Another feature branch is HEAD's to say.
+        assert_eq!(
+            session_branch(&plain, Some("main"), Some("main")).as_deref(),
+            Some("feature")
+        );
+        assert_eq!(
+            session_branch(&plain, Some("next"), Some("main")).as_deref(),
+            Some("next")
+        );
+    }
+
+    /// A session started on `main` that branches takes the branch, and going
+    /// back to `main` after the merge does not take it away (CBN-56).
+    #[test]
+    fn a_turn_ending_off_the_default_branch_moves_the_record() {
+        let session = |branch: &str, worktree: Option<&str>| {
+            SessionIndexItem::new(
+                "a",
+                Harness::ClaudeCode,
+                "/p",
+                "/p",
+                worktree,
+                Some(branch),
+                "hi",
+                ModelId::new("opus"),
+                None,
+                ApprovalPolicy::Auto,
+                false,
+                None,
+            )
+        };
+
+        let on_main = session("main", None);
+        assert!(adopts_branch(&on_main, "cbn-55", Some("main")));
+        assert!(!adopts_branch(&on_main, "main", Some("main")));
+
+        let branched = session("cbn-55", None);
+        assert!(!adopts_branch(&branched, "main", Some("main")));
+        assert!(adopts_branch(&branched, "cbn-56", Some("main")));
+        // No remote to name a default branch: any move is taken.
+        assert!(adopts_branch(&branched, "main", None));
+
+        // Its branch is the CLI's, rebuilt from the worktree name in `pr.ts`.
+        assert!(!adopts_branch(&session("main", Some("calm-owl")), "cbn-55", Some("main")));
+
+        let mut relocated = session("worktree-calm-owl", None);
+        relocated.worktree_removed = true;
+        assert!(!adopts_branch(&relocated, "cbn-55", Some("main")));
     }
 
     /// A fork is a copy, so it sits exactly where the original sits: beside its

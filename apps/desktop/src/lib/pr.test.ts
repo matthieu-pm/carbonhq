@@ -96,6 +96,18 @@ describe("sessionBranch", () => {
     ).toBe("worktree-calm-owl");
   });
 
+  // "Merge it, delete the branch, back to main" is how a session's PR usually
+  // ends, and HEAD on `main` then took the PR out of the summary and the panel.
+  it("keeps the recorded branch once HEAD is back on the default one", () => {
+    const session = { branch: "cbn-55-squares", worktreeName: null };
+    expect(sessionBranch(session, "main", "main")).toBe("cbn-55-squares");
+    // Another feature branch is the session moving on, so HEAD still wins.
+    expect(sessionBranch(session, "cbn-56-next", "main")).toBe("cbn-56-next");
+    // No record to keep, and no default branch known: HEAD is all there is.
+    expect(sessionBranch({ branch: null, worktreeName: null }, "main", "main")).toBe("main");
+    expect(sessionBranch(session, "main", null)).toBe("main");
+  });
+
   // The read is per-session and lands a frame late, and a non-repo has no
   // branch at all — so both fall back rather than drawing nothing.
   it("falls back while there is no reading to use", () => {

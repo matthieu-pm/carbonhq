@@ -5,13 +5,13 @@ import type { PrCheck, PrMark, PullRequest } from "@/types/events";
 ///
 /// `observed` is what git says HEAD is, and it wins wherever the session still
 /// has a checkout of its own to be read off. Everything else
-/// here is a *guess made at creation*: a worktree session's branch is the
-/// CLI's to name, so it is rebuilt from the worktree name, and the recorded
-/// `branch` is whatever was checked out when the session was first sent to.
-/// Neither is re-read, so a checkout inside the tree moves HEAD and leaves
-/// both describing a branch the session is no longer on — which the PR tab
-/// fails *closed* on, asking GitHub about a branch that has no PR and hiding
-/// itself because the answer is empty.
+/// here is a *record*: a worktree session's branch is the CLI's to name, so it
+/// is rebuilt from the worktree name, and the recorded `branch` is whatever
+/// was checked out when the session was first sent to, or the last branch off
+/// the default one that a turn of its ended on. Neither follows a checkout as
+/// it happens, so mid-turn both can describe a branch the session has left —
+/// which the PR tab fails *closed* on, asking GitHub about a branch that has
+/// no PR and hiding itself because the answer is empty.
 ///
 /// A null `observed` is the ordinary resting state, not an error: the read is
 /// per-session and lands a frame late, and a non-repo has no branch at all.
@@ -26,6 +26,14 @@ import type { PrCheck, PrMark, PullRequest } from "@/types/events";
 /// The recorded `branch` survives the removal for this, and the sidebar's mark
 /// kept working throughout because it never had an `observed` to be misled by.
 ///
+/// The default branch is the other case it loses, where the session has a
+/// record to fall back on. Work never lands as a pull request *from* `main`, so
+/// a HEAD back on it says the branch was merged and tidied away, not that the
+/// session's work moved there — and reading it took the PR out of the summary
+/// and the panel the moment its branch was deleted (CBN-56). The record is kept
+/// current for this: a turn ending on another branch writes it, see
+/// `adopts_branch` in `store.rs`.
+///
 /// One function because the header and the PR lookup have to agree about which
 /// branch the session is on; two rebuilding it apart is how they come to
 /// disagree about which PR it has.
@@ -36,10 +44,12 @@ export function sessionBranch(
     worktreeRemoved?: boolean;
   },
   observed?: string | null,
+  defaultBranch?: string | null,
 ): string | null {
   if (session.worktreeRemoved) return session.branch;
-  if (observed) return observed;
-  return session.worktreeName ? `worktree-${session.worktreeName}` : session.branch;
+  const recorded = session.worktreeName ? `worktree-${session.worktreeName}` : session.branch;
+  if (observed && !(recorded && observed === defaultBranch)) return observed;
+  return recorded;
 }
 
 /// Which pull request a sidebar row draws, out of every one on its branch.

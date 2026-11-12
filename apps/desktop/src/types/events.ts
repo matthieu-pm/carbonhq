@@ -1867,7 +1867,13 @@ cwd: string,
  * Repo root — the grouping key, so worktree sessions still list under
  * their project rather than each becoming a project of their own.
  */
-projectPath: string, branch: string | null, 
+projectPath: string, 
+/**
+ * Where the session's work lands: the branch checked out at creation, then
+ * whichever one off the default branch a turn last ended on. See
+ * [`adopts_branch`].
+ */
+branch: string | null, 
 /**
  * `Some` marks this a worktree session; Claude Code names the branch
  * `worktree-<name>`.
@@ -2031,7 +2037,13 @@ cwd: string,
  * Repo root — the grouping key, so worktree sessions still list under
  * their project rather than each becoming a project of their own.
  */
-projectPath: string, branch: string | null, 
+projectPath: string, 
+/**
+ * Where the session's work lands: the branch checked out at creation, then
+ * whichever one off the default branch a turn last ended on. See
+ * [`adopts_branch`].
+ */
+branch: string | null, 
 /**
  * `Some` marks this a worktree session; Claude Code names the branch
  * `worktree-<name>`.

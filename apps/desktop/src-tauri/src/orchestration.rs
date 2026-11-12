@@ -1437,7 +1437,8 @@ pub(crate) async fn resolve_base(from: &str, project_path: &str) -> Result<Strin
         // worktree session — `session_branch` outranks it for a relocated one,
         // whose `cwd` is the shared project root.
         let observed = crate::git::current_branch(&item.cwd).await;
-        let branch = store::session_branch(&item, observed.as_deref()).with_context(|| {
+        let default = crate::git::default_branch(&item.cwd).await;
+        let branch = store::session_branch(&item, observed.as_deref(), default.as_deref()).with_context(|| {
             format!(
                 "session {from} is on no branch — a detached HEAD, or a directory that is not \
                  a repository. Pass a branch or a commit instead."

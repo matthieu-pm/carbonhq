@@ -1390,7 +1390,7 @@ function App() {
   // index carries, which is only ever a guess made at creation — see
   // `sessionBranch`. It lands a frame late and the fallback covers that frame.
   const prBranch = selectedSession
-    ? sessionBranch(selectedSession, workStatus?.branch)
+    ? sessionBranch(selectedSession, workStatus?.branch, workStatus?.defaultBranch)
     : null;
   // The header's way back from a hidden session, which has no sidebar row. The
   // loaded side first, else asked of the backend: with the sidebar on the other

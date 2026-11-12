@@ -1565,10 +1565,17 @@ pub async fn current_branch(cwd: &str) -> Option<String> {
 /// answers the literal string `HEAD`, and on an unborn branch, where it fails.
 /// [`current_branch`] names an unborn branch, which the callers here do not
 /// want — nothing can be pushed from or synced against it yet.
-async fn head_branch(cwd: &str) -> Option<String> {
+pub async fn head_branch(cwd: &str) -> Option<String> {
     git_line(cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
         .await
         .filter(|s| s != "HEAD")
+}
+
+/// [`default_base`] short of its remote: `main`, not `origin/main`. The prefix
+/// comes off rather than everything up to the last slash — see [`work_status`].
+pub async fn default_branch(cwd: &str) -> Option<String> {
+    let base = default_base(cwd).await?;
+    Some(base.strip_prefix("origin/").unwrap_or(&base).to_string())
 }
 
 /// The branch HEAD tracks, or `None` where it tracks nothing.
