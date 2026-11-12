@@ -209,7 +209,7 @@ export default function SpacesView({ active, projects, visibleProjects, request,
   return <div className={cn("spaces-workspace", !active && "hidden")} style={widthVar}>
     <div className="spaces-body">
       <div className="spaces-sidebar-frame" data-open={!sidebarCollapsed} data-motion={motion} inert={sidebarCollapsed || undefined}>{!floating && sidebar}{docked && handle}</div>
-      <main className="spaces-main">
+      <main className="content-backdrop spaces-main">
         {createError && <div role="alert" className="spaces-error mt-4">{createError}<button onClick={() => setCreateError(null)}>Dismiss</button></div>}
         {state.tabs.map((tab) => {
           if (!seen.current.has(tab.id)) return null;

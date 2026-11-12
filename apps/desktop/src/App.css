@@ -108,8 +108,7 @@
   /* A picture behind the content column alone: the conversation or the home,
      never the sidebar strip, the rail or the frame, which keep the backdrop. */
   --content-image: none;
-  /* What dims that picture under a conversation, where prose sits on it bare.
-     The home wears none: its text rides on cards. */
+  /* Keeps text readable over the picture on every content page. */
   --content-veil: none;
 
   /* The whole of the vibrancy dial. The macOS material behind the window
@@ -1402,13 +1401,9 @@
   }
 
   .content-backdrop {
-    background-image: var(--content-image);
+    background-image: var(--content-veil), var(--content-image);
     background-size: cover;
     background-position: center;
-  }
-
-  .content-veil {
-    background-image: var(--content-veil);
   }
 
   /* No bar at all. For a short strip of chips that scrolls sideways: a
