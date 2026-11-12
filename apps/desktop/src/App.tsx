@@ -62,6 +62,7 @@ import {
 import { setLinkOpener } from "@/lib/openLink";
 import { repoChanged } from "@/lib/prSync";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useAllSessions } from "@/hooks/useAllSessions";
 import { useChanges } from "@/hooks/useChanges";
 import { usePrMarks } from "@/hooks/usePrMarks";
 import { usePrReady } from "@/hooks/usePrReady";
@@ -858,6 +859,19 @@ function App() {
           (!projectFilter || i.projectPath === projectFilter),
       ),
     [sessionIndexItems, projects, space, projectFilter],
+  );
+
+  // The home cards count both sides of the index, under the same two scopes;
+  // read only with no session selected, the one state that draws them.
+  const allSessions = useAllSessions(sessionIndexItems, indexSide, selectedSessionId === null);
+  const homeSessions = useMemo(
+    () =>
+      allSessions.filter(
+        (i) =>
+          sessionInSpace(projects, space, i.projectPath) &&
+          (!projectFilter || i.projectPath === projectFilter),
+      ),
+    [allSessions, projects, space, projectFilter],
   );
 
   // Split groups: frontend-only, filed under the space they were made in. A
@@ -3078,7 +3092,7 @@ function App() {
       centered={!shownSession && !issuesOpen && viewTab === "chat"}
       home={
         <HomeCards
-          sessions={visibleSessions}
+          sessions={homeSessions}
           statusBySession={statusBySession}
           asking={askingSessions}
           prFor={prMarks.prFor}

@@ -181,6 +181,15 @@ export function sessionPrs<T extends PrSession>(
   return rows.sort((a, b) => rank(a.pr) - rank(b.pr));
 }
 
+/// The index's two sides as one list: `shown` whole, then whatever of `other`
+/// it does not already hold. A session settled a moment ago is on both until
+/// the other side is read again, and counted twice it would light a day up.
+export function mergeSides<T extends Pick<SessionIndexItem, "sessionId">>(shown: T[], other: T[]): T[] {
+  const held = new Set(shown.map((session) => session.sessionId));
+  const rest = other.filter((session) => !held.has(session.sessionId));
+  return rest.length ? [...shown, ...rest] : shown;
+}
+
 /// "+3" or "−2": a delta against last week, signed the way a diff signs a line.
 export function signedDelta(delta: number): string {
   return `${delta < 0 ? "−" : "+"}${Math.abs(delta)}`;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHeatmap, buildWeekStats, recentSessions, sessionPrs, signedDelta } from "@/lib/home";
+import { buildHeatmap, buildWeekStats, mergeSides, recentSessions, sessionPrs, signedDelta } from "@/lib/home";
 import type { PrMark } from "@/types/events";
 
 /// Wednesday 11 November 2026, mid-afternoon local time.
@@ -145,5 +145,22 @@ describe("signedDelta", () => {
   it("signs the difference", () => {
     expect(signedDelta(3)).toBe("+3");
     expect(signedDelta(-2)).toBe("−2");
+  });
+});
+
+describe("mergeSides", () => {
+  const ids = (list: { sessionId: string }[]) => list.map((s) => s.sessionId);
+
+  it("counts a session on both sides once, as the shown side has it", () => {
+    const shown = [{ sessionId: "a", archived: true }, { sessionId: "b", archived: false }];
+    const merged = mergeSides(shown, [{ sessionId: "a", archived: false }, { sessionId: "c", archived: true }]);
+    expect(ids(merged)).toEqual(["a", "b", "c"]);
+    expect(merged[0].archived).toBe(true);
+  });
+
+  it("keeps the shown list's identity with nothing to add", () => {
+    const shown = [{ sessionId: "a" }];
+    expect(mergeSides(shown, [])).toBe(shown);
+    expect(mergeSides(shown, [{ sessionId: "a" }])).toBe(shown);
   });
 });

@@ -32,8 +32,8 @@ import { cn } from "@/lib/utils";
 import type { PrMark, SessionIndexItem, SessionStatus } from "@/types/events";
 
 type HomeCardsProps = {
-  /// The sessions in scope — the sidebar's own list, so a profile or a project
-  /// filter narrows this page with it.
+  /// The sessions in scope, active and settled both: narrowed by the profile
+  /// and the project filter as the sidebar is, but never by which side it lists.
   sessions: SessionIndexItem[];
   statusBySession: Record<string, SessionStatus | undefined>;
   /// Sessions waiting on an answer from the reader.
@@ -49,7 +49,8 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /// The cards under the new-task composer: what has been going on, and the ways
 /// back into it. Every figure is read off what the app already holds — the
 /// session index, the sidebar's PR marks and subscription usage — so the page
-/// costs no read of its own beyond the usage poll.
+/// costs no read of its own beyond the usage poll and `App`'s read of the
+/// index's other side.
 ///
 /// Drawn with no sessions in scope too, each card in its empty state: a
 /// profile or project with nothing in it is still the same page, and hiding
