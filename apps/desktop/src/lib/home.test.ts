@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHeatmap, buildWeekStats, mergeSides, recentSessions, sessionPrs, signedDelta } from "@/lib/home";
+import { buildHeatmap, buildWeekStats, compactTokens, mergeSides, recentSessions, sessionPrs, signedDelta } from "@/lib/home";
 import type { PrMark } from "@/types/events";
 
 /// Wednesday 11 November 2026, mid-afternoon local time.
@@ -162,5 +162,32 @@ describe("mergeSides", () => {
     const shown = [{ sessionId: "a" }];
     expect(mergeSides(shown, [])).toBe(shown);
     expect(mergeSides(shown, [{ sessionId: "a" }])).toBe(shown);
+  });
+});
+
+describe("tokens", () => {
+  it("files a session's tokens under the day it started", () => {
+    const map = buildHeatmap(
+      [
+        { created: at(2026, 10, 11, 9), tokens: 1200 },
+        { created: at(2026, 10, 11, 18), tokens: 300 },
+        { created: at(2026, 10, 10), tokens: undefined },
+        { created: at(2020, 0, 1), tokens: 9_000_000 },
+      ],
+      NOW,
+      1,
+    );
+    expect(map.weeks[0].map((cell) => cell.tokens)).toEqual([0, 0, 1500, 0, 0, 0, 0]);
+    expect(map.tokens).toBe(1500);
+  });
+
+  it("shortens a count to three figures and a unit", () => {
+    expect(compactTokens(950)).toBe("950");
+    expect(compactTokens(1000)).toBe("1K");
+    expect(compactTokens(12_440)).toBe("12.4K");
+    expect(compactTokens(999_960)).toBe("1M");
+    expect(compactTokens(3_100_000)).toBe("3.1M");
+    expect(compactTokens(412_000_000)).toBe("412M");
+    expect(compactTokens(1_250_000_000)).toBe("1.3B");
   });
 });

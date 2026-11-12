@@ -67,8 +67,12 @@ function devBranch(): string | null {
 }
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => ({
   plugins: [react(), tailwindcss(), fileIcons()],
+
+  // Concurrent dev servers must not replace the optimized modules another
+  // still serves; a lazy import then fails with "Outdated Optimize Dep".
+  cacheDir: command === "serve" ? url(`./node_modules/.vite/dev-${devPort}`) : undefined,
 
   define: { __DEV_BRANCH__: JSON.stringify(devBranch()) },
 

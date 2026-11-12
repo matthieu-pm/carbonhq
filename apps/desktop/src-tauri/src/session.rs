@@ -3540,8 +3540,21 @@ async fn ingest_event(ctx: &Ingest<'_>, mut agent_event: AgentEvent, app: &Sink,
         }
     }
 
+    let turn_ended = matches!(agent_event.payload, AgentEventPayload::TurnCompleted { .. });
+
     if let Err(err) = append_session_event(ctx.session_id, agent_event).await {
         eprintln!("[write err] {err}");
+    }
+
+    // After the append, since the figure is counted off the log.
+    if turn_ended {
+        match crate::store::recount_session_tokens(ctx.session_id).await {
+            Ok(Some(item)) => {
+                app.emit(crate::orchestration::SESSION_CHANGED, &item).ok();
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("[token count err] {e:#}"),
+        }
     }
 
     // After the boundary event is logged, so the prompt that follows it

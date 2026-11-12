@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "desktop-frontend",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd apps/desktop && CARBON_DEV_PORT=1437 pnpm dev"],
+      "port": 1437
+    }
+  ]
+}

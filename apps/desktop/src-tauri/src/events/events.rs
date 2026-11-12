@@ -20,7 +20,7 @@ use ts_rs::TS;
 
 pub mod usage;
 
-pub use usage::{ContextWindow, ModelUsage, Usage};
+pub use usage::{spent_tokens, ContextWindow, ModelUsage, Usage};
 
 // `Harness` is a harness concept, not an event one; it lives in `crate::harness`
 // and is used here only as a field type.

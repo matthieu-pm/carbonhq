@@ -10,7 +10,7 @@
 //! can use.
 
 use crate::events::{
-    usage::ContextWindow, AgentEvent, AgentEventPayload, BlockRef, BlockType, DeltaEvent, FileEdit,
+    usage::{ContextWindow, ModelUsage}, AgentEvent, AgentEventPayload, BlockRef, BlockType, DeltaEvent, FileEdit,
     ImageRef, SessionInfo, Subagent, ToolResult, ToolType, TurnStatus, Usage,
 };
 use crate::harness::Harness;
@@ -20,9 +20,15 @@ use std::sync::Arc;
 
 use super::parser::{
     CodexEvent, DeltaNotification, ErrorNotification, FileChangeEntry, ItemNotification,
-    ItemStatus, PlanNotification, ThreadItem, TokenUsageNotification, TurnError, TurnNotification,
-    TurnStatus as CodexTurnStatus, WebSearchResult,
+    ItemStatus, PlanNotification, ThreadItem, TokenCounts, TokenUsageNotification, TurnError,
+    TurnNotification, TurnStatus as CodexTurnStatus, WebSearchResult,
 };
+
+/// The key the thread's running total rides `per_model` under. One fixed key
+/// and never the model's id: the total is the thread's whatever model ran, and
+/// a reading filed under a new key is counted whole, so a model switch would
+/// spend the whole thread a second time.
+const THREAD_TOTAL: &str = "codex";
 
 /// Per-session state the mapping needs across lines.
 pub struct Mapper {
@@ -37,6 +43,12 @@ pub struct Mapper {
     /// `TurnCompleted` — the composer's ring reads it back out of the log, and
     /// `thread/tokenUsage/updated` is not persisted.
     occupancy: Option<ContextWindow>,
+    /// The main thread's running total, for the same reason: it is what
+    /// `spent_tokens` counts a Codex session by, and it arrives only on the
+    /// unpersisted `thread/tokenUsage/updated`. Kept across turns, since it
+    /// is cumulative and a turn with no reading has spent nothing new.
+    /// A subagent's thread keeps a total of its own, which is not carried.
+    spent: Option<TokenCounts>,
     /// Item ids currently open as a streamed block, so a delta for an item we
     /// never saw start cannot mint a block the transcript has no header for.
     open_blocks: std::collections::HashSet<String>,
@@ -81,6 +93,7 @@ impl Mapper {
             seq,
             turn_id: None,
             occupancy: None,
+            spent: None,
             open_blocks: std::collections::HashSet::new(),
             plan_updates: 0,
             subagent_threads: std::collections::HashMap::new(),
@@ -140,8 +153,26 @@ impl Mapper {
     }
 
     fn turn_completed(&mut self, turn: TurnNotification) -> Vec<AgentEvent> {
-        let usage = self.occupancy.take().map(|window| Usage {
-            context_window: Some(window),
+        let window = self.occupancy.take();
+        // `total` counts cached input inside input; `ModelUsage` holds them apart.
+        let per_model: Vec<ModelUsage> = self
+            .spent
+            .map(|total| ModelUsage {
+                model: THREAD_TOTAL.to_string(),
+                input_tokens: Some(total.input_tokens.saturating_sub(total.cached_input_tokens)),
+                output_tokens: Some(total.output_tokens),
+                cached_input_tokens: Some(total.cached_input_tokens),
+                cache_write_tokens: None,
+                web_search_requests: None,
+                cost_usd: None,
+                context_window: None,
+                max_output_tokens: None,
+            })
+            .into_iter()
+            .collect();
+        let usage = (window.is_some() || !per_model.is_empty()).then(|| Usage {
+            context_window: window,
+            per_model,
             ..Default::default()
         });
 
@@ -792,6 +823,9 @@ impl Mapper {
         if window.is_some() {
             self.occupancy = window.clone();
         }
+        if usage.token_usage.total.is_some() {
+            self.spent = usage.token_usage.total;
+        }
 
         vec![self.event(AgentEventPayload::UsageUpdate(Usage {
             input_tokens: counts.map(|c| c.input_tokens),
@@ -1147,6 +1181,38 @@ mod tests {
         let window = usage.as_ref().unwrap().context_window.as_ref().unwrap();
         assert_eq!(window.used_tokens, 15785);
         assert_eq!(window.max_tokens, 258400);
+    }
+
+    /// The thread's running total rides every closing turn, uncached input
+    /// apart from cached, and is kept for a turn that reports nothing new.
+    #[test]
+    fn the_threads_running_total_rides_each_closing_turn() {
+        let mut m = mapper();
+        map_one(
+            &mut m,
+            "thread/tokenUsage/updated",
+            json!({"threadId": "t", "turnId": "turn_1", "tokenUsage": {
+                "total": {"totalTokens": 1322937, "inputTokens": 1320117,
+                          "cachedInputTokens": 1243392, "outputTokens": 2820},
+                "last": {"totalTokens": 90825},
+                "modelContextWindow": 258400}}),
+        );
+
+        for turn in ["turn_1", "turn_2"] {
+            let closing = map_one(
+                &mut m,
+                "turn/completed",
+                json!({"threadId": "t", "turn": {"id": turn, "status": "completed"}}),
+            );
+            let AgentEventPayload::TurnCompleted { ref usage, .. } = closing[0].payload else {
+                panic!("expected a closing turn");
+            };
+            let total = &usage.as_ref().unwrap().per_model[0];
+            assert_eq!(total.model, "codex");
+            assert_eq!(total.input_tokens, Some(76725));
+            assert_eq!(total.cached_input_tokens, Some(1243392));
+            assert_eq!(total.output_tokens, Some(2820));
+        }
     }
 
     /// A stopped turn is the reader's own doing. Drawn as a failure it would

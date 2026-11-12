@@ -1989,7 +1989,14 @@ continueAt?: string,
  * The reader cancelled the continue above. Kept beside it rather than
  * clearing it, so they can turn it back on until the time passes.
  */
-continueOff: boolean, };
+continueOff: boolean, 
+/**
+ * What the session has spent so far — see [`spent_tokens`]. Counted off
+ * the log at each turn's end rather than added to, so a missed write is
+ * put right by the next one. `None` until a turn ends or a startup counts
+ * it; a session with no turns reads the same as one that spent nothing.
+ */
+tokens?: number, };
 
 /**
  * Session-level facts, known at startup.
@@ -2146,7 +2153,14 @@ continueAt?: string,
  * The reader cancelled the continue above. Kept beside it rather than
  * clearing it, so they can turn it back on until the time passes.
  */
-continueOff: boolean, };
+continueOff: boolean, 
+/**
+ * What the session has spent so far — see [`spent_tokens`]. Counted off
+ * the log at each turn's end rather than added to, so a missed write is
+ * put right by the next one. `None` until a turn ends or a startup counts
+ * it; a session with no turns reads the same as one that spent nothing.
+ */
+tokens?: number, };
 
 /**
  * Driven by [`StatusTracker`](crate::session::StatusTracker). `Completed`

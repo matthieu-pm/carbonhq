@@ -410,6 +410,9 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
     if let Err(e) = store::backfill_removed_worktrees().await {
         eprintln!("[worktree backfill err] {e}");
     }
+    if let Err(e) = store::backfill_session_tokens().await {
+        eprintln!("[token backfill err] {e}");
+    }
     sweep_browser_profiles().await;
     crate::auto_continue::rearm(&sink).await;
     let page_sync_sink = sink.clone();

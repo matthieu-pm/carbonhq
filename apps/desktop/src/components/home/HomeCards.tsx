@@ -16,6 +16,7 @@ import { basename, relativeTime } from "@/lib/format";
 import {
   buildHeatmap,
   buildWeekStats,
+  compactTokens,
   recentSessions,
   sessionPrs,
   signedDelta,
@@ -256,16 +257,21 @@ function ActivityHeatmap({
   weeks,
   total,
   activeDays,
+  tokens,
 }: {
   weeks: DayCell[][];
   total: number;
   activeDays: number;
+  tokens: number;
 }) {
   const [hovered, setHovered] = useState<DayCell | null>(null);
   const first = weeks[0][0].date;
   const last = weeks[weeks.length - 1][6].date;
   const month = (date: Date) => date.toLocaleDateString(undefined, { month: "short" });
-  const summary = `${plural(total, "session")} · ${plural(activeDays, "active day")}`;
+  // Nothing counted reads as nothing said: Codex reports no spend, and a
+  // "0 tokens" beside its sessions would state a figure nobody measured.
+  const spent = (count: number) => (count > 0 ? ` · ${compactTokens(count)} tokens` : "");
+  const summary = `${plural(total, "session")} · ${plural(activeDays, "active day")}${spent(tokens)}`;
 
   return (
     <div className="flex flex-1 flex-col justify-between gap-2.5 px-4 pb-3">
@@ -292,7 +298,7 @@ function ActivityHeatmap({
       <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground tabular-nums">
         <span className="truncate">
           {hovered
-            ? `${hovered.date.toLocaleDateString(undefined, DAY_FORMAT)} · ${plural(hovered.count, "session")}`
+            ? `${hovered.date.toLocaleDateString(undefined, DAY_FORMAT)} · ${plural(hovered.count, "session")}${spent(hovered.tokens)}`
             : summary}
         </span>
         <span className="shrink-0">

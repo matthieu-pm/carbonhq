@@ -32,6 +32,7 @@ use tokio::{
 
 pub mod commands;
 pub mod mapper;
+pub mod rollout;
 pub mod models;
 pub mod parser;
 pub mod permissions;

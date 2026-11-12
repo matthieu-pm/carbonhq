@@ -12,7 +12,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::{
-    events::{now_rfc3339, AgentEvent, AgentEventPayload, ApprovalPolicy},
+    events::{now_rfc3339, spent_tokens, AgentEvent, AgentEventPayload, ApprovalPolicy},
     issues::IssueRef,
     models::{Effort, ModelId},
     session::Harness,
@@ -178,6 +178,13 @@ pub struct SessionIndexItem {
     /// clearing it, so they can turn it back on until the time passes.
     #[serde(default)]
     pub continue_off: bool,
+    /// What the session has spent so far — see [`spent_tokens`]. Counted off
+    /// the log at each turn's end rather than added to, so a missed write is
+    /// put right by the next one. `None` until a turn ends or a startup counts
+    /// it; a session with no turns reads the same as one that spent nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub tokens: Option<u64>,
     /// Every key this build does not know, carried through untouched.
     ///
     /// The index is rewritten **whole**, and `INDEX_LOCK` is an in-process
@@ -696,6 +703,7 @@ impl SessionIndexItem {
             aside: false,
             continue_at: None,
             continue_off: false,
+            tokens: None,
             unknown: Default::default(),
         }
     }
@@ -789,6 +797,7 @@ impl SessionIndexItem {
             aside: false,
             continue_at: None,
             continue_off: false,
+            tokens: None,
             unknown: Default::default(),
         }
     }
@@ -1472,6 +1481,79 @@ pub async fn reset_in_progress_sessions() -> Result<()> {
             item.status = SessionStatus::Idle;
             changed = true;
         }
+    }
+
+    if changed {
+        write_session_index(sessions).await?;
+    }
+
+    Ok(())
+}
+
+/// A session's spend, counted off its log. A log that is not there yet is a
+/// session that has spent nothing; one that cannot be read is `None`, so the
+/// next count tries again rather than recording a zero.
+///
+/// A Codex session whose log counts nothing is asked of Codex's own rollout:
+/// the log carries a thread's total only from the build that began stashing
+/// it. The two agree once they overlap — the first total to reach the log is
+/// the thread's whole, and is taken whole.
+async fn count_tokens(item: &SessionIndexItem) -> Option<u64> {
+    let path = get_session_path(&item.session_id).await.ok()?;
+    let counted = match fs::read_to_string(path).await {
+        Ok(log) => spent_tokens(&log, &item.created),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(_) => return None,
+    };
+    if counted > 0 || item.harness != Harness::Codex {
+        return Some(counted);
+    }
+
+    let Some(thread_id) = item.thread_id.clone() else {
+        return Some(counted);
+    };
+    let from_rollout = tokio::task::spawn_blocking(move || {
+        use crate::harness::codex::rollout;
+        rollout::spend(rollout::rollouts().get(&thread_id)?)
+    })
+    .await
+    .ok()
+    .flatten();
+    Some(from_rollout.unwrap_or(counted))
+}
+
+/// Counts a session's tokens again and records them. Returns the entry only
+/// where the figure moved, so a turn that spent nothing announces nothing.
+///
+/// The log is read outside `INDEX_LOCK`: it has one writer, the caller, and
+/// holding the index across a multi-megabyte read stalls every other session.
+pub async fn recount_session_tokens(session_id: &str) -> Result<Option<SessionIndexItem>> {
+    let Some(item) = get_session_index_item(session_id).await? else {
+        return Ok(None);
+    };
+    let Some(tokens) = count_tokens(&item).await else {
+        return Ok(None);
+    };
+    let tokens = Some(tokens);
+    let written = edit_item(session_id, |item| {
+        let moved = item.tokens != tokens;
+        item.tokens = tokens;
+        (moved.then(|| item.clone()), moved)
+    })
+    .await?;
+    Ok(written.flatten())
+}
+
+/// Counts every session that has no figure yet: the ones that predate the
+/// field. Run at startup, before a turn can end and count its own.
+pub async fn backfill_session_tokens() -> Result<()> {
+    let _guard = INDEX_LOCK.lock().await;
+
+    let mut sessions = read_index().await?;
+    let mut changed = false;
+    for item in sessions.iter_mut().filter(|i| i.tokens.is_none()) {
+        item.tokens = count_tokens(item).await;
+        changed |= item.tokens.is_some();
     }
 
     if changed {

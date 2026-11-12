@@ -15,6 +15,8 @@ export type DayCell = {
   /// Local midnight.
   date: Date;
   count: number;
+  /// Spent by the sessions started this day, whenever their turns ran.
+  tokens: number;
   /// 0 for none, then 1–4 against the busiest day shown.
   level: 0 | 1 | 2 | 3 | 4;
   /// After today — drawn as a gap, since the last column is the current week.
@@ -26,6 +28,8 @@ export type Heatmap = {
   weeks: DayCell[][];
   total: number;
   activeDays: number;
+  /// Spent by every session shown. A session Carbon has no count for adds 0.
+  tokens: number;
 };
 
 function startOfDay(at: Date): Date {
@@ -52,20 +56,25 @@ function addDays(at: Date, days: number): Date {
 }
 
 /// Sessions started per day over the last `weeks` weeks, the current one last.
+/// A session's tokens go to the day it started, like the session itself: the
+/// index holds one total per session, with no record of which day spent it.
 export function buildHeatmap(
-  sessions: Pick<SessionIndexItem, "created">[],
+  sessions: Pick<SessionIndexItem, "created" | "tokens">[],
   now: Date,
   weeks = HEATMAP_WEEKS,
 ): Heatmap {
   const today = startOfDay(now);
   const first = addDays(startOfWeek(now), -(weeks - 1) * 7);
   const counts = new Array<number>(weeks * 7).fill(0);
+  const tokens = new Array<number>(weeks * 7).fill(0);
 
   for (const session of sessions) {
     const at = Date.parse(session.created);
     if (Number.isNaN(at)) continue;
     const index = dayIndex(first, startOfDay(new Date(at)));
-    if (index >= 0 && index < counts.length) counts[index] += 1;
+    if (index < 0 || index >= counts.length) continue;
+    counts[index] += 1;
+    tokens[index] += session.tokens ?? 0;
   }
 
   const max = Math.max(...counts);
@@ -74,6 +83,7 @@ export function buildHeatmap(
     return {
       date,
       count,
+      tokens: tokens[index],
       level: count === 0 ? 0 : (Math.ceil((count / max) * 4) as DayCell["level"]),
       future: date > today,
     };
@@ -83,7 +93,21 @@ export function buildHeatmap(
     weeks: Array.from({ length: weeks }, (_, week) => cells.slice(week * 7, week * 7 + 7)),
     total: counts.reduce((sum, count) => sum + count, 0),
     activeDays: counts.filter((count) => count > 0).length,
+    tokens: tokens.reduce((sum, count) => sum + count, 0),
   };
+}
+
+/// "950", "12.4K", "3.1M", "1.2B": a token count short enough for a footer.
+export function compactTokens(tokens: number): string {
+  const units: [number, string][] = [[1e9, "B"], [1e6, "M"], [1e3, "K"]];
+  for (const [size, unit] of units) {
+    // Against the rounded figure, so 999,960 reads 1M rather than 1000K.
+    if (tokens >= size * 0.99995) {
+      const scaled = tokens / size;
+      return `${scaled >= 100 ? Math.round(scaled) : Number(scaled.toFixed(1))}${unit}`;
+    }
+  }
+  return String(Math.round(tokens));
 }
 
 export type WeekStats = {
