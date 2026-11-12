@@ -211,22 +211,62 @@ fn partner(root: &Path) -> Option<PathBuf> {
     Some(root.parent()?.parent()?.join(EVERYONE[1 - at]))
 }
 
-/// Where a link beside `dir`'s partner points to reach `dir`.
+/// What a link sitting in `folder` holds to reach `dir`.
 ///
 /// Relative, so a project's link survives the repo being moved or cloned, and
 /// both ends stay inside the home or project folder: fx refuses a link that
-/// leaves them.
-fn link_target(dir: &Path) -> Result<PathBuf> {
-    let rel = dir
+/// leaves them. Worked out between the *resolved* folders, since a link's
+/// target is read from where the link physically sits: with `.agents/skills`
+/// itself a link into a dotfiles repo, `../../.claude/skills/x` dangles.
+fn link_target(folder: &Path, dir: &Path) -> Result<PathBuf> {
+    let from = std::fs::canonicalize(folder)
+        .with_context(|| format!("couldn't resolve {}", folder.display()))?;
+    let to =
+        std::fs::canonicalize(dir).with_context(|| format!("couldn't resolve {}", dir.display()))?;
+    let common = from
+        .components()
+        .zip(to.components())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let mut rel: PathBuf = from.components().skip(common).map(|_| "..").collect();
+    rel.extend(to.components().skip(common));
+    Ok(rel)
+}
+
+/// Creates `link` pointing at `dir`, and takes it back out unless it really
+/// resolves there: a dangling link is a skill one agent family silently lacks.
+fn make_link(link: &Path, dir: &Path) -> Result<()> {
+    let folder = link
         .parent()
-        .and_then(|root| EVERYONE.iter().find(|rel| root.ends_with(rel)))
-        .ok_or_else(|| anyhow!("{} isn't in a folder every agent can share", dir.display()))?;
-    Ok(Path::new("../..").join(rel).join(dir.file_name().unwrap_or_default()))
+        .ok_or_else(|| anyhow!("{} has no folder", link.display()))?;
+    let target = link_target(folder, dir)?;
+    std::os::unix::fs::symlink(&target, link)
+        .with_context(|| format!("couldn't link the skill into {}", folder.display()))?;
+    if std::fs::canonicalize(link).ok() != std::fs::canonicalize(dir).ok() {
+        let _ = std::fs::remove_file(link);
+        bail!(
+            "a link at {} wouldn't reach {}",
+            link.display(),
+            dir.display()
+        );
+    }
+    Ok(())
+}
+
+/// Points the link at `at` to `dir`, replacing whatever link is there in one
+/// step, so a failure leaves the old link rather than none.
+fn relink(at: &Path, dir: &Path) -> Result<()> {
+    let name = at.file_name().unwrap_or_default().to_string_lossy();
+    let staged = at.with_file_name(format!(".{name}.carbon-{}", uuid::Uuid::now_v7()));
+    make_link(&staged, dir)?;
+    std::fs::rename(&staged, at).map_err(|err| {
+        let _ = std::fs::remove_file(&staged);
+        anyhow::Error::from(err).context(format!("couldn't move the link to {}", at.display()))
+    })
 }
 
 /// Links the skill at `dir` into its partner folder, under its own name.
 fn link_into_partner(dir: &Path) -> Result<PathBuf> {
-    let target = link_target(dir)?;
     let other = dir
         .parent()
         .and_then(partner)
@@ -240,8 +280,7 @@ fn link_into_partner(dir: &Path) -> Result<PathBuf> {
         );
     }
     std::fs::create_dir_all(&other).context("couldn't create the skills folder")?;
-    std::os::unix::fs::symlink(target, &link)
-        .with_context(|| format!("couldn't link the skill into {}", other.display()))?;
+    make_link(&link, dir)?;
     Ok(link)
 }
 
@@ -920,24 +959,68 @@ pub async fn save_skill(path: String, skill: SkillDocument) -> Result<String, Fa
 /// would leave one agent family reading a folder under the old name.
 async fn save_shared(dir: &Path, skill: &SkillDocument) -> Result<String> {
     let dir = original(dir).unwrap_or_else(|| dir.to_path_buf());
+    let plan = plan_save(&dir, skill).await?;
+    if !plan.renamed {
+        return apply_save(&dir, plan).await;
+    }
+    // Every link to the skill follows it. The one carrying the folder's name
+    // takes the new name, so no agent keeps reading it under the old one;
+    // an alias the reader named themselves keeps its name.
     let links = partner_links(&dir);
-    let to = PathBuf::from(save_at(&dir, skill).await?);
-    if to != dir {
-        let target = link_target(&to)?;
-        for link in links {
-            // Under the new name where it is free, else where it already was.
-            let renamed = link.with_file_name(to.file_name().unwrap_or_default());
-            let at = if std::fs::symlink_metadata(&renamed).is_ok() { link.clone() } else { renamed };
-            std::fs::remove_file(&link)
-                .and_then(|()| std::os::unix::fs::symlink(&target, &at))
-                .with_context(|| format!("renamed the skill, but couldn't move its link at {}", link.display()))?;
+    let moves: Vec<(PathBuf, PathBuf)> = links
+        .iter()
+        .map(|link| {
+            let at = if link.file_name() == dir.file_name() {
+                link.with_file_name(plan.to.file_name().unwrap_or_default())
+            } else {
+                link.clone()
+            };
+            (link.clone(), at)
+        })
+        .collect();
+    // Checked before anything moves: a name the other folder holds for a
+    // different skill would leave this one under its old name there, and
+    // fx then offers both names for it.
+    for (_, at) in &moves {
+        if !links.contains(at) && std::fs::symlink_metadata(at).is_ok() {
+            bail!(
+                "there's already a skill called {} in {}",
+                at.file_name().unwrap_or_default().to_string_lossy(),
+                at.parent().unwrap_or(at).display()
+            );
+        }
+    }
+    let to = PathBuf::from(apply_save(&dir, plan).await?);
+    for (_, at) in &moves {
+        relink(at, &to)
+            .with_context(|| format!("renamed the skill, but couldn't move its link to {}", at.display()))?;
+    }
+    for (link, _) in &moves {
+        if !moves.iter().any(|(_, at)| at == link) {
+            std::fs::remove_file(link)
+                .with_context(|| format!("renamed the skill, but couldn't remove its old link at {}", link.display()))?;
         }
     }
     Ok(to.to_string_lossy().into_owned())
 }
 
+/// What a save will do, decided and checked before anything is written.
+struct SavePlan {
+    to: PathBuf,
+    renamed: bool,
+    contents: String,
+}
+
 /// Check the destination before writing, and restore the folder on a failed edit.
 async fn save_at(dir: &Path, skill: &SkillDocument) -> Result<String> {
+    let plan = plan_save(dir, skill).await?;
+    apply_save(dir, plan).await
+}
+
+/// The folder moves only when the declared name changes and the new one also
+/// differs from the folder's own, so a body-only edit never moves a folder
+/// whose name and declared name already disagree.
+async fn plan_save(dir: &Path, skill: &SkillDocument) -> Result<SavePlan> {
     let text = tokio::fs::read_to_string(skill_file(&dir)).await?;
     let (frontmatter, _) = split_frontmatter(&text);
     let fields = metadata(frontmatter)?;
@@ -963,6 +1046,19 @@ async fn save_at(dir: &Path, skill: &SkillDocument) -> Result<String> {
         }
     }
     let contents = compose(frontmatter, skill)?;
+    Ok(SavePlan {
+        to,
+        renamed,
+        contents,
+    })
+}
+
+async fn apply_save(dir: &Path, plan: SavePlan) -> Result<String> {
+    let SavePlan {
+        to,
+        renamed,
+        contents,
+    } = plan;
     if renamed {
         tokio::fs::rename(dir, &to)
             .await
@@ -1504,6 +1600,186 @@ mod tests {
         let moved = base.join(".agents/skills/new");
         assert_eq!(std::fs::read_link(&moved).unwrap(), PathBuf::from("../../.claude/skills/new"));
         assert!(std::fs::read_to_string(moved.join("SKILL.md")).unwrap().contains("name: \"new\""));
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    fn doc(name: &str, body: &str) -> SkillDocument {
+        SkillDocument { name: name.into(), description: "d".into(), body: body.into() }
+    }
+
+    fn entries(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A skill no other folder links to renames like any other. It used to be
+    /// moved and written, then answered with an error, leaving the form on a
+    /// path that no longer existed.
+    #[tokio::test]
+    async fn renaming_an_unshared_skill_outside_the_pair_succeeds() {
+        let base = test_dir();
+        let dir = skill_in(&base, ".codex/skills", "old");
+        let to = PathBuf::from(save_shared(&dir, &doc("new", "changed")).await.unwrap());
+        assert_eq!(to, base.join(".codex/skills/new"));
+        assert!(!dir.exists());
+        assert!(std::fs::read_to_string(to.join("SKILL.md")).unwrap().contains("changed"));
+        // The same holds in the pair, for a skill that isn't shared.
+        let alone = skill_in(&base, ".claude/skills", "alone");
+        let to = PathBuf::from(save_shared(&alone, &doc("renamed", "b")).await.unwrap());
+        assert_eq!(to, base.join(".claude/skills/renamed"));
+        assert!(std::fs::symlink_metadata(base.join(".agents/skills/renamed")).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// A rename whose new name the other folder holds for a different skill is
+    /// refused before anything moves. It used to go through and leave the link
+    /// under the old name, so fx offered `/old` and `/new` for one skill and
+    /// the unrelated `new` was shadowed.
+    #[tokio::test]
+    async fn a_shared_rename_onto_a_taken_partner_name_changes_nothing() {
+        let base = test_dir();
+        let dir = skill_in(&base, ".claude/skills", "old");
+        let link = link_into_partner(&dir).unwrap();
+        let unrelated = skill_in(&base, ".agents/skills", "new");
+        let before = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+
+        for opened in [&dir, &link] {
+            let err = save_shared(opened, &doc("new", "changed")).await.unwrap_err();
+            assert!(format!("{err:#}").contains("already a skill called new"), "{err:#}");
+            assert_eq!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap(), before);
+            assert!(std::fs::symlink_metadata(base.join(".claude/skills/new")).is_err());
+            assert_eq!(std::fs::read_link(&link).unwrap(), PathBuf::from("../../.claude/skills/old"));
+            assert!(!std::fs::symlink_metadata(&unrelated).unwrap().file_type().is_symlink());
+            assert!(std::fs::read_to_string(unrelated.join("SKILL.md")).unwrap().contains("name: new"));
+            assert_eq!(entries(&base.join(".agents/skills")), vec!["new", "old"]);
+        }
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// A link already standing at the new name for this same skill is not a
+    /// collision: it is kept, and the old name's link goes.
+    #[tokio::test]
+    async fn a_shared_rename_onto_its_own_alias_keeps_one_link() {
+        let base = test_dir();
+        let dir = skill_in(&base, ".claude/skills", "old");
+        link_into_partner(&dir).unwrap();
+        std::os::unix::fs::symlink("../../.claude/skills/old", base.join(".agents/skills/new")).unwrap();
+        let other = skill_in(&base, ".claude/skills", "keep");
+        link_into_partner(&other).unwrap();
+        std::os::unix::fs::symlink("../../.claude/skills/old", base.join(".agents/skills/alias")).unwrap();
+
+        let to = PathBuf::from(save_shared(&dir, &doc("new", "b")).await.unwrap());
+        assert_eq!(entries(&base.join(".agents/skills")), vec!["alias", "keep", "new"]);
+        for name in ["alias", "new"] {
+            let link = base.join(".agents/skills").join(name);
+            assert_eq!(std::fs::read_link(&link).unwrap(), PathBuf::from("../../.claude/skills/new"));
+            assert_eq!(std::fs::canonicalize(&link).unwrap(), std::fs::canonicalize(&to).unwrap());
+        }
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// A body-only edit of a shared skill whose folder and declared name
+    /// differ moves nothing and leaves its link alone, even where the other
+    /// folder holds the declared name.
+    #[tokio::test]
+    async fn a_body_edit_keeps_a_mismatched_shared_folder_and_its_link() {
+        let base = test_dir();
+        let dir = base.join(".claude/skills/folder-name");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "---\nname: declared\ndescription: d\n---\nold").unwrap();
+        let link = link_into_partner(&dir).unwrap();
+        skill_in(&base, ".agents/skills", "declared");
+
+        let to = save_shared(&link, &doc("declared", "updated")).await.unwrap();
+        assert_eq!(PathBuf::from(to), dir);
+        assert!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap().ends_with("updated\n"));
+        assert_eq!(std::fs::read_link(&link).unwrap(), PathBuf::from("../../.claude/skills/folder-name"));
+        // Naming it after its folder is no rename either.
+        save_shared(&dir, &doc("folder-name", "again")).await.unwrap();
+        assert!(dir.is_dir());
+        assert_eq!(partner_links(&dir), vec![link]);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// `.agents/skills` kept in a dotfiles repo and linked into place: the
+    /// skill's link is worked out from where it physically sits, still
+    /// relative, and every step that finds or moves links still finds it.
+    #[tokio::test]
+    async fn sharing_into_a_linked_folder_reaches_the_skill() {
+        let base = test_dir();
+        let dir = skill_in(&base, ".claude/skills", "review");
+        let physical = base.join("dotfiles/config/agent-skills");
+        std::fs::create_dir_all(&physical).unwrap();
+        std::fs::create_dir_all(base.join(".agents")).unwrap();
+        std::os::unix::fs::symlink(&physical, base.join(".agents/skills")).unwrap();
+
+        let link = link_into_partner(&dir).unwrap();
+        assert_eq!(link, base.join(".agents/skills/review"));
+        assert_eq!(
+            std::fs::read_link(&link).unwrap(),
+            PathBuf::from("../../../.claude/skills/review")
+        );
+        assert!(link.join("SKILL.md").is_file());
+        assert_eq!(partner_links(&dir), vec![link.clone()]);
+        assert_eq!(original(&link), Some(dir.clone()));
+        let mut rows = walk(&base.join(".agents/skills"), false).unwrap();
+        mark_sharing(&base.join(".agents/skills"), &mut rows);
+        assert!(rows[0].shared);
+
+        let to = PathBuf::from(save_shared(&link, &doc("audit", "b")).await.unwrap());
+        assert_eq!(to, base.join(".claude/skills/audit"));
+        let moved = base.join(".agents/skills/audit");
+        assert_eq!(std::fs::read_link(&moved).unwrap(), PathBuf::from("../../../.claude/skills/audit"));
+        assert!(moved.join("SKILL.md").is_file());
+        assert_eq!(entries(&physical), vec!["audit"]);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// The same with the other folder linked away, sharing in both
+    /// directions: from a skill that lives behind the linked folder, and into it.
+    #[tokio::test]
+    async fn sharing_out_of_and_into_a_linked_claude_folder() {
+        let base = test_dir();
+        let physical = base.join("dotfiles/claude-skills");
+        std::fs::create_dir_all(&physical).unwrap();
+        std::fs::create_dir_all(base.join(".claude")).unwrap();
+        std::os::unix::fs::symlink(&physical, base.join(".claude/skills")).unwrap();
+
+        let dir = skill_in(&base, ".claude/skills", "review");
+        let link = link_into_partner(&dir).unwrap();
+        assert_eq!(std::fs::read_link(&link).unwrap(), PathBuf::from("../../dotfiles/claude-skills/review"));
+        assert!(link.join("SKILL.md").is_file());
+        assert_eq!(partner_links(&dir), vec![link.clone()]);
+
+        let plan = skill_in(&base, ".agents/skills", "plan");
+        let back = link_into_partner(&plan).unwrap();
+        assert_eq!(back, base.join(".claude/skills/plan"));
+        assert_eq!(std::fs::read_link(&back).unwrap(), PathBuf::from("../../.agents/skills/plan"));
+        assert!(back.join("SKILL.md").is_file());
+        assert_eq!(original(&back), Some(plan.clone()));
+
+        // Renamed through the link that sits in the linked folder.
+        let to = PathBuf::from(save_shared(&back, &doc("design", "b")).await.unwrap());
+        assert_eq!(to, base.join(".agents/skills/design"));
+        let moved = base.join(".claude/skills/design");
+        assert_eq!(std::fs::read_link(&moved).unwrap(), PathBuf::from("../../.agents/skills/design"));
+        assert!(moved.join("SKILL.md").is_file());
+        assert_eq!(entries(&physical), vec!["design", "review"]);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// A link that would not resolve is never left behind.
+    #[test]
+    fn a_link_to_nothing_is_refused_and_not_left() {
+        let base = test_dir();
+        let link = base.join("link");
+        assert!(make_link(&link, &base.join("missing")).is_err());
+        assert!(std::fs::symlink_metadata(&link).is_err());
         std::fs::remove_dir_all(base).unwrap();
     }
 
