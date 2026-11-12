@@ -268,8 +268,8 @@ function ActivityHeatmap({
   const first = weeks[0][0].date;
   const last = weeks[weeks.length - 1][6].date;
   const month = (date: Date) => date.toLocaleDateString(undefined, { month: "short" });
-  // Nothing counted reads as nothing said: Codex reports no spend, and a
-  // "0 tokens" beside its sessions would state a figure nobody measured.
+  // Nothing counted reads as nothing said: "0 tokens" beside sessions with no
+  // count would state a figure nobody measured.
   const spent = (count: number) => (count > 0 ? ` · ${compactTokens(count)} tokens` : "");
   const summary = `${plural(total, "session")} · ${plural(activeDays, "active day")}${spent(tokens)}`;
 

@@ -92,7 +92,8 @@ pub struct ContextWindow {
 /// so a turn is the difference from the last one — and a reading *below* the
 /// last is a new child counting from zero, measured after an effort respawn,
 /// so it is taken whole. Everywhere else the turn's own counts are its spend.
-/// A harness that reports neither (Codex, at a turn's end) adds nothing.
+/// A turn that reports neither adds nothing. Codex's thread total rides the
+/// first shape, under one fixed key — see its mapper.
 ///
 /// Lenient like every reader of the log: a line that will not parse is skipped.
 pub fn spent_tokens(log: &str, since: &str) -> u64 {
@@ -206,7 +207,7 @@ mod tests {
             turn("fx", "2026-11-01T01:00:00Z", serde_json::json!({ "inputTokens": 100, "cacheWriteTokens": 20, "cachedInputTokens": 5000, "outputTokens": 30 })),
             // grok's input already holds its cached share.
             turn("grok", "2026-11-01T02:00:00Z", serde_json::json!({ "inputTokens": 1000, "cachedInputTokens": 900, "outputTokens": 10 })),
-            // Codex closes a turn with a context reading and no counts.
+            // A turn closed with a context reading and no counts spends nothing.
             turn("codex", "2026-11-01T03:00:00Z", serde_json::json!({ "contextWindow": { "usedTokens": 5, "maxTokens": 10 } })),
         ]
         .join("\n");

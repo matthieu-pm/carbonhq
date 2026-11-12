@@ -1401,7 +1401,9 @@ export type ModelId = string;
 
 /**
  * What one model has consumed **for the session so far** — cumulative and
- * monotonic across turns, not a per-turn figure.
+ * monotonic across turns, not a per-turn figure. Per child, in practice: the
+ * reading starts again from zero after a respawn, which [`spent_tokens`]
+ * allows for.
  *
  * That is the whole reason it is carried and persisted. [`Usage`]'s own counts
  * are the harness's per-turn sum over every main-thread message, which double

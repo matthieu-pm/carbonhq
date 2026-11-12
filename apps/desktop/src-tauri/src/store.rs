@@ -1546,14 +1546,27 @@ pub async fn recount_session_tokens(session_id: &str) -> Result<Option<SessionIn
 
 /// Counts every session that has no figure yet: the ones that predate the
 /// field. Run at startup, before a turn can end and count its own.
+///
+/// A Codex session at zero is asked again each time. Its log can say nothing
+/// about turns from before it carried the thread's total, and a zero recorded
+/// before the rollout was read, or while Codex's files were out of reach,
+/// would otherwise stand for good.
 pub async fn backfill_session_tokens() -> Result<()> {
     let _guard = INDEX_LOCK.lock().await;
 
     let mut sessions = read_index().await?;
     let mut changed = false;
-    for item in sessions.iter_mut().filter(|i| i.tokens.is_none()) {
-        item.tokens = count_tokens(item).await;
-        changed |= item.tokens.is_some();
+    for item in sessions.iter_mut() {
+        let unasked = item.tokens.is_none()
+            || (item.tokens == Some(0) && item.harness == Harness::Codex && item.thread_id.is_some());
+        if !unasked {
+            continue;
+        }
+        let counted = count_tokens(item).await;
+        if counted.is_some() && counted != item.tokens {
+            item.tokens = counted;
+            changed = true;
+        }
     }
 
     if changed {
