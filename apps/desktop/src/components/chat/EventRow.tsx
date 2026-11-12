@@ -43,8 +43,11 @@ export default function EventRow({
   hideToolLabel = false,
   openTool = false,
   onOpenSession,
+  subagentWorking,
 }: {
   event: AgentEvent;
+  /// Lifecycle can finish a child before its spawning tool returns a result.
+  subagentWorking?: boolean;
   /// Results keyed by call id, so a started call renders its own outcome without
   /// searching the event list itself.
   resultByCallId: Map<string, ToolResult>;
@@ -87,6 +90,8 @@ export default function EventRow({
     case "tool_call_started":
       return (
         <ToolCall
+          callId={payload.callId}
+          subagentWorking={subagentWorking}
           name={payload.name}
           toolType={payload.toolType}
           title={payload.title}

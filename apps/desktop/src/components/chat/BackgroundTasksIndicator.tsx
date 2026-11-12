@@ -1,4 +1,5 @@
 import Orb from "@/components/Orb";
+import BotAvatar from "@/components/BotAvatar";
 
 /// Standing notice that async subagents are still working — driven by the
 /// latest `background_tasks_changed` set, so it outlives the turn that spawned
@@ -16,9 +17,11 @@ import Orb from "@/components/Orb";
 /// transcript, where the affordance is the row itself.
 export default function BackgroundTasksIndicator({
   count,
+  agentIds = [],
   onOpen,
 }: {
   count: number;
+  agentIds?: string[];
   onOpen: () => void;
 }) {
   return (
@@ -28,7 +31,9 @@ export default function BackgroundTasksIndicator({
       aria-label={`Show ${count} background task${count === 1 ? "" : "s"} in the subagent panel`}
       className="flex cursor-pointer items-center gap-2 text-left"
     >
-      <Orb state="background" variant="spiral" />
+      {agentIds.length ? <span className="flex shrink-0 -space-x-1">
+        {agentIds.slice(0, 3).map((id) => <BotAvatar key={id} seed={id} working />)}
+      </span> : <Orb state="background" variant="spiral" />}
 
       <span className="shimmer-text text-chat">
         {count} Background Task{count === 1 ? "" : "s"}

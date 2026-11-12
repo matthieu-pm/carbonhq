@@ -127,6 +127,7 @@ export default memo(function TurnBlock({
       <EventRow
         key={item.id}
         event={item}
+        subagentWorking={run ? !run.done : undefined}
         resultByCallId={resultByCallId}
         editsByCallId={editsByCallId}
         onOpenSession={onOpenSession}

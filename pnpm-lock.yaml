@@ -10,9 +10,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@blobatar/react':
-        specifier: ^2.7.0
-        version: 2.7.0(blobatar@2.7.0(react@19.3.1))(react@19.3.1)
       '@fontsource-variable/geist':
         specifier: ^5.3.0
         version: 5.3.0
@@ -79,9 +76,6 @@ importers:
       '@yogesharc/thinking-orbs':
         specifier: ^0.1.2
         version: 0.1.2(react@19.3.1)
-      blobatar:
-        specifier: ^2.7.0
-        version: 2.7.0(react@19.3.1)
       border-beam:
         specifier: 1.4.1
         version: 1.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -97,6 +91,9 @@ importers:
       lucide-react:
         specifier: ^1.60.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
+      open-bot-avatar:
+        specifier: 0.2.1
+        version: 0.2.1
       posthog-js:
         specifier: ^1.438.13
         version: 1.438.13(@types/react@19.3.0)(react@19.3.1)
@@ -5364,6 +5361,9 @@ packages:
 
   oniguruma-to-es@4.3.6:
     resolution: {integrity: sha512-csuQ9x3Yr0cEIs/Zgx/OEt9iBw9vqIunAPQkx19R/fiMq2oGVTgcMqO/V3Ybqefr1TBvosI6jU539ksaBULJyA==}
+
+  open-bot-avatar@0.2.1:
+    resolution: {integrity: sha512-J0SBBtSt0sIIbuUeekkdURJcS1O5k/en7zlYrGzfX8HXPv7zR4mArl3Dqipt3RIez0LXvAXiP9uN7n1tcwrlcw==}
 
   open@11.0.4:
     resolution: {integrity: sha512-++Zlftm0kVLPmzC06t6epuWmcRMDbI4z5P3NNX979WA/k23+NtSOynEGzsVfZwguKw2mi5umVgnBlJQMwRz4Pg==}
@@ -11971,6 +11971,8 @@ snapshots:
       oniguruma-parser: 0.12.2
       regex: 6.1.0
       regex-recursion: 6.0.2
+
+  open-bot-avatar@0.2.1: {}
 
   open@11.0.4:
     dependencies:

@@ -1,0 +1,33 @@
+[data-bot-avatar] {
+  --bot-eye-travel: 6px;
+  transition: rotate 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Narrow faces keep the wider scan inside their silhouette. */
+[data-bot-avatar="paint-brush"],
+[data-bot-avatar="cactus"] {
+  --bot-eye-travel: 4px;
+}
+
+[data-bot-avatar="mushroom"] {
+  --bot-eye-travel: 5px;
+}
+
+[data-bot-avatar][data-working="true"] svg rect {
+  animation: bot-eye-scan 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes bot-eye-scan {
+  0%, 100% { transform: translateX(calc(-1 * var(--bot-eye-travel))); }
+  50% { transform: translateX(var(--bot-eye-travel)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-bot-avatar] {
+    transition: none;
+  }
+
+  [data-bot-avatar][data-working="true"] svg rect {
+    animation: none;
+  }
+}

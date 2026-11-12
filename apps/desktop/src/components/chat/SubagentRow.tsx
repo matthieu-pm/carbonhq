@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import Orb from "@/components/Orb";
+import BotAvatar from "@/components/BotAvatar";
 
 import type { SubagentRun } from "@/lib/transcript";
 import { cn } from "@/lib/utils";
@@ -36,10 +36,7 @@ export default function SubagentRow({
       onClick={() => onOpen(run.id)}
       className="group flex w-full cursor-pointer items-center gap-2 text-left text-chat"
     >
-      {/* The orb *is* the running state, so it goes when the run ends rather
-          than settling into a resting pose — a still orb next to a finished run
-          reads as something that stalled. */}
-      {running && <Orb state="working" variant="gyro" />}
+      <BotAvatar seed={run.id} working={!run.done} />
 
       <span
         className={cn(

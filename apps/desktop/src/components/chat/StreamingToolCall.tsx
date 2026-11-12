@@ -1,5 +1,7 @@
 import { ChevronRight } from "lucide-react";
 
+import BotAvatar from "@/components/BotAvatar";
+import { streamsSubagent } from "@/lib/botAvatars";
 import { streamingLabel, toolLabel } from "@/lib/tools";
 import { streamingCall } from "@/lib/streaming";
 
@@ -13,9 +15,11 @@ import { streamingCall } from "@/lib/streaming";
 /// is kept identical on purpose — this row is replaced by that one mid-stream,
 /// and any difference in class or order shows up as a jump at the swap.
 export default function StreamingToolCall({
+  callId,
   name,
   partialJson,
 }: {
+  callId?: string | null;
   name: string;
   /// The `input_json_delta` fragments concatenated so far. A prefix of a JSON
   /// object, so it is read rather than parsed.
@@ -33,6 +37,7 @@ export default function StreamingToolCall({
       {/* A div, not a disabled button: there is nothing under this row to open,
           and a button that never does anything is a focus stop that lies. */}
       <div className="flex w-full items-center gap-2 text-left text-chat">
+        {callId && streamsSubagent(name) && <BotAvatar seed={callId} working />}
         <span className="shrink-0 shimmer-text text-foreground/80">{label}</span>
 
         {target && (

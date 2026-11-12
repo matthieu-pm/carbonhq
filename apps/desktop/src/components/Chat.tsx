@@ -770,6 +770,9 @@ export default function Chat({
             {backgroundTaskCount > 0 && (
               <BackgroundTasksIndicator
                 count={backgroundTaskCount}
+                agentIds={[...subagentById.values()]
+                  .filter((run) => !run.done && run.taskId !== null && liveTaskIds?.has(run.taskId))
+                  .map((run) => run.id)}
                 onOpen={onOpenSubagentPanel}
               />
             )}
@@ -857,7 +860,7 @@ function StreamingPreview({ sessionId }: { sessionId: string }) {
   // the block announces its tool before any argument arrives, and having only
   // the name is exactly the case the preview exists to cover.
   if (block.type === "tool_use") {
-    return block.name ? <StreamingToolCall name={block.name} partialJson={block.text} /> : null;
+    return block.name ? <StreamingToolCall callId={block.callId} name={block.name} partialJson={block.text} /> : null;
   }
 
   return <AssistantMessage text={block.text} streaming />;
