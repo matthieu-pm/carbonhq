@@ -1242,7 +1242,7 @@ export default function ChatInput({
           // on each `/`.
           <div
             className={cn(
-              "flex items-center justify-between gap-3 px-1 pt-2",
+              "flex min-h-8 items-center justify-between gap-3 px-1 pt-2",
               menuOpen && "invisible",
             )}
           >

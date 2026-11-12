@@ -235,11 +235,11 @@ function checksLabel(pr: PrMark): string | null {
 }
 
 const LEVELS = [
-  "bg-foreground/[0.07]",
-  "bg-primary/25",
-  "bg-primary/45",
-  "bg-primary/70",
-  "bg-primary",
+  "bg-blue-500/[0.08]",
+  "bg-blue-500/25",
+  "bg-blue-500/45",
+  "bg-blue-500/70",
+  "bg-blue-500",
 ] as const;
 
 const DAY_FORMAT: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" };
