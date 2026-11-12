@@ -52,10 +52,11 @@ export function useSkills() {
   }, [refresh]);
 
   /// Each write re-reads afterwards and answers the skill's folder, which a
-  /// rename moves.
+  /// rename moves. `shared` also links the skill into the folder's partner,
+  /// so every agent loads it.
   const create = useCallback(
-    async (root: string, skill: SkillDocument) => {
-      const path = await invoke<string>("create_skill", { root, skill }, LOCAL);
+    async (root: string, skill: SkillDocument, shared = false) => {
+      const path = await invoke<string>("create_skill", { root, skill, shared }, LOCAL);
       await refresh();
       return path;
     },
@@ -80,15 +81,24 @@ export function useSkills() {
   );
 
   const importFolder = useCallback(
-    async (root: string, source: string) => {
-      const path = await invoke<string>("import_skill", { root, source }, LOCAL);
+    async (root: string, source: string, shared = false) => {
+      const path = await invoke<string>("import_skill", { root, source, shared }, LOCAL);
       await refresh();
       return path;
     },
     [refresh],
   );
 
-  return { listing, busy, error, refresh, create, save, remove, importFolder };
+  /// Links a skill that lives in one folder into the other, where it stays.
+  const share = useCallback(
+    async (path: string) => {
+      await invoke("share_skill", { path }, LOCAL);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  return { listing, busy, error, refresh, create, save, remove, importFolder, share };
 }
 
 /// One skill whole, for the editor.

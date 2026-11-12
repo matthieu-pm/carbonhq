@@ -11,6 +11,7 @@ import {
   DotsOutline12,
   FolderImportOutline18,
   FolderOpenOutline12,
+  Globe2Outline12,
   LockOutline12,
   PenOutline12,
   PlusOutline12,
@@ -52,6 +53,8 @@ type Mode =
 
 /// A folder's name in a picker: where it is and who reads it.
 function rootTitle(root: SkillRoot): { title: string; detail: string } {
+  // The one target that is not a folder but a pair of them.
+  if (root.sharedWith) return { title: root.project ? baseName(root.project) : "Global", detail: "Every agent" };
   if (root.label) return { title: root.label, detail: root.project ? `${tildePath(root.project)} · ${tildePath(root.path)}` : tildePath(root.path) };
   if (root.project) return { title: baseName(root.project), detail: tildePath(root.path) };
   return { title: "Global", detail: tildePath(root.path) };
@@ -67,8 +70,13 @@ const NAME_RULE = /^[a-z0-9-]{1,64}$/;
 /// **A folder is shared, so each group names its readers**: a skill put in
 /// `~/.agents/skills` reaches Codex, pi, Grok Build and fx at once, and the
 /// form says so before the reader picks one.
+///
+/// **No one folder reaches all five, so "Every agent" is two**: the skill is
+/// kept in `.claude/skills` and linked into `.agents/skills`. It leads the
+/// picker, and a skill already in either folder takes the link from its row's
+/// menu. A shared skill draws in both groups, since both folders hold it.
 export default function SkillsSettings() {
-  const { listing, busy, error, refresh, create, save, remove, importFolder } = useSkills();
+  const { listing, busy, error, refresh, create, save, remove, importFolder, share } = useSkills();
   const [mode, setMode] = useState<Mode | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ path: string; message: string } | null>(null);
@@ -126,8 +134,8 @@ export default function SkillsSettings() {
           targets={targets}
           onCancel={() => setMode(null)}
           onPickAgain={() => void pickFolder()}
-          onImport={async (root) => {
-            await importFolder(root, mode.source);
+          onImport={async (target) => {
+            await importFolder(target.path, mode.source, !!target.sharedWith);
             setMode(null);
           }}
         />
@@ -137,9 +145,9 @@ export default function SkillsSettings() {
           skill={mode.kind === "edit" ? mode.skill : null}
           targets={targets}
           onCancel={() => setMode(null)}
-          onSave={async (root, doc) => {
+          onSave={async (target, doc) => {
             if (mode.kind === "edit") await save(mode.skill.path, doc);
-            else await create(root, doc);
+            else if (target) await create(target.path, doc, !!target.sharedWith);
             setMode(null);
           }}
         />
@@ -194,6 +202,10 @@ export default function SkillsSettings() {
                       setConfirming(null);
                       remove(skill.path).catch((err) => setRowError({ path: skill.path, message: String(err) }));
                     }}
+                    onShare={() => {
+                      setRowError(null);
+                      share(skill.path).catch((err) => setRowError({ path: skill.path, message: String(err) }));
+                    }}
                   />
                 ))
               )}
@@ -214,6 +226,7 @@ function SkillRow({
   onAskRemove,
   onCancelRemove,
   onRemove,
+  onShare,
 }: {
   skill: SkillEntry;
   locked: string | null;
@@ -223,6 +236,7 @@ function SkillRow({
   onAskRemove: () => void;
   onCancelRemove: () => void;
   onRemove: () => void;
+  onShare: () => void;
 }) {
   return (
     <div className="flex flex-col">
@@ -237,6 +251,7 @@ function SkillRow({
           <span className="flex items-center gap-1.5 text-ui text-foreground">
             <span className="truncate">{skill.name}</span>
             {locked && <LockOutline12 aria-label="Read-only" className="size-3 shrink-0 text-muted-foreground" />}
+            {skill.shared && <span className="shrink-0 text-muted-foreground/70">Every agent</span>}
           </span>
           {skill.description && <span className="truncate text-ui text-muted-foreground">{skill.description}</span>}
         </button>
@@ -258,7 +273,7 @@ function SkillRow({
                 <DotsOutline12 className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-40">
+            <DropdownMenuContent align="end" className="min-w-48">
               <DropdownMenuItem onSelect={onOpen}>
                 <PenOutline12 className="size-3" />
                 {locked ? "View" : "Edit"}
@@ -267,6 +282,12 @@ function SkillRow({
                 <FolderOpenOutline12 className="size-3" />
                 Show in Finder
               </DropdownMenuItem>
+              {!locked && skill.shareable && (
+                <DropdownMenuItem onSelect={onShare}>
+                  <Globe2Outline12 className="size-3" />
+                  Share with every agent
+                </DropdownMenuItem>
+              )}
               {!locked && (
                 <DropdownMenuItem variant="destructive" onSelect={onAskRemove}>
                   <TrashOutline12 className="size-3" />
@@ -293,14 +314,15 @@ function targetItems(targets: SkillRoot[]) {
   return targets.map((root) => {
     const { title, detail } = rootTitle(root);
     return {
-      id: root.path,
+      id: root.id,
       label: `${title} · ${detail}`,
       detail: root.readers.map((h) => AGENT_NAMES[h]).join(", "),
     };
   });
 }
 
-/// Where a skill goes, and the sentence saying who picks it up.
+/// Where a skill goes, and the sentence saying who picks it up. Keyed on the
+/// target's id, not its path: "Every agent" and `.claude/skills` share one.
 function FolderPicker({
   targets,
   value,
@@ -308,15 +330,17 @@ function FolderPicker({
 }: {
   targets: SkillRoot[];
   value: string;
-  onPick: (path: string) => void;
+  onPick: (id: string) => void;
 }) {
-  const picked = targets.find((t) => t.path === value);
+  const picked = targets.find((t) => t.id === value);
   return (
     <>
       <Picker label="Folder" value={value} items={targetItems(targets)} onPick={onPick} />
       {picked && (
-        <p className="-mt-1.5 flex items-center gap-1.5 text-ui text-muted-foreground @md:pl-27">
+        <p className="-mt-1.5 text-ui text-muted-foreground @md:pl-27">
           Loaded by {listNames(picked.readers)}.
+          {picked.sharedWith &&
+            ` Kept in ${tildePath(picked.path)} and linked into ${tildePath(picked.sharedWith)}.`}
         </p>
       )}
     </>
@@ -334,10 +358,10 @@ function SkillForm({
   skill: SkillEntry | null;
   targets: SkillRoot[];
   onCancel: () => void;
-  onSave: (root: string, doc: SkillDocument) => Promise<void>;
+  onSave: (target: SkillRoot | undefined, doc: SkillDocument) => Promise<void>;
 }) {
   const [doc, setDoc] = useState<SkillDocument | null>(skill ? null : { name: "", description: "", body: "" });
-  const [root, setRoot] = useState(targets[0]?.path ?? "");
+  const [root, setRoot] = useState(targets[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const locked = skill?.locked ?? null;
@@ -375,7 +399,7 @@ function SkillForm({
         if (locked || !ready || saving) return;
         setSaving(true);
         setFailure(null);
-        onSave(root, doc)
+        onSave(targets.find((t) => t.id === root), doc)
           .catch((err) => setFailure(String(err)))
           .finally(() => setSaving(false));
       }}
@@ -478,9 +502,10 @@ function ImportForm({
   targets: SkillRoot[];
   onCancel: () => void;
   onPickAgain: () => void;
-  onImport: (root: string) => Promise<void>;
+  onImport: (target: SkillRoot) => Promise<void>;
 }) {
-  const [root, setRoot] = useState(targets[0]?.path ?? "");
+  const [root, setRoot] = useState(targets[0]?.id ?? "");
+  const target = targets.find((t) => t.id === root);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -489,10 +514,10 @@ function ImportForm({
       className="@container flex flex-col gap-3 rounded-xl border border-border/60 p-3"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!root || saving) return;
+        if (!target || saving) return;
         setSaving(true);
         setFailure(null);
-        onImport(root)
+        onImport(target)
           .catch((err) => setFailure(String(err)))
           .finally(() => setSaving(false));
       }}
@@ -521,7 +546,7 @@ function ImportForm({
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" variant="secondary" size="sm" disabled={!root || saving}>
+        <Button type="submit" variant="secondary" size="sm" disabled={!target || saving}>
           {saving && <Spinner className="size-3" />}
           Import
         </Button>

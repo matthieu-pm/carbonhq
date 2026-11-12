@@ -7,7 +7,7 @@ import { SettingsHeaderSlot } from "@/components/settings/headerAction";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import DemoThemeBar from "@/demo/ThemeBar";
-import type { Harness, McpServerEntry, McpSource, McpTarget, SkillDocument, SkillsListing } from "@/types/events";
+import type { Harness, McpServerEntry, McpSource, McpTarget, SkillDocument, SkillEntry, SkillRoot, SkillsListing } from "@/types/events";
 import "../App.css";
 
 const project = "/Users/demo/Projects/carbon";
@@ -32,18 +32,45 @@ const sources: McpSource[] = [
   { id: "fx", file: "fx", owner: "fx", readers: ["fx"], project: null,
     path: "/Users/demo/.fx/mcp.json", label: null, servers: [{ ...server, name: "filesystem", transport: "stdio", command: "npx", args: ["-y", "server-filesystem"], url: null, headers: [], env: [{ name: "API_KEY", value: "fixture-key" }] }], error: null, transports: ["stdio", "http", "sse"] },
 ];
-const listing: SkillsListing = { roots: [{ id: root, path: root, project: null, readers: ["codex", "pi", "grok", "fx"], label: null, error: null, writable: true,
-  skills: [
-    { name: "review-pr", description: "Review a pull request and check its behavior.", path: `${root}/review-pr`, locked: null, linked: false },
-    { name: "carbon", description: "Manage Carbon sessions and drive the browser.", path: `${root}/carbon`, locked: "Managed by Carbon. Every launch rewrites it.", linked: false },
-  ] }], targets: [] };
-listing.targets = [{ ...listing.roots[0], skills: [] }];
-const documents = new Map<string, SkillDocument>(listing.roots[0].skills.map((s) => [s.path, { name: s.name, description: s.description, body: "# Instructions\n\nRead the changes and verify the result.\n" }]));
-function addSkill(folder: string, doc: SkillDocument) {
-  const path = `${folder}/${doc.name}`;
-  if (documents.has(path)) throw "A skill with that name already exists.";
-  listing.roots.find((r) => r.path === folder)!.skills.push({ ...doc, path, locked: null, linked: false });
+const claudeRoot = "/Users/demo/.claude/skills";
+const entry = (folder: string, name: string, description: string, over: Partial<SkillEntry> = {}): SkillEntry => ({
+  name, description, path: `${folder}/${name}`, locked: null, linked: false, shared: false, shareable: false, ...over,
+});
+const folder = (path: string, readers: Harness[], skills: SkillEntry[]): SkillRoot => ({
+  id: path, path, project: null, readers, label: null, error: null, writable: true, sharedWith: null, skills,
+});
+// One shared skill drawn in both groups, one that can still be shared, and one
+// Carbon owns.
+const listing: SkillsListing = { roots: [
+  folder(claudeRoot, ["claude_code", "grok", "fx"], [
+    entry(claudeRoot, "release-notes", "Write release notes from merged pull requests.", { shared: true }),
+  ]),
+  folder(root, ["codex", "pi", "grok", "fx"], [
+    entry(root, "carbon", "Manage Carbon sessions and drive the browser.", { locked: "Managed by Carbon. Every launch rewrites it." }),
+    entry(root, "release-notes", "Write release notes from merged pull requests.", { shared: true, linked: true }),
+    entry(root, "review-pr", "Review a pull request and check its behavior.", { shareable: true }),
+  ]),
+], targets: [] };
+listing.targets = [
+  { ...folder(claudeRoot, ["claude_code", "codex", "grok", "fx", "pi"], []), id: `everyone:${claudeRoot}`, sharedWith: root },
+  ...listing.roots.map((r) => ({ ...r, skills: [] })),
+];
+const documents = new Map<string, SkillDocument>(listing.roots.flatMap((r) => r.skills).map((s) => [s.path, { name: s.name, description: s.description, body: "# Instructions\n\nRead the changes and verify the result.\n" }]));
+const other = (path: string) => (path === root ? claudeRoot : root);
+/// What `link_into_partner` does: the same skill, drawn in the other folder too.
+function linkInto(from: string, name: string) {
+  const row = listing.roots.find((r) => r.path === from)!.skills.find((s) => s.name === name)!;
+  Object.assign(row, { shared: true, shareable: false });
+  const to = other(from);
+  listing.roots.find((r) => r.path === to)!.skills.push({ ...row, path: `${to}/${name}`, linked: true });
+  documents.set(`${to}/${name}`, documents.get(row.path)!);
+}
+function addSkill(to: string, doc: SkillDocument, shared: boolean) {
+  const path = `${to}/${doc.name}`;
+  if (documents.has(path) || (shared && documents.has(`${other(to)}/${doc.name}`))) throw "A skill with that name already exists.";
+  listing.roots.find((r) => r.path === to)!.skills.push(entry(to, doc.name, doc.description, { shareable: !shared }));
   documents.set(path, doc);
+  if (shared) linkInto(to, doc.name);
   return path;
 }
 
@@ -83,7 +110,11 @@ mockIPC(async (command, payload) => {
       return structuredClone(listing);
     }
     case "read_skill": return documents.get(String(args.path));
-    case "create_skill": return addSkill(String(args.root), args.skill as SkillDocument);
+    case "create_skill": return addSkill(String(args.root), args.skill as SkillDocument, !!args.shared);
+    case "share_skill": {
+      const path = String(args.path);
+      return linkInto(path.slice(0, path.lastIndexOf("/")), path.slice(path.lastIndexOf("/") + 1));
+    }
     case "save_skill": {
       const old = String(args.path);
       const doc = args.skill as SkillDocument;
@@ -99,7 +130,7 @@ mockIPC(async (command, payload) => {
       documents.delete(String(args.path));
       return;
     }
-    case "import_skill": return addSkill(String(args.root), { name: "imported-skill", description: "Imported folder and support files.", body: "# Imported" });
+    case "import_skill": return addSkill(String(args.root), { name: "imported-skill", description: "Imported folder and support files.", body: "# Imported" }, !!args.shared);
     default: return null;
   }
 });
@@ -114,7 +145,7 @@ function Demo() {
         <nav className="flex gap-2" aria-label="Settings tabs">
           <Button variant={tab === "mcp" ? "secondary" : "ghost"} onClick={() => setTab("mcp")}>MCP</Button>
           <Button variant={tab === "skills" ? "secondary" : "ghost"} onClick={() => setTab("skills")}>Skills</Button>
-          <Button variant="ghost" onClick={() => addSkill(root, { name: `external-${documents.size}`, description: "Added outside Settings. Reopen the tab to read it.", body: "# External" })}>Add external skill</Button>
+          <Button variant="ghost" onClick={() => addSkill(root, { name: `external-${documents.size}`, description: "Added outside Settings. Reopen the tab to read it.", body: "# External" }, false)}>Add external skill</Button>
         </nav>
         <header className="flex items-center gap-2"><h1 className="text-lg font-medium">{tab === "mcp" ? "MCP" : "Skills"}</h1><div ref={setSlot} className="contents" /></header>
         <p className="text-ui text-muted-foreground">Fixture data. Changes stay in this demo.</p>

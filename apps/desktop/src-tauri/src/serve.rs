@@ -1391,10 +1391,11 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
             crate::mcp_servers::remove_mcp_server(target, name).await;
         list_skills(discover_pi: Option<bool>) => crate::skills::list_skills(discover_pi).await;
         read_skill(path: String) => crate::skills::read_skill(path).await;
-        create_skill(root: String, skill: crate::skills::SkillDocument) => crate::skills::create_skill(root, skill).await;
+        create_skill(root: String, skill: crate::skills::SkillDocument, shared: Option<bool>) => crate::skills::create_skill(root, skill, shared).await;
+        share_skill(path: String) => crate::skills::share_skill(path).await;
         save_skill(path: String, skill: crate::skills::SkillDocument) => crate::skills::save_skill(path, skill).await;
         remove_skill(path: String) => crate::skills::remove_skill(path).await;
-        import_skill(root: String, source: String) => crate::skills::import_skill(root, source).await;
+        import_skill(root: String, source: String, shared: Option<bool>) => crate::skills::import_skill(root, source, shared).await;
 
         // Projects and settings.
         list_projects() => crate::projects::list_projects().await;

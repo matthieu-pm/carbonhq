@@ -58,6 +58,16 @@ const PROJECT_ROOTS: &[(&str, &[Harness], bool)] = &[
 /// The folders `carbon skill install` writes, where `carbon` is Carbon's.
 const CARBON_HOMES: &[&str] = &[".claude/skills", ".codex/skills", ".agents/skills"];
 
+/// The two folders that reach all five agents between them, in the home
+/// directory and in a project alike. A shared skill lives in one and is linked
+/// into the other (CBN-59).
+///
+/// A link and not a copy, so one edit reaches everyone. Measured before it was
+/// built: Claude Code, Codex and pi each follow a linked skill and list it
+/// once, and grok lists a name held in both folders once. grok and fx read
+/// both folders, so neither depends on following the link at all.
+const EVERYONE: [&str; 2] = [".claude/skills", ".agents/skills"];
+
 /// A description is drawn on one line; the whole frontmatter is read for edit.
 const FRONTMATTER_BYTES: u64 = 8192;
 
@@ -77,6 +87,11 @@ pub struct SkillEntry {
     /// A link to a folder elsewhere. Editing writes through to it; removing
     /// takes the link alone.
     pub linked: bool,
+    /// One folder of [`EVERYONE`] linked into the other, so every agent loads
+    /// it. True of both rows it draws.
+    pub shared: bool,
+    /// Whether [`share_skill`] can link this one into the other folder.
+    pub shareable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -94,6 +109,9 @@ pub struct SkillRoot {
     pub error: Option<String>,
     /// Whether new skills can be made or imported here.
     pub writable: bool,
+    /// On a target alone: the second folder a skill made here is linked into,
+    /// which is what makes this the "every agent" choice.
+    pub shared_with: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -183,6 +201,94 @@ fn root_of(known: &Known, skills: Vec<SkillEntry>, error: Option<String>) -> Ski
         skills,
         error,
         writable: true,
+        shared_with: None,
+    }
+}
+
+/// The other folder of [`EVERYONE`], where `root` is one of them.
+fn partner(root: &Path) -> Option<PathBuf> {
+    let at = EVERYONE.iter().position(|rel| root.ends_with(rel))?;
+    Some(root.parent()?.parent()?.join(EVERYONE[1 - at]))
+}
+
+/// Where a link beside `dir`'s partner points to reach `dir`.
+///
+/// Relative, so a project's link survives the repo being moved or cloned, and
+/// both ends stay inside the home or project folder: fx refuses a link that
+/// leaves them.
+fn link_target(dir: &Path) -> Result<PathBuf> {
+    let rel = dir
+        .parent()
+        .and_then(|root| EVERYONE.iter().find(|rel| root.ends_with(rel)))
+        .ok_or_else(|| anyhow!("{} isn't in a folder every agent can share", dir.display()))?;
+    Ok(Path::new("../..").join(rel).join(dir.file_name().unwrap_or_default()))
+}
+
+/// Links the skill at `dir` into its partner folder, under its own name.
+fn link_into_partner(dir: &Path) -> Result<PathBuf> {
+    let target = link_target(dir)?;
+    let other = dir
+        .parent()
+        .and_then(partner)
+        .ok_or_else(|| anyhow!("{} has no second folder to share into", dir.display()))?;
+    let link = other.join(dir.file_name().unwrap_or_default());
+    if std::fs::symlink_metadata(&link).is_ok() {
+        bail!(
+            "there's already a skill called {} in {}",
+            link.file_name().unwrap_or_default().to_string_lossy(),
+            other.display()
+        );
+    }
+    std::fs::create_dir_all(&other).context("couldn't create the skills folder")?;
+    std::os::unix::fs::symlink(target, &link)
+        .with_context(|| format!("couldn't link the skill into {}", other.display()))?;
+    Ok(link)
+}
+
+/// The links in `dir`'s partner folder that resolve to `dir`.
+fn partner_links(dir: &Path) -> Vec<PathBuf> {
+    let Some(other) = dir.parent().and_then(partner) else {
+        return Vec::new();
+    };
+    let Ok(real) = std::fs::canonicalize(dir) else {
+        return Vec::new();
+    };
+    std::fs::read_dir(other)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_symlink()))
+        .map(|entry| entry.path())
+        .filter(|link| std::fs::canonicalize(link).is_ok_and(|to| to == real))
+        .collect()
+}
+
+/// The folder a shared skill's link stands for, where `dir` is such a link.
+fn original(dir: &Path) -> Option<PathBuf> {
+    let target = std::fs::read_link(dir).ok()?;
+    let real = partner(dir.parent()?)?.join(target.file_name()?);
+    let same = std::fs::canonicalize(&real).ok()? == std::fs::canonicalize(dir).ok()?;
+    (same && !real.is_symlink()).then_some(real)
+}
+
+/// Fills in what a row in one of [`EVERYONE`]'s folders says about sharing.
+fn mark_sharing(root: &Path, skills: &mut [SkillEntry]) {
+    let Some(other) = partner(root) else {
+        return;
+    };
+    for skill in skills {
+        let dir = Path::new(&skill.path);
+        skill.shared = if skill.linked {
+            original(dir).is_some()
+        } else {
+            !partner_links(dir).is_empty()
+        };
+        skill.shareable = !skill.linked
+            && skill.locked.is_none()
+            && dir.is_dir()
+            && dir
+                .file_name()
+                .is_some_and(|name| std::fs::symlink_metadata(other.join(name)).is_err());
     }
 }
 
@@ -215,6 +321,16 @@ pub async fn list_skills(discover_pi: Option<bool>) -> Result<SkillsListing, Fai
             let mut targets = Vec::new();
             for k in &known {
                 if k.creatable {
+                    // Ahead of the folder it writes to, so it leads its scope
+                    // and is what the form opens on.
+                    if let Some(other) = partner(&k.path).filter(|_| k.path.ends_with(EVERYONE[0])) {
+                        targets.push(SkillRoot {
+                            id: format!("everyone:{}", k.path.display()),
+                            readers: vec![Claude, Codex, Grok, Fx, Pi],
+                            shared_with: Some(other.to_string_lossy().into_owned()),
+                            ..root_of(k, Vec::new(), None)
+                        });
+                    }
                     targets.push(root_of(k, Vec::new(), None));
                 }
                 if k.readers.is_empty() {
@@ -224,7 +340,10 @@ pub async fn list_skills(discover_pi: Option<bool>) -> Result<SkillsListing, Fai
                     k.project.is_none() && CARBON_HOMES.iter().any(|rel| home.join(rel) == k.path);
                 match walk(&k.path, carbon_home) {
                     Ok(skills) if skills.is_empty() && !k.creatable => {}
-                    Ok(skills) => roots.push(root_of(k, skills, None)),
+                    Ok(mut skills) => {
+                        mark_sharing(&k.path, &mut skills);
+                        roots.push(root_of(k, skills, None));
+                    }
                     Err(err)
                         if !k.path.exists()
                             && err
@@ -302,6 +421,7 @@ fn discovery_error(label: &str, path: &Path, readers: Vec<Harness>, error: Strin
         skills: Vec::new(),
         error: Some(error),
         writable: false,
+        shared_with: None,
     }
 }
 
@@ -364,6 +484,8 @@ fn pi_roots_from_commands(answer: &Value, project: Option<&Path>) -> Vec<SkillRo
                         .map(|_| "Managed by Carbon or an agent".to_string())
                 }),
             linked: std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()),
+            shared: false,
+            shareable: false,
         };
         if let Some(group) = roots.iter_mut().find(|r| r.id == id) {
             group.skills.push(entry);
@@ -377,6 +499,7 @@ fn pi_roots_from_commands(answer: &Value, project: Option<&Path>) -> Vec<SkillRo
                 skills: vec![entry],
                 error: None,
                 writable: !package,
+                shared_with: None,
             });
         }
     }
@@ -428,6 +551,7 @@ fn locked_root(
             .collect(),
         error: None,
         writable: false,
+        shared_with: None,
     }
 }
 
@@ -457,6 +581,8 @@ fn walk(root: &Path, carbon_home: bool) -> Result<Vec<SkillEntry>> {
                         path: path.to_string_lossy().into_owned(),
                         locked: Some("SKILL.md couldn't be read".to_string()),
                         linked: entry.file_type().map(|t| t.is_symlink()).unwrap_or(false),
+                        shared: false,
+                        shareable: false,
                     })
                 }
             };
@@ -489,6 +615,8 @@ fn walk(root: &Path, carbon_home: bool) -> Result<Vec<SkillEntry>> {
                 path: path.to_string_lossy().into_owned(),
                 locked,
                 linked,
+                shared: false,
+                shareable: false,
             })
         })
         .collect();
@@ -698,12 +826,40 @@ pub async fn read_skill(path: String) -> Result<SkillDocument, Fail> {
     })
 }
 
-/// A new skill in `root`, as `<root>/<name>/SKILL.md`.
+/// Refuses a shared write whose name the second folder already holds, before
+/// anything is written to the first.
+fn check_partner_free(root: &Path, name: &str) -> Result<()> {
+    let other = partner(root)
+        .ok_or_else(|| anyhow!("{} isn't a folder every agent can share", root.display()))?;
+    if std::fs::symlink_metadata(other.join(name)).is_ok() {
+        bail!("there's already a skill called {name} in {}", other.display());
+    }
+    Ok(())
+}
+
+/// Links a skill just written into its partner folder, taking the skill back
+/// out where the link fails: half a shared skill is one agent family short
+/// with nothing on screen saying so.
+async fn share_new(dir: &Path) -> Result<()> {
+    if let Err(err) = link_into_partner(dir) {
+        let _ = tokio::fs::remove_dir_all(dir).await;
+        return Err(err);
+    }
+    Ok(())
+}
+
+/// A new skill in `root`, as `<root>/<name>/SKILL.md`. `shared` also links it
+/// into the folder's partner, so every agent loads it.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub async fn create_skill(root: String, skill: SkillDocument) -> Result<String, Fail> {
+pub async fn create_skill(
+    root: String,
+    skill: SkillDocument,
+    shared: Option<bool>,
+) -> Result<String, Fail> {
     let _guard = WRITE_LOCK.lock().await;
     let _across = crate::store::lock_across_processes("agent-skills").await;
     let root = writable_root(&root).await?;
+    let shared = shared.unwrap_or(false);
     let name = skill.name.trim().to_string();
     check_name(&name)?;
     let contents = compose(None, &skill)?;
@@ -713,6 +869,9 @@ pub async fn create_skill(root: String, skill: SkillDocument) -> Result<String, 
     }
     if tokio::fs::symlink_metadata(&dir).await.is_ok() {
         return Err(anyhow!("there's already a skill called {name} there").into());
+    }
+    if shared {
+        check_partner_free(&root, &name)?;
     }
     tokio::fs::create_dir_all(&root)
         .await
@@ -726,7 +885,24 @@ pub async fn create_skill(root: String, skill: SkillDocument) -> Result<String, 
             .context("couldn't write SKILL.md")
             .into());
     }
+    if shared {
+        share_new(&dir).await?;
+    }
     Ok(dir.to_string_lossy().into_owned())
+}
+
+/// Links an existing skill into its folder's partner, so every agent loads it.
+/// The skill stays where it is.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn share_skill(path: String) -> Result<(), Fail> {
+    let _guard = WRITE_LOCK.lock().await;
+    let _across = crate::store::lock_across_processes("agent-skills").await;
+    let dir = editable_skill(&path).await?;
+    if dir.is_symlink() || !dir.is_dir() {
+        return Err(anyhow!("only a skill folder can be shared, not a link or a single file").into());
+    }
+    link_into_partner(&dir)?;
+    Ok(())
 }
 
 /// Rename the folder only when the declared name changes; agents may accept different names.
@@ -735,7 +911,29 @@ pub async fn save_skill(path: String, skill: SkillDocument) -> Result<String, Fa
     let _guard = WRITE_LOCK.lock().await;
     let _across = crate::store::lock_across_processes("agent-skills").await;
     let dir = editable_skill(&path).await?;
-    save_at(&dir, &skill).await.map_err(Into::into)
+    save_shared(&dir, &skill).await.map_err(Into::into)
+}
+
+/// [`save_at`], keeping a shared skill's link pointing at it through a rename.
+///
+/// A skill opened by its link is saved where it lives: renaming the link alone
+/// would leave one agent family reading a folder under the old name.
+async fn save_shared(dir: &Path, skill: &SkillDocument) -> Result<String> {
+    let dir = original(dir).unwrap_or_else(|| dir.to_path_buf());
+    let links = partner_links(&dir);
+    let to = PathBuf::from(save_at(&dir, skill).await?);
+    if to != dir {
+        let target = link_target(&to)?;
+        for link in links {
+            // Under the new name where it is free, else where it already was.
+            let renamed = link.with_file_name(to.file_name().unwrap_or_default());
+            let at = if std::fs::symlink_metadata(&renamed).is_ok() { link.clone() } else { renamed };
+            std::fs::remove_file(&link)
+                .and_then(|()| std::os::unix::fs::symlink(&target, &at))
+                .with_context(|| format!("renamed the skill, but couldn't move its link at {}", link.display()))?;
+        }
+    }
+    Ok(to.to_string_lossy().into_owned())
 }
 
 /// Check the destination before writing, and restore the folder on a failed edit.
@@ -807,6 +1005,21 @@ pub async fn remove_skill(path: String) -> Result<(), Fail> {
             .with_context(|| format!("couldn't remove {}", dir.display()))?;
         return Ok(());
     }
+    // Read before the folder goes: a link is matched by where it resolves.
+    let links = partner_links(&dir);
+    discard(&dir).await?;
+    // A shared skill's link goes with it, or it dangles: unseen in the list,
+    // and in the way of the next skill made under that name.
+    for link in links {
+        tokio::fs::remove_file(&link)
+            .await
+            .with_context(|| format!("removed the skill, but not its link at {}", link.display()))?;
+    }
+    Ok(())
+}
+
+/// Moves a skill folder to the Trash, or deletes it where there is none.
+async fn discard(dir: &Path) -> Result<()> {
     let trash = home()?.join(".Trash");
     if cfg!(target_os = "macos") && trash.is_dir() {
         let name = dir
@@ -824,7 +1037,7 @@ pub async fn remove_skill(path: String) -> Result<(), Fail> {
         return Ok(());
     }
     if cfg!(target_os = "macos") {
-        return Err(anyhow!("couldn't find the Trash folder; the skill was kept").into());
+        bail!("couldn't find the Trash folder; the skill was kept");
     }
     if dir.is_file() {
         tokio::fs::remove_file(&dir)
@@ -839,11 +1052,17 @@ pub async fn remove_skill(path: String) -> Result<(), Fail> {
 }
 
 /// Copies a folder holding a `SKILL.md` into `root`, under its own name.
+/// `shared` also links the copy into the folder's partner.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub async fn import_skill(root: String, source: String) -> Result<String, Fail> {
+pub async fn import_skill(
+    root: String,
+    source: String,
+    shared: Option<bool>,
+) -> Result<String, Fail> {
     let _guard = WRITE_LOCK.lock().await;
     let _across = crate::store::lock_across_processes("agent-skills").await;
     let root = writable_root(&root).await?;
+    let shared = shared.unwrap_or(false);
     let source = tokio::fs::canonicalize(&source)
         .await
         .context("couldn't open the skill folder")?;
@@ -871,10 +1090,18 @@ pub async fn import_skill(root: String, source: String) -> Result<String, Fail> 
     if to.starts_with(&source) {
         return Err(anyhow!("can't import a folder into itself").into());
     }
+    if shared {
+        check_partner_free(displayed.parent().unwrap_or(&displayed), &name)?;
+    }
     let (from, dest) = (source.clone(), to.clone());
     tokio::task::spawn_blocking(move || copy_dir(&from, &dest))
         .await
         .map_err(|e| anyhow!("couldn't copy the skill: {e}"))??;
+    if shared {
+        // By the folder's own spelling, not its canonical one: the link is
+        // found from the name of the folder it sits in.
+        share_new(&displayed).await?;
+    }
     Ok(displayed.to_string_lossy().into_owned())
 }
 
@@ -1205,5 +1432,113 @@ mod tests {
         let answer = json!({"commands":[{"source":"skill","name":"skill:carbon","sourceInfo":{"path":path,"scope":"user","origin":"top-level"}}]});
         let roots = pi_roots_from_commands(&answer, None);
         assert!(roots[0].skills[0].locked.is_some());
+    }
+
+    /// A skill folder under `base`'s `rel`, as the agents would find it.
+    fn skill_in(base: &Path, rel: &str, name: &str) -> PathBuf {
+        let dir = base.join(rel).join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), format!("---\nname: {name}\ndescription: d\n---\nbody")).unwrap();
+        dir
+    }
+
+    /// The link is what makes one skill reach every agent, and it is relative
+    /// so a project's survives the repo being moved (CBN-59).
+    #[test]
+    fn a_shared_skill_is_linked_into_the_other_folder() {
+        let base = test_dir();
+        let dir = skill_in(&base, ".claude/skills", "review");
+
+        let link = link_into_partner(&dir).unwrap();
+        assert_eq!(link, base.join(".agents/skills/review"));
+        assert_eq!(
+            std::fs::read_link(&link).unwrap(),
+            PathBuf::from("../../.claude/skills/review")
+        );
+        assert!(link.join("SKILL.md").is_file());
+        assert_eq!(partner_links(&dir), vec![link.clone()]);
+        assert_eq!(original(&link), Some(dir.clone()));
+
+        // A name the other folder already holds is refused, never replaced.
+        assert!(link_into_partner(&dir).is_err());
+        assert!(check_partner_free(&base.join(".claude/skills"), "review").is_err());
+
+        // The other way round too: a skill that started in `.agents/skills`.
+        let other = skill_in(&base, ".agents/skills", "plan");
+        let back = link_into_partner(&other).unwrap();
+        assert_eq!(
+            std::fs::read_link(&back).unwrap(),
+            PathBuf::from("../../.agents/skills/plan")
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// Only the two covering folders pair up; a skill anywhere else has no
+    /// second folder to go to.
+    #[test]
+    fn only_the_two_covering_folders_share() {
+        assert_eq!(partner(Path::new("/p/.claude/skills")), Some(PathBuf::from("/p/.agents/skills")));
+        assert_eq!(partner(Path::new("/p/.agents/skills")), Some(PathBuf::from("/p/.claude/skills")));
+        assert_eq!(partner(Path::new("/p/.codex/skills")), None);
+
+        let base = test_dir();
+        let dir = skill_in(&base, ".codex/skills", "review");
+        assert!(link_into_partner(&dir).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// Renamed through its link, a shared skill moves the folder every agent
+    /// reads and takes the link with it. Renaming the link alone left one
+    /// family of agents on the old name.
+    #[tokio::test]
+    async fn renaming_a_shared_skill_through_its_link_moves_both() {
+        let base = test_dir();
+        let dir = skill_in(&base, ".claude/skills", "old");
+        let link = link_into_partner(&dir).unwrap();
+        let doc = SkillDocument { name: "new".into(), description: "d".into(), body: "body".into() };
+
+        let to = PathBuf::from(save_shared(&link, &doc).await.unwrap());
+        assert_eq!(to, base.join(".claude/skills/new"));
+        assert!(!dir.exists());
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        let moved = base.join(".agents/skills/new");
+        assert_eq!(std::fs::read_link(&moved).unwrap(), PathBuf::from("../../.claude/skills/new"));
+        assert!(std::fs::read_to_string(moved.join("SKILL.md")).unwrap().contains("name: \"new\""));
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// What a row says: shared on both ends of a link, shareable only where
+    /// the other folder has room for the name.
+    #[test]
+    fn rows_say_whether_they_are_shared_or_can_be() {
+        let base = test_dir();
+        let shared = skill_in(&base, ".claude/skills", "shared");
+        link_into_partner(&shared).unwrap();
+        skill_in(&base, ".claude/skills", "alone");
+        skill_in(&base, ".claude/skills", "taken");
+        skill_in(&base, ".agents/skills", "taken");
+
+        let flags = |rel: &str| {
+            let root = base.join(rel);
+            let mut skills = walk(&root, false).unwrap();
+            mark_sharing(&root, &mut skills);
+            skills
+                .into_iter()
+                .map(|s| (s.name, s.shared, s.shareable))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            flags(".claude/skills"),
+            vec![
+                ("alone".to_string(), false, true),
+                ("shared".to_string(), true, false),
+                ("taken".to_string(), false, false),
+            ]
+        );
+        assert_eq!(
+            flags(".agents/skills"),
+            vec![("shared".to_string(), true, false), ("taken".to_string(), false, false)]
+        );
+        std::fs::remove_dir_all(base).unwrap();
     }
 }
