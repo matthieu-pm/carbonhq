@@ -604,13 +604,15 @@
   --surface-sheet: transparent;
 }
 
-/* Over the photo the cards and the composer let a little of it through, so they
-   read as laid on it rather than cut out of it. Scoped to the content column:
-   a card on the flat backdrop has nothing to show and would only go darker.
-   Not on glass, where `--card` and `--composer` are veils already. */
+/* Over the photo the cards show it through: 70% of the card colour, which dims
+   the glow enough to read a title over. An 80% fill read as a slab and glass's
+   own 5.5% veil left labels on bare white. The composer a transcript scrolls
+   under takes `--veil-float` and its blur, as on glass. Scoped to the content
+   column: on the flat backdrop a see-through card is only a shade off the
+   page. Not on glass, where both tokens are veils already. */
 [data-theme="default"][data-mode="dark"]:not([data-transparency]) .content-backdrop {
-  --card: color-mix(in oklab, var(--surface-card) 80%, transparent);
-  --composer: color-mix(in oklab, var(--surface-card) 80%, transparent);
+  --card: color-mix(in oklab, var(--surface-card) 70%, transparent);
+  --composer: var(--veil-float);
 }
 
 [data-theme="default"][data-mode="light"] {
