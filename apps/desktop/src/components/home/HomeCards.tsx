@@ -287,7 +287,7 @@ function ActivityHeatmap({
             key={cell.date.getTime()}
             onPointerEnter={() => setHovered(cell.future ? null : cell)}
             className={cn(
-              "aspect-square rounded-[3px]",
+              "aspect-square rounded-[4px]",
               cell.future ? "bg-transparent" : LEVELS[cell.level],
               hovered === cell && "outline outline-1 outline-foreground/50",
             )}
