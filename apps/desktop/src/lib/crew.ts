@@ -4,7 +4,7 @@ import type { SessionIndexItem, SessionStatus } from "@/types/events";
 /// session and the three things a row says about it without being opened.
 export type CrewRow = {
   item: SessionIndexItem;
-  /// A turn is in flight. Draws the orb, and nothing else in the crew moves.
+  /// A turn is in flight. Animates the character and draws the working mark.
   busy: boolean;
   /// Standing still behind a card somebody has to answer. The sidebar's yellow,
   /// and the one state that opens a row on its own.

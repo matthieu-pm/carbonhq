@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Blobatar } from "@blobatar/react";
-import { idle, surprised } from "blobatar/expression";
 import { CircleDashed, Eye, MousePointerClick } from "lucide-react";
 
+import BotAvatar from "@/components/BotAvatar";
 import Chat from "@/components/Chat";
 import { Button } from "@/components/ui/button";
 import {
@@ -563,38 +562,7 @@ function CrewHeader({
 /// dozen rows it passes through on the way somewhere else.
 const TIP_DELAY = 700;
 
-/// The session's own avatar, wearing what that session wants.
-///
-/// Two poses for the whole crew, picked on how much each one *moves* rather
-/// than on what it means: at 20px in a column watched out of the corner of the
-/// eye, the only channel that reaches you is motion. `surprised` is the loudest
-/// the library has and takes the one state standing still waiting for you;
-/// `idle` is every other row.
-///
-/// **A working row gets `idle` too, and `thinking` is why.** That pose was the
-/// obvious pick and cannot be held still: it sets `--mo-rock`, and the
-/// library's `motion.css` runs that eye seesaw unconditionally — `animate`
-/// moves `--mo-amp`, which the rock does not read. The seesaw *is* the pose
-/// (the library's own note calls it the two-dot loader), so "thinking but
-/// still" is not a state it has, and the orb at the row's other end already
-/// says working.
-///
-/// Motion is therefore spent on one state and nothing else. Running the idle
-/// loop everywhere was tried and made the column restless, which is what a
-/// thing watched out of the corner of the eye must not be: a crew where every
-/// face is moving says nothing about which one to look at. The rest keep
-/// `hover`, which is not nothing — the loop is still there for anyone who goes
-/// looking for it with the cursor.
+/// The same session id draws the same character in the crew and message references.
 function RowAvatar({ row }: { row: CrewRow }) {
-  return (
-    <span className="ml-0.5 flex size-5 shrink-0 items-center justify-center">
-      <Blobatar
-        name={row.item.sessionId}
-        aria-hidden
-        expression={row.asking ? surprised : idle}
-        animate={row.asking ? "always" : "hover"}
-        className="size-5 shrink-0"
-      />
-    </span>
-  );
+  return <BotAvatar seed={row.item.sessionId} working={row.busy} className="ml-0.5" />;
 }

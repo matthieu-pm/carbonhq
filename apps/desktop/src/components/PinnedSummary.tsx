@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { Popover } from "radix-ui";
 import { ChevronDown, ChevronUp, FileDiff, FileText, GitBranch, Globe, Image, Link, Monitor, MoreHorizontal, Plus, Search, SlidersHorizontal } from "lucide-react";
 
-import AgentIcon from "@/components/AgentIcon";
+import BotAvatar from "@/components/BotAvatar";
 import ContextDetails from "@/components/ContextDetails";
 import ImageLightbox, { Thumb, type LightboxImage } from "@/components/chat/ImageLightbox";
 import TodoList from "@/components/chat/TodoList";
@@ -221,7 +221,10 @@ export default function PinnedSummary({
 
         {visible("subagents") && subagents.length > 0 && <SummarySection title="Subagents">
           <button type="button" className={row} onClick={() => onOpen("more")}>
-            <AgentIcon harness={harness} className="size-4" />
+            <span className="flex shrink-0 -space-x-1">
+              {subagents.slice(0, 3).map((run) => <BotAvatar key={run.id} seed={run.id}
+                working={!run.done && (busy || (run.taskId !== null && liveTaskIds.has(run.taskId)))} />)}
+            </span>
             <span>{[running > 0 && `${running} running`, done > 0 && `${done} done`, unfinished > 0 && `${unfinished} unfinished`].filter(Boolean).join(" · ")}</span>
           </button>
         </SummarySection>}

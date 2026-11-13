@@ -17,6 +17,7 @@ import {
   Undo2,
 } from "lucide-react";
 import Orb from "@/components/Orb";
+import BotAvatar from "@/components/BotAvatar";
 
 import PrStateIcon, { prStateLabel } from "@/components/PrStateIcon";
 import UpdateRow from "@/components/UpdateRow";
@@ -2614,6 +2615,7 @@ function SessionRow({
               : "row-reached:[mask-image:linear-gradient(to_left,transparent_24px,black_40px)]",
           )}
         >
+          {item.parentSessionId && <BotAvatar seed={item.sessionId} working={status === "in_progress" && !asking} className="mr-1 size-5" />}
           {item.title}
         </span>
 

@@ -1,7 +1,7 @@
 import { Suspense, lazy, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
-import Orb from "@/components/Orb";
+import BotAvatar from "@/components/BotAvatar";
 
 import ImageRow from "@/components/chat/ImageRow";
 import TodoList from "@/components/chat/TodoList";
@@ -92,6 +92,8 @@ const TODO_FIELDS = [...SUMMARY_FIELDS, "todos", "merge", "plan", "explanation"]
 const PREVIEW_CHARS = 4000;
 
 type ToolCallProps = {
+  callId: string;
+  subagentWorking?: boolean;
   name: string;
   toolType: ToolType;
   title: string | null;
@@ -118,6 +120,8 @@ type ToolCallProps = {
 };
 
 export default function ToolCall({
+  callId,
+  subagentWorking,
   name,
   toolType,
   title,
@@ -359,11 +363,8 @@ export default function ToolCall({
         {/* The shimmer is the running state; it stops the moment the result
             lands, so a settled row is plain text again. The label carries the
             same information in its tense — "Reading" then "Read". */}
-        {/* A delegated run gets the orb the subagent row carries, for the same
-            reason: the reader is waiting on a whole agent rather than on a
-            call, and this is the one tool row where that is true. */}
-        {pending && toolType === "subagent_spawn" && (
-          <Orb state="working" variant="gyro" />
+        {toolType === "subagent_spawn" && (
+          <BotAvatar seed={callId} working={subagentWorking ?? pending} />
         )}
 
         {/* One inline flow for a delegated run, three flex items for everything

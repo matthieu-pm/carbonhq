@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { ChevronRight, Square } from "lucide-react";
 
+import BotAvatar from "@/components/BotAvatar";
 import EventRow from "@/components/chat/EventRow";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -109,9 +110,7 @@ function hasBrief(spawn: AgentEvent): boolean {
 
 /// One run: what it is doing on the row, what it did underneath.
 ///
-/// No icon and no tool name. Every row here is a subagent, so an icon repeated
-/// down the list distinguishes nothing, and the name is the harness's word for
-/// the mechanism ("Task", "local_bash") rather than for the work.
+/// Its character matches the conversation row; the description names the work.
 function RunRow({
   run,
   open,
@@ -183,9 +182,8 @@ function RunRow({
             />
           )}
 
-          {/* The shimmer stands in for the orb the chat row carries: at this text
-              size the orb is taller than the row it sits in, and a list of them
-              animating at once is the panel's loudest element. */}
+          <BotAvatar seed={run.id} working={!run.done && live} />
+
           <span
             className={cn(
               "min-w-0 flex-1 truncate",
@@ -245,7 +243,7 @@ function RunRow({
           ) : (
             run.spawn &&
             hasBrief(run.spawn) && (
-              <EventRow event={run.spawn} resultByCallId={resultByCallId} openTool />
+              <EventRow event={run.spawn} resultByCallId={resultByCallId} openTool subagentWorking={!run.done && live} />
             )
           )}
 
