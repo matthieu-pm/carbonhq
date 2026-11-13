@@ -2,9 +2,9 @@
 
 Spaces is the document workspace on Cmd+P, opened from the rail. It fills the shell's sheet, its own sidebar included, beside the shared rail. Pages are Markdown documents. Profiles is the previous Spaces feature; its serialized project field and local storage keys keep their old spellings so no migration can lose grouping settings.
 
-## Feature flag
+## Availability
 
-Pages and Spaces are unfinished and disabled by default. The owning server reads `pagesEnabled` from `settings.json`; an absent or false value disables Page commands, assets and Linear sync. The local flag also hides Spaces, the Page picker and Cmd+P. Profiles stays available. To test, set `{"pagesEnabled": true}` in an isolated server’s settings file and reconnect the frontend. Keep the real installation off.
+Spaces and Pages are available in beta.5, including on profiles saved by earlier betas. The old `pagesEnabled` setting is retained for compatibility with older builds and no longer hides Spaces or blocks Page commands, assets or linked Linear document sync. The frontend still reads server feature availability so it can connect to older servers.
 
 ## Sidebar and table
 

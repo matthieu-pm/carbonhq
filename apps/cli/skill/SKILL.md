@@ -253,13 +253,10 @@ unless the user asks.
 
 ## Markdown Pages
 
-Pages requires the owning server’s `pagesEnabled` feature flag, which defaults to false.
-
-Pages is behind a release flag and is off by default. For an explicit test,
-set `"pagesEnabled": true` in Carbon's configuration `settings.json`; preserve
-the file's other fields. An isolated server reads this from
-`<CARBON_HOME>/settings.json`. Removing the flag disables Page reads, writes,
-attachments and background sync without deleting any documents.
+Spaces and Pages ship with desktop beta.5 and later. They are available on fresh
+installs and existing profiles without changing `settings.json`. Older servers
+may still require `"pagesEnabled": true`; reconnect after changing an older
+server's configuration. Use the owning server's reported availability.
 
 Spaces holds Markdown documents independently of sessions and worktrees. A Page
 can link to several projects; each link names the same document. Existing project

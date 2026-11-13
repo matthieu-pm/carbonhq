@@ -419,7 +419,6 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-            if !crate::settings::get_feature_flags().await.pages_enabled { continue; }
             if let Err(error) = crate::pages_sync::sync_linked_pages(page_sync_sink.clone()).await {
                 eprintln!("[page sync err] {error}");
             }
@@ -929,9 +928,6 @@ async fn file(stream: TcpStream, token: &str) -> Result<()> {
 async fn servable(path: &str) -> Option<PathBuf> {
     let home = store::get_home_app_dir().await.ok()?;
     let real = tokio::fs::canonicalize(path).await.ok()?;
-    if let Ok(pages) = tokio::fs::canonicalize(home.join("attachments/pages")).await {
-        if real.starts_with(pages) && !crate::settings::get_feature_flags().await.pages_enabled { return None; }
-    }
     if let Some(real) = servable_under(&home, path).await {
         return Some(real);
     }
@@ -1276,9 +1272,6 @@ async fn dispatch_mac(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value
 /// server's own desktop: opening apps and terminals, and the pasteboard.
 /// Mac-only modules are not compiled here.
 async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
-    if crate::pages::owns_command(cmd) {
-        crate::settings::require_pages_enabled().await.map_err(|error| json!(error))?;
-    }
     #[cfg(feature = "desktop")]
     if matches!(
         cmd,
@@ -1535,21 +1528,6 @@ mod tests {
             assert_eq!(content_type(std::path::Path::new(&format!("audio.{extension}"))), mime);
         }
         assert_eq!(content_type(std::path::Path::new("active.svg")), "application/octet-stream");
-    }
-
-    #[test]
-    fn every_registered_pages_command_is_behind_the_release_gate() {
-        let source = include_str!("serve.rs");
-        let mut count = 0;
-        for line in source.lines() {
-            let Some((declaration, implementation)) = line.split_once("=>") else { continue };
-            if !implementation.trim().starts_with("crate::pages::") && !implementation.trim().starts_with("crate::pages_sync::") { continue; }
-            let command = declaration.split_once('(').unwrap().0.trim();
-            assert!(crate::pages::owns_command(command), "{command} bypasses the Pages feature flag");
-            count += 1;
-        }
-        assert!(count > 10);
-        assert!(!crate::pages::owns_command("get_feature_flags"));
     }
 
     #[test]

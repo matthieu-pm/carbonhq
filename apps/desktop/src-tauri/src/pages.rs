@@ -24,30 +24,6 @@ static WRITE_LOCK: Mutex<()> = Mutex::const_new(());
 pub const PAGES_CHANGED: &str = "pages_changed";
 pub const PAGE_ASSETS_CHANGED: &str = "page_assets_changed";
 
-/// The serve gate covers provider reads as well as local documents and attachment writes.
-pub(crate) fn owns_command(command: &str) -> bool {
-    matches!(
-        command,
-        "list_pages"
-            | "read_page"
-            | "create_page"
-            | "update_page"
-            | "set_page_trashed"
-            | "page_history"
-            | "read_page_version"
-            | "restore_page_version"
-            | "page_backlinks"
-            | "list_page_assets"
-            | "write_page_asset"
-            | "list_linear_documents"
-            | "read_linear_document"
-            | "import_linear_document"
-            | "page_sync_status"
-            | "sync_linear_page"
-            | "unlink_linear_page"
-    )
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "events.ts")]
@@ -189,7 +165,6 @@ struct PagesStore {
 
 impl PagesStore {
     async fn open() -> Result<Self, String> {
-        crate::settings::require_pages_enabled().await?;
         let home = crate::store::get_home_app_dir()
             .await
             .map_err(|e| e.to_string())?;
@@ -752,7 +727,6 @@ pub async fn request(
     request: carbon_proto::PageRequest,
     sink: &Sink,
 ) -> Result<serde_json::Value, String> {
-    crate::settings::require_pages_enabled().await?;
     use carbon_proto::PageRequest;
     let value = match request {
         PageRequest::List {

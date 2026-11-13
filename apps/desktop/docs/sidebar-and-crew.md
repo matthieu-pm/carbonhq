@@ -1,6 +1,6 @@
 # The rail
 
-**An always-on column at the window's left edge** ([Rail.tsx](../src/components/layout/Rail.tsx)) — Home, Spaces (only while `pagesEnabled`), Issues, and usage and Settings at the foot. It names *where* you are; the sidebar names *what* is in it. Home is the new task page, so it goes through `goToSession` like every other way into a task. Issues and Spaces left the sidebar for it: each is a page, and a row for one in a list of tasks read as a task.
+**An always-on column at the window's left edge** ([Rail.tsx](../src/components/layout/Rail.tsx)) — Home, Spaces, Issues, and usage and Settings at the foot. It names *where* you are; the sidebar names *what* is in it. Home is the new task page, so it goes through `goToSession` like every other way into a task. Issues and Spaces left the sidebar for it: each is a page, and a row for one in a list of tasks read as a task.
 
 **The sidebar sits in the sheet, not on the frame.** A strip of the same card at half the frame's scrim, so list and conversation read as one place to work with the rail outside it. ⌘B hides the strip; the rail stays. **Spaces takes the whole sheet, sidebar included** (`AppShell`'s `page`), since it brings a sidebar of its own — the task shell stays mounted and hidden under it, the settings page's bargain. Settings itself still draws its list on the frame: a shell given no `rail` keeps the older shape.
 

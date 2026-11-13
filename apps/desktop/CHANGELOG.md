@@ -22,6 +22,33 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.30.0-beta.5 · 2026-11-13 · notify
+
+### New
+
+- **Spaces.** Write Markdown Pages, organize documents by project and use them
+  as context in tasks. Spaces is available from the rail on new and existing installs.
+- **Home dashboard.** Start a task from the home composer and see activity,
+  usage and project progress together, including settled sessions.
+- **Shared skills.** Share a skill with every agent from Settings, and manage
+  shared skill names and locations in one place.
+
+### Improved
+
+- **Crew in the pinned summary.** See active crew members and completed member
+  avatars beside the task summary. Open their conversations directly.
+- **Agent avatars.** Subagents and crew sessions have distinct bot avatars.
+- **Activity.** Blue activity squares and token spending make recent work
+  easier to read.
+- **Carbon dark.** A background photo shows through the content cards, with
+  matching surfaces across new tasks and Spaces.
+- **Session branches.** Session details follow branch changes as work moves.
+
+### Fixed
+
+- The new-task composer stays in place when a harness update appears.
+- Codex sessions recorded with zero tokens are recounted in activity totals.
+
 ## 0.30.0-beta.4 · 2026-11-11 · notify
 
 ### Fixed

@@ -3,7 +3,7 @@ import { invoke, listen, LOCAL } from "@/lib/transport";
 
 import type { FeatureFlags } from "@/types/events";
 
-/// The local server decides which unfinished features this app exposes; failures stay off.
+/// The local server reports feature availability; older servers can still withhold Spaces.
 export function useFeatureFlags(): FeatureFlags {
   const [flags, setFlags] = useState<FeatureFlags>({ pagesEnabled: false });
   useEffect(() => {
