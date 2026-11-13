@@ -74,7 +74,6 @@ import { handoffActions } from "@/lib/handoff";
 import { prTabVisible, usePullRequest } from "@/hooks/usePullRequest";
 import RightPanel, {
   MountOnce,
-  PANEL_MIN,
   PanelActions,
   PanelToggle,
   TabBody,
@@ -83,13 +82,10 @@ import RightPanel, {
   type PanelTab,
 } from "@/components/RightPanel";
 import {
-  CHAT_MIN,
   useChatColumnFloor,
   usePaneWidth,
-  useViewportWidth,
 } from "@/components/ResizeHandle";
 import Sidebar, {
-  SIDEBAR_MIN,
   SEARCH_INPUT_ID,
   SettingsButton,
   SidebarToggle,
@@ -101,7 +97,7 @@ import Sidebar, {
 } from "@/components/Sidebar";
 import { useChord } from "@/hooks/useShortcuts";
 import { type Chord, formatChords } from "@/lib/shortcuts";
-import Crew, { CREW_STACK_WITH_PANEL_W, CREW_W } from "@/components/Crew";
+import Crew from "@/components/Crew";
 import SplitView, { DragGhost, DropZone, type PaneChat } from "@/components/SplitView";
 import { DROP_ATTR, useSessionDrag, type DropTarget } from "@/lib/dragSession";
 import {
@@ -1019,63 +1015,21 @@ function App() {
     () => crewRows(visibleSessions, crewAnchorId, { statusBySession, askingSessions }),
     [visibleSessions, crewAnchorId, statusBySession, askingSessions],
   );
-  // Whether this conversation has a crew to draw at all, and whether the reader
-  // wants it drawn. The second is ⌘⇧C and nothing else: no button, since a
-  // permanent control in the titlebar would be chrome for a thing most
-  // conversations never have. Stated cost — hidden, the column is reachable
-  // only by somebody who remembers the chord.
-  //
-  // Kept per conversation and in memory, the shape `panelOpens` above takes
-  // and for its reason: what the column *holds* differs from one conversation
-  // to the next, so a reader who put away a fan-out of six has said nothing
-  // about the next one. Keyed on the anchor, since that is whose crew it is.
-  // Not persisted, so a conversation never opened holds no entry and the map
-  // cannot outgrow the session list.
-  //
-  // Three readings of one thing, and the split matters. `crewUp` is the
-  // *arrangement* — what the main column is drawing and what the composer is
-  // pointed at — and it deliberately does not ask which view tab is on screen:
-  // tab bodies hide rather than unmount, so a flip to Files with a row focused
-  // would otherwise swap the hidden transcript for that row's and swap it back
-  // on return, taking the scroll pin and the mounted turns with it both ways.
-  // `crewDrawn` is the column itself, which is the reading every gate on being
-  // *seen* takes.
-  // A grouped *anchor* has no crew: its column is already several
-  // conversations side by side, so there is nowhere for the list to go. The
-  // question is asked of the anchor and never of the selection — a child that
-  // happens to sit in a split group would otherwise swap the whole column for
-  // that group the moment its row was clicked, which is the arrangement
-  // leaving on the one gesture that is supposed to stay inside it.
   const crewExists = crew.length > 0 && !groupOf(spaceGroups, crewAnchorId);
-  const crewAvailable = crewExists && !issuesOpen && viewTab === "chat";
-  // **Beside the chat only where it fits, judged on minimums alone.** The
-  // crew never gives width back, so on a narrow window it crushed the sidebar
-  // to a sliver. Measured off the sidebar's *drawn* width this would chase
-  // itself — the crew's floor is what clamps that width — so it reads the
-  // floor. Where it does not fit it starts hidden and ⌘⇧C stacks it under the
-  // transcript instead; an explicit toggle outranks the default either way.
-  // The panel counts as the crew would leave it — under the anchor's key, see
-  // `panelKey` below — since reading `panelOpen` itself would loop back here.
-  // The sidebar counts at its drawn width, since the panel yields to it and a
-  // widened sidebar would otherwise leave the panel a sliver; floored at its
-  // minimum, because narrowing the window clamps that width under it.
-  // Up to a 14" MacBook's width, an open panel stacks the crew even where the
-  // minimums fit: all four at their floors reads as cramped, not as fitting.
-  // That case still starts shown — it fits, it is only drawn somewhere else.
-  const crewPanelOpen = !!(crewAnchorId && panelOpens[crewAnchorId]) && !issuesOpen;
-  const sidebarW = Math.max(SIDEBAR_MIN, usePaneWidth("sidebar"));
-  // What the sidebar is drawn at, 0 while shut or floating: past the rail,
-  // where the content column starts.
-  const sidebarDrawn = usePaneWidth("sidebar");
-  const viewportW = useViewportWidth();
-  const crewFits =
-    viewportW >=
-    RAIL_W + CHAT_MIN + CREW_W + (collapsed ? 0 : sidebarW) + (crewPanelOpen ? PANEL_MIN : 0);
-  const crewBeside = crewFits && !(crewPanelOpen && viewportW <= CREW_STACK_WITH_PANEL_W);
+  const summaryEligible = !issuesOpen && !spacesOpen && !settingsOpen && viewTab === "chat" && selectedSessionId !== null;
+  // The anchor owns the summary choice, so focusing a child keeps the rail or popover open.
+  const summaryId = (crewExists && crewAnchorId) || selectedSessionId;
+  const summary = usePinnedSummary(summaryId, summaryEligible, crewExists || !activeGroup);
+  const summaryShown = summary.open;
+  const crewAvailable = crewExists && summaryEligible;
   const [crewHiddenBy, setCrewHiddenBy] = useState<Record<string, boolean>>({});
-  const crewHidden = !!crewAnchorId && (crewHiddenBy[crewAnchorId] ?? !crewFits);
-  const crewUp = crewExists && !crewHidden;
-  const crewDrawn = crewAvailable && !crewHidden;
+  const crewHidden = !!crewAnchorId && !!crewHiddenBy[crewAnchorId];
+  // Hidden page bodies retain the layout last shown on the chat page.
+  const crewSummaryShown = useRef(false);
+  if (summaryEligible) crewSummaryShown.current = summaryShown;
+  const crewUp = crewExists && !crewHidden && crewSummaryShown.current;
+  const crewDrawn = crewAvailable && !crewHidden && summaryShown;
+  const sidebarDrawn = usePaneWidth("sidebar");
 
   // **Whose preference the right pane follows.** A split group is one
   // arrangement and answers under the group's id; the crew is the same shape —
@@ -1133,17 +1087,16 @@ function App() {
   /// preference is kept, so coming back restores the pane exactly as it was;
   /// everything that draws or reads reads this instead.
   const panelShown = panelOpen && !issuesOpen;
-  // One conversation keeps a readable floor whatever the panes beside it are
-  // dragged to; a split holds several deliberately small ones, so the same
-  // floor there would refuse the layout the reader asked for. The crew rides
-  // on top of it because it is fixed-width and never gives any of it back.
-  // What the main column is actually showing. With a crew up that is the
-  // anchor, which `crewExists` has already established is in no group.
   const mainGroup = crewUp ? null : activeGroup;
-  useChatColumnFloor(!mainGroup, crewDrawn && crewBeside ? CREW_W : 0);
+  useChatColumnFloor(!mainGroup);
 
+  const setCrewVisible = (visible: boolean) => {
+    if (crewAnchorId) setCrewHiddenBy((prev) => ({ ...prev, [crewAnchorId]: !visible }));
+  };
   const toggleCrew = () => {
-    if (crewAnchorId) setCrewHiddenBy((prev) => ({ ...prev, [crewAnchorId]: !crewHidden }));
+    const show = !summaryShown || crewHidden;
+    setCrewVisible(show);
+    if (show) summary.setOpen(true);
   };
 
   // **The main column keeps drawing the anchor, whatever is selected.** That is
@@ -1417,12 +1370,6 @@ function App() {
   // are merged: the pick is unset, the default resolves to Changes, and this
   // reads true — harmless, because a merged PR never settles and the poll is
   // gated on that too.
-  const summary = usePinnedSummary(
-    selectedSessionId,
-    !issuesOpen && viewTab === "chat" && selectedSession !== null,
-    !mainGroup && !crewDrawn,
-  );
-  const summaryShown = summary.open;
   const sources = useMemo(() => summarySources(selectedSession?.events ?? []), [selectedSession?.events]);
   const pullRequests = usePullRequest(
     selectedSession?.cwd ?? "",
@@ -3003,22 +2950,28 @@ function App() {
         ? shownSession.title
         : `${basename(shownSession.projectPath)} / ${shownSession.title}`
     : "New Task";
-  const summaryCard = selectedSession && (
+  const summaryCard = shownSession && (
     <PinnedSummary
-      key={selectedSession.sessionId}
-      sessionId={selectedSession.sessionId}
-      project={basename(selectedSession.projectPath)}
-      cwd={selectedSession.cwd}
-      environment={serverName(serverOfPath(selectedSession.cwd))}
+      key={summaryId}
+      sessionId={shownSession.sessionId}
+      project={basename(shownSession.projectPath)}
+      cwd={shownSession.cwd}
+      environment={serverName(serverOfPath(shownSession.cwd))}
       branch={prBranch || null}
-      worktree={selectedSession.worktreeName}
-      harness={selectedSession.harness}
+      worktree={shownSession.worktreeName}
+      harness={shownSession.harness}
       changes={shownChanges.changes}
       changesLoading={shownChanges.loading}
       changesError={shownChanges.error}
       prs={pullRequests.prs}
       prsLoading={pullRequests.loading}
       prsError={pullRequests.error}
+      crew={crewExists ? <Crew rows={crew} open={crewOpen} selectedId={selectedSessionId}
+        paneState={paneState} prFor={prMarks.prFor} onToggle={toggleCrewRow} onFocus={focusSession}
+        onOpenInMain={openCrewRowInMain} onShowInSidebar={(id) => void setSessionFlags(id, { hidden: false })}
+        composing={composing} active={crewDrawn} chat={paneChat} /> : undefined}
+      crewVisible={!crewHidden}
+      onCrewVisibleChange={setCrewVisible}
       subagents={subagents}
       todos={sessionTodos}
       busy={busy}
@@ -3028,7 +2981,7 @@ function App() {
       open={summary.open}
       docked={summary.docks && !panelShown}
       onOpen={(tab) => { summary.closePopover(); showPanel(tab); }}
-      onManageSources={serverOfPath(selectedSession.cwd) === LOCAL ? () => { summary.closePopover(); setSettingsTab("mcp"); setSettingsOpen(true); } : undefined}
+      onManageSources={serverOfPath(shownSession.cwd) === LOCAL ? () => { summary.closePopover(); setSettingsTab("mcp"); setSettingsOpen(true); } : undefined}
       onHide={() => summary.setOpen(false)}
     />
   );
@@ -3105,32 +3058,8 @@ function App() {
       summaryDocked={summary.docks && !panelShown}
       summary={summary.mode === "pinned" && !issuesOpen && viewTab === "chat" ? summaryCard : null}
       summaryOpen={summaryShown}
-      summaryKey={selectedSessionId ?? undefined}
+      summaryKey={summaryId ?? undefined}
       overlay={singleDrop && <DropZone region={singleDrop.region} label={singleDrop.label} />}
-      // Chat's alone, and not a `TabBody` — the other views answer questions
-      // about a repository rather than about a conversation, and a split is
-      // already several conversations side by side, where a crew beside one
-      // pane of it would be a third arrangement of the same column.
-      crewStacked={!crewBeside}
-      crew={
-        crewDrawn ? (
-          <Crew
-            stacked={!crewBeside}
-            rows={crew}
-            open={crewOpen}
-            selectedId={selectedSessionId}
-            paneState={paneState}
-            prFor={prMarks.prFor}
-            onToggle={toggleCrewRow}
-            onFocus={focusSession}
-            onOpenInMain={openCrewRowInMain}
-            onShowInSidebar={(id) => void setSessionFlags(id, { hidden: false })}
-            composing={composing}
-            active={!issuesOpen && viewTab === "chat"}
-            chat={paneChat}
-          />
-        ) : undefined
-      }
       sidebar={
         <Sidebar
           items={searchedSessions}

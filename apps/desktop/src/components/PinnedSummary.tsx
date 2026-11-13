@@ -78,6 +78,9 @@ type Props = {
   prsLoading: boolean;
   prsError: PrUnavailable | null;
   subagents: SubagentRun[];
+  crew?: ReactNode;
+  crewVisible?: boolean;
+  onCrewVisibleChange?: (visible: boolean) => void;
   /// The agent's current task list, `null` where it keeps none.
   todos?: Todo[] | null;
   busy: boolean;
@@ -120,7 +123,7 @@ function SummarySection({ title, action, children }: { title?: string; action?: 
 /// Details follow the conversation's real data; empty sections take no space.
 export default function PinnedSummary({
   sessionId, project, cwd, environment, branch, worktree, harness, changes, changesLoading, changesError,
-  prs, prsLoading, prsError, subagents, todos = null, busy, liveTaskIds, sources, context, open, docked = false,
+  prs, prsLoading, prsError, subagents, crew, crewVisible = true, onCrewVisibleChange, todos = null, busy, liveTaskIds, sources, context, open, docked = false,
   onOpen, onManageSources, onHide,
 }: Props) {
   const [allSources, setAllSources] = useState(false);
@@ -142,7 +145,8 @@ export default function PinnedSummary({
   const breakdown = useContextBreakdown(sessionId, open && harness === "claude_code" && visible("context"), `${context?.used}:${busy}`);
   const showContext = visible("context") && (context !== null || breakdown !== null);
   const tasks = visible("tasks") && todos?.length ? todos : null;
-  const empty = !showWorkspace && !showGit && !showPrs && !tasks && !(visible("subagents") && subagents.length) && !showSources && !showContext;
+  const showCrew = !!crew && crewVisible;
+  const empty = !showCrew && !showWorkspace && !showGit && !showPrs && !tasks && !(visible("subagents") && subagents.length) && !showSources && !showContext;
   const hide = () => {
     onHide();
     requestAnimationFrame(() => document.getElementById("pinned-summary-toggle")?.focus());
@@ -170,8 +174,12 @@ export default function PinnedSummary({
               onCheckedChange={(checked) => setItems((prev) => setSummaryItem(prev, item.id, checked))}>
               {item.label}
             </DropdownMenuCheckboxItem>)}
+            {crew && <DropdownMenuCheckboxItem checked={crewVisible}
+              onSelect={(event) => event.preventDefault()} onCheckedChange={onCrewVisibleChange}>
+              Crew
+            </DropdownMenuCheckboxItem>}
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={SUMMARY_ITEMS.every((item) => visible(item.id) === item.defaultVisible)} onSelect={() => setItems({})}>Reset to default</DropdownMenuItem>
+            <DropdownMenuItem disabled={SUMMARY_ITEMS.every((item) => visible(item.id) === item.defaultVisible) && (!crew || crewVisible)} onSelect={() => { setItems({}); onCrewVisibleChange?.(true); }}>Reset to default</DropdownMenuItem>
             <DropdownMenuItem onSelect={hide}>Hide pinned summary</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -212,6 +220,8 @@ export default function PinnedSummary({
             {allPrs ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}{allPrs ? "Show less" : `Show ${prs.length - 1} more`}
           </button>}
         </SummarySection>}
+
+        {showCrew && <SummarySection title="Crew">{crew}</SummarySection>}
 
         {tasks && <SummarySection title="Tasks" action={<span className="text-xs tabular-nums text-muted-foreground">
           {tasks.filter((todo) => todo.status === "completed").length}/{tasks.length}

@@ -35,14 +35,6 @@ type AppShellProps = {
   /// The panel is open. It stays mounted while shut, so its card has to be
   /// told rather than read off the element.
   panelOpen?: boolean;
-  /// The crew — the sessions this conversation started — when it has any. Inside
-  /// the main column so it comes and goes with the view tabs, outside the chat
-  /// column for the panel's reason: a composer spanning a list of other
-  /// conversations does not say which one it talks to.
-  crew?: ReactNode;
-  /// The window has no room for the crew beside the chat, so it is drawn
-  /// between the transcript and the composer instead.
-  crewStacked?: boolean;
   /// Holds the composer in the middle of the available column and drops the
   /// transcript pane. The empty state has no transcript to anchor the composer
   /// against, so pinning it to the bottom leaves the one usable control as far
@@ -81,8 +73,6 @@ export default function AppShell({
   panel,
   panelLeft = false,
   panelOpen = false,
-  crew,
-  crewStacked = false,
   centered = false,
   home,
   overlay,
@@ -178,9 +168,6 @@ export default function AppShell({
               {overlay}
             </div>
           ) : (
-            // The crew runs the full height beside both, so its rows get the
-            // composer's band too rather than stopping short of it at a line
-            // nothing else on screen is drawn to.
             <div className="relative flex min-h-0 flex-1">
               <div className="conversation-column flex min-w-0 flex-1 flex-col">
                 {/* `flex flex-col` so the view tabs' bodies, which size themselves
@@ -193,10 +180,8 @@ export default function AppShell({
                       aria-label="Conversation summary" aria-hidden={!summaryOpen} inert={!summaryOpen}>{summary}</aside>}
                   </div>
                 </div>
-                {crewStacked && crew}
                 <div className="conversation-footer shrink-0">{footer}</div>
               </div>
-              {!crewStacked && crew}
               {summary && summaryDocked && <aside key={summaryKey} className="conversation-rail" data-state={summaryOpen ? "open" : "closed"}
                 aria-label="Conversation summary" aria-hidden={!summaryOpen} inert={!summaryOpen}>
                 {/* Stands where the panel would, as the sidebar's strip mirrored: same fill, a hairline toward the chat. */}

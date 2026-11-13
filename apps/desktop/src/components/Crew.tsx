@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
-import { CircleDashed, Eye, MousePointerClick } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CircleDashed, Eye } from "lucide-react";
 
 import BotAvatar from "@/components/BotAvatar";
 import Chat from "@/components/Chat";
@@ -14,10 +14,7 @@ import PermissionRequest from "@/components/chat/PermissionRequest";
 import QuestionRequest from "@/components/chat/QuestionRequest";
 import Orb from "@/components/Orb";
 import PrStateIcon, { prStateLabel } from "@/components/PrStateIcon";
-import { HINT_KEYS } from "@/components/Sidebar";
 import type { PaneChat } from "@/components/SplitView";
-import ShortcutKeys from "@/components/ShortcutKeys";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { PaneState } from "@/hooks/useSessions";
 import type { CrewRow } from "@/lib/crew";
@@ -28,289 +25,73 @@ import { CREW_TAIL } from "@/lib/turnWindow";
 import { cn } from "@/lib/utils";
 import type { AgentEvent, PrMark } from "@/types/events";
 
-/// The crew's width, fixed — not a share, and not draggable.
-///
-/// A split pane bids for width against its neighbour and the reader arbitrates,
-/// because both sides are places to work. This column is a place to work *from*:
-/// it is the one conversation's list of what it has running, so a watcher that
-/// can take half the window is a second workspace nobody asked for. 320 is the
-/// sidebar's own order of width, which is the right comparison — a list of
-/// sessions with somewhere to answer them, beside the conversation that started
-/// them.
-export const CREW_W = 320;
-/** Widest window on which an open right panel stacks the crew: a 14" MacBook. */
-export const CREW_STACK_WITH_PANEL_W = 1512;
-
 type CrewProps = {
   rows: CrewRow[];
-  /// The rows the *reader* opened. A row a question opened is not in here —
-  /// see `expanded` below, which is what keeps the set meaning one thing.
   open: ReadonlySet<string>;
   selectedId: string | null;
   paneState: (sessionId: string) => PaneState;
-  /// The app's own, taking repo and branch — a branch name says nothing about
-  /// which checkout it belongs to. Fed the index's recorded branch like the
-  /// sidebar rows are, and deliberately: reading the observed HEAD instead is
-  /// one child process per row.
   prFor: (repoPath: string, branch: string | null) => PrMark | undefined;
   onToggle: (sessionId: string) => void;
   onFocus: (sessionId: string) => void;
-  /// ⌘-click: leave the crew and open this session as an ordinary full-width
-  /// one. The only way *out* of the arrangement from inside it — everything
-  /// else here keeps the conversation that started these on the left.
   onOpenInMain: (sessionId: string) => void;
-  /// Right-click on a hidden row: list it in the sidebar too.
   onShowInSidebar: (sessionId: string) => void;
-  /// A draft is standing in the selected session, so every other transcript
-  /// gives way. The split grid's own rule, read off the same store, and the
-  /// *emptiness* alone — subscribing to the text would rerender every mounted
-  /// transcript on every keystroke.
   composing: boolean;
   active: boolean;
   chat: PaneChat;
-  /// Drawn under the transcript rather than beside it — see `crewBeside` in
-  /// `App`. Full width and capped in height, so the transcript keeps the most.
-  stacked?: boolean;
 };
 
-/// The sessions the conversation on the left started, one strip each, with the
-/// composer serving whichever of them is selected. Its own, not everything
-/// downstream of it — see [`crewRows`].
-///
-/// **A split view in its relationship, not in its layout.** Parent and child
-/// are exactly the pair the split grid is built for, so the same rules hold
-/// here: one composer serves the focused transcript, clicking into a transcript
-/// is what focuses it, and every other one gives way while a draft is standing.
-/// A reader who has learnt the grid has learnt this.
-///
-/// Two things are its own. The width is fixed rather than bid for
-/// ([`CREW_W`]), and **the main column never changes** — opening a row draws
-/// the child's transcript *here*, beside the conversation it came out of,
-/// rather than taking that conversation's place. One transcript drawn twice on
-/// one screen is the thing this arrangement exists to avoid, and it is what
-/// makes the crew a place to orchestrate from rather than a slower way to
-/// switch sessions.
-///
-/// Lineage is deliberately absent. The sidebar draws the tree; a second one
-/// here would spend this column's left edge repeating what the list next to it
-/// already says, and could not be drawn honestly anyway — a connector between
-/// two headers is broken by whatever transcript is expanded between them.
+/// Crew rows share the summary's width and scroll; questions remain answerable here.
 export default function Crew({
-  rows,
-  open,
-  selectedId,
-  paneState,
-  prFor,
-  onToggle,
-  onFocus,
-  onOpenInMain,
-  onShowInSidebar,
-  composing,
-  active,
-  chat,
-  stacked = false,
+  rows, open, selectedId, paneState, prFor, onToggle, onFocus,
+  onOpenInMain, onShowInSidebar, composing, active, chat,
 }: CrewProps) {
-  const list = (
-    // **An edge, not a divider, and the ramp is what makes it one.** A flat
-    // border is what a split draws between two places to work, and this is one
-    // place with a list beside it — which is why there was none here at all for
-    // a while, and why a flat one drawn only while the right panel was out was
-    // the first attempt at a middle. Ramped, it stops being that argument: it
-    // is full strength at the composer's end and gone by the top, so it reads
-    // as this column having a side rather than as the screen being cut in two,
-    // and it says the same thing whether or not a panel is open. `--border` is
-    // already a 10% white, so the ramp is 0 to 100 *of that* — the panel's own
-    // flat `border-l border-border` in the same colour, arriving.
-    //
-    // `border-image` rather than a gradient on a pseudo-element: this column
-    // scrolls, and an absolutely-placed child is positioned against the padding
-    // box and would slide away up the list. A border is painted on the border
-    // box and stays. It costs `border-color` being ignored here, which is why
-    // the token is named inside the gradient instead.
-    //
-    // Scrolls, hint and all. A fan-out has no ceiling on how many sessions it
-    // starts, and the rows past the window's edge were simply clipped — with
-    // the chord that puts the column away clipped along with them. The hint
-    // scrolls with the list rather than being pinned under it, since it is the
-    // end of the list rather than a status bar.
-    <div
-      className={cn(
-        // Stacked, it must shrink to the wrapper's 40% to scroll inside it.
-        "flex min-h-0 flex-col overflow-y-auto",
-        !stacked && "shrink-0",
-        // Stacked, closed rows cap at five before scrolling: five plus the hint
-        // row (5 × h-8 + h-7), or five alone where the hint rides the first
-        // row. An open transcript or a card takes the wrapper's height instead
-        // — a card is taller than five rows, and capped it scrolled inside a
-        // 188px box, its question or its options out of sight (#588).
-        stacked
-          ? !rows.some((r) => open.has(r.item.sessionId) || r.asking) &&
-              "max-h-[11.75rem] @lg:max-h-40"
-          : "border-l [border-image:linear-gradient(to_bottom,transparent,var(--border))_1]",
-      )}
-      style={stacked ? undefined : { width: CREW_W }}
-    >
-      {/* No heading. The fixed width and the rows' own marks already say this is
-          a list rather than a workspace, and a label over five rows that each
-          name themselves is a row of chrome spent on the one thing nobody has
-          to be told. */}
-      {rows.map((row, i) => {
-        const id = row.item.sessionId;
-        // Two ways a row is open and they draw different things. `open` holds
-        // what the *reader* opened; a question opens its own row without going
-        // in there, so the set stays a record of what was asked for rather than
-        // of what happened to be on screen — which is what lets the toggle
-        // promote a card to its transcript.
-        const openFully = open.has(id);
-        const focused = selectedId === id;
-        const pane = paneState(id);
-        return (
-          <div
-            key={id}
-            className={cn(
-              "flex min-h-0 flex-col",
-              // Only a *transcript* bids for height. Open rows share what the
-              // strips leave, with no cap on how many may be open — a row
-              // closing under somebody mid-sentence to make room is worse than
-              // three tighter ones. A card is three lines and takes three.
-              // The floor is what keeps that honest once the column scrolls:
-              // `flex-1` shrinks to nothing before a flex container agrees to
-              // overflow, so enough closed rows would squeeze every open one to
-              // a line of its own header.
-              // A transcript still being read is not one yet: a row's first
-              // open is a round trip for its log, and growing on the click drew
-              // an empty box that filled when the read landed. Grown with the
-              // transcript instead, the rows below move once.
-              openFully && pane.session ? "min-h-64 flex-1" : "shrink-0",
-            )}
-          >
-            <div className="flex items-center">
-              <div className="min-w-0 flex-1">
-                <CrewHeader
-                  row={row}
-                  open={openFully}
-                  focused={focused}
-                  pr={prFor(row.item.projectPath, row.item.branch)}
-                  onToggle={() => onToggle(id)}
-                  onOpenInMain={() => onOpenInMain(id)}
-                  onShowInSidebar={() => onShowInSidebar(id)}
-                />
-              </div>
-              {/* Stacked, the list is as wide as the composer and the first
-                  row has room to spare, so the chord rides it rather than
-                  spending a line of its own. */}
-              {stacked && i === 0 && <CrewHint className="hidden gap-2 @lg:flex" />}
-            </div>
-            {(openFully || row.asking) && (
-              // Dimmed rather than veiled, the grid's own reading: a scrim is
-              // one more element to keep in step with the palette, where
-              // opacity recedes the transcript against whatever is behind it.
-              // The header keeps full strength, since it is what names the row
-              // — so the crew still reads as a list while one of it is being
-              // written to.
-              <div
-                // The transcript claims focus, the header does not — and the
-                // split is load-bearing rather than tidy. Pointerdown bubbles
-                // before the click it precedes, so a focus claim on the *row*
-                // fired before the header's own click could read `focused`,
-                // and collapsing somebody else's open row then bounced the
-                // composer to the anchor instead of leaving it where the
-                // reader had it. The header already focuses what it opens.
-                //
-                // A card alone claims nothing: answering it is a reply sent by
-                // id, not a move into that session, so the composer stays on
-                // the conversation the reader was in.
-                onPointerDown={() => openFully && !focused && onFocus(id)}
-                onFocus={() => openFully && !focused && onFocus(id)}
-                className={cn(
-                  "min-h-0 flex-1 transition-opacity duration-150 ease-out",
-                  composing && !focused && "opacity-35",
-                )}
-              >
-                {openFully ? (
-                  <Chat
-                    {...pane}
-                    {...chat}
-                    // Narrowest the transcript gets, and no checkpoint rail:
-                    // at 320 it would sit over the text.
-                    crowded
-                    rail={false}
-                    // The newest turn or two and nothing above them — a strip
-                    // is a look in on work happening elsewhere, and ⌘-click is
-                    // there for reading the rest of it.
-                    tail={CREW_TAIL}
-                    active={active && focused}
-                  />
-                ) : (
-                  <PendingCard
-                    row={row}
-                    events={pane.session?.events}
-                    chat={chat}
-                    onOpenInMain={() => onOpenInMain(id)}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* The chord, under the last row rather than pinned to the foot of the
-          column. There is no button for this anywhere, so without a line
-          saying so the crew could be put away by somebody with no way to get
-          it back — and under the rows it reads as the end of the list, where
-          at the window's bottom edge it read as a status bar the app had
-          grown. No `mt-auto`, deliberately: an open row already takes the rest
-          of the height and pushes this down on its own.
-
-          Drawn as the sidebar's own hint row — label left, held-back caps
-          right — since it is the same kind of sentence in the same kind of
-          list. Caps first was tried and is worse: the label is what the eye
-          reads, and leading with the chord makes the row start on the one part
-          of it nobody is looking for. "Toggle", not "hide": the chord is the
-          only way *back* too, and a hint naming one direction reads as a
-          control that only goes that way. */}
-      <CrewHint className={cn("flex justify-between", stacked && "@lg:hidden")} />
-    </div>
-  );
-
-  // Stacked, the wrapper lines the list up with the composer's column and is
-  // the container the hint's placement is asked of; `mb-2` keeps it off the
-  // handoff sliver. While a card is up the list takes the well's darker wash,
-  // fading top to bottom: the sheet's own fill read as more transcript, and a
-  // bordered card pulled more of the eye than the question deserves. A card may
-  // also take more of the column than a transcript, since it holds a turn until
-  // answered and has to be read whole. Not `shrink-0`: the composer is, so at
-  // that height a tall draft would push it out of the window. The transcript's
-  // zero basis still gives way first; the list scrolls once this does.
-  const asking = rows.some((r) => r.asking);
-  return stacked ? (
-    <div
-      className={cn(
-        "@container mx-auto mb-2 flex min-h-0 w-[calc(100%-2rem)] max-w-3xl flex-col overflow-hidden rounded-2xl",
-        asking
-          ? "max-h-[70%] bg-linear-to-b from-(--surface-well) to-transparent"
-          : "max-h-[40%]",
-      )}
-    >
-      {list}
-    </div>
-  ) : (
-    list
-  );
-}
-
-/// The chord's hint row: at the foot of the list, or beside the first row.
-function CrewHint({ className }: { className?: string }) {
+  const running = rows.filter((row) => row.busy || row.asking);
+  const done = rows.filter((row) => !row.busy && !row.asking);
+  const [doneExpanded, setDoneExpanded] = useState(false);
+  // A member finishing must not close the transcript somebody is already reading.
+  const expanded = doneExpanded || done.some((row) => open.has(row.item.sessionId));
+  const renderRow = (row: CrewRow) => {
+    const id = row.item.sessionId;
+    // A question opens its card without selecting the session or claiming the composer.
+    const openFully = open.has(id);
+    const focused = selectedId === id;
+    const pane = paneState(id);
+    return (
+      <div key={id} className="flex min-w-0 flex-col">
+        <CrewHeader row={row} focused={focused}
+          pr={prFor(row.item.projectPath, row.item.branch)}
+          onOpenInMain={() => onOpenInMain(id)}
+          onShowInSidebar={() => onShowInSidebar(id)} />
+        {(openFully || row.asking) && <div
+          onPointerDown={() => openFully && !focused && onFocus(id)}
+          onFocus={() => openFully && !focused && onFocus(id)}
+          className={cn("min-w-0 transition-opacity duration-150 ease-out",
+            openFully && "flex h-80 max-h-[60vh] min-h-0 flex-col overflow-hidden",
+            composing && !focused && "opacity-35")}>
+          {openFully ? <Chat {...pane} {...chat} crowded rail={false} tail={CREW_TAIL} active={active && focused} />
+            : <PendingCard row={row} events={pane.session?.events} chat={chat} onOpenInMain={() => onOpenInMain(id)} />}
+        </div>}
+      </div>
+    );
+  };
   return (
-    <div
-      className={cn(
-        "min-h-7 shrink-0 items-center px-3 text-ui text-muted-foreground/60",
-        className,
-      )}
-    >
-      Toggle crew
-      <ShortcutKeys ids={["crew.toggle"]} className={HINT_KEYS} />
+    <div className="flex min-w-0 flex-col">
+      {running.map(renderRow)}
+      {done.length > 0 && <>
+        <button type="button" aria-expanded={expanded}
+          aria-label={`${expanded ? "Hide" : "Show"} ${done.length} completed crew ${done.length === 1 ? "member" : "members"}`}
+          className="flex min-h-8 w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-1 text-left text-xs text-foreground/80 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          onClick={() => {
+            if (expanded) done.filter((row) => open.has(row.item.sessionId)).forEach((row) => onToggle(row.item.sessionId));
+            setDoneExpanded(!expanded);
+          }}>
+          <span className="flex shrink-0 -space-x-1">
+            {done.slice(0, 3).map((row) => <BotAvatar key={row.item.sessionId} seed={row.item.sessionId} />)}
+          </span>
+          <span className="flex-1">{done.length} done</span>
+        </button>
+        {expanded && done.map(renderRow)}
+      </>}
     </div>
   );
 }
@@ -323,9 +104,8 @@ function CrewHint({ className }: { className?: string }) {
 /// interruption proportionate: a question is three lines, where a transcript
 /// takes every open row's height to show a conversation nobody asked to see.
 ///
-/// The transcript is one click away: the header toggle puts the row in `open`.
-/// A row cannot be *shut* while it is asking, which is the same promise the
-/// yellow mark makes.
+/// The session header opens its full conversation. Answering the card keeps
+/// the reader here.
 function PendingCard({
   row,
   events,
@@ -412,22 +192,17 @@ function PendingCard({
   );
 }
 
-/// Title, state and what the branch has landing. No tree line, no elbow, no indent —
-/// see the note on [`Crew`].
+/// Crew rows open the full conversation while their question cards remain answerable here.
 function CrewHeader({
   row,
-  open,
   focused,
   pr,
-  onToggle,
   onOpenInMain,
   onShowInSidebar,
 }: {
   row: CrewRow;
-  open: boolean;
   focused: boolean;
   pr: PrMark | undefined;
-  onToggle: () => void;
   onOpenInMain: () => void;
   onShowInSidebar: () => void;
 }) {
@@ -457,13 +232,9 @@ function CrewHeader({
         <ContextMenuTrigger asChild disabled={!row.item.hidden}>
         <button
           type="button"
-          aria-expanded={open}
-          // ⌘ is the app's own "out there, not here" — the transcript's link
-          // dialog and the issue rows both spend it that way, and a row drawn
-          // in the main column instead of in its strip is that sentence again.
-          onClick={(e) => (e.metaKey || e.ctrlKey ? onOpenInMain() : onToggle())}
+          onClick={onOpenInMain}
           className={cn(
-            "group relative flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 pl-1.5 pr-3 text-left text-ui select-none",
+            "group relative flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-xs select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             // Selection is weight and colour, no fill. A filled row is how a
             // *list* marks the one thing it is showing, and in a column with no
             // borders it was the loudest shape on screen — a lit band across
@@ -517,32 +288,7 @@ function CrewHeader({
         </button>
         </ContextMenuTrigger>
       </TooltipTrigger>
-      {/* The click is a keycap rather than the word, so the whole gesture is
-          one chip pair the eye takes in at once, with the sentence left to say
-          only what happens. `aria-label` on the glyph, since it is the only
-          copy of that word.
-
-          It names ⌘-click alone and not the plain one: the row's own look says
-          it opens, and a tooltip repeating what a click does is the thing the
-          app's tooltip rule refuses. The PR state loses its `title` for the
-          same reason — a native tooltip inside a real one is two boxes racing,
-          and the glyph's `aria-label` is where that sentence belongs.
-
-          "Full view" and not "in the main chat", which was the old copy and
-          stopped being true: the main chat is the conversation that *started*
-          these, and ⌘-click does not put a row into it — it closes the crew
-          and gives the session the whole column, the way picking it out of the
-          sidebar would, and the change is the part the reader can see: a 320px
-          strip becoming the column. */}
-      <TooltipContent side="left">
-        <KbdGroup>
-          <Kbd>⌘</Kbd>
-          <Kbd aria-label="click">
-            <MousePointerClick />
-          </Kbd>
-        </KbdGroup>
-        to open in full view
-      </TooltipContent>
+      <TooltipContent side="left">Open conversation</TooltipContent>
     </Tooltip>
       <ContextMenuContent className="w-40">
         <ContextMenuItem className="text-ui" onSelect={onShowInSidebar}>
