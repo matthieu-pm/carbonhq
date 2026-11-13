@@ -1,0 +1,23 @@
+Welcome to the crew.
+
+Thanks for subscribing. You’re on the list for new releases, useful workflows, and a look at what we’re building.
+
+Carbon brings your coding agents into one app. Run them side by side, give each task its own worktree, and review the changes in one place.
+
+Download for macOS: https://carbonhq.sh/download/macos
+
+Your first session
+01 — Bring a project. Attach a repository or a folder you already work in.
+02 — Pick an agent. Choose a harness and model, then give it one clear task.
+03 — Follow the work. Read the conversation, inspect the changes, and keep your next task nearby.
+
+Read the first-session guide: https://carbonhq.sh/docs/get-started/first-session
+
+A little Carbon in your inbox.
+We’ll share what’s new and practical ways to get more from your agents. You can unsubscribe anytime.
+
+Thanks for being here,
+The Carbon crew
+
+You’re receiving this because you subscribed at carbonhq.sh.
+Unsubscribe: {{{RESEND_UNSUBSCRIBE_URL}}}

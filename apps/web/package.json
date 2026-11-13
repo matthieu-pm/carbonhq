@@ -7,7 +7,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:newsletter": "node --test scripts/newsletter.test.mjs",
+    "newsletter:setup": "node --env-file-if-exists=.env.local scripts/setup-newsletter.mjs",
+    "newsletter:templates": "node --env-file-if-exists=.env.local scripts/newsletter-templates.mjs",
+    "newsletter:welcome": "node --env-file-if-exists=.env.local scripts/welcome-email.mjs",
+    "newsletter:welcome-enable": "node --env-file-if-exists=.env.local scripts/enable-welcome.mjs"
   },
   "dependencies": {
     "@blobatar/react": "^2.7.0",
@@ -15,6 +20,7 @@
     "blobatar": "^2.7.0",
     "lucide-react": "^1.60.0",
     "next": "^16.4.2",
+    "open-bot-avatar": "0.2.1",
     "posthog-js": "^1.438.13",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

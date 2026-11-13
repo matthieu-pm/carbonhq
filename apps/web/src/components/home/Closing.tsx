@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 
 import { DownloadButton } from "@/components/DownloadButton";
+import { Newsletter } from "@/components/home/Newsletter";
 import { Title } from "@/components/home/Section";
 import { Stripes } from "@/components/home/Stripes";
 import { INSTALL_LINE, REPO } from "@/lib/links";
@@ -36,6 +37,7 @@ export function Closing() {
             <CopyLine />
           </Way>
         </div>
+        <Newsletter />
       </div>
 
       <footer className="relative mx-auto mt-[120px] flex w-full max-w-[960px] flex-col gap-4 pb-[220px] sm:flex-row sm:items-center sm:justify-between lg:mt-auto lg:pb-[276px]">

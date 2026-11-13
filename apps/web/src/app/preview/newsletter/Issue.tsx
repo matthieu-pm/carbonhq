@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
+import { AppleGlyph } from "@/components/AppleGlyph";
 
-import { Wordmark } from "@/components/Wordmark";
 import { INSTALL_LINE } from "@/lib/links";
 
 const LABEL = "font-mono text-[11px] leading-[14px] tracking-[0.06em] uppercase";
@@ -14,7 +14,7 @@ const GUTTER = "px-5 @md:px-10";
 /// The blocks of one issue, in reading order. Numbers match the pins on the
 /// annotated frame and the legend above it.
 export const BLOCKS = [
-  { name: "Masthead", note: "Preheader, wordmark, issue number. The preheader is what the inbox shows beside the subject." },
+  { name: "Masthead", note: "Preheader, logomark, issue number. The preheader is what the inbox shows beside the subject." },
   { name: "Lead", note: "One headline in the site's white-lead, grey-tail style, a hero image and one button." },
   { name: "Release notes", note: "Pulled from CHANGELOG.md, grouped New / Improved / Fixed with the changelog's own squares." },
   { name: "Feature deep-dive", note: "One feature, one GIF, two short paragraphs, one link to the docs." },
@@ -40,7 +40,7 @@ export function Issue({ annotate = false }: { annotate?: boolean }) {
           <a className={`${LABEL} ${MUTED} shrink-0`}>View online</a>
         </div>
         <div className={`flex items-center justify-between pt-8 pb-10 ${GUTTER}`}>
-          <Wordmark className={`h-[22px] w-auto ${STRONG}`} />
+          <img src="/icon-dark.svg" alt="Carbon" width={32} height={32} className="-ml-[3px] block size-8 light:invert" />
           <p className={`${LABEL} ${MUTED}`}>No. 07 · Nov 2026</p>
         </div>
       </header>
@@ -210,7 +210,8 @@ function Button({ children, inverted = false }: { children: ReactNode; inverted?
     ? "bg-white text-[#0B0B0F]"
     : "bg-white text-[#0B0B0F] light:bg-[#0A0A0A] light:text-white light:shadow-[0_1px_2px_#00000040]";
   return (
-    <a className={`inline-flex h-10 items-center rounded-[6px] px-4 text-[14px] leading-5 font-medium shadow-[inset_0_-1px_0_#4D4C4C,0_1px_2px_#00000040] ${fill}`}>
+    <a className={`inline-flex h-10 items-center gap-2 rounded-[6px] px-4 text-[14px] leading-5 font-medium shadow-[inset_0_-1px_0_#4D4C4C,0_1px_2px_#00000040] ${fill}`}>
+      {children === "Download for macOS" && <AppleGlyph className="-mt-0.5 size-4" />}
       {children}
     </a>
   );

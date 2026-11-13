@@ -1,0 +1,28 @@
+{
+  "from": "Carbon <newsletter@carbonhq.sh>",
+  "subject": "Welcome to Carbon",
+  "segment_id": "9b4c4628-3db6-47cc-a812-917bed54d053",
+  "template": {
+    "id": "76c1d11b-e4e2-4979-9ca3-121d6b249fbf",
+    "status": "published"
+  },
+  "broadcast": {
+    "id": "da601024-6bbd-4534-b70b-474af14f5a4f",
+    "status": "draft",
+    "subscribed_contacts_at_launch": 0
+  },
+  "event": {
+    "id": "01a1d6d4-1e0d-74bc-8f9e-37358dde5cf0",
+    "name": "carbon.newsletter.subscribed"
+  },
+  "automation": {
+    "id": "01a1d6d5-07e0-705d-893d-7be2dadbe152",
+    "status": "disabled",
+    "unused": true
+  },
+  "delivery": {
+    "method": "signup_email_api",
+    "property": "carbon_welcome",
+    "website_hook": "implemented"
+  }
+}

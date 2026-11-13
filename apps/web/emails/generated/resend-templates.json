@@ -1,0 +1,14 @@
+[
+  {
+    "id": "567f9e07-f69d-40e8-84e8-10747ac79271",
+    "name": "Carbon newsletter — Dark",
+    "alias": "carbon-newsletter-dark",
+    "status": "draft"
+  },
+  {
+    "id": "657cc5a9-a061-4b59-b959-6e3d5998d16b",
+    "name": "Carbon newsletter — Light",
+    "alias": "carbon-newsletter-light",
+    "status": "draft"
+  }
+]

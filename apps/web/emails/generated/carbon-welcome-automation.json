@@ -1,0 +1,29 @@
+{
+  "name": "Carbon welcome — future newsletter subscribers",
+  "status": "disabled",
+  "steps": [
+    {
+      "key": "signup",
+      "type": "trigger",
+      "config": {
+        "event_name": "carbon.newsletter.subscribed"
+      }
+    },
+    {
+      "key": "welcome",
+      "type": "send_email",
+      "config": {
+        "template": {
+          "id": "76c1d11b-e4e2-4979-9ca3-121d6b249fbf"
+        },
+        "from": "Carbon <newsletter@carbonhq.sh>"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": "signup",
+      "to": "welcome"
+    }
+  ]
+}

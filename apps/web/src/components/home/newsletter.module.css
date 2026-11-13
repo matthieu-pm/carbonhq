@@ -1,0 +1,62 @@
+.card {
+  display: grid;
+  gap: 28px;
+  padding: 28px 24px 30px;
+  border-bottom: 1px solid #ffffff4d;
+  background: #ffffff1a;
+}
+
+.copy { min-width: 0; }
+.eyebrow { font-family: var(--font-geist-mono), monospace; font-size: 11px; line-height: 14px; letter-spacing: .06em; text-transform: uppercase; color: #ffffffb3; }
+.title { margin-top: 6px; font-size: 20px; line-height: 26px; letter-spacing: -.02em; color: white; }
+.description { max-width: 320px; margin-top: 10px; font-size: 14px; line-height: 21px; color: #ffffffb3; }
+.form { align-self: end; min-width: 0; padding-block: 2px 24px; }
+.controls { display: flex; gap: 8px; }
+.field { position: relative; isolation: isolate; flex: 1; min-width: 0; overflow: hidden; border-radius: 6px; background: #0b0a6e; }
+.input { position: relative; width: 100%; height: 44px; border: 0; background: transparent; padding: 0 14px; color: white; font-size: 14px; outline: none; }
+.input::placeholder { color: #ffffff80; }
+.field:focus-within { outline: 2px solid white; outline-offset: 3px; }
+.dither { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; clip-path: inset(0 100% 0 0); }
+.dither[data-active="true"] { clip-path: inset(0); animation: fill 1200ms cubic-bezier(.45, 0, .2, 1) both; }
+.action { position: relative; flex-shrink: 0; }
+.subscribe { display: flex; align-items: center; justify-content: center; gap: 6px; width: 122px; height: 44px; border-radius: 6px; background: white; color: #0b0b0f; font-size: 14px; font-weight: 500; box-shadow: inset 0 -1px #4d4c4c, 0 1px 2px #00000040; cursor: pointer; transition: transform 150ms ease-out, opacity 150ms ease-out; }
+.subscribe:focus-visible { outline: 2px solid white; outline-offset: 4px; }
+.subscribe:active { transform: scale(.96); }
+.subscribe:disabled { cursor: default; }
+.note { display: flex; justify-content: space-between; align-items: start; gap: 10px; min-height: 34px; padding-top: 10px; color: #ffffffb3; font-size: 11px; line-height: 16px; }
+.honeypot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.crew { position: absolute; z-index: 2; top: -52px; left: 12px; width: 68px; height: 74px; pointer-events: none; transform: translate(0, 0); }
+.bot { display: block; width: 64px; height: 64px; }
+.cursor { position: absolute; left: 36px; top: 49px; filter: drop-shadow(0 1px 2px #0004); }
+.clickRing { position: absolute; left: 30px; top: 44px; width: 20px; height: 20px; border: 2px solid white; border-radius: 50%; opacity: 0; }
+.card[data-phase="crew"] .crew { animation: arrive 700ms cubic-bezier(.23, 1, .32, 1) both; }
+.card[data-phase="pressing"] .subscribe { transform: scale(.96); }
+.card[data-phase="pressing"] .cursor { transform: scale(.88); transform-origin: top left; }
+.card[data-phase="done"] .clickRing { animation: click 360ms ease-out both; }
+.card[data-phase="done"] .crew { animation: leave 240ms 700ms ease-out both; }
+.card[data-phase="done"] .subscribe { background: #e4ffed; color: #164629; }
+
+@media (hover: hover) and (pointer: fine) {
+  .subscribe:not(:disabled):hover { opacity: .9; }
+}
+
+@media (min-width: 640px) {
+  .card { grid-template-columns: 1fr 1fr; gap: 48px; min-height: 200px; border-inline: 1px solid #ffffff4d; }
+}
+
+@media (max-width: 380px) {
+  .card { padding-inline: 18px; }
+  .subscribe { width: 108px; }
+  .input { padding-inline: 10px; }
+}
+
+@keyframes fill { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes arrive { 0% { opacity: 0; transform: translate(-90px, -12px) rotate(-8deg); } 25% { opacity: 1; } 100% { opacity: 1; transform: translate(0, 0) rotate(0); } }
+@keyframes click { from { opacity: .8; transform: scale(.6); } to { opacity: 0; transform: scale(1.8); } }
+@keyframes leave { to { opacity: 0; transform: translateY(-8px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .dither[data-active="true"], .card[data-phase] .crew, .card[data-phase] .clickRing { animation: none; }
+  .card[data-phase="pressing"] .subscribe, .card[data-phase="pressing"] .cursor, .subscribe:active { transform: none; }
+  .subscribe { transition: none; }
+}
