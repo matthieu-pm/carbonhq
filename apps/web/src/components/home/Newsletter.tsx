@@ -105,7 +105,7 @@ export function Newsletter() {
             <button type="submit" className={s.subscribe} disabled={busy || phase === "done"}>
               {phase === "done" ? <><Check size={15} /> Subscribed</> : phase === "error" ? "Try again" : phase === "sending" ? "Subscribing…" : "Subscribe"}
             </button>
-            {(phase === "crew" || phase === "pressing" || phase === "done") && (
+            {(phase === "crew" || phase === "pressing" || phase === "sending" || phase === "done") && (
               <div className={s.crew} aria-hidden>
                 <CrewBot happy={phase === "done"} />
                 <MousePointer2 className={s.cursor} size={25} fill="white" stroke="#17135b" strokeWidth={1.5} />
