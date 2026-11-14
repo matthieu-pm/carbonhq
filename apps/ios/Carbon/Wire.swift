@@ -164,6 +164,38 @@ struct LiveState: Decodable {
     let tasks: [AgentEvent]
     /// Every non-empty queue; absent from a server that predates `queue_changed`.
     let queued: [QueueChanged]?
+    let secrets: [SecretHandoff]?
+}
+
+struct SecretHandoff: Decodable, Identifiable {
+    struct Field: Decodable { let name: String; let label: String }
+    struct Selector: Decodable { let name: String; let selector: String }
+    struct Target: Decodable {
+        let kind: String
+        let command: [String]?
+        let path: String?
+        let origin: String?
+        let fields: [Selector]?
+        let submit: String?
+    }
+    let id: String
+    let sessionId: String
+    let agent: String
+    let purpose: String
+    let fields: [Field]
+    let target: Target
+    let cwd: String
+    let expiresAt: Double
+    let state: String
+    let message: String?
+    let keepFile: Bool
+    let keepBlocked: String?
+    let submitLabel: String?
+}
+
+struct SecretRequestsChanged: Decodable {
+    let sessionId: String
+    let requests: [SecretHandoff]
 }
 
 /// A session's whole queue, sent each time it moves.

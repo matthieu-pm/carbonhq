@@ -298,6 +298,9 @@ fn session_named(request: &Request) -> Option<&str> {
         Request::SetAside(r) => Some(&r.session_id),
         Request::Share(r) => Some(&r.session_id),
         Request::Browser(r) => Some(&r.session_id),
+        Request::Secret(carbon_proto::SecretRequest::Create { session_id, .. }
+            | carbon_proto::SecretRequest::Status { session_id, .. }
+            | carbon_proto::SecretRequest::Cancel { session_id, .. }) => Some(session_id),
         _ => None,
     }
 }
@@ -628,6 +631,9 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
         Request::SendMessage(send) => send_message(send, None, app).await,
         Request::LinkIssues(link) => link_issues(link, app).await,
         Request::WriteIssue(write) => write_issue(write, app).await,
+        Request::Secret(request) => Ok(Response::Secret {
+            data: crate::secrets::request(request, app).await.map_err(anyhow::Error::msg)?,
+        }),
         Request::Pages(request) => Ok(Response::Pages {
             data: crate::pages::request(request, app).await.map_err(anyhow::Error::msg)?,
         }),
@@ -702,6 +708,7 @@ pub async fn answer_host(cmd: &str, args: serde_json::Value) -> Result<serde_jso
         return reply;
     }
     match cmd {
+        "secret_browser" => crate::secrets::answer_browser(args).await,
         "request" => {
             let request: Request = serde_json::from_value(args).map_err(|e| e.to_string())?;
             let response = answer_on_screen(request)

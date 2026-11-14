@@ -460,6 +460,27 @@ don't rush or pad. Screenshots work while recording.
 they cause. A local dev server is the usual page — start it in the background
 first, then open it. `--json` on any verb answers as JSON for scripting.
 
+## One-use secret hand-offs
+
+Ask for credentials through Carbon's secret card. Never ask the user to paste a secret into chat, a CLI argument, or a question tool.
+
+```bash
+carbon secret command --purpose "Deploy this project" --field VERCEL_TOKEN -- vercel deploy
+carbon secret file --purpose "Run the migration" --field DATABASE_URL --path .env.local -- migrate --env-file '{secret_file}'
+carbon secret file --purpose "Configure local development" --field STRIPE_SECRET_KEY --path .env.local
+carbon secret browser --purpose "Sign in to the dashboard" --field PASSWORD --origin https://example.com --selector 'PASSWORD=input[name=password]' --submit 'button[type=submit]'
+carbon secret status <request-id>
+carbon secret cancel <request-id>
+```
+
+Each request returns metadata and a reference immediately. Wait for the user to answer the card, then read `status`; do not poll in a tight loop. `pending` awaits the user, `running` awaits the operation, and `used`, `failed`, `denied`, `cancelled`, or `expired` are final. A retry needs a new request and approval. `--session <id>` names a session outside its own shell. Remote sessions route to their owning server.
+
+Commands receive values through environment variables. File hand-offs create a temporary owner-only env file by default and set `CARBON_SECRET_FILE`; `{secret_file}` in arguments expands to its path. Files are deleted after the command. The user can explicitly keep a new file at the shown checkout path, which must be ignored by git. Existing files are never replaced. A file request without a command requires the user's explicit keep choice. The env file uses quoted dotenv values; do not source it as shell code.
+
+Browser hand-offs require an open HTTPS page with a visible POST login form and a submit button. Carbon binds the approval to that tab, document, origin, selectors and form action. Navigation or a form change needs a new request. Carbon fills and submits once; the user handles MFA and CAPTCHA. Submission does not establish that login succeeded.
+
+Values stay out of the request/response metadata and Carbon's saved transcript. Command output has exact values and JSON-escaped values redacted before it is returned. This protects against accidental exposure; an unrestricted agent or the approved program, file or page can still recover or expose a value. Discarding Carbon's copy does not revoke the credential or end a browser login. No vault is created. Requests expire after ten minutes and command runs are limited to five minutes.
+
 ## Sharing a dev server
 
 ```bash

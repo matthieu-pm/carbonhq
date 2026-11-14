@@ -12,6 +12,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 
 mod draft;
 mod pages;
+mod secret;
 mod machine;
 mod setup;
 use carbon_proto::{
@@ -69,6 +70,9 @@ enum Command {
     /// Search and edit Markdown Pages in Spaces.
     #[command(subcommand, arg_required_else_help = true)]
     Pages(pages::PagesCommand),
+    /// Request a one-use secret hand-off through Carbon's private card.
+    #[command(subcommand, arg_required_else_help = true)]
+    Secret(secret::SecretCommand),
     /// Drive this session's browser: open pages, read them, click and type.
     Browser(BrowserCommand),
     /// Publish one of this session's dev servers as a public link, list the
@@ -423,13 +427,14 @@ fn run() -> Result<(), String> {
                 | Command::Issue(_)
                 | Command::Draft(_)
                 | Command::Pages(_)
+                | Command::Secret(_)
                 | Command::Browser(_)
                 | Command::Share(_)
                 | Command::New(_)
                 | Command::Ls(_)
                 | Command::Send(_)
         ) {
-            return Err("--machine takes session, draft, issue, pages, browser and share commands".into());
+            return Err("--machine takes session, draft, issue, pages, secret, browser and share commands".into());
         }
         let _ = MACHINE.set(machine);
     }
@@ -453,6 +458,7 @@ fn run() -> Result<(), String> {
         }
         Command::Draft(command) => draft::run(command),
         Command::Pages(command) => pages::run(command),
+        Command::Secret(command) => secret::run(command),
         Command::Browser(args) => browser(args),
         Command::Share(args) => share(args),
         Command::Machine(command) => machine::run(command),

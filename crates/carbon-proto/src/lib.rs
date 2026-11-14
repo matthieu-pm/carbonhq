@@ -44,8 +44,9 @@ use std::path::PathBuf;
 /// request here, a create meant for a VPS starting on the Mac as if it had
 /// gone where it was sent. v13 added `write_issue`: an older app cannot parse
 /// it, and a failed parse answers "could not parse the request" where the
-/// reader needs "update the Carbon app". v14 added managed Markdown Pages.
-pub const PROTOCOL_VERSION: u32 = 14;
+/// reader needs "update the Carbon app". v14 added managed Markdown Pages;
+/// v15 added one-use secret requests, which older apps must refuse explicitly.
+pub const PROTOCOL_VERSION: u32 = 15;
 
 /// The oldest envelope the app still answers. Rises only when a shape is
 /// *renamed*, never for an addition: v4 renamed `LinkIssues.identifiers` to
@@ -123,6 +124,7 @@ impl Request {
             Request::SetRemoteAccess(_) => 11,
             Request::WriteIssue(_) => 13,
             Request::Pages(_) => 14,
+            Request::Secret(_) => 15,
             // v12 is when the wrapper itself arrived. A newer request inside it
             // has to stamp its own version, or a v12 app parses the wrapper and
             // then says it could not parse the line instead of naming the update.
@@ -157,7 +159,38 @@ pub enum Request {
     SetRemoteAccess(SetRemoteAccess),
     WriteIssue(WriteIssue),
     Pages(PageRequest),
+    Secret(SecretRequest),
     OnMachine(OnMachine),
+}
+
+/// Only names and destinations cross the agent wire; values arrive from the user's card.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum SecretRequest {
+    Create { session_id: String, purpose: String, fields: Vec<SecretField>, target: SecretTarget },
+    Status { session_id: String, id: String },
+    Cancel { session_id: String, id: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretField {
+    pub name: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SecretTarget {
+    Command { command: Vec<String> },
+    File { path: String, command: Vec<String> },
+    Browser { origin: String, fields: Vec<SecretSelector>, submit: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretSelector {
+    pub name: String,
+    pub selector: String,
 }
 
 /// Managed Markdown operations carry revisions so agents cannot overwrite unseen edits.
@@ -814,6 +847,9 @@ pub enum Response {
         drafts: Vec<DraftSummary>,
     },
     Pages {
+        data: serde_json::Value,
+    },
+    Secret {
         data: serde_json::Value,
     },
     /// Every issue the session carries *after* the change, so the caller sees

@@ -662,6 +662,7 @@ dependencies = [
  "transcribe-cpp",
  "ts-rs",
  "uuid",
+ "zeroize",
  "zip 9.0.5",
 ]
 
