@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FileCode2 } from "lucide-react";
 
 import { BrowserChrome } from "@/components/app/Browser";
+import { HomeCards } from "@/components/app/HomeCards";
 import Orb from "@/components/app/Orb";
 import Panel, {
   CheckPassed,
@@ -204,6 +205,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
     <ScaledWindow width={WIDTH} height={HEIGHT} minScale={0.48} startX={startX} className={`${s.scene} ${className ?? ""}`}>
       <Window
         interactive
+        contentClassName={s.content}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
         onHome={() => open("new")}
@@ -305,22 +307,40 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
             {!isNew && <BranchButton name={task?.branch ?? BRANCHES[selected as Fixed]} />}
             {/* The pull request stands in for the panel toggle, lit while the
                 pane is open on it. */}
-            {hasPr ? <ItemTab icon={pr} label="#44" active={panelOpen} fixed onClick={() => setPanelShown((shown) => !shown)} /> : <PanelToggle />}
+            {hasPr ? <ItemTab icon={pr} label="#44" active={panelOpen} fixed onClick={() => setPanelShown((shown) => !shown)} /> : !isNew && <PanelToggle />}
           </>
         }
         main={
           isNew ? (
-            <NewTaskComposer
-              value={draft}
-              onChange={setDraft}
-              onSend={send}
-              agent={<ClaudeGlyph className="size-3.5" />}
-              model="Opus 5.5"
-              effort="High"
-              mode="Auto"
-              project="ade"
-              base="main"
-            />
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+              <div className="my-auto w-full shrink-0 py-8">
+                <NewTaskComposer
+                  value={draft}
+                  onChange={setDraft}
+                  onSend={send}
+                  agent={<ClaudeGlyph className="size-3.5" />}
+                  model="Opus 5.5"
+                  effort="High"
+                  mode="Auto"
+                  project="ade"
+                  base="main"
+                />
+                <div className="pt-8">
+                  <HomeCards
+                    recent={[
+                      ...started.map((session) => ({ id: session.id, title: session.prompt, meta: "ade · just now", mark: <span className="size-1.5 rounded-full bg-accent-add" /> })),
+                      ...(["background", "linear", "speedrun", "comments"] as const).map((id, i) => ({ id, title: TITLES[id], meta: `ade · ${i + 1}h ago`, mark: <span className={`size-1.5 rounded-full ${id === "linear" && !tagged ? "bg-accent-command" : "bg-accent-add"}`} /> })),
+                    ].slice(0, 4)}
+                    pullRequests={[
+                      { id: "background", title: TITLES.background, meta: "#44 · ade", mark: pr },
+                      { id: "speedrun", title: TITLES.speedrun, meta: "#42 · ade", mark: <PrOpenGlyph /> },
+                      { id: "comments", title: TITLES.comments, meta: "#41 · ade", mark: <PrMergedGlyph /> },
+                    ]}
+                    onOpen={open}
+                  />
+                </div>
+              </div>
+            </div>
           ) : view === "browser" && hasPr ? (
             <DevServerPage />
           ) : (

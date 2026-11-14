@@ -316,9 +316,7 @@ export function QuestionCard({
   );
 }
 
-/// The composer before a session exists, standing alone mid-sheet: the
-/// wordmark, the toolbar above the box rather than under it, no card around
-/// the box, and a hint where the send button was. Enter sends.
+/// Mirrors the new-task card, with the model at the end of its bottom toolbar.
 export function NewTaskComposer({
   value,
   onChange,
@@ -342,7 +340,7 @@ export function NewTaskComposer({
   base: string;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 items-center px-10">
+    <div className="px-4 pb-4">
       <form
         className="mx-auto w-full max-w-3xl"
         onSubmit={(event) => {
@@ -350,48 +348,57 @@ export function NewTaskComposer({
           onSend();
         }}
       >
-        <Wordmark className="mb-4 h-auto w-30 text-foreground/10" />
-        <div className="-ml-2.5 flex min-w-0 items-center gap-0.5 px-1 pb-1.5 text-ui font-medium text-muted-foreground">
-          <span className="grid size-7 shrink-0 place-items-center">
-            <Plus className="size-4" />
-          </span>
-          <span className="flex h-7 shrink-0 items-center gap-1 px-1.5">
-            {agent}
-            <span>{model}</span>
-            {effort && <span className="text-muted-foreground/60">{effort}</span>}
-          </span>
-          <span className="flex h-7 shrink-0 items-center gap-1.5 px-1.5">
-            <Folder className="size-3.5 shrink-0 fill-current" />
-            {project}
-          </span>
-          {/* The track reads as on or off at a glance. */}
-          <span className="flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-foreground">
-            <span className="flex h-3 w-5 shrink-0 items-center rounded-full bg-primary p-px">
-              <span className="size-2.5 translate-x-2 rounded-full bg-background" />
-            </span>
-            Worktree
-          </span>
-          <span className="truncate px-1.5 font-normal text-muted-foreground/60">from {base}</span>
-          <span className="flex h-7 shrink-0 items-center px-1.5">{mode}</span>
+        <Wordmark aria-hidden className="mb-4 ml-1 h-7 w-26 text-foreground" />
+        <div className="rounded-2xl border border-hairline bg-card shadow-(--shadow-card)">
+          <div className="px-3 pt-3">
+            <textarea
+              rows={3}
+              autoFocus
+              aria-label="Describe a task"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  onSend();
+                }
+              }}
+              placeholder="Describe a task."
+              className="field-sizing-content min-h-[3.5lh] max-h-40 w-full resize-none bg-transparent px-1 py-1 text-prompt text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <div className="flex items-center gap-1 pt-1 pr-2.5 pb-2.5 pl-1.5">
+            <div className="flex min-w-0 flex-1 items-center gap-0.5 px-1 text-ui font-medium text-muted-foreground">
+              <span className="grid size-7 shrink-0 place-items-center"><Plus className="size-4" /></span>
+              <span className="flex h-7 shrink-0 items-center gap-1.5 px-1.5">
+                <Folder className="size-3.5 fill-current" />{project}
+              </span>
+              <span className="flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-foreground">
+                <span className="flex h-3 w-5 shrink-0 items-center rounded-full bg-primary p-px">
+                  <span className="size-2.5 translate-x-2 rounded-full bg-background" />
+                </span>
+                Worktree
+              </span>
+              <span className="truncate px-1.5 font-normal text-muted-foreground/60">from {base}</span>
+              <span className="flex h-7 shrink-0 items-center px-1.5">{mode}</span>
+              <span className="ml-auto flex h-7 min-w-0 items-center gap-1 px-1.5">
+                {agent}<span className="truncate">{model}</span>
+                {effort && <span className="text-muted-foreground/60">{effort}</span>}
+              </span>
+            </div>
+            <span className="grid size-7 shrink-0 place-items-center text-muted-foreground"><Mic className="size-4" /></span>
+            <button
+              type="submit"
+              aria-label="Send task"
+              disabled={!value.trim()}
+              className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-ring disabled:bg-muted disabled:text-muted-foreground"
+            >
+              <ArrowUp strokeWidth={2} className="size-4" />
+            </button>
+          </div>
         </div>
-        <textarea
-          rows={1}
-          autoFocus
-          aria-label="Describe a task"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            // An IME's Enter picks a character; it is not a send.
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              onSend();
-            }
-          }}
-          placeholder="Describe a task."
-          className="field-sizing-content max-h-40 w-full resize-none bg-transparent py-1 text-prompt text-foreground outline-none placeholder:text-muted-foreground"
-        />
-        <div className="flex items-center gap-1 pt-2 text-ui text-muted-foreground/60">
-          Press <CornerDownLeft className="size-3" strokeWidth={2} /> to send
+        <div className="flex min-h-8 items-center gap-1 px-1 pt-2 text-ui text-muted-foreground/60">
+          <CornerDownLeft className="size-3" strokeWidth={2} /> to send
         </div>
       </form>
     </div>

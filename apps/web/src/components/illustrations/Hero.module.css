@@ -1,3 +1,20 @@
+.content {
+  background-size: cover;
+  background-position: center;
+}
+
+:global(:root:not([data-scheme="light"])) .content {
+  --color-card: oklch(0.3 0 0 / 70%);
+  --color-composer: oklch(0.3 0 0 / 62%);
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--color-background) 88%, transparent),
+      color-mix(in oklab, var(--color-background) 50%, transparent) 55%
+    ),
+    url("/carbon-backdrop.webp");
+}
+
 /* A row the visitor's own click brought in eases up into place. */
 .enter { animation: enter 200ms ease-out; }
 

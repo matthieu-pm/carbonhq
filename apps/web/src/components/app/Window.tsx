@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ChartNoAxesColumn, CircleDot, Settings } from "lucide-react";
+import { ArrowLeft, ArrowRight, CircleDot, Settings } from "lucide-react";
 
 import { SIDEBAR_WIDTH } from "./Sidebar";
 
@@ -18,6 +18,7 @@ export default function Window({
   onHome,
   onBack,
   onForward,
+  contentClassName,
   className,
 }: {
   sidebar: ReactNode;
@@ -38,6 +39,7 @@ export default function Window({
   onHome?: () => void;
   onBack?: () => void;
   onForward?: () => void;
+  contentClassName?: string;
   className?: string;
 }) {
   return (
@@ -89,13 +91,19 @@ export default function Window({
           </span>
           <span aria-hidden className="grid size-9 place-items-center text-muted-foreground"><CircleDot className="size-4.5" /></span>
           <div className="flex-1" />
-          <span aria-hidden className="grid size-9 place-items-center text-muted-foreground"><ChartNoAxesColumn className="size-4.5" /></span>
+          <span role="img" aria-label="Subscription usage" className="grid size-9 place-items-center text-foreground">
+            <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" aria-hidden>
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" opacity="0.18" />
+              <circle cx="12" cy="12" r="9" pathLength="100" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeDasharray="100" strokeDashoffset="26" transform="rotate(-90 12 12)" />
+              <path d="m12 8 4 4-4 4-4-4z" fill="currentColor" opacity="0.5" />
+            </svg>
+          </span>
           <span aria-hidden className="grid size-9 place-items-center text-muted-foreground"><Settings className="size-4.5" /></span>
         </nav>
         <div className="flex min-w-0 flex-1 gap-1.5">
           <Sheet className="flex-1">
             {sidebarOpen && <div className="flex shrink-0 border-r border-hairline bg-surface-frame/50">{sidebar}</div>}
-            <div className="flex min-w-0 flex-1 flex-col">{main}</div>
+            <div className={cx("flex min-w-0 flex-1 flex-col", contentClassName)}>{main}</div>
             {crew}
           </Sheet>
           {panel && <Sheet className="shrink-0">{panel}</Sheet>}
