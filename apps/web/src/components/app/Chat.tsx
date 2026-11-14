@@ -31,14 +31,17 @@ export function GitBranchIcon({ className }: { className?: string }) {
 /// The transcript's column: the app's own `max-w-3xl` measure and spacing.
 export function Transcript({
   children,
+  overlay,
   className,
 }: {
   children: ReactNode;
+  overlay?: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cx("relative min-h-0 flex-1 overflow-hidden", className)}>
       <div className="mx-auto flex max-w-3xl flex-col gap-4 px-6 py-6">{children}</div>
+      {overlay}
     </div>
   );
 }

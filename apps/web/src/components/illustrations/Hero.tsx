@@ -6,6 +6,7 @@ import { FileCode2 } from "lucide-react";
 import { BrowserChrome } from "@/components/app/Browser";
 import { HomeCards } from "@/components/app/HomeCards";
 import Orb from "@/components/app/Orb";
+import PinnedSummary, { PinnedSummaryToggle, type SummaryData, type SummaryFile } from "@/components/app/PinnedSummary";
 import Panel, {
   CheckPassed,
   CheckRow,
@@ -39,8 +40,8 @@ import { MiniHome } from "@/components/home/MiniHome";
 import { ScaledWindow } from "./ScaledWindow";
 import s from "./Hero.module.css";
 
-const WIDTH = 1200;
-const HEIGHT = 760;
+const WIDTH = 1800;
+const HEIGHT = 1140;
 
 /// The four sessions that were there before the visitor arrived. The rest of
 /// the list is scenery.
@@ -116,6 +117,10 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
   const [panelTab, setPanelTab] = useState("PR");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [panelShown, setPanelShown] = useState(true);
+  const [detailsPanel, setDetailsPanel] = useState(false);
+  const [summaryChoices, setSummaryChoices] = useState<Record<string, boolean>>({});
+  const [summaryOrder, setSummaryOrder] = useState<Parameters<typeof PinnedSummary>[0]["order"]>(["workspace", "git", "prs", "tasks", "sources", "context"]);
+  const [hiddenSummaryItems, setHiddenSummaryItems] = useState<Parameters<typeof PinnedSummary>[0]["hidden"]>([]);
   const [history, setHistory] = useState({ ids: ["background"], index: 0 });
   const [speedrunRead, setSpeedrunRead] = useState(false);
   const [checksPassed, setChecksPassed] = useState(false);
@@ -139,6 +144,8 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
     setSelected(id);
     setStarted((list) => list.map((t) => (t.id === id ? { ...t, unread: false } : t)));
     setView("chat");
+    setDetailsPanel(false);
+    setPanelTab(id === "background" ? "PR" : "Changes");
     if (id === "speedrun") setSpeedrunRead(true);
   };
 
@@ -195,11 +202,29 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
   const hasPr = selected === "background";
   // The dev server's tab wants the width, so the pane steps aside for it and
   // comes back with the chat.
-  const panelOpen = hasPr && view === "chat" && panelShown;
   const isNew = selected === "new";
+  const panelOpen = !isNew && (hasPr || detailsPanel) && view === "chat" && panelShown;
   const task = started.find((t) => t.id === selected);
   const title = task?.prompt ?? TITLES[selected as Fixed];
   const linearWorking = answer !== undefined && !tagged;
+  const summaryOpen = summaryChoices[selected] ?? true;
+  const summaryDocked = !panelOpen;
+  const summaryData: SummaryData = {
+    branch: task?.branch ?? BRANCHES[selected as Fixed],
+    files: hasPr ? CHANGED : [],
+    pr: hasPr ? { number: 44, title: "Stop background tasks holding the turn open", merged } : undefined,
+    sources: selected === "linear" ? ["Linear"] : hasPr ? ["GitHub"] : [],
+    tasks: hasPr ? TODOS : undefined,
+    context: CONTEXT[selected] ?? 0.04,
+  };
+  const setSummaryOpen = (open: boolean) => setSummaryChoices((choices) => ({ ...choices, [selected]: open }));
+  const openSummaryPanel = (tab: "PR" | "Changes" | "Browser" | "More") => {
+    setPanelTab(tab);
+    setDetailsPanel(true);
+    setPanelShown(true);
+  };
+  const summaryCard = <PinnedSummary key={selected} data={summaryData} docked={summaryDocked}
+    order={summaryOrder} onOrderChange={setSummaryOrder} onOpen={openSummaryPanel} onHide={() => setSummaryOpen(false)} hidden={hiddenSummaryItems} onHiddenChange={setHiddenSummaryItems} />;
 
   return (
     <ScaledWindow width={WIDTH} height={HEIGHT} minScale={0.48} startX={startX} className={`${s.scene} ${className ?? ""}`}>
@@ -305,9 +330,10 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
         headerEnd={
           <>
             {!isNew && <BranchButton name={task?.branch ?? BRANCHES[selected as Fixed]} />}
+            {!isNew && (view === "chat" || !hasPr) && <PinnedSummaryToggle open={summaryOpen} onToggle={() => setSummaryOpen(!summaryOpen)} />}
             {/* The pull request stands in for the panel toggle, lit while the
                 pane is open on it. */}
-            {hasPr ? <ItemTab icon={pr} label="#44" active={panelOpen} fixed onClick={() => setPanelShown((shown) => !shown)} /> : !isNew && <PanelToggle />}
+            {hasPr ? <ItemTab icon={pr} label="#44" active={panelOpen} fixed onClick={() => setPanelShown((shown) => !shown)} /> : !isNew && <PanelToggle onClick={() => { setPanelTab("Changes"); setDetailsPanel(true); setPanelShown(!panelOpen); }} />}
           </>
         }
         main={
@@ -344,8 +370,9 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
           ) : view === "browser" && hasPr ? (
             <DevServerPage />
           ) : (
-            <>
-              <Transcript>
+            <div className={s.chat}>
+              <Transcript className={summaryDocked && summaryOpen ? s.dockedTranscript : undefined}
+                overlay={!summaryDocked && <aside className={s.floatingSummary} data-state={summaryOpen ? "open" : "closed"} aria-label="Conversation summary" aria-hidden={!summaryOpen} inert={!summaryOpen}>{summaryCard}</aside>}>
                 {selected === "background" && (
                   <CheckpointRail count={3} activeIndex={2} className="absolute top-1/2 left-0.5 -translate-y-1/2" />
                 )}
@@ -380,13 +407,14 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
                 mode="Auto"
                 context={CONTEXT[selected] ?? 0.04}
               />
-            </>
+              {summaryDocked && <aside className={s.summaryRail} data-state={summaryOpen ? "open" : "closed"} aria-label="Conversation summary" aria-hidden={!summaryOpen} inert={!summaryOpen}><div className="flex min-h-0 w-80 shrink-0 flex-col border-l border-hairline bg-surface-frame/50">{summaryCard}</div></aside>}
+            </div>
           )
         }
         panel={
           panelOpen && (
-            <Panel tabs={["PR", "Changes", "Browser", "More"]} active={panelTab} onSelect={setPanelTab} width={350}>
-              {panelTab === "PR" && (
+            <Panel tabs={hasPr ? ["PR", "Changes", "Browser", "More"] : ["Changes", "More"]} active={panelTab} onSelect={setPanelTab} width={350}>
+              {panelTab === "PR" && hasPr && (
                 <PrBody
                   checksPassed={checksPassed}
                   merge={merge}
@@ -396,9 +424,9 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
                   onConfirm={confirmMerge}
                 />
               )}
-              {panelTab === "Changes" && <ChangesBody />}
+              {panelTab === "Changes" && <ChangesBody files={summaryData.files} />}
               {panelTab === "Browser" && <DevServerPage tab="Carbon — Run every agent harness in one app" />}
-              {panelTab === "More" && <MoreBody />}
+              {panelTab === "More" && (hasPr ? <MoreBody /> : <div className="px-3 py-3 text-ui text-muted-foreground">No background tasks.</div>)}
             </Panel>
           )
         }
@@ -641,10 +669,11 @@ const CHANGED = [
   { dir: "src-tauri/src/harness/claude_code/", name: "mapper.rs", added: 24, removed: 3 },
 ];
 
-function ChangesBody() {
+function ChangesBody({ files = CHANGED }: { files?: SummaryFile[] }) {
   return (
     <div className="flex flex-col">
-      {CHANGED.map((file) => (
+      {!files.length && <p className="px-3 py-3 text-ui text-muted-foreground">No changes in this turn.</p>}
+      {files.map((file) => (
         <div key={file.name} className="flex items-center gap-2 border-b border-border px-3 py-2.5 text-ui">
           <FileCode2 className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">

@@ -88,10 +88,11 @@ export function BranchButton({ name }: { name: string }) {
 }
 
 /// The panel toggle, where the session has no pull request to stand in for it.
-export function PanelToggle() {
+export function PanelToggle({ onClick }: { onClick?: () => void }) {
+  const Control = onClick ? "button" : "span";
   return (
-    <span className="grid size-7 shrink-0 place-items-center opacity-80">
+    <Control {...(onClick && { type: "button" as const, onClick, "aria-label": "Toggle panel" })} className="grid size-7 shrink-0 place-items-center rounded-md opacity-80 hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring">
       <PanelLeftIcon className="size-4.5" mirrored />
-    </span>
+    </Control>
   );
 }

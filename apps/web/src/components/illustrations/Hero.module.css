@@ -25,4 +25,57 @@
 /* Reduced motion draws every state in place, the running check included. */
 @media (prefers-reduced-motion: reduce) {
   .scene * { animation: none; }
+  .floatingSummary,
+  .summaryRail { transition: none; transform: none; }
+}
+.chat {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.floatingSummary {
+  position: absolute;
+  z-index: 20;
+  inset: 8px 8px 12px auto;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  opacity: 0;
+  transform: translateX(calc(100% + 12px));
+  visibility: hidden;
+  transition: opacity 160ms ease-out, transform 160ms ease-out, visibility 0s 160ms;
+}
+
+.floatingSummary[data-state="open"] {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition-duration: 220ms, 220ms, 0s;
+  transition-delay: 0s;
+}
+
+.summaryRail {
+  position: absolute;
+  z-index: 20;
+  inset: 0 0 0 auto;
+  display: flex;
+  width: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: width 160ms ease-out, visibility 0s 160ms;
+}
+
+.summaryRail[data-state="open"] {
+  width: 320px;
+  visibility: visible;
+  transition-duration: 220ms, 0s;
+  transition-delay: 0s;
+}
+
+.dockedTranscript {
+  margin-right: 320px;
+  padding-left: 320px;
 }

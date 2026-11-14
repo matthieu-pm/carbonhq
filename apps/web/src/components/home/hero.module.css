@@ -1,3 +1,11 @@
+@media (min-width: 1024px) {
+  .preview {
+    left: 50%;
+    width: min(1440px, calc(100vw - 4rem));
+    transform: translateX(-50%);
+  }
+}
+
 /* The reader's cursor over the live window, the one sign it is interactive: an
    arrow with slightly rounded corners, hotspot on its tip. Forced on every child,
    or the window's own buttons would put the system pointer back. Plain url()

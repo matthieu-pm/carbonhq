@@ -30,7 +30,7 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="relative mt-20 lg:rounded-[12px] lg:shadow-[0_2px_50px_12px_#0000004D] light:lg:shadow-[0_20px_60px_-20px_#00000040]">
+        <div className={`relative mt-20 lg:rounded-[12px] lg:shadow-[0_2px_50px_12px_#0000004D] light:lg:shadow-[0_20px_60px_-20px_#00000040] ${h.preview}`}>
           {/* The live window wants a desktop's width; a phone gets a still of
               it instead of a sideways-scrolling miniature. */}
           <div className={`relative max-sm:hidden ${h.liveCursor}`}>
