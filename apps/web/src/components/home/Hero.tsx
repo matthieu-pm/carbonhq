@@ -1,4 +1,9 @@
 import { preload } from "react-dom";
+import { ClaudeGlyph } from "@/components/ClaudeGlyph";
+import { OpenAIGlyph } from "@/components/OpenAIGlyph";
+import { GrokGlyph } from "@/components/GrokGlyph";
+import { GitHubGlyph } from "@/components/GitHubGlyph";
+import { REPO } from "@/lib/links";
 import { DownloadButton } from "@/components/DownloadButton";
 import { Hero as AppWindow } from "@/components/illustrations/Hero";
 import h from "./hero.module.css";
@@ -15,18 +20,39 @@ export function Hero() {
 
   return (
     <header id="hero" className="relative overflow-clip bg-black px-5 pb-14 sm:px-8 sm:pb-10 light:bg-[linear-gradient(#FFFFFF_900px,#F4F4F2_900px)]">
-      <HeroBackdrop />
+      <HeroBackdrop introLayout />
 
       <div className="relative mx-auto w-full max-w-[960px]">
         <SiteNav />
 
-        <div className="pt-16 sm:pt-[101px] lg:ml-[102px] lg:max-w-[756px]">
-          <h1 className="font-inter text-[36px] leading-[40px] font-normal tracking-[-0.03em] text-balance text-white sm:text-[46px] light:text-[#0A0A0A] sm:leading-[46px]">
-            Run every agent harness in one app.
-          </h1>
-          <div className="mt-8 flex flex-wrap items-start justify-between gap-4 pr-5">
-            <DownloadButton from="hero" className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-white px-4 text-[14px] leading-5 font-medium text-[#0B0B0F] shadow-[inset_0_-1px_0_#4D4C4C,0_1px_2px_#00000040,0_10px_28px_-10px_#00000099] transition-opacity hover:opacity-90 [&>svg]:-mt-0.5 light:bg-[#0A0A0A] light:text-white light:shadow-[inset_0_-1px_0_#000,0_1px_2px_#00000040]" />
-            <p className="text-[14px] leading-5 tracking-[-0.01em] text-white/30 light:text-black/40">Free and open source {"{Beta}"}</p>
+        <div className={h.intro}>
+          <div className={h.badge}>
+            <span className={h.agentMarks} aria-hidden="true">
+              <span><OpenAIGlyph className="size-3" /></span>
+              <span><GrokGlyph className="size-3" /></span>
+              <span><ClaudeGlyph className="size-3" /></span>
+            </span>
+            Connect any agent harness
+          </div>
+          <div className={h.introGrid}>
+            <h1 className={h.headline}>
+              <span>Your agents.</span>
+              <span>One place to build.</span>
+            </h1>
+            <div className={h.supporting}>
+              <p className={h.description}>
+                Run Claude Code, Codex, and your other coding agents side by side.
+                Bring your subscriptions and keep tasks, conversations, and pull requests in one place.
+              </p>
+              <div className={h.actions}>
+                <DownloadButton from="hero" className={`${h.action} ${h.primaryAction}`} />
+                <a href={REPO} target="_blank" rel="noopener noreferrer" className={`${h.action} ${h.secondaryAction}`}>
+                  <GitHubGlyph className="size-4" />
+                  View on GitHub
+                </a>
+              </div>
+              <p className={h.note}>Free and open source {"{Beta}"}</p>
+            </div>
           </div>
         </div>
 

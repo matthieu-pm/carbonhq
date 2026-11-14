@@ -49,7 +49,7 @@ const SIDES = (() => {
 /// The 1440×900 pixel field, centred so its tiles line up with the 960 column
 /// at any width; a narrower screen crops it and a wider one gets its sides.
 /// The agent marks sit inside the same box so they stay on their tiles.
-export function HeroBackdrop({ id = "hero" }: { id?: string }) {
+export function HeroBackdrop({ id = "hero", introLayout = false }: { id?: string; introLayout?: boolean }) {
   return (
     <div aria-hidden className="pointer-events-none absolute top-0 left-1/2 h-[900px] w-[1440px] -translate-x-1/2">
       <svg
@@ -106,22 +106,22 @@ export function HeroBackdrop({ id = "hero" }: { id?: string }) {
           fill={`url(#${id}-stripes)`}
           mask={`url(#${id}-tiles-mask)`}
         />
-        {/* Dark ink on this blue is unreadable, so in light the field turns
-            to pale blues behind the headline and its button, in whole tiles. */}
-        <g className="hidden light:block" clipPath={`url(#${id}-cut)`} shapeRendering="crispEdges">
+        {!introLayout && <g className="hidden light:block" clipPath={`url(#${id}-cut)`} shapeRendering="crispEdges">
           <path d={CUT} fill="#FFFFFF" />
           {FIELD.map(([d, , light]) => (
             <path key={d} d={d} fill={light} />
           ))}
           <path d={CUT} fill={`url(#${id}-stripes-light)`} mask={`url(#${id}-tiles-mask)`} />
-        </g>
+        </g>}
       </svg>
 
+      {!introLayout && <>
       <OpenAIGlyph className="absolute top-[196px] left-[76px] size-7 text-white opacity-80" />
       <ClaudeGlyph className="absolute top-[196px] left-[196px] size-7" />
       <FxGlyph className="absolute top-[376px] left-[137px] size-7 text-white opacity-80" />
       <GrokGlyph className="absolute top-[376px] left-[197px] size-7 text-white opacity-80" />
       <PiGlyph className="absolute top-[436px] left-[76px] size-7 text-white opacity-95 [--color-background:oklch(0.145_0_0)]" />
+      </>}
     </div>
   );
 }
