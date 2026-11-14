@@ -430,7 +430,7 @@ async fn execute(r: &Handoff, values: &Values) -> Result<(Option<String>, Option
     match &r.target {
         SecretTarget::Command { command } => run(command, &r.cwd, &values.0, None).await,
         SecretTarget::File { path, command } => {
-            let body = zeroize::Zeroizing::new(env_file(&values.0));
+            let body = env_file(&values.0)?;
             let file = if r.keep_file {
                 let checked = keep_path(Path::new(&r.cwd), path)?;
                 if checked != PathBuf::from(path) {
@@ -464,13 +464,37 @@ async fn execute(r: &Handoff, values: &Values) -> Result<(Option<String>, Option
     }
 }
 
-fn env_file(values: &HashMap<String, String>) -> String {
+/// Dotenv quotes are literal delimiters, not JSON escapes; some values have no lossless spelling.
+fn env_file(values: &HashMap<String, String>) -> Result<zeroize::Zeroizing<String>, String> {
     let mut fields: Vec<_> = values.iter().collect();
     fields.sort_by_key(|(name, _)| *name);
-    fields
-        .into_iter()
-        .map(|(name, value)| format!("{name}={}\n", serde_json::to_string(value).unwrap()))
-        .collect()
+    let mut body = zeroize::Zeroizing::new(String::new());
+    for (name, value) in fields {
+        if value.contains('\r') {
+            return Err("Dotenv readers change carriage returns. Use a command environment hand-off for this value.".into());
+        }
+        let quote = ['\'', '`', '"'].into_iter().find(|quote| {
+            !value.contains(*quote)
+                && (*quote != '"' || (!value.contains("\\n") && !value.contains("\\r")))
+        });
+        let unquoted = !value.contains(['#', '\n'])
+            && value.trim() == value
+            && !value.starts_with(['\'', '"', '`']);
+        if quote.is_none() && !unquoted {
+            return Err("This value cannot be written losslessly as dotenv. Use a command environment hand-off instead.".into());
+        }
+        body.push_str(name);
+        body.push('=');
+        if let Some(quote) = quote {
+            body.push(quote);
+        }
+        body.push_str(value);
+        if let Some(quote) = quote {
+            body.push(quote);
+        }
+        body.push('\n');
+    }
+    Ok(body)
 }
 
 fn private_dir(path: &Path) -> Result<(), String> {
@@ -684,6 +708,19 @@ mod tests {
     }
 
     #[test]
+    fn dotenv_encoding_matches_the_actual_parser_fixtures() {
+        let cases: Vec<Value> =
+            serde_json::from_str(include_str!("../fixtures/secret_env.json")).unwrap();
+        for case in cases {
+            let values = HashMap::from([("TOKEN".into(), case["value"].as_str().unwrap().into())]);
+            match case["encoded"].as_str() {
+                Some(expected) => assert_eq!(env_file(&values).unwrap().as_str(), expected),
+                None => assert!(env_file(&values).is_err()),
+            }
+        }
+    }
+
+    #[test]
     fn submission_is_session_bound_single_use_and_never_stores_values() {
         let r = handoff();
         REQUESTS.lock().unwrap().insert(r.id.clone(), r.clone());
@@ -759,7 +796,7 @@ mod tests {
         private_dir(&dir).unwrap();
         let path = dir.join("secrets.env");
         let values = HashMap::from([("TOKEN".into(), "synthetic\n\"value".into())]);
-        let body = env_file(&values);
+        let body = env_file(&values).unwrap();
         private_file(&path, body.as_bytes()).unwrap();
         assert_eq!(
             std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
@@ -770,7 +807,7 @@ mod tests {
             0o600
         );
         assert!(private_file(&path, b"replacement").is_err());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), body.as_str());
         let mut cleanup = TempFile(Some(path.clone()));
         let command = vec![
             "/bin/sh".into(),
@@ -781,7 +818,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(code, Some(7));
-        assert_eq!(redact(&output.unwrap(), &values), "TOKEN=\"[redacted]\"\n");
+        assert_eq!(redact(&output.unwrap(), &values), "TOKEN='[redacted]'\n");
         cleanup.remove().unwrap();
         assert!(!path.exists());
         assert!(!dir.exists());

@@ -31,6 +31,7 @@ export type SecretRequestStatus =
   | "running"
   | "used"
   | "failed"
+  | "unconfirmed"
   | "denied"
   | "expired"
   | "cancelled";
@@ -91,7 +92,7 @@ export default function SecretRequest({
   const { status, target } = request;
 
   if (rejected && status === "pending")
-    return <Settled request={{ ...request, status: "failed", message: "Couldn't reach Carbon. Ask the agent to request it again." }} />;
+    return <Settled request={{ ...request, status: "unconfirmed", message: "Couldn't reach Carbon. Check the hand-off status before requesting another." }} />;
   if (status !== "pending" && status !== "running") return <Settled request={request} />;
 
   return (
@@ -405,7 +406,7 @@ function Destination({ target, fields }: { target: SecretTarget; fields: SecretF
 /// destination are safe to show; they were on the card already.
 function Settled({ request }: { request: SecretRequestView }) {
   const { status, message } = request;
-  const failed = status === "failed";
+  const failed = status === "failed" || status === "unconfirmed";
   const Icon = status === "used" ? Check : failed ? TriangleAlert : CircleSlash;
 
   return (
@@ -473,6 +474,8 @@ function settledLine({ status, target, keepFile }: SecretRequestView) {
       return "request expired. Nothing was shared.";
     case "failed":
       return "hand-off failed. Carbon discarded its copy.";
+    case "unconfirmed":
+      return "hand-off is not yet confirmed.";
     case "used":
       if (target.kind === "browser")
         return `filled and submitted on ${splitOrigin(target.origin).host}. Carbon discarded its copy.`;

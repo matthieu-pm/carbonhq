@@ -401,49 +401,16 @@ pub async fn secret_handoff(args: Value) -> Reply {
         Some(SecretTab(tab))
     } else { None };
     let nonce = uuid::Uuid::new_v4().to_string();
-    let script = format!("(() => {{ const request = {}; const nonce = {}; {} }})()", args, json!(nonce), SECRET_FORM_JS);
+    let script = format!("({SECRET_FORM_JS})({args}, {})", json!(nonce));
     let answer = eval(tab, &script).await.map_err(|_| "The browser hand-off failed. Ask for a new one; it may already have submitted.")?;
     if answer["ok"] != true {
         return Err("The approved page or form changed. Ask for a new hand-off.".into());
     }
     if submitting { Ok(json!({ "submitted": true })) }
-    else { Ok(json!({ "tab": tab, "document": nonce, "url": answer["url"], "form": answer["form"], "label": answer["label"] })) }
+    else { Ok(json!({ "tab": tab, "document": answer["document"], "url": answer["url"], "form": answer["form"], "label": answer["label"] })) }
 }
 
-const SECRET_FORM_JS: &str = r#"
-const target = request.target;
-if (location.origin !== target.origin || location.protocol !== 'https:') return {ok:false};
-const prepared = request.prepared;
-if (request.action === 'submit' && (window.__carbonSecretDocument !== prepared.document || location.href !== prepared.url)) return {ok:false};
-const find = selector => { const found = document.querySelectorAll(selector); return found.length === 1 ? found[0] : null; };
-const button = find(target.submit);
-if (!(button instanceof HTMLButtonElement || button instanceof HTMLInputElement) || button.type !== 'submit' || button.disabled || !button.checkVisibility()) return {ok:false};
-const form = button.form;
-if (!form || form.method.toLowerCase() !== 'post' || new URL(button.getAttribute('formaction') || form.action, location.href).origin !== target.origin) return {ok:false};
-const fingerprint = JSON.stringify([form.action, form.method, button.getAttribute('formaction'), button.getAttribute('formmethod')]);
-if (request.action === 'submit' && prepared.form !== fingerprint) return {ok:false};
-const fields = target.fields.map(binding => ({ name:binding.name, el:find(binding.selector) }));
-if (fields.some(({el}) => !(el instanceof HTMLInputElement) || !['text','password','email','tel'].includes(el.type) || el.form !== form || el.disabled || el.readOnly || !el.checkVisibility())) return {ok:false};
-if (new Set(fields.map(({el}) => el)).size !== fields.length) return {ok:false};
-if (request.action === 'prepare') {
-  window.__carbonSecretDocument = nonce;
-  return {ok:true,url:location.href,form:fingerprint,label:(button.innerText || button.value || button.getAttribute('aria-label') || '').trim().slice(0,160)};
-}
-const clear = () => { for (const {el} of fields) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,''); el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); } };
-try {
-  for (const {name,el} of fields) {
-    el.style.webkitTextSecurity = 'disc';
-    el.setAttribute('data-carbon-secret','');
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,request.values[name]);
-    el.dispatchEvent(new Event('input',{bubbles:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
-  }
-  if (location.origin !== target.origin || window.__carbonSecretDocument !== prepared.document || !form.isConnected || !button.isConnected || fields.some(({el})=>!el.isConnected) || JSON.stringify([form.action,form.method,button.getAttribute('formaction'),button.getAttribute('formmethod')]) !== fingerprint || new URL(button.getAttribute('formaction') || form.action,location.href).origin !== target.origin) { clear(); return {ok:false}; }
-  if ((button.getAttribute('formmethod') || form.method).toLowerCase() !== 'post' || !form.reportValidity()) { clear(); return {ok:false}; }
-  form.requestSubmit(button);
-  return {ok:true};
-} catch (_) { clear(); return {ok:false}; }
-"#;
+const SECRET_FORM_JS: &str = include_str!("secret_form.js");
 
 /// Runs `body` with `el` bound to the located element, or fails naming what
 /// was looked for.

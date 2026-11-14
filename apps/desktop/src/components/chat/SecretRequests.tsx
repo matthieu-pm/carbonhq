@@ -14,8 +14,8 @@ function view(request: SecretHandoff): SecretRequestView {
       submit: { selector: target.submit, label: request.submitLabel ?? undefined },
     } : { ...target, cwd: request.cwd },
     expiresAt: request.expiresAt,
-    status: request.state,
-    message: request.message ?? undefined,
+    status: request.clientError && request.state === "pending" ? "unconfirmed" : request.state,
+    message: request.clientError ?? request.message ?? undefined,
     keepFile: request.keepFile,
     keepBlocked: request.keepBlocked ?? undefined,
   };

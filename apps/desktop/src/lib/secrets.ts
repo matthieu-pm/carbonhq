@@ -21,6 +21,7 @@ export type SecretHandoff = {
   keepFile: boolean;
   keepBlocked: string | null;
   submitLabel: string | null;
+  clientError?: string;
 };
 
 const bySession = new Map<string, SecretHandoff[]>();
@@ -81,17 +82,28 @@ export async function submitSecret(request: SecretHandoff, values: Record<string
   try {
     await invoke("answer_secret_request", { sessionId: request.sessionId, id: request.id, values, keepFile });
   } catch {
-    await invoke("deny_secret_request", { sessionId: request.sessionId, id: request.id }).catch(() => {});
-    replace(request.sessionId, (bySession.get(request.sessionId) ?? []).map((row) => row.id === request.id
-      ? { ...row, state: "failed", message: "The hand-off could not be confirmed. Ask for a new request; it may already have run." } : row));
+    await reconcile(request, "Could not confirm the hand-off. Check its status before requesting another; it may already have run.");
   } finally {
     for (const key of Object.keys(values)) delete values[key];
   }
 }
 
 export async function denySecret(request: SecretHandoff) {
-  await invoke("deny_secret_request", { sessionId: request.sessionId, id: request.id }).catch(() => {
-    replace(request.sessionId, (bySession.get(request.sessionId) ?? []).map((row) => row.id === request.id
-      ? { ...row, state: "failed", message: "Could not confirm cancellation. This request will expire." } : row));
-  });
+  try {
+    await invoke("deny_secret_request", { sessionId: request.sessionId, id: request.id });
+  } catch {
+    await reconcile(request, "Could not confirm cancellation. Check its status; this request will expire.");
+  }
+}
+
+/// A missing acknowledgement cannot overrule an event or a newer reconnect snapshot.
+async function reconcile(request: SecretHandoff, message: string) {
+  const current = () => bySession.get(request.sessionId)?.find((row) => row.id === request.id);
+  if (current()?.state !== "pending") return;
+  const revision = revisions.get(request.sessionId);
+  const requests = await invoke<SecretHandoff[]>("list_secret_requests", { sessionId: request.sessionId }).catch(() => null);
+  if (requests && revisions.get(request.sessionId) === revision) replace(request.sessionId, requests);
+  if (current()?.state !== "pending") return;
+  replace(request.sessionId, (bySession.get(request.sessionId) ?? []).map((row) => row.id === request.id
+    ? { ...row, clientError: message } : row));
 }

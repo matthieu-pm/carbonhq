@@ -450,6 +450,14 @@ final class Store {
         asks[key]?.removeAll { $0.payload.askId == requestId }
     }
 
+    /// A lost acknowledgement reads the server without overwriting newer live outcomes.
+    func refreshSecretRequests(_ key: SessionKey) async {
+        let before = secrets[key]?.map { [$0.id, $0.state] }
+        guard let requests: [SecretHandoff] = try? await call(key.server, "list_secret_requests", ["sessionId": .string(key.id)]),
+              secrets[key]?.map({ [$0.id, $0.state] }) == before else { return }
+        secrets[key] = requests
+    }
+
     // MARK: Events
 
     private func handle(_ server: UUID, _ name: String, _ data: Data) {

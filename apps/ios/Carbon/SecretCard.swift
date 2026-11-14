@@ -7,20 +7,21 @@ struct SecretCard: View {
     @State private var values: [String: String] = [:]
     @State private var keepFile = false
     @State private var sent = false
-    @State private var failed = false
+    @State private var unconfirmed = false
 
     private var fileOnly: Bool { request.target.kind == "file" && (request.target.command ?? []).isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             CardHeader(symbol: "key.fill", text: "\(request.agent) requests a one-time secret")
-            if request.state == "pending" && !failed {
+            if request.state == "pending" && !unconfirmed {
                 destination
                 Text(request.purpose).font(Theme.Font.callout)
                 ForEach(request.fields, id: \.name) { field in
                     VStack(alignment: .leading, spacing: Theme.Space.xs) {
                         Text(field.label).font(Theme.Font.meta)
                         SecureField(field.name, text: Binding(get: { values[field.name] ?? "" }, set: { values[field.name] = $0 }))
+                            .disabled(sent)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .padding(Theme.Space.s)
@@ -29,7 +30,7 @@ struct SecretCard: View {
                 }
                 if request.target.kind == "file" {
                     Toggle("Keep in \(request.target.path ?? "file")", isOn: $keepFile)
-                        .disabled(request.keepBlocked != nil)
+                        .disabled(sent || request.keepBlocked != nil)
                     Text(request.keepBlocked ?? "Creates a new file and leaves it on disk. Existing files are never replaced.")
                         .font(Theme.Font.meta).foregroundStyle(Theme.secondary)
                 }
@@ -51,14 +52,14 @@ struct SecretCard: View {
                 destination
                 ProgressView("Using the approved hand-off…")
             } else {
-                Text(failed ? "Could not confirm the hand-off. Ask for a new request; it may already have run." : summary)
+                Text(unconfirmed && request.state == "pending" ? "Could not confirm the hand-off. Check its status before requesting another; it may already have run." : summary)
                     .font(Theme.Font.callout).foregroundStyle(Theme.secondary)
                 if let message = request.message { Text(message).font(Theme.Font.meta).foregroundStyle(Theme.secondary) }
             }
         }
         .card(edge: Theme.accent.opacity(0.35))
         .onDisappear { values.removeAll() }
-        .onChange(of: request.state) { _, state in if state != "pending" { values.removeAll() } }
+        .onChange(of: request.state) { _, state in if state != "pending" { values.removeAll(); unconfirmed = false } }
     }
 
     private var summary: String {
@@ -90,14 +91,15 @@ struct SecretCard: View {
         guard !sent else { return }
         sent = true
         let submitted = values
+        let keep = keepFile
         values.removeAll()
         Task {
             do {
                 let _: JSON = try await store.call(key.server, "answer_secret_request", [
                     "sessionId": .string(key.id), "id": .string(request.id),
-                    "values": .object(submitted.mapValues(JSON.string)), "keepFile": .bool(keepFile),
+                    "values": .object(submitted.mapValues(JSON.string)), "keepFile": .bool(keep),
                 ])
-            } catch { failed = true }
+            } catch { await reconcile() }
         }
     }
 
@@ -107,7 +109,14 @@ struct SecretCard: View {
         Task {
             do {
                 let _: JSON = try await store.call(key.server, "deny_secret_request", ["sessionId": .string(key.id), "id": .string(request.id)])
-            } catch { failed = true }
+            } catch { await reconcile() }
         }
+    }
+
+    private func reconcile() async {
+        if store.secrets[key]?.first(where: { $0.id == request.id })?.state == "pending" {
+            await store.refreshSecretRequests(key)
+        }
+        unconfirmed = store.secrets[key]?.first(where: { $0.id == request.id })?.state == "pending"
     }
 }
