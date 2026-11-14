@@ -404,6 +404,7 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
         }
     }
 
+    crate::secrets::clean_stale().await.map_err(anyhow::Error::msg)?;
     if let Err(e) = store::reset_in_progress_sessions().await {
         eprintln!("[status reset err] {e}");
     }
@@ -748,7 +749,7 @@ impl Live {
     fn payload(&self) -> Value {
         let tasks: Vec<&Value> = self.tasks.values().collect();
         let queued: Vec<&Value> = self.queued.values().collect();
-        json!({ "asks": self.asks, "tasks": tasks, "queued": queued })
+        json!({ "asks": self.asks, "tasks": tasks, "queued": queued, "secrets": crate::secrets::snapshot() })
     }
 }
 
@@ -1310,6 +1311,11 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         // not yet listening when it connected — `carbon-serve` included, which
         // an app installed after it meets as This Mac.
         live_state() => ok(HUB.live.lock().unwrap_or_else(|e| e.into_inner()).payload());
+        list_secret_requests(session_id: String) => ok(crate::secrets::for_session(&session_id));
+        answer_secret_request(session_id: String, id: String, values: HashMap<String, String>, keep_file: bool) =>
+            crate::secrets::answer(&session_id, &id, values, keep_file, &sink).await;
+        deny_secret_request(session_id: String, id: String) =>
+            crate::secrets::deny(&session_id, &id, &sink);
         get_feature_flags() => ok(crate::settings::get_feature_flags().await);
         // Sessions.
         send_msg(

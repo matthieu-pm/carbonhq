@@ -54,6 +54,9 @@ struct TranscriptView: View {
                         default: EmptyView()
                         }
                     }
+                    ForEach(store.secrets[key] ?? []) { request in
+                        SecretCard(key: key, request: request)
+                    }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, Theme.Space.l)
@@ -705,7 +708,7 @@ extension View {
 
 /// A question the agent cannot go on without, in the one colour that means
 /// "this is for you".
-private struct CardHeader: View {
+struct CardHeader: View {
     let symbol: String
     let text: String
 

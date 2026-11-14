@@ -39,6 +39,7 @@ static NEXT_ID: AtomicI32 = AtomicI32::new(1);
 static PENDING: Mutex<Option<HashMap<(i32, i32), oneshot::Sender<Reply>>>> = Mutex::new(None);
 /// What each tab's page logged since `console`/`errors` last drained it.
 static CONSOLE: Mutex<Option<HashMap<i32, Vec<(bool, String)>>>> = Mutex::new(None);
+static SECRET_TABS: std::sync::LazyLock<Mutex<std::collections::HashSet<i32>>> = std::sync::LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
 /// The size `set viewport`/`set device` asked for, per session. Only
 /// `screenshot` reads it: the widget stays the pane's size and the page is
 /// laid out at this size for the capture alone.
@@ -301,6 +302,7 @@ pub fn sweep_profiles(live: &std::collections::HashSet<String>) {
 
 /// Called from `on_console_message` for every line a page logs.
 pub(super) fn log(tab: i32, error: bool, text: String) {
+    if SECRET_TABS.lock().unwrap().contains(&tab) { return; }
     let mut guard = CONSOLE.lock().unwrap();
     let lines = guard.get_or_insert_with(HashMap::new).entry(tab).or_default();
     if lines.len() >= MAX_CONSOLE {
@@ -377,6 +379,38 @@ pub(super) async fn eval(tab: i32, expression: &str) -> Reply {
     }
     Ok(reply.pointer("/result/value").cloned().unwrap_or(Value::Null))
 }
+
+struct SecretTab(i32);
+impl Drop for SecretTab {
+    fn drop(&mut self) {
+        if let Some(console) = CONSOLE.lock().unwrap().as_mut() { console.remove(&self.0); }
+        SECRET_TABS.lock().unwrap().remove(&self.0);
+    }
+}
+
+/// Check and submit in one page task, so navigation cannot swap the approved document between them.
+pub async fn secret_handoff(args: Value) -> Reply {
+    let session = args["sessionId"].as_str().ok_or("Missing browser session.")?;
+    let tab = if args["action"] == "prepare" { driven_tab(session)? }
+        else { args["prepared"]["tab"].as_i64().and_then(|t| i32::try_from(t).ok()).ok_or("The approved tab is unavailable.")? };
+    if !tabs_of(session).iter().any(|t| t.id == tab) { return Err("The approved tab closed. Ask for a new hand-off.".into()); }
+    awake(tab).await.map_err(|_| "The approved tab is unavailable.")?;
+    let submitting = args["action"] == "submit";
+    let _private = if submitting {
+        if !SECRET_TABS.lock().unwrap().insert(tab) { return Err("A hand-off is already running in this tab.".into()); }
+        Some(SecretTab(tab))
+    } else { None };
+    let nonce = uuid::Uuid::new_v4().to_string();
+    let script = format!("({SECRET_FORM_JS})({args}, {})", json!(nonce));
+    let answer = eval(tab, &script).await.map_err(|_| "The browser hand-off failed. Ask for a new one; it may already have submitted.")?;
+    if answer["ok"] != true {
+        return Err("The approved page or form changed. Ask for a new hand-off.".into());
+    }
+    if submitting { Ok(json!({ "submitted": true })) }
+    else { Ok(json!({ "tab": tab, "document": answer["document"], "url": answer["url"], "form": answer["form"], "label": answer["label"] })) }
+}
+
+const SECRET_FORM_JS: &str = include_str!("secret_form.js");
 
 /// Runs `body` with `el` bound to the located element, or fails naming what
 /// was looked for.
@@ -1505,7 +1539,7 @@ const HELPERS_JS: &str = r#"
       el.setAttribute('data-carbon-ref', ref);
       let line = '@' + ref + ' ' + r + ' "' + label + '"';
       if (r === 'link' && el.href) line += ' → ' + el.href;
-      if ((r === 'textbox' || r === 'combobox') && 'value' in el && el.value) line += ' value="' + String(el.value).slice(0, 60) + '"';
+      if ((r === 'textbox' || r === 'combobox') && 'value' in el && el.value && el.type !== 'password' && !el.hasAttribute('data-carbon-secret')) line += ' value="' + String(el.value).slice(0, 60) + '"';
       if (r === 'checkbox' || r === 'radio' || r === 'switch') line += (el.checked || el.getAttribute('aria-checked') === 'true') ? ' [checked]' : ' [ ]';
       if (el.disabled) line += ' [disabled]';
       lines.push(line);

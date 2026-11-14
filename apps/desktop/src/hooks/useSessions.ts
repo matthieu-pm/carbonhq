@@ -32,6 +32,7 @@ import { setOlderLoader } from "@/lib/olderPages";
 import { stanceFor } from "@/lib/permission";
 import { isProvisional, nextMainSeq, provisionalId, retireOldestProvisional } from "@/lib/provisional";
 import { questionDrafts } from "@/lib/questionDrafts";
+import { usePendingSecretSessions, type SecretHandoff } from "@/lib/secrets";
 import { mergeMissed, missedEvents, type LiveState } from "@/lib/resync";
 import { forgetTranscript, keepTranscript, takeTranscript } from "@/lib/keptTranscripts";
 import { playNotification } from "@/lib/sound";
@@ -2854,7 +2855,7 @@ const canAnnounce = (sessionId: string): boolean => {
   return allowedInSpace(projectsRef.current, space, projectPath);
 };
 
-const announce = (sessionId: string, kind: NoticeKind, label: string): boolean => {
+const announce = (sessionId: string, kind: NoticeKind, label: string, inIsland = true): boolean => {
   const item = sessionIndexItemsRef.current.find((i) => i.sessionId === sessionId);
 
   // A session in another space keeps running; it just has no channel here.
@@ -2866,7 +2867,7 @@ const announce = (sessionId: string, kind: NoticeKind, label: string): boolean =
     // A card is the island's to raise while it runs: its pill counts what waits
     // and answers it in place, so a banner beside it says the same thing twice.
     // The island watches This Mac alone, so a remote session keeps its banner.
-    if (kind === "asking" && serverOfSession(sessionId) === LOCAL) {
+    if (kind === "asking" && serverOfSession(sessionId) === LOCAL && inIsland) {
       void islandOn().then((on) => on || notifyOS(sessionId, kind, label, item?.title ?? ""));
       return false;
     }
@@ -3158,19 +3159,37 @@ const busy = selectedStatus === "in_progress";
 // The sessions standing still behind a card the reader has to answer. A set
 // rather than the id lists themselves: the sidebar only asks whether a row is
 // waiting, and passing the lists would re-render every row on each request.
+const secretAsks = usePendingSecretSessions();
+useEffect(() => {
+  const seen = new Set<string>();
+  const listening = listen<{ sessionId: string; requests: SecretHandoff[] }>("secret_requests_changed", ({ payload, server }) => {
+    noteSession(payload.sessionId, server);
+    const fresh = payload.requests.some((request) => request.state === "pending" && !seen.has(request.id));
+    for (const request of payload.requests) seen.add(request.id);
+    if (fresh) announce(payload.sessionId, "asking", "Needs a secret", false);
+    if (!payload.requests.some((request) => request.state === "pending") && !asksBySessionRef.current[payload.sessionId]?.length) {
+      dismissNotice(payload.sessionId, "asking");
+    }
+  });
+  return () => { void listening.then((unlisten) => unlisten()); };
+}, []);
 const askingSessions = useMemo(
   () =>
     new Set(
-      Object.entries(asksBySession)
+      [...secretAsks, ...Object.entries(asksBySession)
         .filter(([, ids]) => ids.length > 0)
-        .map(([sessionId]) => sessionId),
+        .map(([sessionId]) => sessionId)],
     ),
-  [asksBySession],
+  [asksBySession, secretAsks],
 );
 
 // The dock badge counts the same rows the rail marks, so it lives beside the
 // two maps that decide them rather than in `App`.
-useDockBadge(statusBySession, asksBySession, sessionIndexItems);
+const allAsksBySession = useMemo(() => ({
+  ...asksBySession,
+  ...Object.fromEntries([...secretAsks].map((id) => [id, [...(asksBySession[id] ?? []), "secret"]])),
+}), [asksBySession, secretAsks]);
+useDockBadge(statusBySession, allAsksBySession, sessionIndexItems);
 
 // Prompts typed into the running turn and not yet handed to the CLI. Not gated
 // on `busy` like the live state below: a queue only exists while a turn runs,

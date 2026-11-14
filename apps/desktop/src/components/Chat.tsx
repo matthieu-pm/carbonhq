@@ -8,6 +8,7 @@ import ApiRetryIndicator from "@/components/chat/ApiRetryIndicator";
 import PermissionRequest from "@/components/chat/PermissionRequest";
 import QueuedMessages from "@/components/chat/QueuedMessages";
 import QuestionRequest from "@/components/chat/QuestionRequest";
+import SecretRequests from "@/components/chat/SecretRequests";
 import Reasoning from "@/components/chat/Reasoning";
 import WorkingIndicator, { OrbLine } from "@/components/chat/WorkingIndicator";
 import StreamingToolCall from "@/components/chat/StreamingToolCall";
@@ -714,6 +715,7 @@ export default function Chat({
               </div>
             ))}
 
+            <SecretRequests sessionId={session.sessionId} active={active} />
             {cards.map((ask) =>
               ask.type === "questions_asked" ? (
                 <QuestionRequest

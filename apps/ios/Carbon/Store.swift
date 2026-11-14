@@ -24,6 +24,7 @@ final class Store {
     private(set) var items: [SessionKey: SessionItem] = [:]
     private(set) var transcripts: [SessionKey: Transcript] = [:]
     private(set) var asks: [SessionKey: [AgentEvent]] = [:] { didSet { asksChanged() } }
+    private(set) var secrets: [SessionKey: [SecretHandoff]] = [:] { didSet { asksChanged() } }
     private(set) var queued: [SessionKey: [Queued]] = [:]
     private(set) var projects: [UUID: [Project]] = [:]
     /// Each repo's PR marks by branch, as `pr_marks` last answered.
@@ -107,6 +108,7 @@ final class Store {
         for key in items.keys where key.server == s.id { items[key] = nil }
         for key in transcripts.keys where key.server == s.id { transcripts[key] = nil }
         for key in asks.keys where key.server == s.id { asks[key] = nil }
+        for key in secrets.keys where key.server == s.id { secrets[key] = nil }
         for key in marks.keys where key.server == s.id { marks[key] = nil }
         projects[s.id] = nil
         loadErrors[s.id] = nil
@@ -300,7 +302,9 @@ final class Store {
         return open.checksState == "RUNNING" ? .checks : .pr
     }
 
-    func isAsking(_ key: SessionKey) -> Bool { !(asks[key]?.isEmpty ?? true) }
+    func isAsking(_ key: SessionKey) -> Bool {
+        !(asks[key]?.isEmpty ?? true) || (secrets[key]?.contains { $0.state == "pending" } ?? false)
+    }
 
     func open(_ key: SessionKey) async {
         await load(key)
@@ -446,11 +450,22 @@ final class Store {
         asks[key]?.removeAll { $0.payload.askId == requestId }
     }
 
+    /// A lost acknowledgement reads the server without overwriting newer live outcomes.
+    func refreshSecretRequests(_ key: SessionKey) async {
+        let before = secrets[key]?.map { [$0.id, $0.state] }
+        guard let requests: [SecretHandoff] = try? await call(key.server, "list_secret_requests", ["sessionId": .string(key.id)]),
+              secrets[key]?.map({ [$0.id, $0.state] }) == before else { return }
+        secrets[key] = requests
+    }
+
     // MARK: Events
 
     private func handle(_ server: UUID, _ name: String, _ data: Data) {
         let decoder = JSONDecoder()
         switch name {
+        case "secret_requests_changed":
+            guard let change = try? decoder.decode(EventFrame<SecretRequestsChanged>.self, from: data).payload else { return }
+            secrets[SessionKey(server: server, id: change.sessionId)] = change.requests
         case "agent_event":
             guard let e = try? decoder.decode(EventFrame<AgentEvent>.self, from: data).payload else { return }
             apply(SessionKey(server: server, id: e.sessionId), e)
@@ -458,6 +473,8 @@ final class Store {
             guard let live = try? decoder.decode(EventFrame<LiveState>.self, from: data).payload else { return }
             // Replaces what is held: a card answered while the socket was down goes.
             for key in asks.keys where key.server == server { asks[key] = nil }
+            for key in secrets.keys where key.server == server { secrets[key] = nil }
+            for secret in live.secrets ?? [] { secrets[SessionKey(server: server, id: secret.sessionId), default: []].append(secret) }
             for key in tasks.keys where key.server == server { tasks[key] = nil }
             for a in live.asks { asks[SessionKey(server: server, id: a.sessionId), default: []].append(a) }
             for t in live.tasks {
