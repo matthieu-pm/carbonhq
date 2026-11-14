@@ -1,7 +1,7 @@
 import { preload } from "react-dom";
 import { ClaudeGlyph } from "@/components/ClaudeGlyph";
 import { OpenAIGlyph } from "@/components/OpenAIGlyph";
-import { GrokGlyph } from "@/components/GrokGlyph";
+import { PiGlyph } from "@/components/PiGlyph";
 import { GitHubGlyph } from "@/components/GitHubGlyph";
 import { REPO } from "@/lib/links";
 import { DownloadButton } from "@/components/DownloadButton";
@@ -29,7 +29,7 @@ export function Hero() {
           <div className={h.badge}>
             <span className={h.agentMarks} aria-hidden="true">
               <span><OpenAIGlyph className="size-3" /></span>
-              <span><GrokGlyph className="size-3" /></span>
+              <span><PiGlyph className="size-3" /></span>
               <span><ClaudeGlyph className="size-3" /></span>
             </span>
             Connect any agent harness
