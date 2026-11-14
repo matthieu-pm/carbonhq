@@ -1,6 +1,6 @@
-import { useRef, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
 import { Popover } from "radix-ui";
-import { ChevronDown, ChevronUp, FileDiff, FileText, GitBranch, Globe, Image, Link, Monitor, MoreHorizontal, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, FileDiff, FileText, GitBranch, GripVertical, Globe, Image, Link, Monitor, MoreHorizontal, Plus, Search, SlidersHorizontal } from "lucide-react";
 
 import BotAvatar from "@/components/BotAvatar";
 import ContextDetails from "@/components/ContextDetails";
@@ -17,10 +17,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useContextBreakdown } from "@/hooks/useContextBreakdown";
+import { useDragReorder } from "@/hooks/useDragReorder";
 import { openPath } from "@/hooks/useDocs";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { openLink } from "@/lib/openLink";
-import { SUMMARY_ITEMS, setSummaryItem, summaryItemVisible, type SummaryItems, type SummarySource } from "@/lib/pinnedSummary";
+import {
+  SUMMARY_ITEMS, SUMMARY_SECTIONS, moveSummarySection, setSummaryItem, summaryItemVisible, summaryOrder,
+  type SummaryItems, type SummarySectionId, type SummarySource,
+} from "@/lib/pinnedSummary";
 import type { Todo } from "@/lib/todos";
 import type { SubagentRun } from "@/lib/transcript";
 import { fileSrc, qualify, serverOfPath } from "@/lib/transport";
@@ -107,13 +111,47 @@ const SOURCE_ROWS = {
   web: { icon: Globe, label: "Web page" },
 };
 
+type Reorder = ReturnType<typeof useDragReorder<SummarySectionId>>;
+
+/// Whatever ends a section's first line gives its place to the grip while the grip shows.
+const TRAILING = "group-hover/section:invisible group-has-[[data-grip]:focus-visible]/section:invisible group-data-held/section:invisible";
+
 /// Only sections with content own a divider, so hidden details leave no empty rules.
-function SummarySection({ title, action, children }: { title?: string; action?: ReactNode; children: ReactNode }) {
+/// The grip alone drags, since a section is mostly rows that answer their own clicks.
+function SummarySection({ label, title, action, index, reorder, children }: {
+  label: string;
+  title?: string;
+  action?: ReactNode;
+  index: number;
+  reorder: Reorder;
+  children: ReactNode;
+}) {
+  const { drag, shown, start, commit, offset } = reorder;
+  const held = drag?.from === index;
+  const grip = shown.length > 1;
   return (
-    <section aria-label={title ?? "Workspace and changes"} className="border-t border-border/65 px-2 py-2 first:border-t-0">
+    <section aria-label={label} data-held={held || undefined} style={{ transform: offset(index) }}
+      onPointerDown={(event) => {
+        if ((event.target as Element).closest("[data-grip]")) start(event, index);
+      }}
+      className={cn("group/section relative border-t border-border/65 px-2 py-2 first:border-t-0",
+        // Only the sections making room glide; the held one tracks the pointer exactly.
+        drag && !held && "transition-transform duration-150 ease-out",
+        held && "z-10 rounded-xl border-transparent bg-background shadow-(--shadow-button)")}>
+      {grip && <button type="button" data-grip aria-label={`Move ${label}`}
+        onKeyDown={(event) => {
+          const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+          if (!delta) return;
+          event.preventDefault();
+          if (!drag) commit(index, index + delta);
+        }}
+        className={cn("absolute top-2 right-4.5 flex w-3 cursor-grab touch-none items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover/section:opacity-100",
+          title ? "h-6" : "h-8", held && "opacity-100")}>
+        <GripVertical className="size-3" />
+      </button>}
       {title && <div className="mb-1 flex min-h-6 items-center justify-between gap-2 px-2.5">
         <h3 className="text-xs text-muted-foreground">{title}</h3>
-        {action}
+        {action && <div className={cn("flex items-center", grip && TRAILING)}>{action}</div>}
       </div>}
       {children}
     </section>
@@ -133,6 +171,7 @@ export default function PinnedSummary({
   const [allPrs, setAllPrs] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [items, setItems] = useLocalStorage<SummaryItems>("ade.pinnedSummaryItems", {});
+  const [savedOrder, setSavedOrder] = useLocalStorage<string[]>("ade.pinnedSummaryOrder", []);
   const visible = (id: Parameters<typeof summaryItemVisible>[1]) => summaryItemVisible(items, id);
   const done = subagents.filter((run) => run.done).length;
   const running = subagents.filter((run) => !run.done && (busy || (run.taskId !== null && liveTaskIds.has(run.taskId)))).length;
@@ -146,7 +185,116 @@ export default function PinnedSummary({
   const showContext = visible("context") && (context !== null || breakdown !== null);
   const tasks = visible("tasks") && todos?.length ? todos : null;
   const showCrew = !!crew && crewVisible;
-  const empty = !showCrew && !showWorkspace && !showGit && !showPrs && !tasks && !(visible("subagents") && subagents.length) && !showSources && !showContext;
+  const present: Record<SummarySectionId, boolean> = {
+    workspace: showWorkspace, git: !!showGit, prs: showPrs, crew: showCrew, tasks: !!tasks,
+    subagents: visible("subagents") && subagents.length > 0, sources: showSources, context: showContext,
+  };
+  const shownSections = summaryOrder(savedOrder).filter((id) => present[id]);
+  const reorder = useDragReorder(shownSections, (id) => id, (id, _delta, to) => {
+    setSavedOrder((prev) => moveSummarySection(summaryOrder(prev), shownSections, id, to));
+  });
+  const empty = shownSections.length === 0;
+  const trailing = reorder.shown.length > 1 ? TRAILING : undefined;
+  /// Each section's body, drawn in the reader's order.
+  const renderSection: Record<SummarySectionId, (at: { index: number; reorder: Reorder }) => ReactNode> = {
+    workspace: (at) => <SummarySection label="Workspace" {...at}>
+      <div className="flex min-h-8 min-w-0 items-center gap-2.5 px-2.5 text-xs text-foreground/80">
+        <Monitor className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate" title={cwd}>{environment}</span>
+        <span className={cn("max-w-32 truncate text-muted-foreground", trailing)} title={worktree ?? "Current checkout"}>{worktree ?? "Current checkout"}</span>
+      </div>
+      <OpenInButton path={cwd} variant="details" />
+    </SummarySection>,
+    git: (at) => <SummarySection label="Branch and changes" {...at}>
+      {visible("branch") && branch && <div className="flex min-h-8 min-w-0 items-center gap-2.5 px-2.5 text-xs text-foreground/80" aria-label={`Branch: ${branch}`}>
+        <GitBranch className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate" title={branch}>{branch}</span>
+      </div>}
+      {visible("changes") && <button type="button" className={row} onClick={() => onOpen("changes")}>
+        <FileDiff className="size-4 shrink-0 text-muted-foreground" />
+        <span className="flex-1">Changes</span>
+        <span className={cn("flex", !(visible("branch") && branch) && trailing)}>
+          {changesError ? <span className="text-muted-foreground">Unavailable</span>
+            : changesLoading && !changes ? <span className="text-muted-foreground">Reading…</span>
+            : <span className="flex gap-1.5 font-mono tabular-nums"><span className={changes?.added ? "text-accent-add" : "text-muted-foreground"}>+{changes?.added ?? 0}</span><span className={changes?.removed ? "text-destructive" : "text-muted-foreground"}>-{changes?.removed ?? 0}</span></span>}
+        </span>
+      </button>}
+    </SummarySection>,
+    prs: (at) => <SummarySection label="Pull requests" title="Pull requests" {...at}>
+      {(allPrs ? prs : prs.slice(0, 1)).map((pr) => <button type="button" key={pr.number} className={row} onClick={() => onOpen("pr")}>
+        <PrStateIcon pr={pr} className="size-4" />
+        <span className="truncate" title={pr.title}>{pr.title}</span>
+      </button>)}
+      {!prs.length && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => onOpen("pr")}>
+        {prsLoading ? "Looking for pull requests…" : "Pull requests unavailable"}
+      </button>}
+      {prs.length > 1 && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => setAllPrs((value) => !value)} aria-expanded={allPrs}>
+        {allPrs ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}{allPrs ? "Show less" : `Show ${prs.length - 1} more`}
+      </button>}
+    </SummarySection>,
+    crew: (at) => <SummarySection label="Crew" title="Crew" {...at}>{crew}</SummarySection>,
+    tasks: (at) => tasks && <SummarySection label="Tasks" title="Tasks" {...at} action={<span className="text-xs tabular-nums text-muted-foreground">
+      {tasks.filter((todo) => todo.status === "completed").length}/{tasks.length}
+    </span>}>
+      <div className="px-2.5 py-1"><TodoList todos={tasks} live={busy} dense /></div>
+    </SummarySection>,
+    subagents: (at) => <SummarySection label="Subagents" title="Subagents" {...at}>
+      <button type="button" className={row} onClick={() => onOpen("more")}>
+        <span className="flex shrink-0 -space-x-1">
+          {subagents.slice(0, 3).map((run) => <BotAvatar key={run.id} seed={run.id}
+            working={!run.done && (busy || (run.taskId !== null && liveTaskIds.has(run.taskId)))} />)}
+        </span>
+        <span>{[running > 0 && `${running} running`, done > 0 && `${done} done`, unfinished > 0 && `${unfinished} unfinished`].filter(Boolean).join(" · ")}</span>
+      </button>
+    </SummarySection>,
+    sources: (at) => <SummarySection label="Sources" title="Sources" {...at} action={onManageSources && <Tooltip>
+      <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" aria-label="Manage MCP servers" onClick={onManageSources} className="-mr-1.5 text-muted-foreground"><Plus className="size-4" /></Button></TooltipTrigger>
+      <TooltipContent>Manage MCP servers</TooltipContent>
+    </Tooltip>}>
+      {(allSources ? sources : sources.slice(0, 3)).map((source) => {
+        const { icon: Icon, label } = SOURCE_ROWS[source.kind];
+        const thumbnail = source.kind === "image" && source.image.path
+          ? fileSrc(qualify(source.image.path, serverOfPath(cwd)))
+          : null;
+        const content = <>
+          {thumbnail ? <Thumb item={{ src: thumbnail, name: source.label }} className="size-4 shrink-0 rounded-sm object-cover" />
+            : source.kind === "mcp" && source.server
+              ? <McpLogo server={{ name: source.server, transport: "http", command: null, args: [], env: [], url: null, headers: [], enabled: true, inherited: false }} className="text-muted-foreground" />
+              : <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
+          <span className="min-w-0 flex-1 truncate" title={"url" in source ? source.url : source.label}>{source.label}</span>
+          <span className="shrink-0 text-muted-foreground">{label}</span>
+        </>;
+        if ("url" in source) return <a key={source.id} href={source.url} className={row} onClick={(event) => {
+          event.preventDefault();
+          openLink(source.url, event);
+        }}>{content}</a>;
+        if (source.kind === "attachment") return <button key={source.id} type="button" className={row} onClick={() => {
+          openPath(sessionId, source.path);
+        }}>{content}</button>;
+        if (source.kind === "image") return <button key={source.id} type="button" className={row} onClick={(event) => {
+          const src = thumbnail ?? source.image.url;
+          if (!src) return;
+          previewTrigger.current = event.currentTarget;
+          setPreviewImage({ src, name: source.label });
+          setImageOpen(true);
+        }}>{content}</button>;
+        return <div key={source.id} className="flex min-h-8 items-center gap-2.5 px-2.5 py-1 text-xs text-foreground/80">{content}</div>;
+      })}
+      {sources.length > 3 && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => setAllSources((value) => !value)} aria-expanded={allSources}>
+        {allSources ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}{allSources ? "Show less" : `View all (${sources.length})`}
+      </button>}
+      {previewImage && <ImageLightbox images={[previewImage]} index={imageOpen ? 0 : null}
+        onIndex={() => {}} onClose={() => setImageOpen(false)}
+        onCloseAutoFocus={(event) => {
+          if (!previewTrigger.current?.isConnected) return;
+          event.preventDefault();
+          previewTrigger.current.focus();
+        }} />}
+    </SummarySection>,
+    context: (at) => <SummarySection label="Context window" title="Context window" {...at}>
+      <ContextDetails breakdown={breakdown} total={context} />
+    </SummarySection>,
+  };
   const hide = () => {
     onHide();
     requestAnimationFrame(() => document.getElementById("pinned-summary-toggle")?.focus());
@@ -179,114 +327,14 @@ export default function PinnedSummary({
               Crew
             </DropdownMenuCheckboxItem>}
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={SUMMARY_ITEMS.every((item) => visible(item.id) === item.defaultVisible) && (!crew || crewVisible)} onSelect={() => { setItems({}); onCrewVisibleChange?.(true); }}>Reset to default</DropdownMenuItem>
+            <DropdownMenuItem disabled={SUMMARY_ITEMS.every((item) => visible(item.id) === item.defaultVisible) && (!crew || crewVisible) && summaryOrder(savedOrder).every((id, i) => id === SUMMARY_SECTIONS[i])}
+              onSelect={() => { setItems({}); setSavedOrder([]); onCrewVisibleChange?.(true); }}>Reset to default</DropdownMenuItem>
             <DropdownMenuItem onSelect={hide}>Hide pinned summary</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div>
-        {showWorkspace && <SummarySection>
-          <div className="flex min-h-8 min-w-0 items-center gap-2.5 px-2.5 text-xs text-foreground/80">
-            <Monitor className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate" title={cwd}>{environment}</span>
-            <span className="max-w-32 truncate text-muted-foreground" title={worktree ?? "Current checkout"}>{worktree ?? "Current checkout"}</span>
-          </div>
-          <OpenInButton path={cwd} variant="details" />
-        </SummarySection>}
-
-        {showGit && <SummarySection>
-          {visible("branch") && branch && <div className="flex min-h-8 min-w-0 items-center gap-2.5 px-2.5 text-xs text-foreground/80" aria-label={`Branch: ${branch}`}>
-            <GitBranch className="size-4 shrink-0 text-muted-foreground" />
-            <span className="truncate" title={branch}>{branch}</span>
-          </div>}
-          {visible("changes") && <button type="button" className={row} onClick={() => onOpen("changes")}>
-            <FileDiff className="size-4 shrink-0 text-muted-foreground" />
-            <span className="flex-1">Changes</span>
-            {changesError ? <span className="text-muted-foreground">Unavailable</span>
-              : changesLoading && !changes ? <span className="text-muted-foreground">Reading…</span>
-              : <span className="flex gap-1.5 font-mono tabular-nums"><span className={changes?.added ? "text-accent-add" : "text-muted-foreground"}>+{changes?.added ?? 0}</span><span className={changes?.removed ? "text-destructive" : "text-muted-foreground"}>-{changes?.removed ?? 0}</span></span>}
-          </button>}
-        </SummarySection>}
-
-        {showPrs && <SummarySection title="Pull requests">
-          {(allPrs ? prs : prs.slice(0, 1)).map((pr) => <button type="button" key={pr.number} className={row} onClick={() => onOpen("pr")}>
-            <PrStateIcon pr={pr} className="size-4" />
-            <span className="truncate" title={pr.title}>{pr.title}</span>
-          </button>)}
-          {!prs.length && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => onOpen("pr")}>
-            {prsLoading ? "Looking for pull requests…" : "Pull requests unavailable"}
-          </button>}
-          {prs.length > 1 && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => setAllPrs((value) => !value)} aria-expanded={allPrs}>
-            {allPrs ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}{allPrs ? "Show less" : `Show ${prs.length - 1} more`}
-          </button>}
-        </SummarySection>}
-
-        {showCrew && <SummarySection title="Crew">{crew}</SummarySection>}
-
-        {tasks && <SummarySection title="Tasks" action={<span className="text-xs tabular-nums text-muted-foreground">
-          {tasks.filter((todo) => todo.status === "completed").length}/{tasks.length}
-        </span>}>
-          <div className="px-2.5 py-1"><TodoList todos={tasks} live={busy} dense /></div>
-        </SummarySection>}
-
-        {visible("subagents") && subagents.length > 0 && <SummarySection title="Subagents">
-          <button type="button" className={row} onClick={() => onOpen("more")}>
-            <span className="flex shrink-0 -space-x-1">
-              {subagents.slice(0, 3).map((run) => <BotAvatar key={run.id} seed={run.id}
-                working={!run.done && (busy || (run.taskId !== null && liveTaskIds.has(run.taskId)))} />)}
-            </span>
-            <span>{[running > 0 && `${running} running`, done > 0 && `${done} done`, unfinished > 0 && `${unfinished} unfinished`].filter(Boolean).join(" · ")}</span>
-          </button>
-        </SummarySection>}
-
-        {showSources && <SummarySection title="Sources" action={onManageSources && <Tooltip>
-          <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" aria-label="Manage MCP servers" onClick={onManageSources} className="-mr-1.5 text-muted-foreground"><Plus className="size-4" /></Button></TooltipTrigger>
-          <TooltipContent>Manage MCP servers</TooltipContent>
-        </Tooltip>}>
-          {(allSources ? sources : sources.slice(0, 3)).map((source) => {
-            const { icon: Icon, label } = SOURCE_ROWS[source.kind];
-            const thumbnail = source.kind === "image" && source.image.path
-              ? fileSrc(qualify(source.image.path, serverOfPath(cwd)))
-              : null;
-            const content = <>
-              {thumbnail ? <Thumb item={{ src: thumbnail, name: source.label }} className="size-4 shrink-0 rounded-sm object-cover" />
-                : source.kind === "mcp" && source.server
-                  ? <McpLogo server={{ name: source.server, transport: "http", command: null, args: [], env: [], url: null, headers: [], enabled: true, inherited: false }} className="text-muted-foreground" />
-                  : <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
-              <span className="min-w-0 flex-1 truncate" title={"url" in source ? source.url : source.label}>{source.label}</span>
-              <span className="shrink-0 text-muted-foreground">{label}</span>
-            </>;
-            if ("url" in source) return <a key={source.id} href={source.url} className={row} onClick={(event) => {
-              event.preventDefault();
-              openLink(source.url, event);
-            }}>{content}</a>;
-            if (source.kind === "attachment") return <button key={source.id} type="button" className={row} onClick={() => {
-              openPath(sessionId, source.path);
-            }}>{content}</button>;
-            if (source.kind === "image") return <button key={source.id} type="button" className={row} onClick={(event) => {
-              const src = thumbnail ?? source.image.url;
-              if (!src) return;
-              previewTrigger.current = event.currentTarget;
-              setPreviewImage({ src, name: source.label });
-              setImageOpen(true);
-            }}>{content}</button>;
-            return <div key={source.id} className="flex min-h-8 items-center gap-2.5 px-2.5 py-1 text-xs text-foreground/80">{content}</div>;
-          })}
-          {sources.length > 3 && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => setAllSources((value) => !value)} aria-expanded={allSources}>
-            {allSources ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}{allSources ? "Show less" : `View all (${sources.length})`}
-          </button>}
-          {previewImage && <ImageLightbox images={[previewImage]} index={imageOpen ? 0 : null}
-            onIndex={() => {}} onClose={() => setImageOpen(false)}
-            onCloseAutoFocus={(event) => {
-              if (!previewTrigger.current?.isConnected) return;
-              event.preventDefault();
-              previewTrigger.current.focus();
-            }} />}
-        </SummarySection>}
-
-        {showContext && <SummarySection title="Context window">
-          <ContextDetails breakdown={breakdown} total={context} />
-        </SummarySection>}
+      <div ref={reorder.list}>
+        {reorder.shown.map((id, index) => <Fragment key={id}>{renderSection[id]({ index, reorder })}</Fragment>)}
         {empty && <div className="p-2"><button type="button" className={row} onClick={() => setMenuOpen(true)}><SlidersHorizontal className="size-4" />Choose what to show</button></div>}
       </div>
     </section>

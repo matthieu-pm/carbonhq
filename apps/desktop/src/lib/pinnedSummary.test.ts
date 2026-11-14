@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { setSummaryItem, summaryDocks, summaryItemVisible, summaryPresentation, summarySources } from "@/lib/pinnedSummary";
+import { moveSummarySection, setSummaryItem, summaryDocks, summaryItemVisible, summaryOrder, summaryPresentation, summarySources, SUMMARY_SECTIONS } from "@/lib/pinnedSummary";
 import type { AgentEvent, AgentEventPayload, ImageRef } from "@/types/events";
 
 function event(payload: AgentEventPayload, scope: Partial<AgentEvent> = {}): AgentEvent {
@@ -110,4 +110,33 @@ it("forgets an override when a detail returns to its default without losing othe
   expect(summaryItemVisible(restored, "workspace")).toBe(true);
   expect(summaryItemVisible(restored, "context")).toBe(false);
   expect(setSummaryItem(restored, "context", true)).toEqual({});
+});
+
+describe("summaryOrder", () => {
+  it("starts from the default order", () => {
+    expect(summaryOrder([])).toEqual([...SUMMARY_SECTIONS]);
+  });
+
+  it("drops unknown and repeated ids and slots missing sections after their default neighbour", () => {
+    expect(summaryOrder(["context", "gone", "prs", "context", "workspace"])).toEqual(
+      ["context", "prs", "crew", "tasks", "subagents", "sources", "workspace", "git"],
+    );
+  });
+});
+
+describe("moveSummarySection", () => {
+  const order = [...SUMMARY_SECTIONS];
+
+  it("moves among the shown sections and leaves hidden ones in their slots", () => {
+    const shown = ["workspace", "git", "tasks", "context"] as const;
+    expect(moveSummarySection(order, shown, "context", 0)).toEqual(
+      ["context", "workspace", "prs", "crew", "git", "subagents", "sources", "tasks"],
+    );
+  });
+
+  it("moves down", () => {
+    expect(moveSummarySection(order, order, "workspace", 2)).toEqual(
+      ["git", "prs", "workspace", "crew", "tasks", "subagents", "sources", "context"],
+    );
+  });
 });

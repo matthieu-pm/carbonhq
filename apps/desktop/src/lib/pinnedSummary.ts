@@ -44,6 +44,34 @@ export function setSummaryItem(items: SummaryItems, id: SummaryItemId, visible: 
   return visible === SUMMARY_ITEMS.find((item) => item.id === id)!.defaultVisible ? rest : { ...rest, [id]: visible };
 }
 
+/// The card's sections as drawn, which is coarser than `SUMMARY_ITEMS`: branch and changes share one.
+export const SUMMARY_SECTIONS = ["workspace", "git", "prs", "crew", "tasks", "subagents", "sources", "context"] as const;
+export type SummarySectionId = (typeof SUMMARY_SECTIONS)[number];
+
+/// The saved order brought up to date. Unknown ids drop out, and a section the
+/// save never named lands after the one it follows by default, so a section
+/// added in a later build appears where it was designed to.
+export function summaryOrder(saved: readonly string[]): SummarySectionId[] {
+  const known = new Set<string>(SUMMARY_SECTIONS);
+  const order = [...new Set(saved)].filter((id): id is SummarySectionId => known.has(id));
+  SUMMARY_SECTIONS.forEach((id, i) => {
+    if (order.includes(id)) return;
+    const before = i > 0 ? order.indexOf(SUMMARY_SECTIONS[i - 1]) : -1;
+    order.splice(before + 1, 0, id);
+  });
+  return order;
+}
+
+/// Moves `id` to index `to` among the sections on screen. Hidden and empty
+/// sections keep their slots, so showing one again puts it back where it was.
+export function moveSummarySection(order: readonly SummarySectionId[], shown: readonly SummarySectionId[], id: SummarySectionId, to: number): SummarySectionId[] {
+  const next = shown.filter((key) => key !== id);
+  next.splice(to, 0, id);
+  const visible = new Set(shown);
+  let i = 0;
+  return order.map((key) => visible.has(key) ? next[i++] : key);
+}
+
 export type SummarySource = { id: string; label: string } & (
   | { kind: "attachment"; path: string }
   | { kind: "image"; image: ImageRef }
