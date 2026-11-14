@@ -63,6 +63,8 @@ A session you start from the composer may create sessions. Those may create sess
 
 ```bash
 carbon session ls
+carbon session ls --machine vps
+carbon session ls --machine all --all --json
 ```
 
 One line per session: id, status, title, branch. A session created by another one also says `spawned by <id>`, and a hidden one says `hidden`.
@@ -72,6 +74,7 @@ One line per session: id, status, title, branch. A session created by another on
 | `--all` | Every project, not just this one. |
 | `--project <path>` | List this repo instead of the one you are in. |
 | `--json` | One JSON array, for scripts. Each entry carries `sessionId`, `title`, `cwd`, `projectPath`, `branch`, `worktreeName`, `status`, `modified`, `parentSessionId` and `hidden`. |
+| `--machine <name\|all>` | One connected machine, or this one and every connected machine. `--all` separately includes every project. Remote rows also carry `machine`. |
 
 Status is `idle`, `in_progress` or `completed`. `completed` means the turn finished and nobody has opened the session since. Settled sessions are not listed.
 
@@ -110,6 +113,10 @@ carbon session unset-aside <id>
 | `unset-aside <id>` | Takes it out of set-aside. |
 
 These are the same as the sidebar's buttons. Settling a session also settles the hidden sessions it started.
+
+## Sessions on another machine
+
+Pass `--machine <name>` to start a session on another connected machine. Commands naming an existing session id find its machine automatically. New sessions use the other machine's checkout; see [Work on another machine](/cli/servers#work-on-another-machine).
 
 ## Limits
 

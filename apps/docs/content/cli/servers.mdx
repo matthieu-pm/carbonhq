@@ -1,6 +1,6 @@
 ---
 title: Servers
-description: Make a machine a Carbon server with carbon server, give it a public address, and manage the app's list of servers with carbon machine.
+description: Install and pair a Carbon server, manage connected machines, and run CLI commands on another machine.
 sidebar:
   order: 8
 ---
@@ -8,7 +8,7 @@ sidebar:
 Two command groups, for two sides of the same setup:
 
 - `carbon server` runs on the machine that will **be** a server: a Linux box, or a Mac with no Carbon app. It installs what is missing and keeps the server running.
-- `carbon machine` runs on your Mac and edits the **app's list** of servers, the same list as Settings → Servers.
+- `carbon machine` manages the machines **this server can reach**. On a Mac with the app, it is the same list as Settings → Servers. It also works on a headless server.
 
 For the full walkthrough of putting Carbon on a Linux server, see [Connect a server](/server).
 
@@ -27,6 +27,7 @@ carbon server status
 | `stop` | Stops the server and removes it from the background. |
 | `status` | Says whether the server is running, and its public address if it has one. |
 | `tunnel on` / `tunnel off` | Puts a public address in front of the server, or takes it down. |
+| `pair` | Prints a QR code for adding this server to the Carbon iPhone app. Needs a public address first. |
 
 ### Install
 
@@ -71,6 +72,14 @@ Gives the server a public address that stays the same across restarts, and waits
 
 `carbon server tunnel off` takes the address down. The server is then reachable over SSH alone. The address is off until you turn it on.
 
+### Pair an iPhone
+
+```bash
+carbon server pair
+```
+
+Prints a QR code for the server's existing public address. Scan it with the iPhone's Camera or Carbon's **Add server** scanner. If the server has no public address yet, run `carbon server tunnel on` first. Anyone holding the QR code can use the server.
+
 ### On a Mac with the Carbon app
 
 The app runs this Mac's server, so `start`, `run` and `status` are refused with `the Carbon app runs this Mac's server`. `install` still installs tools and then stops. `tunnel on` and `tunnel off` work, and do the same as the Remote access switch in Settings → Servers.
@@ -94,7 +103,7 @@ carbon machine add vps root@203.0.113.7
 carbon machine ls
 ```
 
-Edits the app's list of servers. Changes show in Settings → Servers as you run them. These run on a Mac with the app; on a server with no app they are refused, since the list lives in the Mac app.
+Edits this server's machine list. On a Mac with the app, changes show in Settings → Servers. On a headless machine, the list belongs to its background server and works with no window open.
 
 | Command | What it does |
 |---|---|
@@ -109,7 +118,7 @@ Each name belongs to one server; `add` and `rename` refuse a name another server
 
 ### Add a server
 
-The address is the line you log in with, or a `ws://` address:
+The address is an SSH login, or a `ws://` or `wss://` address. Use a Mac's **Remote access** address and token to reach its app-managed server:
 
 ```bash
 carbon machine add vps root@203.0.113.7
@@ -117,16 +126,39 @@ carbon machine add vps ssh -p 2222 root@203.0.113.7
 carbon machine add vps my-ssh-alias
 cat serve-token | carbon machine add vps ws://127.0.0.1:7317
 carbon machine add --token-file serve-token vps ws://127.0.0.1:7317
+carbon machine add --token-file serve-token mac wss://example.opentunnel.xyz
 ```
 
-For SSH, everything after the name is the login, so it needs no quotes. The app logs in with your Mac's own `ssh` and reads the server's token over that login. A login can take most of a minute.
+For SSH, everything after the name is the login, so it needs no quotes. Carbon uses this machine's own `ssh` and reads the server's token over that login. A login can take most of a minute. The host key and your login key must already be trusted; `add` does not approve a host or answer a password prompt for you.
 
-A `ws://` address needs the server's token, from `~/.carbon/serve-token` on the server. Pass it with `--token-file`, which must come before the name, or on standard input. There is no flag that takes the token itself, so it never lands in your shell history.
+A `ws://` or `wss://` address needs the server's token, from `~/.carbon/serve-token` on the server or its Remote access settings. Pass it with `--token-file`, which must come before the name, or on standard input. There is no flag that takes the token itself, so it never lands in your shell history.
 
 If the connection fails, `add` saves nothing and says why: an unknown host key, a login that wants a password, no Carbon on the server.
+
+## Work on another machine
+
+`--machine <name>` forwards `session`, `draft`, `issue`, `pages`, `secret`, `browser` and `share` commands through this server to a machine from `carbon machine ls`. Put the flag before or after the command:
+
+```bash
+carbon --machine vps session new "Run the load test" --title "Load test"
+carbon --machine vps session ls
+carbon session ls --machine all
+carbon session ls --machine all --all --json
+carbon session send <session-id> "Use the staging database."
+carbon --machine vps pages list
+```
+
+`session ls --machine all` lists this machine and every connected machine. `--all` is separate: it includes every project. Other commands require one machine.
+
+A command naming a session id finds its machine automatically if the local server does not hold that session. Page and draft ids do not have this lookup; pass `--machine` when they belong elsewhere.
+
+For sessions and drafts, Carbon finds the other machine's checkout by the repository's `origin` remote. If there is no matching checkout, attach one there or pass `--project <path on that machine>`. A `--base <session-id>` becomes that session's branch, which must also be available on the target machine. Push it first if needed. Pages' project paths always name projects on the owning server.
+
+Connections work in one direction. Adding `vps` here lets this machine reach it; `vps` can message back only if it also adds this machine. Forwarded commands do not hop through another server to a third machine.
 
 ## Limits
 
 - `carbon server` installs browser libraries and ffmpeg with apt alone.
 - On a Mac, the background server runs only while you are logged in.
-- `carbon machine` works only where the Carbon app runs.
+- `carbon machine` and `carbon server` change this machine only. Neither takes `--machine`.
+- Remote commands need a local server and a working connection to the target. They do not install or update an older target server for you.

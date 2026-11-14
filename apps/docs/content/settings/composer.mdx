@@ -1,0 +1,36 @@
+---
+title: Composer buttons
+description: Show, hide and reorder the composer's built-in prompt buttons, and add buttons with your own prompts.
+sidebar:
+  order: 9
+---
+
+Composer buttons save you typing a prompt you use often. They rise from the top edge of an existing session's composer when you hover it or focus a button. Clicking one sends its prompt to that session immediately.
+
+Customize them in Settings → **Composer**. Open Settings with `⌘,`; you can change that shortcut in Settings → Shortcuts.
+
+## Built-in buttons
+
+| Button | Prompt sent | When it appears |
+|---|---|---|
+| **Commit** | `commit your changes` | The working tree has uncommitted changes. |
+| **Create PR** | `create a PR` | The branch has work to propose, is not the default branch, and has no pull request yet. |
+| **Run server** | `start the dev server in the background` | A session is open. |
+
+Switch a built-in button off to hide it. Its prompt is fixed; add your own button for different wording.
+
+## Add your own
+
+1. Click **Add button**.
+2. Write the **Prompt** to send. It can include several lines.
+3. Give it a **Label**, or leave the label blank to use the prompt's first three words.
+
+Changes save as you type. A button with an empty prompt stays hidden. Your buttons appear whenever a session is open, so write prompts that make sense in the sessions where you will use them.
+
+Drag a row by its grip to reorder it, or focus the grip and press `↑` or `↓`. Built-in and custom buttons share one order. Use a custom row's bin button and confirm to remove it.
+
+## Limits
+
+- A click sends the prompt immediately. It does not put text in the composer for editing first.
+- These buttons ask the agent to act. Its instructions, permissions and tool results still apply.
+- Buttons belong to existing sessions; the new-task composer has none.

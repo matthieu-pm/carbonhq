@@ -8,7 +8,11 @@ export default defineConfig({
   description: "How to install and use Carbon, the desktop app for coding agents.",
   // The wordmark already says the name, so no text beside it. `href` leaves
   // the docs for the site, since `/` here is the docs' own index.
-  logo: { image: "/logo.svg", text: "", href: "https://carbonhq.sh" },
+  logo: {
+    image: { light: "/logo.svg", dark: "/logo-dark.svg", alt: "Carbon" },
+    text: "",
+    href: "https://carbonhq.sh",
+  },
   content: { root: "content" },
   // Dark first, like the site and the app. The palette is the site's: neutral
   // ramp, near-white accent, Geist.

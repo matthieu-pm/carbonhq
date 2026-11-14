@@ -49,11 +49,23 @@ When an agent finishes planning and asks to start work, the card carries the pla
 
 The Plan tab keeps the latest plan for each session until you quit Carbon, so you can still read it after you approve.
 
+## One-time secrets
+
+An agent can request a credential through a **One-time secret** card. Enter it in the masked fields instead of pasting it into chat. Check the purpose and destination first: the card shows the exact command and working folder, file path, or website and form fields.
+
+- A command request offers **Run with secret**.
+- A file request can run with a temporary file. Keeping a file is an explicit switch; Carbon requires a git-ignored path and does not replace an existing file.
+- A browser request offers **Fill and submit**. You handle any MFA or CAPTCHA.
+
+**Deny** shares nothing. Requests expire after ten minutes, and each approval runs once. Fields clear when submitted; switching away can clear a partially entered value too. A later summary shows the result without the value. If a hand-off is unconfirmed, check its status before requesting another.
+
+Carbon keeps the value out of its saved transcript and logs and discards its own copy after use. The approved command, file or website can still expose it. A kept file stays on disk, and a browser login stays signed in. See [Secret hand-offs](/cli/secrets) for the commands and limits.
+
 ## After a restart
 
 **Quit** does not stop your sessions (only **Quit completely** does). On a Mac they run in Carbon's background server, so an open card is still there when you reopen the app, and you can answer it.
 
-A card belongs to the agent process that asked. If that process ends — you stop or settle the session, or the background server restarts — the card goes away and its buttons can no longer work. Requests and answers are not saved in the transcript. Nothing is lost by it: when you send your next message, the agent asks again if it still needs the permission.
+Permission and question cards belong to the agent process that asked. If that process ends — for example, you settle the session or the background server restarts — those cards go away and their buttons can no longer work. Requests and answers are not saved in the transcript. Nothing is lost by it: when you send your next message, the agent asks again if it still needs the permission.
 
 ## Limits
 

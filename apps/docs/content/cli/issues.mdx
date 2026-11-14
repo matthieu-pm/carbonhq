@@ -1,6 +1,6 @@
 ---
 title: Issues
-description: Tag a session with the Linear or GitHub issues its work is against using carbon issue link, and remove tags with carbon issue unlink.
+description: Link Linear or GitHub issues to sessions, post Linear comments, and change a Linear issue's status.
 sidebar:
   order: 5
 ---
@@ -54,13 +54,33 @@ carbon issue unlink DRA-54
 
 Takes the issue off the session and prints what is left. The issue itself is untouched. It takes the same `--session` flag and forms as `link`.
 
-## What it asks the tracker
+## What linking asks the tracker
 
 Nothing. `carbon issue link` writes down what you give it, so it works without a connected tracker and without a network. Without `--title` and `--url`, the tag is the bare identifier and links nowhere.
 
 Two other ways to tag do look the issue up, and need the tracker connected in the app: `--issue` on [`carbon session new`](/cli/sessions#start-a-session), and an identifier written into a prompt, like `#DRA-53`. If the lookup fails, the session still runs and the tag stays plain text.
 
+## Comment on a Linear issue
+
+```bash
+carbon issue comment CBN-53 "The retry fix is ready for review."
+```
+
+Posts the quoted text as a comment. This uses the Linear connection in Carbon's settings. The key stays in Carbon; you do not pass it to the command. No calling session or `--session` is needed.
+
+## Change a Linear issue's status
+
+```bash
+carbon issue status CBN-53 "In Progress"
+```
+
+Moves the issue to a status its team already has. Quote names containing spaces. Names ignore letter case and repeated spaces. You can also use `triage`, `backlog`, `unstarted`, `started`, `completed` or `canceled` (`cancelled` also works) when exactly one status has that kind. Unknown or ambiguous matches are refused. Neither `comment` nor `status` links the issue to a session; use `link` for that.
+
+To use another machine's Linear connection, pass `--machine <name>`. See [Work on another machine](/cli/servers#work-on-another-machine).
+
 ## Limits
 
-- **`carbon` never writes to the tracker.** No status change, no comment, no assignee. Tagging records the link on the session in Carbon and nothing else. To move or comment on an issue, use the tracker, or the status and priority menus in the app's issue panel.
+- `comment` and `status` write to Linear only. They need Linear connected in Carbon. For GitHub writes, use GitHub or `gh`.
+- The CLI does not create issues, read their full descriptions, or set assignees, labels or priorities.
+- Comments must contain text and can have at most 50,000 characters.
 - A tag is a copy. If the issue's title changes in the tracker, the tag keeps the old one until you link it again.

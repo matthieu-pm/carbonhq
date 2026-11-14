@@ -1,0 +1,67 @@
+---
+title: Reviewing work
+description: Read a turn's changes, inspect uncommitted files and commit history, browse files, and check or merge a GitHub pull request.
+sidebar:
+  order: 8
+---
+
+Use the side panel to review what a session changed, and the main **Diff** and **Files** tabs to inspect its repository. In a worktree session, these views read that worktree.
+
+Open the side panel with the panel button or `⌘E`. `⌘⌥E` moves it to the other side. You can change the shortcuts in Settings → Shortcuts.
+
+## Read the latest changes
+
+In the side panel, choose **Changes**. It lists the newest turn that changed files. Open a row to see its diff. Binary files are listed without a text diff.
+
+Carbon compares the files before that turn with its closing snapshot. Files already changed before the prompt are outside that comparison. A finished turn's changes stay fixed when something else later edits the checkout.
+
+This view needs a git repository and a recorded snapshot. For the repository's current state, use **Open Diff view** or add a **Diff** tab.
+
+## Inspect the repository
+
+Click **+** in the session's top tab row and choose **Diff**. It has three views:
+
+| View | What it shows |
+|---|---|
+| **Uncommitted** | Current working-tree changes against the latest commit. |
+| **Branch** | Commits on this branch beyond its base. |
+| **History** | The repository's commit history. |
+
+Pick a file, or a commit and then a file, to read the diff. **Split view** puts the versions side by side; **Unified view** puts them in one column. `⌘⇧←` and `⌘⇧→` move between the three views.
+
+Diff is read-only. Ask the agent in chat to edit, commit or create a pull request. The composer's [prompt buttons](/settings/composer) can send those requests.
+
+## Browse files and Markdown
+
+Use **+ → Files** to open the file tree and search for a file. File paths in the transcript also open files here; Markdown links open in the side panel's **Docs** tab. `⌘`-click a path to use the app chosen in Settings → Integrations → **Open files with**.
+
+The file viewer is read-only. Repository Markdown in **Docs** has its own editing and preview controls; `⌘S` saves it. These files are separate from [Spaces Pages](/using-carbon/spaces).
+
+## Manage tabs
+
+Chat, Diff, open files and browser pages share the session's top tab row. Drag tabs to reorder them. `⌘⇧[` and `⌘⇧]` step through it; `⌘1`–`⌘8` select a position and `⌘9` selects the last tab.
+
+`⌘W` closes the current closable tab or pane. `⌘⇧T` reopens the last closed session tab. On the new-task composer, that same shortcut toggles Worktree instead.
+
+## Check a pull request
+
+The side panel's **PR** tab shows pull requests from the session's branch. It requires a GitHub remote and the `gh` CLI signed in on the machine holding the repository. See [Accounts](/settings/accounts) for local sign-in.
+
+Open a PR row to read its checks, reviews and comments. Use **Open on GitHub** for the full pull request. **Refresh** reads its state again.
+
+A draft offers **Ready for review**. An open PR offers a merge method: **Squash and merge**, **Create a merge commit** or **Rebase and merge**. Pick the method, click it, then confirm. Read the readiness status and the destination branch before confirming; GitHub applies its own rules. A closed PR offers **Reopen**.
+
+## Other panel tabs
+
+Tabs appear when a session has something for them:
+
+- **Issue** shows its [linked issues](/settings/issues#issues-linked-to-a-session).
+- **Plan** keeps the latest [plan submitted for approval](/using-carbon/permissions#approve-a-plan).
+- **More** shows task lists, subagents and background tasks. A supported background task has a stop button; **Stop all** stops the listed tasks.
+- **Browser** opens the session's browser. See [Browser](/cli/browser) for agent controls.
+
+## Limits
+
+- The Changes panel reports a turn's file changes, not who made each edit. Another process writing in the same checkout during that turn can affect its snapshot.
+- Closing a tab does not stop the session.
+- PR actions change the real GitHub pull request. Carbon does not merge files locally through the Diff view.

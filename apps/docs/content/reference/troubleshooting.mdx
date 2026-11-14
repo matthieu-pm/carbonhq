@@ -2,26 +2,34 @@
 title: Troubleshooting
 description: Fixes for common problems — a missing or logged-out agent, a stuck session, a dead permission card, a refused carbon command, silent dictation, missing notifications, gh, worktrees, rate limits — and where the logs are.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 Each heading below is a problem, followed by what to do about it. Most of them start with a message in the app; it is quoted here as the app shows it.
 
-Several fixes say **restart the server**. On a Mac that means Quit → **Quit completely**, then open Carbon again. Plain **Quit** leaves the background server, and every session in it, running. See [Sessions keep running when you quit](/reference/remote-access#sessions-keep-running-when-you-quit).
+Several fixes say **restart the server**. On a Mac with the app, use Quit → **Quit completely**, then open Carbon again. This stops that Mac's running agents. Plain **Quit** leaves its background server running. On Linux, let active work finish, then run `systemctl --user restart carbon`. Restart the machine that owns the session; reopening your Mac app does not restart a remote server.
+
+## macOS blocks Carbon
+
+First move Carbon from the disk image into Applications, eject the image, and open the Applications copy. A message saying "Move Carbon to your Applications folder" means the app is still running from an installer or a temporary macOS location.
+
+Some beta builds are not notarized. If macOS says it cannot verify the developer, and you trust the copy you downloaded from [carbonhq.sh](https://carbonhq.sh), open System Settings → Privacy & Security and look for **Open Anyway** after trying to launch it. Follow the confirmation there. Do not use this to bypass a warning for a download from an unknown source.
+
+If an update reports a disk-space or read-only-volume error, check that you opened the Applications copy and that its disk has room for the download and extraction. Do not keep retrying from a mounted dmg.
 
 ## An agent is marked as not installed
 
 The agent picker in the composer puts a red dot on an agent Carbon can't find. Pick it and the composer says "`<Agent>` isn't installed, so this session can't start." with **Copy command** and **Install guide**. Nothing is created until you send, so your prompt stays in the composer.
 
 1. Copy the install command and run it in Terminal, or follow the install guide.
-2. **Restart the server.** Carbon looks for each agent once and remembers the answer, so an agent installed while Carbon runs still reads as missing until then.
+2. **Restart the server that will run the session.** Carbon looks for each agent once and remembers the answer, so an agent installed while that server runs still reads as missing until then.
 3. Send again.
 
-Carbon finds an agent on your `PATH`, in the usual install folders (`~/.local/bin`, Homebrew, nvm and others), or by asking your login shell. If it still can't, make sure `command -v <agent>` works in a new Terminal window.
+Carbon finds an agent on your `PATH`, in the usual install folders (`~/.local/bin`, Homebrew, nvm and others), or by asking your login shell. If it still can't, make sure `command -v <agent>` works in a new Terminal window on the machine running the session. A remote server needs its own install and login.
 
 ## "isn't logged in"
 
-When an agent's sign-in has expired, the composer says "`<Agent>` isn't logged in" with **Copy command** and **Log in**. **Log in** opens Terminal running that agent's own login. Finish it there, then send again.
+When an agent's sign-in has expired, the composer says "`<Agent>` isn't logged in" with **Copy command** and **Log in**. **Log in** opens Terminal running that agent's own login. Finish it there, then send again. For a remote project, sign in on that project's server; your Mac's agent login is separate.
 
 To see which account each agent uses, or to sign in before anything fails, open Settings → Accounts. See [Accounts](/settings/accounts).
 
@@ -52,10 +60,22 @@ The `carbon` command line and the app must speak the same version. The message n
 |---|---|
 | "this carbon CLI speaks protocol vN, the app speaks vM — run `carbon update`" | The CLI is behind. On a Mac, quit and reopen Carbon, which puts its own CLI back in `~/.local/bin`. Elsewhere, run `carbon update`. |
 | "… — update the Carbon app" | The app is behind. Update it in Settings → About → Updates. |
-| "Carbon isn't running. Start the app and try again." | Open Carbon. On a Linux server, start it with `carbon server start`. |
+| "Carbon isn't running. Start the app and try again." | Open Carbon. On a standalone server, start it with `carbon server start`. |
 | "permission denied reaching Carbon at …" | Carbon may well be running. A sandbox around the command, or the folder's permissions, blocked it. Run that one command outside the sandbox. |
 
 On a Mac, the app ships the `carbon` CLI and installs it each time it starts. See [the carbon CLI](/cli).
+
+**Terminal says `carbon: command not found`.** Open the release app once, then try `~/.local/bin/carbon --help`. If that works, add `~/.local/bin` to your shell's `PATH` and open a new terminal. If several copies are installed, `command -v carbon` shows which one your shell uses; a symlink to a development build is not replaced by the app.
+
+## A server will not connect
+
+- **SSH asks for a password.** The app uses key-based SSH. Set up the key using the command the app offers, then try again.
+- **The host key is new or has changed.** Check the fingerprint on the server before trusting it. Do not remove a saved key just to hide an unexplained mismatch.
+- **An address-and-token connection is refused.** Copy the address and token from the owning server again. If its token changed, every client needs the new one. See [Change the token](/reference/remote-access#change-the-token).
+- **A Mac's Remote access address is unreachable.** Keep the Mac awake and check Remote access on its **This Mac** row. Quitting normally leaves it running; **Quit completely** stops it.
+- **A Linux server stops after logout.** Check `carbon server status`. Enable linger with `sudo loginctl enable-linger <user>` for the account running Carbon. See [Connect a server](/server).
+
+Disconnecting or removing a server in Settings does not stop agents on that machine.
 
 ## Dictation records nothing
 
@@ -85,7 +105,7 @@ So a banner never shows while Carbon is in front. If you never see banners from 
 1. Open System Settings → Notifications → Carbon and allow notifications. macOS asks the first time Carbon posts one; if you said no then, nothing more is asked.
 2. Check Focus and Do Not Disturb.
 
-A session in a space other than the one you are in announces nothing. See [Notifications](/settings/notifications).
+A session in a Profile other than the one you are in announces nothing. See [Notifications](/settings/notifications).
 
 A background subagent that reports back after its turn can make a session announce "finished" twice.
 
@@ -100,14 +120,14 @@ If it says "Still no gh — Carbon looks where your login shell looks.", open a 
 
 If `gh` is installed but logged out, the tab shows `gh auth login` instead. Run it, then press **Recheck**. On the issues page, GitHub's connect pane has **Check again** for the same thing.
 
-On a remote server, the tab shows `carbon setup` instead, which installs `gh` there.
+On a remote server, run `carbon server install` and pick the GitHub CLI. Older messages may call this `carbon setup`, which is still accepted. Sign in with `gh auth login` on that server, then recheck.
 
 ## A worktree won't delete
 
 - **"that worktree is in use by another session (…)"**: another session's agent is working in that folder right now. Settle or stop that session, then delete again.
 - **"… is not a worktree Carbon created, so it will not be removed"**: Carbon only removes worktrees under `<project>/.claude/worktrees/`. Remove others yourself with `git worktree remove`.
 
-If you delete a session and its worktree can't be removed, the folder stays behind with nothing in Carbon pointing at it. In the project, run `git worktree remove <path>`, then `git branch -D worktree-<name>`. See [Worktrees](/using-carbon/worktrees).
+If you delete a session and its worktree can't be removed, the folder stays behind with nothing in Carbon pointing at it. Check the folder for uncommitted work before removing it. In the project, run `git worktree list` to confirm its path and branch, then `git worktree remove <path>`. Avoid forcing removal of a dirty tree. Use `git branch -d <branch>` if you also want to remove a merged branch; keep an unmerged branch until its commits are safe. See [Worktrees](/using-carbon/worktrees).
 
 ## Usage and rate limits
 
@@ -117,9 +137,15 @@ If you delete a session and its worktree can't be removed, the folder stays behi
 
 ## An update won't install
 
-- **Restart to update stays waiting.** Carbon won't restart while any session is mid-turn, since restarting would cut it off. It installs once they finish. Hover the button to see why it waits.
+- **Restart to update stays waiting.** Carbon won't restart while any session is mid-turn. Hover the button to see why it waits. When the turns finish, click **Restart to update** again; Carbon does not restart itself automatically.
 - **"Check for Updates…" from the menu says nothing.** With the sidebar collapsed, the answer has nowhere to show. Open the sidebar, or use Settings → About → Updates.
 - **A remote server won't update from the app.** See [Update remote servers](/reference/remote-access#update-remote-servers).
+
+## Pages or sessions seem to be missing
+
+Check the owning server in Settings → Servers first. Then check the current Profile and the session's settled state, or Trash for a Page. A development build and the release app use different data folders, and setting `CARBON_HOME` also selects a different folder.
+
+Do not delete `~/.carbon` to fix an empty list: it contains the transcripts, Pages and credentials. If you need to restore a copy, stop its server first and follow [Back up and restore](/reference/backups).
 
 ## Logs and parse failures
 
@@ -135,7 +161,9 @@ To see what kinds of line failed and how often:
 jq -r '.stage + " " + .detail' ~/.carbon/parse_failures.jsonl | sort | uniq -c
 ```
 
-When you report a bug, those two files are the most useful things to attach. Check them for anything private first: they hold raw lines from your sessions. See [Data on disk](/reference/data) for everything else in `~/.carbon`.
+Read the logs on the machine running the session. A custom `CARBON_HOME` changes their location; development builds have [their own folders](/reference/data#development-builds).
+
+When you report a bug, these logs can help. Check them for anything private before sharing: parse failures hold raw lines from your sessions. Include the Carbon version, agent and whether the session runs on This Mac or a remote server. See [Data on disk](/reference/data) for everything else in `~/.carbon`.
 
 ## Limits
 

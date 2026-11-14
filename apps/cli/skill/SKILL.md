@@ -593,11 +593,12 @@ On a Mac with the Carbon app, the app ships this CLI and puts it in
 `~/.local/bin` each launch, so `carbon update` there says so and does nothing.
 Updating the app is how the CLI moves.
 
-The app and this CLI ship separately, so they can drift. When they disagree about
-the protocol the app **refuses the command** — every command, not just whichever
-one is new — rather than doing something you cannot see is wrong. You do not need
-to know which flags need which version: run the command, and if the two disagree
-you get a refusal naming the cure. There are only two:
+The app and this CLI ship separately, so they can drift. Each request carries
+the oldest protocol version that supports it. The app accepts requests in its
+supported range, so a newer CLI can still run commands an older app understands.
+A request outside that range is refused before it runs. You do not need to know
+which flags need which version: run the command, and a protocol refusal names
+the cure. There are only two:
 
 - *"this carbon CLI speaks protocol vN, the app speaks vM — run `carbon update`"* —
   you are behind. Run it, then retry the command. This is the common case and
@@ -638,8 +639,9 @@ the cure is safe.
   dialogs are out of reach.
 - **No reading transcripts.** You can create, list and message. You cannot read
   what another session said — ask it to send you a summary instead.
-- **Other machines cannot answer.** A session on another machine can be
-  started, messaged and listed from here, but cannot message you back.
+- **Remote replies need a connection back.** A session on another machine can
+  message you if its server can reach yours. Starting a session there does not
+  create that reverse connection. See *Working on another machine*.
 - **Two levels deep.** A session you create may create sessions of its own; those
   may not. If you hit this, say so — the user can start the next batch from a
   top-level session.

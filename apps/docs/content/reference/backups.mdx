@@ -1,0 +1,36 @@
+---
+title: Back up and restore
+description: Back up Carbon's server data, Pages and agent history without copying files while the server is writing them.
+sidebar:
+  order: 3
+---
+
+Carbon stores each machine's sessions and Pages on that machine. A backup of your Mac does not back up a connected Linux server. Start with [Data on disk](/reference/data) to find the data you need.
+
+## Back up a server
+
+1. Let running turns finish. Stop any background tasks you no longer need.
+2. On a Mac with the desktop app, use Quit → **Quit completely**. Plain **Quit** leaves the server writing files. On a standalone server, run `carbon server stop`; this stops running agents and removes its background service.
+3. Copy the Carbon data folder to a private backup location. The default is `~/.carbon`; use your chosen folder if you set `CARBON_HOME`. Runtime files such as `carbon.sock`, `serve-port` and `serve.lock` do not need to be copied; the server recreates them.
+4. Back up your project folders, including any worktrees with uncommitted work. They are outside Carbon's data folder. Back up the [agents' own data](/reference/data#where-agents-keep-their-own-data) too if you need to resume their conversations.
+5. Reopen Carbon, or run `carbon server start` on a standalone server.
+
+Keep `pages/`, its `history/` and `linear-sync/` folders, and `attachments/pages/` together. A Page's text alone does not include its attachments or saved sync state. Page history is useful for undoing edits, but lives on the same disk and is not a separate backup.
+
+Backups can contain transcripts, tokens, browser cookies, private documents and raw diagnostic lines. Protect them as you would the originals. Interface preferences such as theme, shortcuts and Profiles are in the Mac app's own storage and need your Mac backup too.
+
+## Restore a backup
+
+1. Stop the server as above. Keep a separate copy of the current data before replacing anything.
+2. Restore the saved data to its original folder path as a whole. Avoid mixing a session index from one backup with transcripts from another, or Pages with a different copy of their sync state.
+3. Restore the projects and agent data you need. Sessions remember their working directories, so those paths must exist on the machine running them. Keep the restored data private to your user.
+4. Open Carbon, or run `carbon server start` on a standalone server. Check the session list and Pages before sending new prompts. A stopped agent resumes when you send a message.
+
+A restored linked Page may differ from its current Linear document. Check its sync status before choosing a version; Carbon keeps both sides when they conflict. See [Spaces](/using-carbon/spaces).
+
+## Limits
+
+- Copying Carbon's data does not copy your repositories or make their uncommitted files safe.
+- This is a same-path restore, not an automatic migration to another account or folder. Session directories and Page attachment metadata can contain absolute paths.
+- A backup contains the server's token and tunnel identity. Do not run a restored clone beside the original with those same credentials and identity.
+- Restoring Carbon does not restore your providers' subscriptions or guarantee that an agent login is still valid.

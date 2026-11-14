@@ -5,7 +5,9 @@ session lives on a server — This Mac through Remote access, or a VPS — and t
 phone reads and drives it over the same WebSocket the desktop uses
 ([SERVE-PLAN.md](../desktop/SERVE-PLAN.md)).
 
-## What v1 does
+For build, test and wire-maintenance steps, read [README.md](README.md).
+
+## What the client implements
 
 - **Every saved server at once, one merged list**, the desktop sidebar's live
   list: stages workspace-wide with a gap between runs and no headings, PR marks
@@ -15,9 +17,14 @@ phone reads and drives it over the same WebSocket the desktop uses
 - **Transcript**, live, shaped like the desktop's: finished turns fold to
   prompt, summary line and answer; runs of one tool group into a row; a
   running turn keeps its newest five rows on screen. No diffs, no
-  highlighting, no images.
+  highlighting. Prompt attachments, tool-result images and standalone Markdown
+  images load through the owning server (see `Images.swift`).
 - **Reply** to a session, **Stop** a turn.
 - **Permission and question cards**, answered in place.
+- **One-use secret cards**, with values submitted to the owning server outside
+  the prompt and event log (`SecretCard.swift`).
+- **Local servers** sheet, listing a session's dev servers with public-link
+  sharing and stop-sharing controls (`LocalServers.swift`).
 - **New session** with the desktop composer's picks: project, harness, model,
   effort, stance, fast mode, worktree, branch.
 - **Pairing** by paste or by QR, and every server's name, token and removal
@@ -31,7 +38,7 @@ phone reads and drives it over the same WebSocket the desktop uses
   so the mic is drawn nowhere else. Both composers carry it, and the Island's
   voice orb takes the row while it records.
 
-Left out: push, attachments, the Diff/Files/Browser views,
+Left out: push, attachment picking in the composer, the Diff/Files/Browser views,
 forks, settle/pin, the settled list, spaces, issues.
 
 ## Stack
@@ -120,7 +127,8 @@ Commands used: `list_session_index_items`, `get_session_by_id`,
 `list_branches`, `checkout_branch`, `mark_session_read`, `work_status`,
 `prs_for_branch`, `merge_pr`, `mark_pr_ready`, `reopen_pr`, `set_last_selected_project`,
 `add_project`, `github_repos`, `clone_github_repo`, `recheck_gh`, `pr_marks`,
-`transcribe_upload`.
+`transcribe_upload`, `list_local_servers`, `share_ready`, `share_port`, `stop_share`,
+`list_secret_requests`, `answer_secret_request`, `deny_secret_request`.
 
 **New session restates the desktop composer's rules** (`Picks` in
 `NewSessionView.swift`): which stances each harness honours (`permission.ts`),

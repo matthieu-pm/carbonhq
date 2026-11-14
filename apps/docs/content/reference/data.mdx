@@ -1,13 +1,13 @@
 ---
 title: Data on disk
-description: What Carbon keeps in ~/.carbon, what goes when you delete a session, the environment variables you can set, and where each agent keeps its own data.
+description: Find Carbon's sessions, Pages, attachments and credentials, understand deletion and development homes, and locate each agent's own data.
 sidebar:
   order: 2
 ---
 
-Carbon keeps everything on your machine, in one folder: `~/.carbon`. Transcripts, the session list, attachments, settings and the browser's profiles all live there. A Linux server keeps its own `~/.carbon` with the sessions that run on it.
+Carbon keeps its server data in `~/.carbon`: transcripts, the session list, Pages, attachments and settings. Each connected machine keeps its own data where its server runs. The Mac app keeps some interface preferences separately.
 
-The folder is readable by your user alone, and Carbon uploads none of it. For what does leave the machine, see [Privacy](/reference/privacy).
+The folder is readable by your user alone. Connecting another device lets it read and use that server's data. Linked Linear Pages sync with Linear. For what else leaves the machine, see [Privacy](/reference/privacy).
 
 ## What's in ~/.carbon
 
@@ -15,7 +15,12 @@ The folder is readable by your user alone, and Carbon uploads none of it. For wh
 |---|---|
 | `sessions/<session-id>.jsonl` | One file per session: the whole transcript, one event per line. The only copy Carbon keeps. |
 | `sessions/index.json` | The session list: each session's title, project, working directory, agent, model and flags. |
-| `attachments/<session-id>/` | A copy of every image you sent in that session, so the transcript still shows it after you delete the original. Other files are not copied; the prompt names them by path. |
+| `attachments/<session-id>/` | Copies of images you sent and images tools returned, so the transcript can show them after the originals are gone. Local non-image files are referenced by path. |
+| `attachments/uploads/` | Files uploaded from another device, including audio sent from an iPhone for transcription. |
+| `pages/<page-id>.md` | A Page's Markdown and metadata: title, project links, revision, favorites and Trash state. |
+| `pages/history/<page-id>/<revision>.md` | Saved revisions of each Page. |
+| `pages/linear-sync/` | Linked Linear documents, sync baselines, pending writes and conflict copies. Keep it with the Pages when backing up. |
+| `attachments/pages/<page-id>/` | A Page's attachments and their metadata. These survive session and worktree deletion. |
 | `drafts.json` | Tasks you saved with `⌘S` and have not started. |
 | `projects.json` | Attached projects, and which one was last selected. |
 | `settings.json` | The analytics install id, your dictation model and microphone, the Linear account name, and whether Remote access is on. |
@@ -29,23 +34,27 @@ The folder is readable by your user alone, and Carbon uploads none of it. For wh
 | `chromium/` | The headless browser `carbon browser` drives where the app's own browser is not open, such as on a Linux server. |
 | `pi-sessions/` | pi's own transcript of each pi session, which is how pi resumes it. |
 | `opentunnel/`, `tunnel-url` | The identity behind your Remote access and share addresses, and the current address. Deleting `opentunnel/` gives you new addresses. |
-| `serve-token` | The token other Macs use to reach this one through Remote access (`0600`). |
+| `serve-token` | This server's token, used by the app and devices connecting by address (`0600`). |
 | `serve-port`, `serve.lock`, `carbon.sock` | The running server's port, its lock, and the socket the `carbon` command talks to. |
 | `server.log` | The background server's log. See [Troubleshooting](/reference/troubleshooting). |
 | `parse_failures.jsonl` | Lines from an agent CLI that Carbon could not read, with the raw line. Safe to delete. |
-| `cli-synced` | The app version that last updated your `carbon` CLI. |
+| `secret-handoffs/` | Temporary files for one-use secret requests. Carbon removes them after use and clears crash leftovers when the server starts. A file you explicitly keep is written in the project instead. |
 
-Your composer picks, theme, shortcuts, spaces list and other app preferences are not in `~/.carbon`. They live in the app's own storage on this Mac.
+Your composer picks, theme, shortcuts, Profiles list and other interface preferences live in the app's own storage on this Mac. Spaces documents are the Pages listed above. See [Spaces](/using-carbon/spaces) and [Profiles](/using-carbon/profiles).
 
 Outside `~/.carbon`, Carbon also writes:
 
 - **Worktrees**, inside the project: `<project>/.claude/worktrees/<name>`, on a branch `worktree-<name>`. See [Worktrees](/using-carbon/worktrees).
 - **The login item** that starts the background server: `~/Library/LaunchAgents/com.yogesh.carbon.server.plist`. The app writes it on every launch.
-- **The `carbon` CLI**, if you installed it: `~/.local/bin/carbon`, and its skill in `~/.claude/skills/carbon/` and `~/.codex/skills/carbon/`.
+- **The `carbon` CLI**, installed by the release app on launch: `~/.local/bin/carbon`, and its skill in the agents' skill folders. See [carbon CLI](/cli).
+
+### Development builds
+
+A development build uses `~/.carbon-dev`. A build compiled in a worktree uses `~/.carbon-worktrees/<name>` for its sessions, Pages, drafts and server. These worktree builds share projects, settings and credentials from `~/.carbon-dev`. Their browser profiles are separate from the release app's.
 
 ## What goes when you delete a session
 
-Deleting a session removes, from this machine:
+Deleting a session removes, from the machine that owns it:
 
 - its transcript and its row in the session list,
 - its attachments,
@@ -58,6 +67,8 @@ It does not remove the agent's own record of the conversation. Claude Code, Code
 
 **Settling** a session is not deleting it. Settle stops it and removes its browser profile, so it starts signed out of websites if you unsettle it. The transcript, attachments and worktree stay until you delete the worktree or the session. See [Sessions](/using-carbon/sessions).
 
+Pages belong to Spaces, independently of a session or worktree. Deleting a session does not delete its linked Pages or their attachments. Moving a Page to Trash keeps its content and history; it does not delete a linked document in Linear.
+
 ## Environment variables
 
 You rarely need these. Set them in the environment that launches Carbon or the `carbon` command. The Mac app opened from the Dock or Finder does not read your shell's variables, so start it from Terminal to use one:
@@ -66,11 +77,11 @@ You rarely need these. Set them in the environment that launches Carbon or the `
 CARBON_HOME=~/carbon-test /Applications/Carbon.app/Contents/MacOS/carbon
 ```
 
-The app passes `CARBON_HOME` and `CARBON_NO_ANALYTICS` on to the background server it starts.
+Before changing these variables, use Quit → **Quit completely** so the existing background server stops. Then launch from Terminal. The app passes `CARBON_HOME` and `CARBON_NO_ANALYTICS` to its background server. On a Mac, changing the home does not create a second independent login service; the app points its service at the chosen home.
 
 | Variable | Read by | What it does |
 |---|---|---|
-| `CARBON_HOME` | App, server, `carbon` | Uses another folder instead of `~/.carbon`, with its own sessions, settings and socket. Two Carbon servers must never share one folder: each overwrites the other's session list. On a Mac, the browser profiles and Chromium stay in `~/.carbon` either way. |
+| `CARBON_HOME` | App, server, `carbon` | Uses another folder instead of `~/.carbon`, with its own server data, settings and socket. Only one server can own a home; a second is refused. In a release Mac app, embedded browser profiles and its Chromium framework stay under `~/.carbon`; headless browser data follows the chosen home. |
 | `CARBON_NO_ANALYTICS` | App, server | Turns analytics off for that run, and is the only way to. Any value counts, even `0`. See [Privacy](/reference/privacy). |
 | `CARBON_ENDPOINT` | `carbon` | Which Carbon the CLI talks to: a socket path. Carbon sets it for every agent it runs, so an agent's `carbon` calls reach the right app. |
 | `CARBON_SESSION_ID` | `carbon` | The session the CLI acts for. Carbon sets it for every agent it runs. |
@@ -96,7 +107,7 @@ Carbon runs each agent's own CLI and does not store agent logins. Each agent kee
 Signing in from Settings → Accounts runs the agent's own login, so the credential lands in that agent's folder. Two exceptions write there on your behalf:
 
 - **pi:** an API key you add in Accounts is written to `~/.pi/agent/auth.json`, pi's own store.
-- **fx:** Carbon sets `fast_mode` and `session_titles` in `~/.fx/settings.json` when it creates an fx session. That file is fx's global setting, so it also changes what your fx terminal uses.
+- **fx:** Carbon disables fx's own session titles in `~/.fx/settings.json`. Changing the fx provider also writes that global file. Fast mode is sent to the session without writing the global setting.
 
 See [Accounts](/settings/accounts).
 
@@ -105,4 +116,4 @@ See [Accounts](/settings/accounts).
 - Nothing cleans up `parse_failures.jsonl`; it grows until you delete it.
 - A dictation model removed from Carbon's list in a later version stays in `models/` with no button to delete it. Delete the file by hand.
 - If removing a worktree fails while deleting its session, the folder stays behind. Remove it with `git worktree remove <path>` in the project.
-- There is no export. To back up, copy `~/.carbon`.
+- A copy of `~/.carbon` does not include project files, all agent history or interface preferences. See [Back up and restore](/reference/backups).

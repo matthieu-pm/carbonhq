@@ -56,7 +56,7 @@ Preview uses strict Mermaid, untrusted KaTeX, sanitized Markdown and sandboxed P
 
 Local revision checks and displayed remote versions guard conflict choices. Linear has no atomic compare-and-swap document update; the final remote re-read is best effort. Preserve uncertain attempts across failures and restarts. Verification uses isolated fixtures rather than changing real Linear documents. Carbon Page and attachment URLs remain Carbon references when synced; attachments are not rehosted in Linear.
 
-## Verification checkpoints
+## Historical verification checkpoints
 
 - Stage 1: independent standards and spec reviews, fixes and re-reviews; full frontend and Rust tests; real isolated CLI/restart smoke; browser editing, save, preview, search, favorites, Trash and restore.
 - Stage 2: independent reviews caught unseen-revision overwrite, dropped events during saves and nested Markdown fidelity gaps. Regression tests and re-reviews passed. Browser exercised rich startup, typing/autosave focus, slash/table insertion, source switching, historical restore and a real CLI write against an unsaved browser draft.
@@ -65,4 +65,4 @@ Local revision checks and displayed remote versions guard conflict choices. Line
 
 Run frontend tests and build from `apps/desktop`; full Rust tests and the headless check from `apps/desktop/src-tauri`; CLI and protocol tests from their own crates. Full Rust tests must follow filtered runs because ts-rs regenerates the shared frontend types.
 
-Final verification: 1,014 frontend tests; 1,099 Rust tests (32 ignored); 29 CLI tests plus installer; 8 protocol tests; 34 isolated Linear adapter/engine fixtures. Desktop and docs builds, headless check and diff checks passed. The native webview and real Linear writes were not manually exercised. The feature flag remains off.
+Before beta.5 enabled Pages by default, final staged verification recorded: 1,014 frontend tests; 1,099 Rust tests (32 ignored); 29 CLI tests plus installer; 8 protocol tests; 34 isolated Linear adapter/engine fixtures. Desktop and docs builds, headless check and diff checks passed. The native webview and real Linear writes were not manually exercised. The feature flag was off for that run; see Availability above for the current default.

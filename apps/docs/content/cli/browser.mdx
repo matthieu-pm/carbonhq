@@ -7,7 +7,7 @@ sidebar:
 
 Every session has its own browser, drawn in the app beside the chat. `carbon browser` drives it from the command line. It is mostly for agents: an agent checks the dev server it just changed, fills a form, or records a video of a feature working, and you watch the same tabs it acts on.
 
-Each command acts on one session's tabs: the session running the command, or the one `--session` names. It cannot reach another session's pages. Every verb lands on that session's active tab, and `open` makes a tab if there is none.
+Each command acts on one session's tabs: the session running the command, or the one `--session` names. It does not use tabs from other sessions or your usual web browser. Every verb lands on that session's active tab, and `open` makes a tab if there is none.
 
 ```bash
 carbon browser open http://localhost:3000
@@ -147,9 +147,11 @@ While a recording runs, the pane shows a notice in place of the page, and you ca
 
 ## On a server
 
-On a Linux server, `carbon browser` runs its own Chromium with no window. It needs the system libraries Chromium uses, and `record` needs ffmpeg. `carbon server install` offers both as **Browser for agents** and **ffmpeg**. See [Servers](/cli/servers).
+With the Mac app open, commands use its built-in browser. With no browser host connected, the server uses its own Chromium with no window. On Linux it needs the system libraries Chromium uses, and `record` needs ffmpeg. `carbon server install` offers both as **Browser for agents** and **ffmpeg**. See [Servers](/cli/servers).
 
 Screenshots and recordings land in the same folders, under `~/.carbon/browser` on the server.
+
+Use `--machine <name>` to target a connected machine. An explicit `--session <id>` can also find its machine automatically. See [Work on another machine](/cli/servers#work-on-another-machine).
 
 ## Limits
 

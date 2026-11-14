@@ -2,7 +2,7 @@
 title: Notifications
 description: How Carbon tells you a session finished, needs permission or asked a question — a macOS banner, an in-app card, or nothing — plus the ready-to-merge card, ⌘G, the sidebar marks and the dock badge.
 sidebar:
-  order: 5
+  order: 7
 ---
 
 Carbon tells you when a session hands work back to you. It picks one way to tell you, based on where you are, so you never get the same news twice.
@@ -12,21 +12,24 @@ Carbon tells you when a session hands work back to you. It picks one way to tell
 - **Done** — a session's turn ended.
 - **Needs permission** — a session wants your approval before it runs a tool.
 - **Needs an answer** — a session asked you a question.
+- **Needs a secret** — a session requested a [one-time secret hand-off](/using-carbon/permissions#one-time-secrets).
 - **Ready to merge** — a session's pull request has turned ready.
 
 ## Which way you hear
 
-For the first three, the channel depends on where you are:
+For completion and requests, the channel depends on where you are:
 
 | You are | You get |
 |---|---|
-| In another app | A macOS banner, with the session's title. Clicking it brings Carbon forward on that session. |
+| In another app | For local sessions, the Island shows permission and question cards and completion pills while it is running. Otherwise, a macOS banner opens the session in Carbon. Remote sessions and secret requests use banners. |
 | In Carbon, looking at something else | A card in the top-left corner of the window, and a sound. |
 | In Carbon, looking at that session | Nothing. The transcript already shows it. |
 
 **Ready to merge** works differently. It is always a card, never a banner, even when you are looking at the session — the panel line changing quietly is easy to miss. It appears when a PR changes to ready, not for one that was already ready when Carbon first saw it.
 
-Sessions filed in another [space](/using-carbon/spaces) stay silent until you switch to that space. They keep running.
+Sessions filed in another [Profile](/using-carbon/profiles) raise no in-app card or macOS banner until you switch to that Profile. They keep running. The Island's pending permission and question cards are independent of this filter.
+
+When a crew member's question is already visible in the pinned summary, Carbon plays a sound without adding a second notification card. Configure the floating panel in [Settings → Island](/settings/island).
 
 ## Cards
 
@@ -35,7 +38,7 @@ Each card names what is wanted and offers a button:
 | Card | Button | Goes to | Stays for |
 |---|---|---|---|
 | Done | View | The session | 10 seconds |
-| Needs permission, Needs an answer | Answer | The session, where the card to answer is | 15 seconds |
+| Needs permission, Needs an answer, Needs a secret | Answer | The session, where the card to answer is | 15 seconds |
 | Ready to merge | Review | The session with its PR tab open | 10 seconds |
 | Delete worktree? | Delete or Skip | Delete removes the worktree of a session you just settled. Skip keeps it. | 15 seconds |
 
@@ -67,7 +70,7 @@ Each sidebar row carries a mark on its left edge:
 - **Green** — the turn is over and you haven't looked yet. Opening the row clears it.
 - **Yellow** — the session is waiting on you. Only answering clears it.
 
-Yellow wins when both apply. The Carbon icon in the Dock shows a count of sessions with either mark, across every space, and clears itself at zero.
+Yellow wins when both apply. The Carbon icon in the Dock shows a count of sessions with either mark, across every Profile, and clears itself at zero.
 
 ## Allow notifications in macOS
 

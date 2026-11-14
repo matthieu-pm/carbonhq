@@ -21,7 +21,9 @@ Only the session's own dev servers can be shared: the ones its Browser tab lists
 
 The link also shows on that server's row in the session's Browser tab, where you can stop it.
 
-Run from inside a session, it shares that session's server. From your own terminal, add `--session <id>`.
+Run from inside a session, it shares that session's server. From your own terminal, add `--session <id>` to `start` or `stop`.
+
+To share on a connected machine, pass `--machine <name>`. An explicit `--session <id>` can also find its machine automatically. See [Work on another machine](/cli/servers#work-on-another-machine).
 
 ## Stop a link
 

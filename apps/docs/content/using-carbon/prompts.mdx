@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-A prompt is mostly plain text, but the composer understands four kinds of tag, takes attachments, and can turn speech into text. The placeholder names the tags that work right now, for example "Follow-up. @files. /skills. &tasks. #issues."
+A prompt is mostly plain text, but the composer understands five kinds of tag, takes attachments, and can turn speech into text. The placeholder names the tags that work right now, for example "Follow-up. @files. /skills. &tasks. #issues. $mcp."
 
 Each tag opens a picker as you type it. In any picker, `↑` and `↓` move, `⏎` or `Tab` picks, and `Esc` closes it without losing what you typed. A finished tag turns into a chip: a short label that stands for the full text sent to the agent.
 
@@ -45,7 +45,17 @@ Connecting Linear or GitHub, and how linking works: [Issue trackers](/settings/i
 
 ## Tag another session with &
 
-Type `&` to pick another session from the sidebar's current list. Settled sessions and the session you are in are left out. The pick writes the session's title and its id, so the agent can message it with `carbon send`. `&tasks.` shows in the placeholder only when there is another session to tag.
+Type `&` to pick another session from the sidebar's current list. Settled sessions and the session you are in are left out. The pick writes the session's title and its id, so the agent can message it with `carbon session send`. `&tasks.` shows in the placeholder only when there is another session to tag.
+
+## Mention an MCP server with $
+
+Type `$` at the start of a word to list MCP servers configured for the session's agent and folder. Pick one to insert a chip such as `$linear`. Carbon tells the agent to use that server's tools for the request.
+
+Only a configured server's exact name counts, so ordinary text like `$HOME` stays text unless you have a server named `HOME`. A mention does not install or sign in to a server. Manage local servers in [Settings → MCP](/settings/mcp).
+
+## Reference a Page
+
+Open the attachment menu or right-click the composer and choose **Reference a Page**. Pick a saved Page to send its title and revision with your prompt. Opening the reference later shows that revision, even if the Page has changed. See [Spaces and Pages](/using-carbon/spaces#history-and-references).
 
 ## Attach images and files
 
@@ -59,7 +69,7 @@ Attachments show as tiles above the text. Hover a tile and click its cross to re
 
 What happens depends on the file:
 
-- **Images** (PNG, JPEG, GIF, WebP) up to 5 MB go to the model as images. Carbon keeps a copy with the session, so the transcript still shows the picture after you delete the original.
+- **Images** (PNG, JPEG, GIF, WebP) up to 5 MB go to Claude Code, Codex, pi and compatible Grok Build versions as images. The selected model must support them. fx does not receive attached images; see [agent support](/using-carbon/agents#what-each-one-supports). Carbon keeps a copy with the session, so the transcript still shows the picture after you delete the original.
 - **Everything else**, and images over 5 MB, goes in as an `@path` mention. The agent opens the file itself. These are not copied.
 
 If the model takes text only, the tray says "This model takes text only — the image will be sent, and the provider may refuse it."
@@ -77,6 +87,14 @@ Your unsent text is kept per session. Switch away and back and it is still there
 To keep a new task for later, write it in the new-task composer and press `⌘S`. It needs a project picked. The text, project, agent, model, effort, permission mode, fast mode and worktree choice are saved as a draft, the composer empties, and a "Saved as draft" card appears with **View**.
 
 To find drafts, click the dashed circle (**Show drafts**) next to the project filter in the sidebar. Click a draft to open it in the new-task composer. While it is open, edits save on their own ("Changes auto-saved"). Send it to start the task. Right-click a draft and choose **Delete** to remove it.
+
+## Edit your latest sent message
+
+Hover your latest prompt and click **Edit message**. Change the text in place, then **Send**, or use **Cancel** or `Esc` to leave it unchanged.
+
+Replacement is currently supported only for a Codex turn with no tools or other effects. It needs a starting git snapshot and unchanged files, no attached images or queued messages, and no unfinished background work. Carbon checks the turn's history and explains why **Send** is blocked when it cannot verify these conditions.
+
+If the turn is still running, sending the revision stops it and checks again before replacing it. The revised prompt runs in the same chat and shows **Edited · replayed**. A failed replacement keeps your revised text in the editor.
 
 ## Undo
 

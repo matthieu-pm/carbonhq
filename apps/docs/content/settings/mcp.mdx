@@ -1,0 +1,62 @@
+---
+title: MCP servers
+description: Add, edit and remove MCP servers in each agent's own configuration, check their status, and choose global or project scope.
+sidebar:
+  order: 3
+---
+
+MCP servers give agents tools and access to services. Settings → **MCP** lists the servers configured on **This Mac**, grouped by agent and configuration file. It shows which agents read each file, so you can see when a change affects more than one.
+
+Open Settings with `⌘,`. You can change that shortcut in Settings → Shortcuts.
+
+## Add a server
+
+1. Click **Add server**.
+2. Under **Agent**, pick the agent and scope. The sentence below names the file Carbon will change.
+3. Enter a **Name** and choose a **Type**.
+4. For **Local command**, enter the executable under **Command**, one argument per line under **Arguments**, and any **Environment** variables. For **HTTP** or **SSE**, enter the **URL** and any **Headers**. Only supported types appear.
+5. Click **Add server**, then start a new session to use it.
+
+Environment values and headers are masked. Use the eye button to check a value.
+
+Carbon writes the agent's own configuration. The change also applies when you run that agent in a terminal.
+
+## Pick the scope
+
+| Agent | Available scopes |
+|---|---|
+| Claude Code | **Global** for all projects; **Just you** for your private configuration in one project; **Shared** for the project's `.mcp.json`. Grok Build also reads the Global and Shared files. |
+| Codex | **Global**, or **Project** in `.codex/config.toml`. Codex loads project configuration when the project is trusted. |
+| Grok Build | **Global**, or **Project** in `.grok/config.toml`. |
+| fx | **Global** in `~/.fx/mcp.json`. |
+| pi | **Global** in `~/.pi/agent/mcp.json`, or **Project** in `.pi/mcp.json`. Project configuration requires trust in pi. |
+
+Project choices come from the projects attached to Carbon. A shared project file can be committed with your repository; check what you put in it before sharing it.
+
+## Read the status
+
+The list appears first, then status checks fill in. Click **Refresh** to read the files and check again.
+
+| Status | Meaning |
+|---|---|
+| **Connected** | The agent reports the server as connected. |
+| **Needs sign-in** | Sign in through the agent itself, such as `/mcp` in Claude Code or the agent's MCP login command. |
+| **Failed to connect** | Check the command, URL and the agent's own error. |
+| **Off** | The server is disabled in its configuration. |
+
+Some agents report configuration or authentication state without making a live connection. A missing status does not prove a server is unavailable. If Carbon cannot ask an agent, it shows the error below that group.
+
+## Edit or remove a server
+
+Open the server's **⋯** menu and choose **Edit** or **Remove**. Removal asks you to confirm and changes only that file and scope. New sessions pick up the change.
+
+A pi project row marked **Uses global definition** offers **Edit global definition**. This changes the shared definition rather than making a project copy.
+
+A lock marks servers reported by an agent that Carbon cannot edit, such as plugin-provided servers. Change those where they come from.
+
+## Limits
+
+- This page manages This Mac's configuration, even when you have a remote session selected.
+- OAuth sign-in happens in the agent, not in this Settings tab.
+- MCP configuration is per agent. Adding a server for one does not make it available to every agent; the group names its readers.
+- Carbon's issue-tracker connection is separate. See [Issues](/settings/issues).

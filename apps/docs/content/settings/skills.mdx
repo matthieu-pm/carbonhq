@@ -1,0 +1,51 @@
+---
+title: Skills
+description: Create, import, read, edit and remove skills, and share one skill with every agent without keeping separate copies.
+sidebar:
+  order: 4
+---
+
+Skills are reusable instructions an agent can load for a task. Settings → **Skills** lists skills on **This Mac**, grouped by their folders, with the agents that read each folder.
+
+Open Settings with `⌘,`. You can change that shortcut in Settings → Shortcuts.
+
+## Create a skill
+
+1. Click **New skill**.
+2. Choose a **Folder**. **Global · Every agent** makes the skill available across projects and agents. A project's **Every agent** choice keeps it with that project. Other choices show which agents load them.
+3. Enter a **Name**, **Description** and **Instructions**. A new name uses lowercase letters, numbers and hyphens, up to 64 characters. The description tells the agent what the skill does and when to use it.
+4. Click **Create skill**. New sessions pick it up.
+
+A skill is a folder containing `SKILL.md`. Files you keep beside it can hold scripts, references or templates.
+
+## Import a skill folder
+
+Click **Import** and choose a folder containing `SKILL.md`. Choose its destination and click **Import** again.
+
+Carbon copies the whole folder, including supporting files, under its existing folder name. It leaves the original alone. A destination that already holds that name is refused.
+
+## Share with every agent
+
+The **Every agent** destination keeps one skill in `.claude/skills` and links it into `.agents/skills`, either at home or in the project. Editing that shared skill changes the instructions every agent reads.
+
+For an existing skill, open its **⋯** menu and choose **Share with every agent** when offered. Carbon refuses if the other folder already holds that name. It does not replace another skill.
+
+A shared skill can appear under both folders in the list. The **Every agent** label identifies it.
+
+## Read and edit
+
+Click a skill row to open it, or choose **Edit** from its **⋯** menu. Change the name, description or instructions, then click **Save**. Use **Show in Finder** to work with its supporting files.
+
+A lock means the skill is read-only here. You can **View** it and see why it cannot be changed. Built-in, plugin and package skills may be read-only.
+
+Click **Refresh** to scan the folders again after changes outside Carbon. Start a new session to load changed instructions. Claude Code's slash picker is cached; a newly installed skill may need **Quit completely** and a relaunch to appear there. Use the composer's [slash picker](/using-carbon/prompts#slash-commands) to invoke skills the agent lists.
+
+## Remove a skill
+
+Choose **Remove** from the row's **⋯** menu and confirm. Removing a linked entry offers **Remove link**, leaving the original folder. Removing a shared skill's original also removes its matching link.
+
+## Limits
+
+- This page manages This Mac's skills, not the selected remote server's folders.
+- Agents decide when to load a skill. Its presence does not force every prompt to use it.
+- Folder permissions, unsupported skill formats and package ownership can make a skill read-only.

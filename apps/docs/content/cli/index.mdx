@@ -1,13 +1,13 @@
 ---
 title: The carbon command
-description: Install the carbon CLI, keep it up to date, and see every command it has for sessions, drafts, issues, the browser, sharing and servers.
+description: Install and update the carbon CLI, manage sessions and Pages, write to Linear, and run commands on other machines.
 sidebar:
   order: 1
 ---
 
-`carbon` is Carbon's command line. It lets you, and the agents running inside Carbon, do from a terminal what you would otherwise do in the app: start sessions, list them, message them, save drafts, tag issues, drive a session's browser, share a dev server, and set up a server. Its main use is letting one agent fan work out into several sessions, each with its own worktree and its own row in the sidebar.
+`carbon` is Carbon's command line. You and your agents can start and manage sessions, save drafts, edit Markdown Pages, work with issues, drive a session's browser, share a dev server, and connect machines. Its main use is letting one agent fan work out into several sessions, each with its own worktree and branch.
 
-Every command talks to the Carbon app on the same machine, so the app has to be running. On a Linux server, it talks to the Carbon server instead. See [Connect a server](/server).
+Session commands talk to a Carbon server on the same machine. On a Mac, the app starts that server, which keeps running when you quit the window. Linux and headless Macs can run a server too. Use `--machine <name>` to forward supported commands to another connected machine. See [Servers](/cli/servers#work-on-another-machine).
 
 ## Install
 
@@ -31,6 +31,8 @@ Check what you have:
 carbon --version
 ```
 
+`-V` is the short form of `--version`.
+
 ## Update
 
 ```bash
@@ -52,7 +54,7 @@ If a background server is installed on this machine, `carbon update` does not re
 
 ## How it reaches the app
 
-Every command connects to a socket in `~/.carbon`: `~/.carbon/carbon.sock`. Nothing on the network can reach it. Set `CARBON_ENDPOINT` to a socket path to talk to a different one.
+Commands that use Carbon connect to a local socket, normally `~/.carbon/carbon.sock`. Set `CARBON_ENDPOINT` to name a different socket explicitly, including when the server uses a separate `CARBON_HOME` data directory. Remote commands go through this local server's connections; they do not connect the CLI directly to a remote socket. Installation, updates, skill installation and shell completion can run without a server.
 
 Sessions Carbon starts get two things in their environment: `CARBON_SESSION_ID`, naming the session, and `CARBON_ENDPOINT`, naming the app that started it. That is how `carbon` knows which session is calling. From inside a session, a new session is nested under the caller, and `carbon browser` drives the caller's own browser. From your own terminal there is no calling session, so commands that need one take `--session <id>`.
 
@@ -84,30 +86,32 @@ Prints a completion script for `bash`, `zsh`, `fish`, `elvish` or `powershell`.
 |---|---|---|
 | `carbon session` | Start, list, message, rename, stop, settle and set aside sessions | [Sessions](/cli/sessions) |
 | `carbon draft` | Save a task for later, list drafts, start or remove one | [Drafts](/cli/drafts) |
-| `carbon issue` | Tag a session with the issues its work is against | [Issues](/cli/issues) |
+| `carbon issue` | Tag sessions, comment on Linear issues and change their status | [Issues](/cli/issues) |
+| `carbon pages` | Search and edit Markdown Pages, history, attachments and Linear sync | [Pages](/cli/pages) |
+| `carbon secret` | Request a one-use secret hand-off for a command, file or browser login | [Secret hand-offs](/cli/secrets) |
 | `carbon browser` | Drive a session's browser: open, read, click, type, screenshot, record | [Browser](/cli/browser) |
 | `carbon share` | Publish a session's dev server as a public link | [Share](/cli/share) |
 | `carbon server` | Make this machine a Carbon server | [Servers](/cli/servers) |
-| `carbon machine` | The list of servers the app connects to | [Servers](/cli/servers) |
+| `carbon machine` | Manage the machines this server can reach | [Servers](/cli/servers) |
 | `carbon update` | Install the newest release | above |
 | `carbon skill install` | Write the skill for your agents | above |
 | `carbon completion` | Print a shell completion script | above |
 
 For how the session commands fit together, see [Orchestration](/cli/orchestration).
 
-A command group run on its own, like `carbon session`, prints its help. Every command takes `--help`.
+A command group run on its own, like `carbon session`, prints its help. Every command takes `--help` (`-h` for a shorter summary).
 
 Older spellings still work, so scripts and agents with an older skill keep running: `carbon new`, `carbon ls` and `carbon send` are `carbon session new`, `ls` and `send`; `carbon setup` is `carbon server install`; `carbon serve` is `carbon server run`; `carbon share <port>` is `carbon share start <port>`.
 
 ## Output and exit codes
 
-Commands that make something print its id alone on standard output, and a sentence for you on standard error. So `id=$(carbon session new "…")` captures the id.
+Session creation, draft creation and draft start print the new id alone on standard output, and a sentence for you on standard error. So `id=$(carbon session new "…")` captures the id. Pages and secret hand-offs return JSON; `carbon pages read --markdown` prints only the Markdown body.
 
 A failure prints `carbon: <reason>` and exits with 1. A command typed wrong exits with 2 and prints usage.
 
 ## When the app and the CLI disagree
 
-The app and the CLI ship separately, so they can drift apart. When the two speak different versions, the app refuses the command and the message names which side is behind:
+The app and the CLI ship separately, so they can drift apart. An older server can still answer commands it understands. When a command needs a version the server cannot handle, it is refused and the message names which side needs updating:
 
 - "this carbon CLI speaks protocol vN, the app speaks vM — run \`carbon update\`" means the CLI is behind. Run `carbon update` and try again.
 - "… — update the Carbon app" means the app is behind. Update the app.
@@ -116,14 +120,14 @@ Nothing was created or sent, so retrying after the fix is safe. Updating the app
 
 ## When it cannot reach the app
 
-Three messages, and only the second means the app is closed:
+Three messages distinguish a blocked socket, an absent server and another connection failure:
 
 - **`permission denied reaching Carbon at …`** — the app may well be running. A sandbox, or the permissions on the socket's path, blocked the connection. If the command ran inside a sandbox, run it again with that sandbox lifted for this one command.
-- **`Carbon isn't running. Start the app and try again.`** — the app is closed. Open it.
+- **`Carbon isn't running. Start the app and try again.`** — no local server is listening at the chosen socket. Open the Mac app, or start the headless server with `carbon server start`.
 - **`could not connect to Carbon at …`** — something else went wrong, and the line says what. It says nothing about whether the app is up.
 
 ## Limits
 
-- `carbon` needs the app, or a Carbon server, running on the same machine. It does not reach a remote server.
+- Commands that use sessions or stored data need a Carbon server running locally. Supported commands can reach its connected machines with `--machine`.
 - You cannot read another session's transcript from the CLI. See [Orchestration](/cli/orchestration#limits).
-- `carbon` never writes to your issue tracker. See [Issues](/cli/issues).
+- Issue comments and status changes write to Linear. GitHub issue tags are supported, but tracker writes use GitHub's own tools. See [Issues](/cli/issues).

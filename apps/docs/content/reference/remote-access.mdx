@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Your sessions do not run inside the Carbon window. They run in a Carbon server: one in the background on your Mac, and one on each other machine you connect. The app is a client of all of them. This page covers the server on your Mac, the server list, Remote access, public links to dev servers, and keeping remote servers up to date.
+Your sessions do not run inside the Carbon window. They run in a Carbon server: one in the background on your Mac, and one on each other machine you connect. The app is a client of all of them. This page covers the server on your Mac, connecting another device, public links to dev servers, and keeping remote servers up to date.
 
 To put Carbon on a Linux box, see [Connect a server](/server).
 
@@ -18,7 +18,7 @@ Every quit asks first:
 | Button | What it does |
 |---|---|
 | **Quit** | Closes the app. Sessions keep running in the background. This is the default, so `⌘Q` then `⏎` quits. |
-| **Quit completely** | Closes the app and stops the background server, which stops every running session. |
+| **Quit completely** | Closes the app and stops this Mac's background server and its running agents. Agents on other servers keep running there. |
 | **Cancel** | Keeps Carbon open. |
 
 The next time you open Carbon, it starts the background server again. A stopped session resumes when you send it a message.
@@ -90,10 +90,29 @@ What to know:
 - **The address stays the same.** It survives restarts of the server and of your Mac, so a Mac that added it once keeps working.
 - **Carbon open or closed.** The background server answers, not the app, so other Macs can reach this one while it is awake even with Carbon quit. Not while it sleeps.
 - **It stays on.** Carbon remembers the setting and turns Remote access back on whenever the server starts. **Stop remote access** turns it off and drops every connected Mac.
-- **The token is the key.** Anyone with the address and the token can use your sessions, run agents and read your code. Share it only with machines you own. The token is kept in `~/.carbon/serve-token`. To change it, delete that file and restart the server (Quit → **Quit completely**, then open Carbon). Every Mac that used the old token then needs the new one.
+- **The token is the key.** Anyone with the address and the token can use your sessions, run agents and read your code. Share it only with devices you trust. The token is kept in `~/.carbon/serve-token`. See [Change the token](#change-the-token) to revoke existing access.
 - **The relay cannot read your traffic.** The address is served through OpenTunnel. The encrypted connection ends on your Mac, so the relay passes bytes it cannot read.
 
 If the connection to the relay drops, the row says it is reconnecting and the same address comes back.
+
+### Pair an iPhone
+
+If you already have Carbon for iPhone, turn on Remote access, then press **Pair a phone** in the **This Mac** row. Scan the QR code with the iPhone's Camera or Carbon's **Add server** → **Scan QR code**. You can also enter the address and token in the phone's Add server screen.
+
+The phone connects to the server; it runs no agent itself. Your Mac must stay awake. The QR code contains the token and gives the same access as copying it, so keep it private.
+
+For a standalone server with its tunnel enabled, `carbon server pair` prints a QR code in the terminal. See [Server commands](/cli/servers).
+
+### Change the token
+
+To revoke devices that have the old token:
+
+1. Let active work finish, then stop the owning server. On a Mac with the app, use Quit → **Quit completely**. On a standalone server, use `carbon server stop`.
+2. Delete only `serve-token` in that server's data folder, normally `~/.carbon/serve-token`. Leave the rest of the folder intact. If you set `CARBON_HOME`, use that folder instead.
+3. Open Carbon again, or run `carbon server start`. Starting the server creates a fresh token.
+4. Copy the new token or pair again on each device you still want to allow.
+
+Stopping the server interrupts its running agents and connections. Removing a server from a client only forgets it there; it does not revoke a token copied elsewhere.
 
 ### Remote access on a Linux server
 
@@ -149,8 +168,8 @@ A server older than this feature cannot be updated from the app. The app says so
 
 ## Limits
 
-- A Mac can't be reached by SSH like a Linux server. Use Remote access.
+- The app's guided SSH installer supports Linux. For a Mac running the desktop app, use Remote access.
 - Remote access works only while the Mac is awake.
 - The token gives full access. There are no read-only or per-project tokens.
 - Public links have no password and no expiry of their own.
-- There is no browser version and no phone app.
+- There is no browser version of the Carbon interface. A public dev-server link opens the project you shared, not Carbon.

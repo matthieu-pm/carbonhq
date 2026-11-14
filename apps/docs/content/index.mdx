@@ -3,16 +3,17 @@ title: Introduction
 description: Carbon is a Mac app that runs coding agents in one window, many at a time. Start here to see what it does and where to read next.
 ---
 
-Carbon runs the coding agent CLIs you already use (Claude Code, Codex, pi, fx and Grok Build) in one chat window. It is free and open source, and runs on the subscriptions you already have. Carbon installs no agent and stores no agent login: each agent keeps its own.
+Carbon runs the coding agent CLIs you already use (Claude Code, Codex, pi, fx and Grok Build) in one Mac app. It is free and open source. Each agent uses its own subscription or API key and keeps its own login.
 
 ## What you can do
 
 - **Run many agents at once.** Each conversation is a session in the sidebar. Sessions keep running when you switch away, and when you quit the app.
 - **Give each task its own checkout.** A session can work in its own git worktree, so two agents never edit the same files.
-- **Steer the agent as it works.** Change the model, effort, fast mode and permission mode from the composer. Answer permission and question cards in the transcript.
+- **Steer the agent as it works.** Pick the model, effort, fast mode and permission mode in the composer. Available controls depend on the agent and whether a turn is running. Answer permission, question and one-use secret cards in the transcript.
 - **Write prompts with context.** Slash commands, `@` file mentions, `#` issue tags, images and files, and local dictation.
 - **Let agents fan out.** The `carbon` command line lets an agent start sessions of its own, message them, link issues, and drive a browser.
 - **Work from issues.** Connect Linear or GitHub, browse your issues, and tag them in a prompt.
+- **Keep documents in Spaces.** Write Markdown Pages with history and attachments, link them to projects, and let agents read and edit them. Import and sync documents from Linear.
 - **Connect a server.** Add a Linux box over SSH and run your agents there, driven from the Mac app.
 
 ## Where to start
@@ -35,5 +36,11 @@ Carbon runs the coding agent CLIs you already use (Claude Code, Codex, pi, fx an
   </Card>
   <Card title="Connect a server" href="/server" icon="server">
     Connect a Linux server and drive its agents from the Mac app.
+  </Card>
+  <Card title="Remote access" href="/reference/remote-access" icon="globe">
+    Reach your Mac from another device and share a dev server.
+  </Card>
+  <Card title="Data and backups" href="/reference/backups" icon="database">
+    Find what Carbon stores and keep a recoverable copy.
   </Card>
 </CardGroup>

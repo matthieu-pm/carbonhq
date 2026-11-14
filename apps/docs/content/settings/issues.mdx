@@ -26,7 +26,7 @@ At the top left of the page are two marks, Linear and GitHub. Click the one you 
 
 The key is saved in `~/.carbon/credentials.json`, readable only by your user. To remove it, go to Settings → Integrations → Issue tracker and press **Disconnect**. Sessions keep the issues they are tagged with.
 
-The key fills Carbon's own screens. It gives your agent nothing. For the agent to read and manage Linear issues in chat, add [Linear's MCP server](https://linear.app/docs/mcp) to your agent CLI.
+The key supports Carbon's issue screens and the [CLI's Linear comment and status commands](/cli/issues). It does not connect your agent's own tools to Linear. For the agent to read full issues and manage them through MCP, add Linear's MCP server through [Settings → MCP](/settings/mcp), then sign in through that agent.
 
 ### GitHub
 
@@ -43,6 +43,12 @@ If `gh` is still missing or signed out, the page stays as it is. Sign out with `
 The page fills the main column. It is not a session, and the right panel is hidden while it is up.
 
 {/* screenshot: the Issues page with Linear connected, grouped by state, one issue open in the pane beside it */}
+
+### Keep separate lists in tabs
+
+Click **New list** (+) in the top tab row to keep another issue list open. Each list keeps its own tracker and filters. Double-click a list tab to give it a name, or clear the name to return to its automatic title. Drag tabs to reorder them.
+
+`⌘⇧[` and `⌘⇧]` move between tabs; `⌘1`–`⌘8` select by position and `⌘9` selects the last. In an opened issue's pane, click **Open full view** to give it its own tab. `⌘W` closes the current tab or issue pane where applicable.
 
 ### Pick a tracker
 
@@ -108,7 +114,7 @@ carbon issue link DRA-53 --title "Add issue tracker integration" --url "https://
 carbon issue link owner/repo#12 --title "…" --url "…"
 ```
 
-A GitHub issue is always named `owner/repo#123`; a bare `#123` is refused, because a number alone names no repository. `carbon new --issue DRA-53` links an issue to a session as it is created. All the commands and flags are on [Issues in the CLI](/cli/issues).
+A GitHub issue is always named `owner/repo#123`; a bare `#123` is refused, because a number alone names no repository. `carbon session new --issue DRA-53` links an issue to a session as it is created. All the commands and flags are on [Issues in the CLI](/cli/issues).
 
 ## Limits
 

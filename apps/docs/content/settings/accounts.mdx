@@ -15,6 +15,12 @@ There is one block per agent — Claude Code, Codex, pi, fx and Grok Build — a
 
 {/* screenshot: the Accounts tab with Claude Code signed in and pi showing two providers */}
 
+## Choose the machine
+
+When you have remote servers, the machine picker at the top switches between **This Mac** and those servers. Accounts initially follows the selected session's machine. Sign-ins and sign-outs affect the machine you pick, not every connected server.
+
+For an SSH server, **Run in Terminal** opens a terminal connected to that server. A server reached only by address and token cannot use that SSH login route; use its own terminal or a supported API-key method. See [Connect a server](/server).
+
 ## Read a row
 
 Each row is one credential. The dot says its state:
@@ -50,7 +56,7 @@ A row that is not signed in has a **Sign in** button. A signed-in row has a ⋯ 
     Where the agent has more than one way in, pick one under **Method**. The one you already use is marked **in use**.
   </Step>
   <Step title="Run it or paste a key">
-    Most methods are a command. Press **Run in Terminal** and Carbon opens Terminal running it, in the selected session's folder. Finish the login there, usually in your browser. The command is shown with a copy button if you would rather run it somewhere else.
+    Most methods are a command. Press **Run in Terminal** and Carbon opens Terminal running it. Locally it uses the selected session's folder. Finish the login there, usually in your browser. The command is shown with a copy button if you would rather run it somewhere else.
 
     A method that takes a key shows a **Key** field instead. Paste the key and press **Save**.
   </Step>
@@ -107,4 +113,4 @@ The switch beside each agent's name decides whether the composer's agent picker 
 
 - Carbon cannot sign you in without a terminal or a pasted key. Every browser login runs in Terminal.
 - Nothing polls. After a sign-in in Terminal, come back to the window or press Refresh to see it.
-- Accounts are asked in the selected session's folder, since a CLI can read settings from the project it runs in.
+- On the selected session's machine, accounts are checked in its folder. A different machine is checked in its home directory, since a CLI can read project-specific settings.

@@ -1,8 +1,8 @@
 # Carbon
 
 A desktop home for your coding agents. Carbon wraps coding-agent CLIs (Claude
-Code, Codex, fx, pi) in a native chat UI. Run many sessions at once. Each gets
-its own worktree, diff view, PR panel, issue panel and embedded browser.
+Code, Codex, fx, pi and Grok Build) in a native chat UI. Run many sessions at
+once, optionally in separate worktrees, with diff, PR, issue and browser views.
 
 Carbon is based on [Dray](https://github.com/monorepo-labs/dray) by yogesharc,
 used under the Apache License 2.0 (see [LICENSE](LICENSE)). This copy renames
@@ -17,15 +17,20 @@ the project to Carbon and replaces its branding.
 | `apps/docs`         | Docs at carbonhq.sh/docs. Blume, deployed to Vercel.    |
 | `apps/cli`          | The `carbon` CLI agents use to fan work out.             |
 | `crates/carbon-proto` | Wire types shared by the CLI and the app.              |
+| `apps/ios`          | SwiftUI client for Carbon servers. XcodeGen project.    |
+| `apps/island`       | Native macOS companion, sharing parts of the iOS client. |
 
 ## Getting started
 
-You need Node with pnpm, a Rust toolchain, and cmake.
+For desktop development on macOS, install Xcode Command Line Tools, a Rust
+toolchain and cmake. Use the pnpm version in `package.json`; the docs app needs
+Node 22.19 or newer. Install and sign in to the agent CLIs you want to run.
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm app    # desktop app
 pnpm web    # marketing site on :3000
+pnpm docs   # docs site on :4321/docs
 pnpm test   # frontend tests
 ```
 
@@ -36,19 +41,37 @@ cd apps/desktop && pnpm tauri build
 cd apps/desktop/src-tauri && cargo test
 ```
 
+Run each line from the repository root. The desktop dev shim chooses a free
+port and a separate data home for each worktree. `pnpm dev` inside
+`apps/desktop` starts only Vite; it does not start the native app or server.
+The embedded CEF browser needs the extra setup in
+[browser.md](apps/desktop/docs/browser.md).
+
 `cargo test` regenerates `apps/desktop/src/types/events.ts`. Always follow a
 filtered run with a bare `cargo test`.
 
+The [engineering docs](apps/desktop/docs/README.md) map subsystems and checks.
+See the [docs app guide](apps/docs/README.md) for its build and rewrite setup,
+and the [iOS guide](apps/ios/README.md) for native build and test commands.
+
 ## The `carbon` CLI
 
-A standalone binary. It talks to the running app over `~/.carbon/carbon.sock`, so
-an agent in one session can create, list and message others.
+A standalone binary. It talks to Carbon's background server over a Unix
+socket, normally `~/.carbon/carbon.sock`, so an agent in one session can
+create, list and message others. The server keeps sessions running when the
+Mac app closes. A release app installs the bundled CLI in `~/.local/bin`;
+headless machines use the installer:
 
 ```bash
 curl -fsSL https://carbonhq.sh/install.sh | sh
 ```
 
 On Linux the same line makes the machine a Carbon server: [carbonhq.sh/docs/server](https://carbonhq.sh/docs/server).
+
+Dev builds and explicit `CARBON_HOME` overrides use their own sockets.
+Agents receive `CARBON_ENDPOINT` for their owning server. See
+[server and transport](apps/desktop/docs/server-and-transport.md) before
+starting another server on this machine.
 
 ## Releasing
 

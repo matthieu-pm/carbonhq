@@ -65,8 +65,8 @@ Fast mode runs the model at its faster tier. The **Fast mode** switch sits in th
 | Agent | Fast mode |
 |---|---|
 | Claude Code | Opus models. Changes in place, even mid-turn. |
-| Codex | Models that report a fast tier. A change restarts the agent process at the next send. |
-| fx | New tasks only. It cannot change after the session starts. It also sets fx's own default on your machine. |
+| Codex | Models that report a fast tier. Applies to the next turn. |
+| fx | Per session. Can change between turns, or for the next queued turn while one runs. |
 | Grok | Grok 4.7 only. |
 | pi | None. |
 
@@ -104,7 +104,7 @@ Some agents cannot take a change in the middle of a turn. There, the control dim
 | Claude Code | Effort |
 | Codex | Model, effort, permission mode, fast mode |
 | Grok | Permission mode |
-| fx | Provider. Model, effort and permission mode stay open and apply to the next turn. |
+| fx | Provider. Model, effort, permission mode and fast mode stay open and apply to the next turn. |
 | pi | Nothing |
 
 ## Send while a turn runs
@@ -120,17 +120,25 @@ You do not have to wait. Type and press `⏎` during a turn, and the prompt is q
 
 While a turn runs and the box is empty, the send button turns into a square **Stop** button. It stops the turn. Background tasks the agent started, such as a dev server, keep running. While any run, the transcript shows a count like "2 Background Tasks". Click it to open the list in the right panel's **More** tab, where the square button on a row stops that task and **Stop all** stops every one. Settling the session stops them all.
 
+## Continue after a usage limit
+
+When Claude Code reports a usage limit with a reset time, Carbon schedules a `continue` prompt for a minute after that reset. Above the composer, **Continues automatically at …** shows when it will resume.
+
+Click **Cancel** to turn this off. **Continue when limit resets** turns it back on while the schedule is still available. Sending any prompt clears the schedule. It survives a background-server restart.
+
 ## Escape
 
 `Esc` does the first of these that applies, wherever focus is:
 
 1. Throws away a dictation that is recording.
-2. Closes an open picker (`/`, `@`, `#`, `&`) and keeps what you typed.
+2. Closes an open picker (`/`, `@`, `#`, `&`, `$`) and keeps what you typed.
 3. Takes back the newest queued prompt.
 
 ## The context ring
 
 After the first turn, a small ring at the right end of the control row shows how full the model's context is. Hover it for the numbers, like "41k / 200k · 21% used". It turns red at 80%. When the context fills, the agent compacts it, and "Compacting context" shows in the transcript while it does.
+
+For a detailed breakdown on Claude Code, click **Toggle pinned summary** in the session header and look at **Context window**. When the running agent provides it, the breakdown separates categories such as messages, tools and system instructions. Other agents can show the total alone.
 
 ## Hand work back
 
@@ -140,7 +148,7 @@ In a session, a thin row of buttons hides behind the top edge of the composer an
 - **Create PR**, when the branch has new work, has no pull request yet, and is not the default branch.
 - **Run server**, which asks the agent to start the dev server in the background.
 
-They are suggestions to the agent, not commands Carbon runs itself.
+They are prompts to the agent. In [Settings → Composer](/settings/composer), hide or reorder the built-ins and add buttons with your own prompts.
 
 ## Shortcuts
 
@@ -163,6 +171,6 @@ You can change any of these in Settings → Shortcuts.
 ## Limits
 
 - Agent, project, branch and worktree are set at creation and cannot change later.
-- On Codex, changing the model or effort applies at the next send by restarting the agent process.
+- On Codex, model, effort, permission and fast-mode changes apply to the next turn in the existing conversation.
 - On Claude Code, changing effort restarts the agent process at the next send.
-- fx's fast mode and provider are fx's own machine-wide settings, so changing them also changes fx in your terminal.
+- fx's provider and permission-mode choices change its saved defaults too. Its model, effort and fast-mode controls are per session.

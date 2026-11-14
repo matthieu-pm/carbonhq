@@ -19,13 +19,15 @@ Carbon is a Mac app. It runs the coding agent CLIs you install yourself, so sett
 
 <Steps>
   <Step title="Download">
-    On [carbonhq.sh](https://carbonhq.sh), click **Download for macOS**. You get `Carbon_universal.dmg`.
+    On [carbonhq.sh](https://carbonhq.sh), click **Download for macOS**. You get a universal `.dmg` for Apple silicon and Intel.
   </Step>
   <Step title="Install">
-    Open the dmg and drag Carbon into Applications.
+    Open the dmg and drag Carbon into Applications. Eject the disk image after copying.
   </Step>
   <Step title="Open">
-    Open Carbon from Applications. It is signed and notarized by Apple.
+    Open Carbon from Applications. Do not run it from the disk image: Carbon cannot start its background server from a mounted installer or a temporary macOS location.
+
+    If macOS blocks a build you downloaded from Carbon's site, see [macOS blocks Carbon](/reference/troubleshooting#macos-blocks-carbon). Signing and notarization depend on the build; do not assume a beta has passed Apple's notarization.
   </Step>
 </Steps>
 
@@ -71,7 +73,7 @@ Your sessions run in a background process, not in the window. Close the window o
 When you quit (`⌘Q`, or the window's close button), Carbon asks first:
 
 - **Quit** closes the app. Sessions keep running in the background.
-- **Quit completely** closes the app and stops every session too.
+- **Quit completely** closes the app and stops this Mac's background server and its agents. Sessions on other servers keep running.
 - **Cancel** keeps Carbon open.
 
 ### The browser downloads in the background
@@ -82,7 +84,9 @@ You can see how far it has got in Settings → Integrations → **Browser**, and
 
 ## The `carbon` command line
 
-`carbon` is a separate command line tool. It lets your agents start sessions of their own, message other sessions and drive the browser. Carbon tells its agents how to install it when they need it. See [carbon CLI](/cli).
+The app includes the `carbon` command line. On launch, a release build copies it to `~/.local/bin/carbon` and installs its agent skill. It lets you and your agents start sessions, message other sessions, work with Pages and drive the browser, even with the app window closed. See [carbon CLI](/cli).
+
+If Terminal cannot find it, try `~/.local/bin/carbon --help` and put `~/.local/bin` on your shell's `PATH`.
 
 ## Limits
 

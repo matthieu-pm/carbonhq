@@ -36,7 +36,7 @@ Yellow wins when both apply. Other things the row can show:
 - **Pull request glyph** before the title: green open, grey draft, purple merged, red when checks failed on an open one. Hover for the number and state.
 - **Spinning dashed circle** in place of the time: the pull request's checks are running.
 - **Faded**: the session is set aside, or, in the settled view, last changed before today.
-- **Indented under another row**: a session another session started, for example with `carbon new`.
+- **Indented under another row**: a session another session started, for example with `carbon session new`.
 
 Hover a row for **Settle** (tick) and **More** (⋯), which opens the same menu as right-clicking.
 
@@ -55,6 +55,22 @@ The active list is grouped by stage across all projects, with a small gap betwee
 9. Set aside.
 
 A session that is working stays where it would sit at rest. A parent moves with the strongest stage of anything under it, so a child waiting on you pulls its parent up. Newest first within each group. A list of fewer than three sessions is not split at all.
+
+## Read several sessions together
+
+Drag a task from the sidebar onto the chat and drop it on a highlighted edge to open a split view. Drop left or right for another column, or above or below for a stacked pane. Drag a pane's header to rearrange it.
+
+Click a pane to focus it. The composer, header and side panel follow that session. `⌘⌥1`–`⌘⌥9` focus panes. A pane's **Close pane** button, or `⌘W` when applicable, removes it from the layout without settling the session.
+
+Split groups appear together in the sidebar before the normal session groups.
+
+## Conversation details and crew
+
+Click **Toggle pinned summary** in the session header for its workspace, branch, changes, pull requests, task lists, sources and context usage. **Summary options** lets you choose what appears; drag section grips to change their order.
+
+When an agent starts other Carbon sessions, they form its **Crew**. Running members and pending questions appear in the pinned summary. Click a member to open its full conversation. Finished members collapse under a count such as **3 done**; click it to expand them. `⌘⇧C` toggles Crew.
+
+Crew sessions have their own conversations and worktrees. They are different from a harness's internal subagents. See [Orchestration](/cli/orchestration) for starting and messaging crew members.
 
 ## Pin a session
 
@@ -102,10 +118,10 @@ The fork opens selected. It shows the copied conversation at once and starts its
 | Claude Code | Yes |
 | pi | Yes |
 | Grok | Yes |
-| Codex | No |
-| fx | No |
+| Codex | Yes |
+| fx | Yes |
 
-Fork is disabled while the session's turn is running. If the original takes another turn before you send to the fork, the fork carries that turn too, though its transcript does not show it.
+Fork is disabled while the session's turn is running. pi and fx copy their conversation when you fork. Claude Code, Codex and Grok complete the agent-side copy at the fork's first send, so a parent turn sent in between can be included even though the copied Carbon transcript does not show it. A session must have a conversation to copy; a failed first start has none.
 
 ## Rename a session
 
@@ -133,12 +149,16 @@ Right-click and choose **Delete**, then **Delete** again at "Are you sure?". Thi
 
 You can change any of these in Settings → Shortcuts.
 
+## Quit and come back
+
+Closing Carbon or pressing `⌘Q` asks **Quit Carbon?**. **Quit** leaves sessions running in the background. Reopen Carbon to return to them. **Quit completely** stops the background server and its sessions too. See [Permissions](/using-carbon/permissions#after-a-restart) for pending cards.
+
 ## The Dock badge
 
-The number on Carbon's Dock icon counts sessions waiting on you plus sessions finished and unread: the yellow and green marks, in every space. It clears as you deal with them.
+The number on Carbon's Dock icon counts sessions waiting on you plus sessions finished and unread: the yellow and green marks, in every Profile. It clears as you deal with them.
 
 ## Limits
 
 - A fork copies the whole conversation; there is no fork from a chosen message.
-- Codex and fx sessions cannot be forked.
+- Forking needs the agent's saved conversation. Carbon reports when that conversation is missing.
 - Unsettling does not bring back a deleted worktree or browser profile.

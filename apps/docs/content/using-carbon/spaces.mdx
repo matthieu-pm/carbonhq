@@ -1,61 +1,66 @@
 ---
 title: Spaces and Pages
-description: Write Markdown Pages, link them to projects, and work on them with agents.
+description: Write and organize Markdown Pages, use tabs and revision history, reference Pages in tasks, and sync linked Linear documents.
 sidebar:
-  order: 6
+  order: 7
 ---
 
-Spaces and Pages are currently behind a feature flag and **off by default**. The instructions below apply when Pages is enabled for testing. Profiles remains available.
+Spaces is Carbon's document workspace. Its documents are called **Pages**. Open **Spaces** from the app's navigation rail or press `⌘P`. Pages are enabled by default.
 
-Open **Spaces** from the sidebar or press `⌘P`. Spaces is Carbon's document workspace. Its documents are called **Pages**.
-
-Project and session grouping is now called [Profiles](/docs/using-carbon/profiles). Existing groups and settings are kept.
+To group projects and sessions, use [Profiles](/using-carbon/profiles).
 
 ## Create and organize Pages
 
-Click **Create** to write a Page. Use **Link project** to associate it with one or several projects. Every project link points to the same document. A Page can also stand on its own.
+Click **New Page** in the sidebar, press `⌘⇧P`, or choose **Create → New Page**. Write a title and body. A Page can stand on its own or belong to several projects.
 
-Search finds words in titles and document bodies. Use Favorites, Recent, project filters, or the list and grid controls to find your work. Trash keeps deleted Pages available to restore.
+To link projects, open **Document display options and metadata** beside the edited date. Check projects under **Linked projects**. Each project link points to the same document; it does not make a copy.
 
-Pages belong to their Carbon server. A remote Page remains on its server; linking it to a project does not copy it into a repository or worktree.
+The sidebar has **All**, **Pages**, **Linear**, project filters and **Trash**. Above the Page list, **All**, **Favorites** and **Recent** narrow the results. Recent means edited in the last week. Use the list and grid controls to change the layout, and search to find words in titles and bodies. Star a Page to favorite it. **Move to trash** and **Restore document** live in its **Document options** menu.
+
+Pages belong to their Carbon server. **Create** also offers **New Page on …** for connected servers. A remote Page stays on its server; linking it to a project does not put it in a repository or worktree. The active Profile filters Pages by their linked projects; unlinked Pages remain visible.
+
+## Work in tabs
+
+Opening a Page opens a tab, or switches to its existing tab. **New tab** (+) opens another list on All. Each list tab keeps its own section, project, filter, search and layout. Sidebar choices change the active tab.
+
+Drag tabs to reorder them. `⌘⇧[` and `⌘⇧]` move between tabs; `⌘1`–`⌘8` pick by position and `⌘9` picks the last. `⌘W` closes a tab when more than one is open. On a lone Page it returns to the list; on a lone list it leaves Spaces. Tabs are kept between launches.
 
 ## Write Markdown
 
-The rich editor supports headings, formatting, nested lists and checklists, links, images, tables, code blocks, and formulas. Type `/` to insert a block. Select text to format it. Code blocks retain their language, including Mermaid diagram source.
+The rich editor supports headings, formatting, nested lists and checklists, links, images, tables, code blocks and formulas. Type `/` to insert a block. Select text to format it. Code blocks retain their language, including Mermaid diagram source.
 
-Use **Markdown source** to edit the underlying text and **Preview Page** to read it. Source mode preserves constructs outside the rich editor's schema, including HTML, frontmatter, footnotes, reference links, and callouts. Pages larger than 32 KiB open in source mode to keep editing responsive. A Page body can hold up to 256 KiB.
+Open **Document options** (⋯) for **Markdown source** or **Preview**. Source mode preserves constructs outside the rich editor's schema, including HTML, frontmatter, footnotes, reference links and callouts. Pages larger than 32 KiB open in source mode. A Page body can hold up to 256 KiB.
 
-Changes save automatically. `⌘S` saves immediately. If another writer changes the Page, Carbon keeps your draft and offers a comparison. Saving your version requires the revision you reviewed; another intervening edit raises another conflict.
+In **Document display options and metadata**, turn on **Formatting toolbar** or **Full width**. **Open outline** shows the headings beside the document in edit or preview mode.
+
+Changes save automatically. `⌘S` saves immediately. If another writer changes the Page, Carbon keeps your draft. Choose **Review changes** to compare it with the saved Page, then **Use saved version**, **Save my version** or **Keep editing**. Another edit before your save raises another conflict.
 
 ## History and references
 
-Open **Version history** to inspect earlier revisions. Restore writes a new revision and retains the Page's current project links, favorite, and Trash state.
+Choose **Document options → Version history** to inspect earlier revisions. Restoring writes a new revision and retains the Page's current project links, favorite and Trash state.
 
-**Use in task** adds a saved Page reference to the composer. You can also choose **Reference a Page** from the composer's context menu. Conversation references cite a specific revision. Opening one shows that saved content, with an action to open the current Page.
+**Use in task**, in the same menu, adds a saved Page reference to the composer. You can also choose **Reference a Page** from the composer's attachment menu or context menu. Conversation references cite a specific revision. Opening one shows that saved content, with an action to open the current Page.
 
-Use **Link another Page** inside a document for a live link. **Linked from** lists Pages that refer to the document.
+**Copy document link** copies a link to the Page. **Link another Page** inserts a live link inside a document. **Linked from** lists Pages that refer to it.
 
 ## Attachments and previews
 
-Attach files from the Page toolbar. Images can appear inline; file links open a preview where the file type supports it. Preview renders formulas and Mermaid diagrams. Attachments can be up to 20 MiB and stay available independently of sessions and worktrees.
+Choose **Document options → Attach files…**. Images can appear inline; file links open a preview where the file type supports it. Preview renders formulas and Mermaid diagrams. Attachments can be up to 20 MiB and stay available independently of sessions and worktrees.
 
 ## Agent access
 
-Agents use the same managed documents and revision checks as the editor:
-
-```sh
-carbon pages list --project /path/to/project
-carbon pages search "release plan"
-carbon pages read <page-id>
-carbon pages read <page-id> --version 3
-carbon pages update <page-id> --revision 3 --file plan.md
-carbon pages history <page-id>
-```
-
-Use `carbon pages --help` for attachment, backlink, history, and sync commands. Reads return the revision needed by a write. A stale write leaves the document unchanged.
+Agents can search, read and update the same Pages through `carbon pages`. Writes require the revision they read, so a stale write leaves the document unchanged. Ask an agent to read a Page before editing it. Run `carbon pages --help` for the available commands.
 
 ## Linear documents
 
-Choose **Create → Import from Linear** to link a Linear document as a Page. The Page's source controls show its sync status and let you open the original or unlink it while retaining the Carbon Page.
+Choose **Create → Import from Linear**, or open **Linear** in the sidebar and click a document to import and open it. Browsing does not link a document; importing does. Connect Linear first through the [Issues page](/settings/issues#linear).
 
-Linked documents sync in both directions. Page links and attachments stay in Carbon; syncing their Markdown does not upload their files to Linear. If both sides changed, Carbon preserves both versions and asks which to keep. Linear does not provide an atomic conditional document update, so a write checks the remote version immediately before sending; this cannot eliminate a remote edit in the narrow interval between that check and the update.
+A linked Page shows its sync status below the editor. You can sync it, open the original or unlink it while keeping the Carbon Page. Linked documents sync in both directions. Page links and attachments stay in Carbon; syncing their Markdown does not upload their files to Linear.
+
+If both sides changed, Carbon preserves both versions and asks which to keep. Linear has no atomic conditional document update, so a remote edit in the brief interval between checking and writing can still race the sync.
+
+## Limits
+
+- **Slides**, **Images** and **Google Drive** in the sidebar are placeholders. They do not create slides or images, or connect to Drive.
+- Pages are managed documents, separate from repository Markdown files you open in a session's Docs panel.
+- Shortcuts on this page can be changed in Settings → Shortcuts.

@@ -1,0 +1,149 @@
+---
+title: Pages
+description: Search and edit Markdown Pages, restore revisions, attach files, find backlinks, and sync linked Linear documents.
+sidebar:
+  order: 9
+---
+
+`carbon pages` reads and edits the Markdown documents in **Spaces**. Pages belong to their server, independently of sessions and worktrees. Linking a Page to several projects gives each project access to the same document. You do not need a calling session.
+
+## Find and read Pages
+
+```bash
+carbon pages list
+carbon pages search "release plan" --project /absolute/project/path
+carbon pages read <page-id>
+carbon pages read <page-id> --markdown
+```
+
+`list` and `search` return Page summaries with ids. `read` returns the current Page, including its revision. Every command returns JSON except `read --markdown` and `read-version --markdown`, which print the Markdown body alone.
+
+| Command or flag | What it does |
+|---|---|
+| `list` (`ls` also works) | List active Pages, newest modified first. |
+| `search <query>` | Search titles and Markdown bodies. |
+| `--project <path>` | On `list` and `search`, include only Pages linked to this absolute project path on the owning server. |
+| `--trashed` | On `list` and `search`, show Trash instead of active Pages. |
+| `read <id> --version <number>` | Read a historical revision. Also accepts `--markdown`. |
+
+Use `carbon --machine <name> pages …` for Pages on a connected machine. Page ids do not find their owning machine automatically. See [Work on another machine](/cli/servers#work-on-another-machine).
+
+## Create a Page
+
+```bash
+carbon pages create --title "Release plan" --file plan.md \
+  --project /absolute/project/path
+```
+
+`--title` is required. Omit `--file` for an empty Page, or use `--file -` to read UTF-8 Markdown from standard input. Repeat `--project` to link several projects; omit it for a Page with no project links. A new Page starts at revision 1.
+
+## Edit a Page
+
+Read the Page first. Pass the revision you just read with every edit:
+
+```bash
+carbon pages read <page-id>
+carbon pages update <page-id> --revision 1 --file updated.md
+carbon pages patch <page-id> --revision 2 \
+  --old-text "Launch on Friday" --new-text "Launch on Monday"
+```
+
+The revision numbers here are examples. Use the number returned by your own read or previous edit. If another writer changes the Page, Carbon refuses the stale revision. Read again, reconcile their changes, and retry. Refreshing the revision without reconciling can overwrite their work.
+
+`patch` replaces one exact text match. No match, or more than one match, is refused. Use `update` to replace the full body.
+
+| Flag on `update` | What it does |
+|---|---|
+| `--revision <number>` | Required. The current revision you read. |
+| `--title <title>` | Replace the title. |
+| `--file <path\|->` | Replace the body from a UTF-8 file or standard input. Omit to keep it. |
+| `--project <path>` | Replace the entire project-link list. Repeat for several. Omit to keep existing links. |
+| `--clear-projects` | Remove every project link. Cannot be combined with `--project`. |
+| `--favorite true\|false` | Set or clear the favorite marker. |
+
+## Trash and restore
+
+```bash
+carbon pages trash <page-id> --revision 3
+carbon pages list --trashed
+carbon pages restore <page-id> --revision 4
+```
+
+Trash keeps the Page's identity, body and history. Restore brings the same Page back. Both require its current revision.
+
+## Read and restore history
+
+```bash
+carbon pages history <page-id>
+carbon pages read-version <page-id> 2 --markdown
+carbon pages restore-version <page-id> 2 --revision 5
+```
+
+`history` lists the latest 100 committed revisions. Older revisions remain readable and restorable by number. `restore-version` restores the selected title and Markdown as a new revision. It preserves the Page's current project links, favorite marker and Trash state, and never rewrites history.
+
+## Attach a file
+
+```bash
+carbon pages attach <page-id> --file diagram.png
+carbon pages assets <page-id>
+```
+
+`attach` uploads a file and returns its stable `carbon-asset://` URL. Insert that URL as an ordinary Markdown link or image with `update` or `patch`. Uploading alone does not change the Page's body or revision. `assets` lists completed attachments. Attachments belong to the Page and survive session or worktree deletion.
+
+## Find backlinks
+
+```bash
+carbon pages backlinks <page-id>
+carbon pages backlinks <page-id> --owner <target-server-id> \
+  --source-owner <scanned-server-id>
+```
+
+Finds Pages whose Markdown links to the target Page. `--owner` identifies the target Page's server connection; `--source-owner` identifies the store being scanned. Both default to `local`. These flags describe link ownership; use `--machine` to choose which machine actually scans its store. A target on another server need not have a local copy.
+
+In `carbon-page://` links, `local` means the source Page's own server and `this-mac` explicitly means the desktop's local server. Backlinks ignore code, images and trashed source Pages.
+
+## Link a Linear document
+
+```bash
+carbon pages linear-list --query "release plan"
+carbon pages linear-read <linear-document-id>
+carbon pages import-linear <linear-document-id> --project /absolute/project/path
+```
+
+These commands need Linear connected in Carbon. `linear-list` discovers documents without importing them. Pass its returned cursor with `--after <cursor>` to read another results page. `linear-read` reads one document without linking it. `import-linear` creates and explicitly links a Carbon Page; repeat `--project` for several projects.
+
+Only linked documents participate in background sync. Discovery and reading do not turn it on.
+
+## Sync a linked Page
+
+```bash
+carbon pages sync-status <page-id>
+carbon pages sync <page-id> --revision 3
+```
+
+`sync-status` reads saved local sync state without contacting Linear. `sync` contacts Linear and requires the current Page revision. The background server also checks linked documents periodically.
+
+When both copies change, Carbon keeps both originals and records a conflict. Read the local Page, `sync-status` and the remote document before choosing which copy to keep. Resolve with both the shown local revision and remote timestamp:
+
+```bash
+carbon pages sync <page-id> --revision 3 --resolution carbon \
+  --expected-remote-updated-at <shown-remote-timestamp>
+```
+
+`--resolution carbon` keeps Carbon's content; `--resolution linear` takes Linear's. Both require `--expected-remote-updated-at`. If either version changes again, refresh and reconcile before retrying.
+
+To stop syncing:
+
+```bash
+carbon pages unlink-linear <page-id> --revision 4
+```
+
+Unlink keeps the Carbon Page, its revision history and the Linear document.
+
+## Limits
+
+- Markdown bodies must be 256 KiB or smaller. Titles must have 1–240 characters.
+- A Page can link to at most 32 projects, using absolute paths on its owning server.
+- Each attachment must be 20 MiB or smaller.
+- Existing Pages can only be changed with their current revision. The CLI has no force-overwrite flag.
+- A server must support Pages. An older server may require an update or Pages enabled in its configuration.

@@ -1,15 +1,15 @@
 ---
 title: Privacy
-description: Exactly which analytics events Carbon sends and what they carry, what is never sent, how to turn analytics off with `CARBON_NO_ANALYTICS`, and how surveys and the website measure visits.
+description: What Carbon sends through analytics, agents, Page sync and secret hand-offs, where dictation runs, and how to turn analytics off.
 sidebar:
-  order: 3
+  order: 4
 ---
 
 Carbon sends a small set of anonymous usage events, so we can see which builds are in use, which features get used and where the app breaks. Your prompts, code, conversations, file paths, session titles and error messages never leave your machine through analytics. Analytics is on, and Settings has no switch for it.
 
 ## Turn analytics off
 
-Set `CARBON_NO_ANALYTICS` to any value in the environment Carbon starts from. Carbon then sends nothing, from the app or from the background server on your Mac, since the app passes the variable on to it. See [Environment variables](/reference/data#environment-variables) for how to start the app with one.
+Set `CARBON_NO_ANALYTICS` to any value in the environment Carbon starts from. This stops analytics from the app and its Mac background server. Use Quit → **Quit completely** before relaunching with the variable so the existing server stops too. See [Environment variables](/reference/data#environment-variables).
 
 Older versions had a **Share basic analytics** switch in Settings. A choice saved there is no longer read.
 
@@ -38,7 +38,9 @@ Then each event adds its own:
 | `feature_used` | A feature works | Which feature, from a fixed list (below). |
 | `error` | Something breaks | Where it broke, never what it said (below). |
 
-`feature_used` names one of: `dictation` (with the dictation model's id, and where you dictated: `app`, `island` or `phone`), `island_open` (you opened Carbon Island), `island_send` (you sent a message from it), `island_card` (you answered a permission or question card from it), `fork`, `pr_merged`, `linear_connected`, `space_created`, `worktree_deleted`, `settle`, `unsettle`, `pin`, `unpin`, `set_aside`, `unset_aside`, `handoff_commit`, `handoff_pr`, `handoff_runServer`, `remote_access`, `share`, `server_added` and `server_connected`. The last three add how: `app` or `cli` for a share, `ssh` or `address` for a server. Never the port, the address or the server's name. `server_connected` is sent at most once a day per kind.
+`feature_used` names one of: `dictation` (with the dictation model's id, and where you dictated: `app`, `island` or `phone`), `island_open` (you opened Carbon Island), `island_send` (you sent a message from it), `island_card` (you answered a permission or question card from it), `fork`, `pr_merged`, `linear_connected`, `space_created` (a Profile was created), `worktree_deleted`, `settle`, `unsettle`, `pin`, `unpin`, `set_aside`, `unset_aside`, `handoff_commit`, `handoff_pr`, `handoff_runServer`, `handoff_custom`, `browser_open`, `remote_access`, `share`, `server_added` and `server_connected`.
+
+`browser_open` reports only `localhost` for a local or private-network page, or `site` for another website. It never carries the URL or hostname. It counts pages you open through the interface, not an agent's browser commands or every navigation. A share adds `app` or `cli`; a server event adds `ssh` or `address`. Never the port, the address or the server's name. `server_connected` is sent at most once a day per kind.
 
 ## What is never sent
 
@@ -68,7 +70,7 @@ Now and then Carbon may show a short survey card from PostHog, the analytics ser
 
 A Carbon server you install on Linux sends no analytics. The Mac app counts `server_added` and `server_connected` when you add or connect one, as described above.
 
-When you start a session on another machine from the Mac app, the app sends that `session_started`, under your own install id, with `location` set to `remote` and `remote_os` set to `macos`, `linux` or `other`. The server's name, address and hostname are never sent. A Carbon app on that other Mac does not count the session a second time. Sessions an agent starts there on its own are counted by that machine, or not at all on Linux.
+When you start a session on another machine from the Mac app, the app sends that `session_started`, under your own install id, with `location` set to `remote` and `remote_os` set to `macos`, `linux`, `other`, or `unknown` for a server too old to report its system. The server's name, address and hostname are never sent. A Carbon app on that other Mac does not count the session a second time. Sessions an agent starts there on its own are counted by that machine, or not at all on Linux.
 
 ## The website and these docs
 
@@ -82,10 +84,23 @@ Besides analytics, Carbon connects to the network for:
 - **Updates.** Checking for and downloading new versions of the app and the `carbon` CLI.
 - **The changelog.** Reading what's new from carbonhq.sh.
 - **Downloads you trigger or need:** the Chromium framework for Carbon's browser (from Spotify's CEF build server), dictation models (from Hugging Face).
-- **GitHub and Linear,** when you use pull requests or issues, through `gh` or your Linear key.
+- **GitHub and Linear,** when you use pull requests or issues, through `gh` or your Linear key. Importing and linking a Linear document also enables [Page sync](#pages-and-linear-sync).
+- **Websites you open** in the built-in browser, as with any browser. Each session has its own cookies and profile.
 - **OpenTunnel,** only while [Remote access](/reference/remote-access#remote-access) is on or a [public link](/reference/remote-access#share-a-dev-server) is live.
 
-Dictation runs on your Mac. Your voice is never sent anywhere.
+Dictation in the Mac app runs on your Mac without sending audio to a transcription provider. If you use dictation in Carbon for iPhone, the phone sends the recording to your connected Mac for transcription. The returned text becomes your prompt when you send it to an agent.
+
+## Pages and Linear sync
+
+Pages are stored on the server that owns them. Reading Linear's document list does not import or link its documents. Importing a document creates or reuses a linked Page; Carbon then checks linked Pages in the background and syncs title and Markdown changes with Linear. A conflict keeps both versions for you to resolve.
+
+Unlinking a Page stops that sync and keeps both the local Page and the Linear document. Moving a Page to Trash keeps its content, history and attachments locally; it does not delete the Linear document. See [Spaces](/using-carbon/spaces).
+
+## One-use secrets
+
+When an agent requests a secret, Carbon shows a private card for a specific command, file or website. The value stays out of Carbon's saved transcript and logs. Command requests pass it as an environment variable; file requests normally use a temporary private file, which is deleted after use. Choosing to keep the file writes it in your project instead. Browser requests send the fields to the approved website.
+
+The approved command, kept file or website can still expose the secret. This feature is not a vault or a sandbox around your agent. See [Secret hand-offs](/cli/secrets) for the controls and limits.
 
 ## Limits
 

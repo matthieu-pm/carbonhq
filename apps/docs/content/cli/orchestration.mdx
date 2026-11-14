@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-Orchestration is one agent starting other sessions with `carbon`. You ask the agent in one session to "work through these four issues", and it starts four sessions, one per issue, each with its own worktree, branch and sidebar row. You watch them beside the conversation that started them.
+Orchestration is one agent starting other sessions with `carbon`. You ask the agent in one session to "work through these four issues", and it starts four sessions, one per issue, each with its own worktree and branch. You watch them in the conversation's Crew section.
 
 Use it for work that is truly separate: separate branches, separate pull requests. Steps of one task belong in one session.
 
@@ -31,11 +31,11 @@ The new session has none of the calling conversation. A good prompt carries the 
 
 **In the sidebar**, each new row appears under the session that started it. The app does not switch to it, so you stay in the conversation you were in. A session started by a spawned one nests a level deeper.
 
-**In the crew**, beside the conversation. The crew is a column next to the transcript with one row per session this conversation started. Click a row to open its live transcript in place. Permission and question cards from those sessions show in their rows, so you can answer them without leaving. ⌘-click a row to open that session in full view.
+**In Crew**, inside the conversation's pinned summary. Running sessions and sessions waiting for you appear first. Finished sessions sit under the **done** count; click it to expand the list. Click a session row to open its full conversation. Permission and question cards show under its row, so you can answer them without leaving the parent conversation.
 
-⌘⇧C shows or hides the crew. There is no button for it. In a window too narrow for it, the crew starts hidden, and ⌘⇧C shows it between the transcript and the composer. You can change the shortcut in Settings → Shortcuts.
+⌘⇧C shows or hides Crew. You can also toggle **Crew** in **Summary options**. Showing Crew opens the summary if it was closed. In a narrow window, the summary opens as a popover. You can change the shortcut in Settings → Shortcuts.
 
-{/* screenshot: a conversation with the crew column beside it, three child sessions, one with a permission card open */}
+{/* screenshot: Crew in the pinned summary, with running sessions, a done count and a permission card */}
 
 ### Hidden sessions
 
@@ -75,6 +75,10 @@ carbon session ls
 ```
 
 Lists the project's sessions with their status. Nothing reports back on its own. If you want to know when sessions finish, watch the sidebar and the crew, or ask the children to send a summary when they are done.
+
+## Work across machines
+
+Use `carbon --machine <name> session new` to start work on another connected machine. Model and permission settings still inherit from the caller, but the worktree uses the other machine's checkout. Messages can return only if that machine also has a connection back to this one. See [Work on another machine](/cli/servers#work-on-another-machine).
 
 ## Permission prompts
 

@@ -9,30 +9,36 @@ Carbon does not have a model of its own. It runs a coding agent CLI that you ins
 
 You pick the agent in the composer's model picker, in the row of marks at its top. `⌘⇧A` steps to the next one. The row is only there on a new task: a session keeps the agent it started with. To hide an agent you don't use, switch it off in [Settings → Accounts](/settings/accounts).
 
-Carbon installs no agent and stores no agent login. Each agent keeps its own, exactly as in your terminal: if an agent works there, it works in Carbon. Install commands are in [Install Carbon](/get-started/install#install-an-agent).
+Carbon does not bundle an agent. Each agent keeps its own login, the same one it uses in your terminal. Install commands are in [Install Carbon](/get-started/install#install-an-agent).
 
 ## What each one supports
 
 | | Claude Code | Codex | pi | fx | Grok Build |
 |---|---|---|---|---|---|
-| Models | Fable, Opus, Sonnet, Haiku | Read from Codex | Read from pi | Read from fx, per provider | Read from Grok Build |
+| Models | Read from Claude Code, with a built-in fallback | Read from Codex | Read from pi | Read from fx, per provider | Read from Grok Build |
 | Effort levels | Low to Max | Low to Max, plus Ultra on some models | pi's levels for each model | The levels each model takes | Low to Extra High |
-| Fast mode | Opus models | Models that offer it | No | New sessions only | Grok 4.7 |
+| Fast mode | Models that offer it | Models that offer it | No | Models that offer it, per session | Grok 4.7 |
 | Permission modes | Ask every time, Plan, Auto, Bypass permissions | Ask every time, Auto, Bypass permissions | None | Ask every time, Auto | Ask every time, Auto, Bypass permissions |
 | Slash commands | Claude Code's commands and skills | Skills | pi's commands | Skills | Grok Build's commands and skills |
-| Images in prompts | Yes | No | Yes, if the model takes them | No | No |
-| Fork a session | Yes | No | Yes | No | Yes |
+| Images in prompts | Yes | Yes, if the model takes them | Yes, if the model takes them | No | Yes, with a compatible Grok Build and model |
+| Fork a session | Yes | Yes | Yes | Yes | Yes |
 | Worktrees | Yes | Yes | Yes | Yes | Yes |
-| Change during a turn | Model, permission mode, fast mode | Nothing | Model, effort | Model, effort, permission mode, for the next turn | Model, effort, fast mode |
+| Change during a turn | Model, permission mode, fast mode | Nothing | Model, effort | Model, effort, permission mode and fast mode, for the next turn | Model, effort, fast mode |
 | A prompt sent during a turn | Joins the running turn | Joins the running turn | Joins at the next tool call | Waits for the turn to end | Joins at the next step |
 
 What the rows mean:
 
-- **Change during a turn**: these controls stay live while the agent works, and your change applies to the next thing the agent does. The rest are locked until the turn ends, with a tooltip saying so. Between turns you can change all of them; where the agent cannot take a change in place, Carbon restarts it behind the session and the conversation carries on.
+- **Change during a turn**: these controls stay live while the agent works. Most apply to its next step; fx holds them for the next queued turn. The rest are locked until the turn ends, with a tooltip saying so. Between turns you can change all of them; where the agent cannot take a change in place, Carbon restarts it behind the session and the conversation carries on.
 - **A prompt sent during a turn**: it waits under the transcript, and most agents read it before the turn ends.
 - **Worktrees**: Claude Code makes its own worktree. For the others Carbon makes it before the agent starts. Either way it starts from your remote's default branch, like `origin/main`. See [Worktrees](/using-carbon/worktrees).
 
 Models, effort, fast mode and permission modes are covered in [The composer](/using-carbon/composer). Forks are in [Sessions](/using-carbon/sessions).
+
+## Update an agent
+
+When an installed CLI has an update, the new-task composer shows **Update** below it. Click it or press `⌘U` while it is offered. pi and fx updates wait for a running turn on that agent to finish. If an update fails, **Run in Terminal** lets you finish it there. This updates the CLI; Carbon app updates are separate.
+
+Shortcuts can be changed in Settings → Shortcuts.
 
 ## Signing in
 
@@ -50,10 +56,10 @@ If a turn fails because the agent is logged out, the composer says so, like "Cod
 
 Anthropic's agent, and the one Carbon supports most fully.
 
-- **Models.** Fable 5.1, Opus 5.5 and Sonnet 5 follow the latest model of their family, so a session moves up when Claude Code does. Fable 5 and Opus 5 are pinned, for when you want that exact generation. A new session starts on Opus 5.5. Haiku 4.5 has no effort levels.
+- **Models.** Carbon reads Claude Code's available models, effort levels and fast-mode support. Family aliases such as Opus follow the latest model that Claude Code serves under them; pinned generations stay on that generation. New sessions default to Opus. Use **Shortlist models → Refresh** to read the list again.
 - **Effort** is locked during a turn. A change applies from your next message.
 - **Slash commands.** Type `/` for Claude Code's built-in commands, your own and the project's, plugin commands and skills. `/clear`, `/fast`, `/model` and `/rename` are hidden, because Carbon has its own controls for them and would not follow their effect. Typed by hand they still run, so avoid them.
-- **MCP servers** come from Claude Code's own configuration, the same as in your terminal. Carbon adds none. It does let the agent run `carbon` itself without a permission card, so it can [start and message other sessions](/cli).
+- **MCP servers** come from Claude Code's own configuration, the same as in your terminal. Manage them in [Settings → MCP](/settings/mcp). Carbon lets Claude Code run `carbon` itself without a permission card, so it can [start and message other sessions](/cli).
 
 Limits:
 
@@ -62,7 +68,7 @@ Limits:
 
 ## Codex
 
-OpenAI's agent. Carbon asks Codex which models it has, so a model OpenAI ships appears in the picker without a Carbon update. A new session starts on 6 Sol, or 6 Astra if your Codex does not list 6 Sol.
+OpenAI's agent. Carbon asks Codex which models it has, so a model OpenAI ships appears in the picker without a Carbon update. A new session defaults to 6.1 Sol when Codex offers it, otherwise a model from the list Codex reports.
 
 - **Effort.** Max is the deepest reasoning. **Ultra**, on the models that offer it, is the deepest reasoning plus Codex handing parts of the task to helpers on its own. Every model starts on Medium.
 - **Permission modes.** Codex has two settings where most agents have one: when it asks, and what its commands may touch. Commands run in a sandbox the operating system enforces, so a write outside the allowed area fails whether or not anyone was asked.
@@ -74,14 +80,14 @@ OpenAI's agent. Carbon asks Codex which models it has, so a model OpenAI ships a
   | **Bypass permissions** | Full access | Never asks. No sandbox. |
 
 - **Skills.** `/` lists your Codex skills. Codex's own menu commands, like `/model` or `/new`, are not listed.
-- **MCP servers** come from Codex's own configuration. Carbon adds none.
+- **MCP servers** come from Codex's own configuration. Manage them in [Settings → MCP](/settings/mcp).
 
 Limits:
 
 - Carbon needs a recent Codex. An old one reads as not installed: run the installer again.
 - Nothing changes during a turn. Settings wait for the turn to end.
-- Images you attach are not sent. Only the text goes.
-- Codex sessions cannot be forked.
+- Attached images are sent to Codex; the selected model must support images.
+- Model, effort, permission and fast-mode changes apply to the next turn without restarting the agent process.
 
 ## pi
 
@@ -91,24 +97,24 @@ An open-source agent from [pi.dev](https://pi.dev) that works with many model pr
 - **Effort** is pi's thinking levels for each model. Off and Minimal are not offered.
 - **Permissions.** pi has none of its own and runs what the model asks for, so there is no permission picker. A pi extension that gates tools can still ask, and its questions show as cards.
 - **Images** are sent. If the model takes text only, the composer warns you that the provider may refuse it.
-- **MCP servers.** Carbon hands pi none. pi's own setup and extensions decide what tools it has.
+- **MCP servers** come from pi's own global and trusted project configuration. You can manage those files in [Settings → MCP](/settings/mcp). Extensions can add tools too.
 
 ## fx
 
 Vercel's agent, from [fx.sh](https://fx.sh). It runs models through one of three providers: the Vercel AI Gateway, a Codex subscription or a Grok subscription. A Codex login elsewhere on your Mac does not count for fx.
 
 - **Providers.** In the model picker, the three marks after fx's are the providers. Click one and the list changes to its models. It works on a running session too, moving it at your next message, but not during a turn. It also changes fx's default provider in your terminal.
-- **Fast mode** is set when a session is created and cannot change after. It is fx's own setting, so it changes your terminal's default too. On the AI Gateway the separate "fast" model ids are hidden; the switch is how you reach them.
+- **Fast mode** is per session and can change after creation. During a turn the pick applies to the next queued turn. It does not change fx's terminal default. On the AI Gateway the separate "fast" model ids are hidden; use the switch.
 - **Effort** is per model. If fx refuses a level, the turn still runs without it and the transcript says which levels the model takes.
 - **Prompts sent during a turn** wait and go together as one turn when it ends, each in its own bubble. **Now** under the last one, or `⌘⏎`, stops the turn and sends them at once. `Esc` takes the newest back into the composer.
 - **Skills.** `/` lists skills from the same folders fx reads: `.fx/skills`, `skills`, `.opencode/skills`, `.codex/skills`, `.claude/skills`, `.agents/skills` and `.claw/skills` in the project, and `~/.fx/skills`, `~/.config/opencode/skills`, `~/.codex/skills`, `~/.claude/skills`, `~/.agents/skills` and `~/.claw/skills` at home. A skill is a folder holding a `SKILL.md`.
-- **MCP servers.** Under Carbon, fx does not read your MCP servers itself, so Carbon passes it every server in `~/.fx/mcp.json` (the file `fx mcp add` writes). For a server that needs a token, set `bearer_token_env` in that file to an environment variable holding it, and export the variable in your shell profile, like `~/.zprofile`. Carbon does not pass a server you signed in to with `fx mcp auth`, a server that fails to start, or servers from a project's own `.mcp.json`.
+- **MCP servers.** Under Carbon, fx does not read your MCP servers itself, so Carbon reads servers from `~/.fx/mcp.json` (the file `fx mcp add` writes). For a server that needs a token, set `bearer_token_env` in that file to an environment variable holding it, and export the variable in your shell profile, like `~/.zprofile`. Carbon does not pass a server you signed in to with `fx mcp auth`, a server that fails to start, or servers from a project's own `.mcp.json`.
 - **Session titles.** Carbon names fx sessions itself, and turns off fx's own titles in `~/.fx/settings.json` to avoid a delay after the first turn. That applies to fx in your terminal too.
 
 Limits:
 
-- Images you attach are not sent. fx sessions cannot be forked.
-- Provider and fast mode are fx's global settings, shared with your terminal.
+- Images you attach are not sent.
+- The provider choice changes fx's global default, shared with your terminal. Fast mode is per session. Permission-mode changes also update fx's own saved default.
 - fx shortens what a tool returns, so a long result shows only its start.
 - A subagent fx starts has no stop button. Stop the whole turn instead.
 - Carbon adds its own instructions to the first prompt of each new fx session. They are not shown in the transcript.
@@ -130,6 +136,6 @@ xAI's agent. It reads much of the same setup Claude Code does, like `CLAUDE.md`,
 
 Limits:
 
-- Images are not supported.
+- Images require a Grok Build version and model that report image support. Carbon sends them in both new prompts and prompts added during a turn.
 - A subagent or background task Grok Build starts has no stop button. A background task keeps running after you stop the turn, until you settle or delete the session.
 - Under **Ask every time**, the agent's own `carbon` commands raise a permission card too.
