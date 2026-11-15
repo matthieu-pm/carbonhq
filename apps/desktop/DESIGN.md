@@ -315,7 +315,7 @@ Card name its subject — it and `worktree-failed` the only two that do — brea
 
 ## Update row
 
-**Update row drawn only when there something to say.** Sidebar have no permanent footer; row reading "up to date" = chrome for fact nobody asked about. Show nothing while sidebar collapsed, deliberate — next check keep offer alive.
+**Update row drawn only when there something to say.** The profile footer appears once profiles exist; row reading "up to date" = chrome for fact nobody asked about. Show nothing while sidebar collapsed, deliberate — next check keep offer alive.
 
 ## Notice cards
 
@@ -344,3 +344,7 @@ Two details looking incidental. Image capped against own flex box not viewport, 
 Component shared with `UserMessage` for `Avatar`'s reason: index meaning one picture in row and another in lightbox, and overflow control opening on first picture it stand for, = parts second copy drift on. `UserMessage` keep own "file is gone" row, since tool row already name path it read.
 
 - **Picker have two modes, and mixing them what make list feel random.** With nothing typed it _browsing_: grouped, recents first under only heading in list, then harness commands, then everything installed — separated by gap not rules. Moment query exist it _searching_, and ranked list drawn flat: headers while filtering hide matches behind section chrome. `groupCommands` and `filterCommands` = two orderings and nothing blend them, so match quality always win search and habit only ever order browse.
+
+## Profile icons
+
+Profiles switch directly from a row of filled icons below the session list. All Profiles leads in neutral ink; each profile keeps its chosen color. Selected fill follows the sidebar rows. Overflow stays in a More profiles menu so the footer never wraps. Settings opens the same icon and preset-color picker from each profile icon, including the new-profile field. Colors use separate light and dark ramps.

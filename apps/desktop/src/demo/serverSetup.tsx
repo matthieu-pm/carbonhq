@@ -953,6 +953,8 @@ function Demo() {
             navigation={<NavButtons canBack={false} canForward={false} onBack={() => {}} onForward={() => {}} />}
             projects={[]}
             spaces={[]}
+            profileAppearances={{}}
+            onProfileAppearanceChange={() => {}}
             onSetProjectSpace={() => {}}
             onRemoveProject={() => {}}
             onCreateSpace={() => {}}

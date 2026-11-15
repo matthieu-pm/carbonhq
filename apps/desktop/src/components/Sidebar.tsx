@@ -16,6 +16,8 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
+import ProfileSwitcher from "@/components/ProfileSwitcher";
+import type { ProfileAppearances } from "@/lib/profileAppearance";
 import Orb from "@/components/Orb";
 import BotAvatar from "@/components/BotAvatar";
 
@@ -162,6 +164,9 @@ type SidebarProps = {
   projects: Project[];
   /// `null` is every project, whatever space it is filed under.
   space: string | null;
+  profiles: string[];
+  profileAppearances: ProfileAppearances;
+  onProfileChange: (name: string | null) => void;
   // `null` is every project, and it is the entry the filter opens on.
   projectFilter: string | null;
   onProjectFilterChange: (path: string | null) => void;
@@ -793,127 +798,6 @@ export function SettingsButton({ onOpen, current = false }: { onOpen: () => void
   );
 }
 
-/// Every space there is, as the switcher walks them. "All" is an entry rather
-/// than a special case, so the click and the dots read one list and cannot
-/// disagree about what comes next.
-function spaceEntries(spaces: string[]): (string | null)[] {
-  return [null, ...spaces];
-}
-
-/// Which space the whole sidebar is scoped to.
-///
-/// A switch narrows what is *drawn* and nothing else: every session in every
-/// space carries on running, and one that finishes elsewhere simply says
-/// nothing until the reader comes back to it. That is the whole feature — the
-/// point is a screen somebody else can look at, not a second app.
-///
-/// Shaped like the project filter below it: the name over a dot track, a click
-/// steps to the next one. Two controls scoping the same list should not be two
-/// different kinds of control, and the dots say how many spaces there are,
-/// which the chevron never did. This sits in the titlebar strip, one line high,
-/// where the project filter has a whole band to aim at.
-///
-/// Switching only. Making a space and filing projects into it live in Settings,
-/// since both are things done once and neither belongs in the strip a reader
-/// passes through twenty times a day.
-///
-/// Until the first space exists there is nothing to switch between, so the cycle
-/// carries one more entry — New space — which opens that tab's name field on
-/// landing. A ＋ standing in the strip for good is a permanent offer to somebody
-/// who may never want a space, where an entry is only ever met by a reader who
-/// stepped onto it. It drops out the moment a space exists, so ordinary
-/// switching can never land on it.
-export function SpaceSwitcher({
-  spaces,
-  value,
-  naming,
-  onChange,
-  onNew,
-}: {
-  spaces: string[];
-  value: string | null;
-  /// Whether the name field is up. This is what lights the New space entry:
-  /// held here rather than as a click of its own, so cancelling the dialog puts
-  /// the switcher back on All Spaces with no state to unwind.
-  naming: boolean;
-  onChange: (space: string | null) => void;
-  onNew: () => void;
-}) {
-  const offersNew = spaces.length === 0;
-  // Two entries with nothing to name yet — the second's label is the only thing
-  // that makes it New space rather than a space.
-  const entries = offersNew ? [null, null] : spaceEntries(spaces);
-
-  // A space removed elsewhere leaves its name behind in the stored pick, and the
-  // dot track needs a real index. All is the fallback `activeSpace` already makes.
-  const found = entries.indexOf(value);
-  const activeIndex = offersNew ? (naming ? 1 : 0) : found === -1 ? 0 : found;
-
-  const label = (i: number) =>
-    offersNew && i === 1 ? "New profile" : (entries[i] ?? "All Profiles");
-
-  // Wraps: a click has no direction and no dot to slide, so a dead end at the
-  // last space would just look broken. With nothing made yet there is only the
-  // one place to go, and the dialog covers the strip once it opens.
-  const cycle = () => {
-    if (offersNew) return onNew();
-    onChange(entries[(activeIndex + 1) % entries.length]);
-  };
-
-  return (
-    // No tooltip, unlike the two icon buttons beside it: this one draws its
-    // answer in words, so one would only repeat the label. Unselectable because
-    // the name is the target's face, not prose.
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={cycle}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          cycle();
-        }
-      }}
-      className="group/spaces relative flex cursor-pointer items-center px-1.5 select-none focus-visible:outline-none"
-    >
-      {/* Every name in one grid cell, all but the current one hidden, so the
-          box is as wide as the **longest** name and never a pixel wider.
-          That is what makes stepping through smooth: a box that hugs the
-          current name resized on every switch, sliding the two icon buttons
-          beside it and jumping the dots out from under the word. A fixed width
-          fixed that and cost more — it left the name adrift in the middle of
-          the strip, since the widest name is usually far short of it. */}
-      <span className="grid max-w-28 text-ui">
-        {entries.map((_, i) => (
-          <span
-            key={i}
-            aria-hidden={i !== activeIndex}
-            className={cn(
-              "col-start-1 row-start-1 truncate text-center text-muted-foreground transition-colors group-hover/spaces:text-foreground",
-              i !== activeIndex && "invisible",
-            )}
-          >
-            {/* "All Profiles", not "All", to match the project filter's own
-                first entry — and it is the longest label a one-space app has,
-                which is what stops the box being narrower than the word beside
-                it. */}
-            {label(i)}
-          </span>
-        ))}
-      </span>
-      {/* Out of flow, so the name lines up with what sits beside it; the
-          dots hang under it, shown on hover. */}
-      <div className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2">
-        <DotTrack
-          count={entries.length}
-          activeIndex={activeIndex}
-          className="opacity-0 transition-opacity duration-150 group-hover/spaces:opacity-100"
-        />
-      </div>
-    </div>
-  );
-}
-
 /// What the dev badge says for a given branch.
 ///
 /// On `main` it stays bare: that is the common case, and naming the default
@@ -980,6 +864,9 @@ export default function Sidebar({
   onToggleArchived,
   projects,
   space,
+  profiles,
+  profileAppearances,
+  onProfileChange,
   projectFilter,
   onDetach,
   onProjectFilterChange,
@@ -1488,6 +1375,8 @@ export default function Sidebar({
         manual={updateManual}
         onInstall={onInstallUpdate}
       />
+
+      {profiles.length > 0 && <ProfileSwitcher profiles={profiles} appearances={profileAppearances} value={space} onChange={onProfileChange} />}
 
       {/* Under the update row, and last in the column: both are standing
           information, and this is the half nobody is waiting on. */}
