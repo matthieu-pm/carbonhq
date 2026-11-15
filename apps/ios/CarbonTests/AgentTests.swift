@@ -27,6 +27,17 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(options[1].category, "vendor/custom")
         XCTAssertEqual(options[1].name, "vendor-setting")
         XCTAssertTrue(options[1].options.isEmpty)
+        XCTAssertNil(options[0].pendingValue)
+        XCTAssertNil(options[0].rejection)
+    }
+
+    func testRejectedPendingChoiceDoesNotReplaceAcknowledgedValue() throws {
+        let data = Data(#"{"id":"mode","name":"Mode","currentValue":"code","pendingValue":"plan","rejection":"Plan is unavailable","options":[]}"#.utf8)
+        let option = try JSONDecoder().decode(AgentOption.self, from: data)
+        XCTAssertEqual(option.currentValue, "code")
+        XCTAssertEqual(option.pendingValue, "plan")
+        XCTAssertEqual(option.rejection, "Plan is unavailable")
+        XCTAssertTrue(option.options.isEmpty)
     }
 
     func testGenericSessionSurvivesIndexDecoding() throws {

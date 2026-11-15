@@ -1370,7 +1370,8 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         set_fx_provider(provider: String) => crate::set_fx_provider(provider).await;
         list_slash_commands(cwd: String, harness: Harness) => crate::list_slash_commands(&cwd, harness).await;
         agent_options(harness: Harness, session_id: Option<String>) => ok(crate::agent_options(harness, session_id).await);
-        set_agent_option(session_id: String, config_id: String, value: String) => crate::set_agent_option(&session_id, &config_id, &value, sink).await;
+        set_agent_option(session_id: String, config_id: String, value: String, remembered: Option<bool>) => crate::set_agent_option(&session_id, &config_id, &value, remembered, sink).await;
+        reset_agent_options(session_id: String, config_id: Option<String>) => crate::reset_agent_options(&session_id, config_id.as_deref(), sink).await;
         set_acp_agent_executable(id: String, command: Option<String>) => crate::harness::agents::catalog::set_acp_agent_executable(id, command).await;
         agent_modes(harness: Harness, session_id: Option<String>) => ok(crate::agent_modes(harness, session_id).await);
         set_agent_mode(session_id: String, mode: String) => crate::set_agent_mode(&session_id, &mode, sink).await;

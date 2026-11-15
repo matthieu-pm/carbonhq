@@ -100,7 +100,7 @@ function AgentRow({ agent, server, onToggle, onRemove }: { agent: AcpAgent; serv
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`${agent.name} options`} disabled={busy}><DotsOutline12 className="size-3.5" /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {!agent.custom && <DropdownMenuItem onSelect={() => { setCommand(agent.executable); setEditing(true); }}><PenOutline12 className="size-3" />Choose executable</DropdownMenuItem>}
+              {!agent.custom && <DropdownMenuItem onSelect={() => { setCommand(agent.package ? "" : agent.executable); setEditing(true); }}><PenOutline12 className="size-3" />Choose executable</DropdownMenuItem>}
               {agent.overridden && <DropdownMenuItem onSelect={() => void run(() => saveExecutable(null))}><RefreshClockwiseOutline12 className="size-3" />Use catalog command</DropdownMenuItem>}
               {agent.custom && <DropdownMenuItem variant="destructive" onSelect={() => setConfirming(true)}><TrashOutline12 className="size-3" />Remove</DropdownMenuItem>}
             </DropdownMenuContent>

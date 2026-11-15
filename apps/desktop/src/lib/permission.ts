@@ -53,7 +53,7 @@ const FALLBACK: Partial<Record<Harness, (mode: ApprovalPolicy) => ApprovalPolicy
 /// Whether this harness honours this stance.
 export function honoursMode(harness: Harness, mode: ApprovalPolicy): boolean {
   // An ACP agent's stances are its own modes, drawn by `AgentModeSelector`,
-  // so it honours none of Dray's.
+  // so it honours none of Carbon's.
   if (harness.startsWith("acp:")) return false;
   const honoured = HONOURED[harness];
   return !honoured || honoured.includes(mode);
@@ -74,7 +74,7 @@ export function honoursMode(harness: Harness, mode: ApprovalPolicy): boolean {
 /// pointed the other way, and the more alarming direction to be wrong in.
 export function stanceFor(harness: Harness, mode: ApprovalPolicy): ApprovalPolicy {
   if (honoursMode(harness, mode)) return mode;
-  // Recorded only, but `dray new` inherits it — so the narrowest, or a child on
+  // Recorded only, but `carbon new` inherits it — so the narrowest, or a child on
   // another harness comes out freer than an ACP parent ever ran.
   if (harness.startsWith("acp:")) return "manual";
   return FALLBACK[harness]?.(mode) ?? "bypassPermissions";

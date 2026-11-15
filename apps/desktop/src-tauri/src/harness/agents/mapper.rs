@@ -185,11 +185,7 @@ impl Mapper {
 
                 let text = self.outputs.remove(&tool_call_id).unwrap_or_default();
                 let exit_code = self.exits.remove(&tool_call_id);
-                let text = if self.diffs.remove(&tool_call_id).is_some() {
-                    String::new()
-                } else {
-                    text
-                };
+                self.diffs.remove(&tool_call_id);
                 out.push(self.event(AgentEventPayload::ToolCallCompleted {
                     call_id: tool_call_id,
                     result: ToolResult {
@@ -798,6 +794,20 @@ mod tests {
         ]);
         assert!(events.iter().any(|event| matches!(&event.payload,
             P::ToolCallCompleted { result, .. } if result.text == "/project")));
+    }
+
+    #[test]
+    fn a_failed_edit_keeps_its_error_text_after_publishing_a_diff() {
+        let events = updates(&[
+            json!({"sessionUpdate":"tool_call","toolCallId":"c","kind":"edit","status":"in_progress",
+                "content":[{"type":"diff","path":"/a.txt","oldText":"x","newText":"y"}]}),
+            json!({"sessionUpdate":"tool_call_update","toolCallId":"c","status":"failed",
+                "content":[{"type":"content","content":{"type":"text","text":"Could not save /a.txt: permission denied"}}]}),
+        ]);
+        assert!(events.iter().any(|event| matches!(&event.payload,
+            P::FileEdits { call_id: Some(id), edits } if id == "c" && edits.iter().any(|edit| edit.path == "/a.txt"))));
+        assert!(events.iter().any(|event| matches!(&event.payload,
+            P::ToolCallCompleted { call_id, result } if call_id == "c" && result.is_error && result.text == "Could not save /a.txt: permission denied")));
     }
 
     #[test]

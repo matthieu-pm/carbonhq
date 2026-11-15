@@ -5,10 +5,17 @@ struct AgentOptionPicker: View {
     @Binding var value: String
 
     var body: some View {
-        Picker(option.name, selection: $value) {
-            if value.isEmpty { Text("Default").tag("") }
-            ForEach(option.options, id: \.value) { choice in
-                Text(choice.label).tag(choice.value)
+        if option.options.count < 2 && option.options.contains(where: { $0.value == value }) {
+            LabeledContent(option.name, value: option.options.first(where: { $0.value == value })?.label ?? value)
+        } else {
+            Picker(option.name, selection: $value) {
+                if value.isEmpty { Text("Default").tag("") }
+                if !value.isEmpty && !option.options.contains(where: { $0.value == value }) {
+                    Text("\(value) (unavailable)").tag(value)
+                }
+                ForEach(option.options, id: \.value) { choice in
+                    Text(choice.label).tag(choice.value)
+                }
             }
         }
     }
@@ -25,7 +32,7 @@ struct AgentControls: View {
     @State private var readId = UUID()
 
     private var connected: Bool { store.serverState[key.server] == .connected }
-    private var visible: [AgentOption] { options.filter { $0.isComposerOption && !$0.options.isEmpty } }
+    private var visible: [AgentOption] { options.filter { $0.pendingValue != nil || ($0.isComposerOption && !$0.options.isEmpty) } }
     private var harness: String { store.items[key]?.harness ?? "" }
 
     var body: some View {
@@ -51,11 +58,19 @@ struct AgentControls: View {
                 Section {
                     ForEach(visible) { option in
                         AgentOptionPicker(option: option, value: Binding(
-                            get: { option.currentValue ?? "" },
+                            get: { option.pendingValue ?? option.currentValue ?? "" },
                             set: { value in Task { await set(option, value: value) } }
                         ))
+                        if option.pendingValue != nil {
+                            Text("Not applied").font(Theme.Font.meta).foregroundStyle(Theme.tertiary)
+                            if let rejection = option.rejection {
+                                Text(sentence(rejection)).foregroundStyle(Theme.destructive)
+                            }
+                            Button("Discard pick") { Task { await reset(option.id) } }
+                        }
                     }
                     .disabled(busy || writing || !connected)
+                    .opacity(busy || writing || !connected ? 0.5 : 1)
                     if visible.isEmpty && failure == nil { Text("This agent has no settings to change.") }
                 } footer: {
                     if busy { Text("Agent settings cannot change during a turn.") }
@@ -109,5 +124,15 @@ struct AgentControls: View {
         } catch {
             failure = error.localizedDescription
         }
+    }
+
+    private func reset(_ configId: String) async {
+        guard !busy, !writing, connected else { return }
+        writing = true
+        defer { writing = false }
+        do {
+            _ = try await store.call(key.server, "reset_agent_options", ["sessionId": .string(key.id), "configId": .string(configId)], as: JSON.self)
+            await load()
+        } catch { failure = error.localizedDescription }
     }
 }

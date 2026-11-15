@@ -25,7 +25,7 @@ import { dropHeld, dropHeldAsks, heldFor, holdEarlyEvent, isAsk } from "@/lib/ea
 import { fastFor, fastNotice } from "@/lib/fastMode";
 import { isWindowFocused, onFocusChange } from "@/lib/focus";
 import { isAcp } from "@/lib/acpAgents";
-import { pendingAgentOptions } from "@/lib/agentOptions";
+import { pendingAgentOptions, reconcileAgentOptions, rememberAgentOptions, isAgentOptionExplicit } from "@/lib/agentOptions";
 import { lockedMidTurn } from "@/lib/liveControls";
 import { defaultModel, fxListFor, isUnsetModel, landedFxModel, rememberedModel, seededFxModel, usableEffort, usableFxModel, usableModel } from "@/lib/model";
 import { islandOn } from "@/lib/island";
@@ -991,8 +991,10 @@ const handleSendMsg = async (
     // An ACP agent's mode is its own, not a `send_msg` argument, so a new
     // session's pick is held in Rust ahead of the spawn that reads it.
     if (isNewSession && isAcp(harness)) {
+      const options = await invoke<import("@/types/events").ConfigOption[]>("agent_options", { harness }, server);
+      reconcileAgentOptions(server, harness, options);
       for (const [configId, value] of Object.entries(pendingAgentOptions(server, harness))) {
-        await invoke("set_agent_option", { sessionId, configId, value }, server);
+        await invoke("set_agent_option", { sessionId, configId, value, remembered: !isAgentOptionExplicit(server, harness, configId) }, server);
       }
     }
     // Nothing awaited between here and the dispatch, so a send queued behind
@@ -1024,6 +1026,8 @@ const handleSendMsg = async (
       baseRef: isNewSession && useWorktree ? baseRef : null,
       isNewSession,
     });
+
+    if (isNewSession && isAcp(harness)) rememberAgentOptions(server, harness);
 
     // A turn was already running, so the prompt is held rather than sent. It
     // draws as pending until the backend hands it to the CLI, which arrives as

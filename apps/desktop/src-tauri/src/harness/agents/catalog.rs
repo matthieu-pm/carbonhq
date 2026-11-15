@@ -145,6 +145,7 @@ pub struct Launch {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
+    pub package: Option<String>,
 }
 
 static REGISTRY: LazyLock<RwLock<Option<Arc<Registry>>>> = LazyLock::new(Default::default);
@@ -293,7 +294,12 @@ async fn update_prefs(edit: impl FnOnce(&mut Prefs) -> Result<()>) -> Result<()>
     let _across = crate::store::lock_across_processes("acp-agents").await;
     let mut prefs = read_prefs().await?;
     edit(&mut prefs)?;
-    crate::store::write_atomic(&prefs_path().await?, serde_json::to_vec_pretty(&prefs)?).await
+    write_prefs(&prefs_path().await?, &prefs)
+}
+
+fn write_prefs(path: &std::path::Path, prefs: &Prefs) -> Result<()> {
+    crate::store::write_private_atomic(path, &serde_json::to_vec_pretty(prefs)?)?;
+    Ok(())
 }
 
 /// This machine's key into a registry entry's `binary` map.
@@ -308,8 +314,7 @@ fn platform() -> Option<&'static str> {
 }
 
 /// The program and args an entry starts with, before resolving the program.
-/// A binary is preferred where it ships for this platform: it is what the
-/// vendor's own installer puts on `PATH`, where `npx` would fetch a second copy.
+/// An installed platform binary takes precedence over a package download.
 fn recipe(agent: &RegistryAgent) -> Option<(String, Vec<String>)> {
     if let Some(target) = platform().and_then(|p| agent.distribution.binary.as_ref()?.get(p)) {
         let name = std::path::Path::new(&target.cmd)
@@ -318,6 +323,10 @@ fn recipe(agent: &RegistryAgent) -> Option<(String, Vec<String>)> {
             .to_string();
         return Some((name, target.args.clone()));
     }
+    package_recipe(agent)
+}
+
+fn package_recipe(agent: &RegistryAgent) -> Option<(String, Vec<String>)> {
     for (runner, package) in [
         ("npx", &agent.distribution.npx),
         ("uvx", &agent.distribution.uvx),
@@ -350,46 +359,68 @@ fn command_line(program: &str, args: &[String]) -> String {
         .join(" ")
 }
 
-fn command_found(program: &str) -> bool {
-    let path = std::path::Path::new(program);
-    if path.is_absolute() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            return std::fs::metadata(path).is_ok_and(|metadata| {
-                metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
-            });
-        }
-        #[cfg(not(unix))]
-        return path.is_file();
-    }
-    crate::binpath::acp_agent_found(program)
-}
-
 fn registry_recipe(
     agent: &RegistryAgent,
     override_command: Option<&String>,
+    binary_available: bool,
 ) -> Option<(String, Vec<String>, Option<String>, Option<String>)> {
-    let (program, args) =
-        recipe(agent).or_else(|| override_command.map(|command| (command.clone(), Vec::new())))?;
+    if let Some(command) = override_command {
+        let target = platform().and_then(|p| agent.distribution.binary.as_ref()?.get(p));
+        let args = if let Some(target) = target {
+            target.args.clone()
+        } else if let Some(package) = agent
+            .distribution
+            .npx
+            .as_ref()
+            .or(agent.distribution.uvx.as_ref())
+        {
+            package.args.clone()
+        } else {
+            let targets = agent.distribution.binary.as_ref()?;
+            let args = targets.values().next()?.args.clone();
+            // A different platform can supply the ACP flags only when they agree.
+            if !targets.values().all(|target| target.args == args) {
+                return None;
+            }
+            args
+        };
+        return Some((command.clone(), args, None, None));
+    }
+    let (program, args) = if binary_available {
+        recipe(agent)?
+    } else {
+        package_recipe(agent).or_else(|| recipe(agent))?
+    };
     let package = match program.as_str() {
         "npx" => agent.distribution.npx.as_ref(),
         "uvx" => agent.distribution.uvx.as_ref(),
         _ => None,
     };
-    if let Some(command) = override_command {
-        let args = package.map(|p| p.args.clone()).unwrap_or(args);
-        return Some((command.clone(), args, None, None));
-    }
     let package_name = package.map(|p| p.package.clone());
     let runner = package.map(|_| program.clone());
     Some((program, args, package_name, runner))
 }
 
-fn rows(registry: &Registry, prefs: &Prefs) -> Vec<AcpAgent> {
+async fn resolved_registry_recipe(
+    agent: &RegistryAgent,
+    override_command: Option<&String>,
+) -> Option<(String, Vec<String>, Option<String>, Option<String>)> {
+    let binary_available = match recipe(agent) {
+        Some((program, _)) if override_command.is_none() => {
+            crate::binpath::acp_agent_found(&program).await
+        }
+        _ => false,
+    };
+    registry_recipe(agent, override_command, binary_available)
+}
+
+async fn rows(registry: &Registry, prefs: &Prefs) -> Vec<AcpAgent> {
     let enabled = |id: &str| prefs.enabled.iter().any(|e| e == id);
-    let custom = prefs.custom.iter().map(|c| {
-        let ready = command_found(&c.command);
+    let custom = prefs.custom.iter().map(|c| async move {
+        let ready =
+            crate::binpath::resolve_acp_agent(&c.command, c.env.get("PATH").map(String::as_str))
+                .await
+                .is_some();
         AcpAgent {
             harness: Harness::Acp(intern(&c.id)),
             id: c.id.clone(),
@@ -415,11 +446,11 @@ fn rows(registry: &Registry, prefs: &Prefs) -> Vec<AcpAgent> {
         .iter()
         .filter(|a| !HIDDEN.contains(&a.id.as_str()))
         .filter(|a| !prefs.custom.iter().any(|c| c.id == a.id))
-        .map(|a| {
-            let recipe = registry_recipe(a, prefs.executables.get(&a.id));
+        .map(|a| async move {
+            let recipe = resolved_registry_recipe(a, prefs.executables.get(&a.id)).await;
             let supported = recipe.is_some();
             let (program, args, package, runner) = recipe.unwrap_or_default();
-            let ready = command_found(&program);
+            let ready = crate::binpath::acp_agent_found(&program).await;
             AcpAgent {
                 harness: Harness::Acp(intern(&a.id)),
                 id: a.id.clone(),
@@ -440,14 +471,19 @@ fn rows(registry: &Registry, prefs: &Prefs) -> Vec<AcpAgent> {
                 overridden: prefs.executables.contains_key(&a.id),
             }
         });
-    custom.chain(listed).collect()
+    let (mut custom, listed) = tokio::join!(
+        futures_util::future::join_all(custom),
+        futures_util::future::join_all(listed)
+    );
+    custom.extend(listed);
+    custom
 }
 
 /// Reads each agent's executable without launching or downloading it.
 pub async fn list() -> Vec<AcpAgent> {
     let registry = registry().await;
     let prefs = read_prefs().await.unwrap_or_default();
-    rows(&registry, &prefs)
+    rows(&registry, &prefs).await
 }
 
 /// The harnesses the composer offers beside the native five.
@@ -464,14 +500,17 @@ pub async fn enabled() -> Vec<Harness> {
 pub async fn launch(id: &str) -> Result<Launch> {
     let prefs = read_prefs().await?;
     if let Some(custom) = prefs.custom.iter().find(|c| c.id == id) {
-        let program = match std::path::Path::new(&custom.command) {
-            path if path.is_absolute() => path.to_path_buf(),
-            _ => crate::binpath::acp_agent(&custom.command).await,
-        };
+        let program = crate::binpath::resolve_acp_agent(
+            &custom.command,
+            custom.env.get("PATH").map(String::as_str),
+        )
+        .await
+        .unwrap_or_else(|| PathBuf::from(&custom.command));
         return Ok(Launch {
             program,
             args: custom.args.clone(),
             env: custom.env.clone(),
+            package: None,
         });
     }
 
@@ -481,7 +520,8 @@ pub async fn launch(id: &str) -> Result<Launch> {
         .iter()
         .find(|a| a.id == id)
         .with_context(|| format!("no ACP agent named {id}"))?;
-    let (program, args, _, _) = registry_recipe(agent, prefs.executables.get(id))
+    let (program, args, package, _) = resolved_registry_recipe(agent, prefs.executables.get(id))
+        .await
         .with_context(|| format!("{} ships nothing that runs on this machine", agent.name))?;
     Ok(Launch {
         program: if std::path::Path::new(&program).is_absolute() {
@@ -491,6 +531,7 @@ pub async fn launch(id: &str) -> Result<Launch> {
         },
         args,
         env: BTreeMap::new(),
+        package,
     })
 }
 
@@ -529,7 +570,7 @@ pub async fn list_acp_agents(recheck: Option<bool>) -> AcpAgentCatalog {
     let registry = REGISTRY.read().unwrap().clone().unwrap_or(registry);
     match read_prefs().await {
         Ok(prefs) => AcpAgentCatalog {
-            agents: rows(&registry, &prefs),
+            agents: rows(&registry, &prefs).await,
             error: REGISTRY_ERROR.lock().unwrap().clone(),
         },
         Err(error) => AcpAgentCatalog {
@@ -633,6 +674,44 @@ pub async fn remove_custom_acp_agent(id: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn agent_environment_is_private_on_creation_and_replacement() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("carbon-agent-prefs-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("acp-agents.json");
+        let prefs = Prefs {
+            custom: vec![CustomAgent {
+                id: "private-agent".into(),
+                name: "Private agent".into(),
+                command: "agent".into(),
+                args: vec![],
+                env: BTreeMap::from([("API_KEY".into(), "secret".into())]),
+            }],
+            ..Prefs::default()
+        };
+        write_prefs(&path, &prefs).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_prefs(&path, &prefs).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            serde_json::from_slice::<Prefs>(&std::fs::read(path).unwrap())
+                .unwrap()
+                .custom[0]
+                .env["API_KEY"],
+            "secret"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     fn snapshot() -> Registry {
         serde_json::from_str(SNAPSHOT).expect("snapshot parses")
     }
@@ -697,7 +776,8 @@ mod tests {
         let registry = snapshot();
         let agent = registry.agents.iter().find(|a| a.id == "gemini").unwrap();
         let executable = "/Applications/My Agent.app/Contents/MacOS/gemini".to_string();
-        let (program, args, package, runner) = registry_recipe(agent, Some(&executable)).unwrap();
+        let (program, args, package, runner) =
+            registry_recipe(agent, Some(&executable), false).unwrap();
         assert_eq!(program, executable);
         assert_eq!(args, agent.distribution.npx.as_ref().unwrap().args);
         assert!(!args
@@ -711,12 +791,55 @@ mod tests {
     fn registry_packages_remain_distinct_from_installed_executables() {
         let registry = snapshot();
         let agent = registry.agents.iter().find(|a| a.id == "gemini").unwrap();
-        let (_, _, package, runner) = registry_recipe(agent, None).unwrap();
+        let (_, _, package, runner) = registry_recipe(agent, None, false).unwrap();
         assert_eq!(
             package.as_deref(),
             Some(agent.distribution.npx.as_ref().unwrap().package.as_str())
         );
         assert_eq!(runner.as_deref(), Some("npx"));
+    }
+
+    #[test]
+    fn a_missing_binary_uses_the_pinned_package_but_an_installed_binary_wins() {
+        let agent: RegistryAgent = serde_json::from_value(serde_json::json!({
+            "id":"mixed-agent", "name":"Mixed agent", "distribution": {
+                "binary": {(platform().unwrap_or("unknown")): {"cmd":"./bin/mixed-agent", "args":["acp"]}},
+                "npx": {"package":"@example/mixed-agent@1.2.3", "args":["--acp"]}
+            }
+        })).unwrap();
+        let fallback = registry_recipe(&agent, None, false).unwrap();
+        assert_eq!(fallback.0, "npx");
+        assert_eq!(fallback.1, ["-y", "@example/mixed-agent@1.2.3", "--acp"]);
+        assert_eq!(fallback.2.as_deref(), Some("@example/mixed-agent@1.2.3"));
+        assert_eq!(fallback.3.as_deref(), Some("npx"));
+        if platform().is_some() {
+            let installed = registry_recipe(&agent, None, true).unwrap();
+            assert_eq!(installed.0, "mixed-agent");
+            assert_eq!(installed.1, ["acp"]);
+            assert!(installed.2.is_none());
+        }
+    }
+
+    #[test]
+    fn a_foreign_platform_override_keeps_unambiguous_acp_arguments() {
+        let mut agent: RegistryAgent = serde_json::from_value(serde_json::json!({
+            "id":"foreign-agent", "name":"Foreign agent", "distribution": {
+                "binary": {"foreign-platform": {"cmd":"./bin/foreign-agent", "args":["acp"]}}
+            }
+        }))
+        .unwrap();
+        let executable = "/opt/local/Foreign Agent".to_string();
+        let override_recipe = registry_recipe(&agent, Some(&executable), false).unwrap();
+        assert_eq!(override_recipe.0, executable);
+        assert_eq!(override_recipe.1, ["acp"]);
+        agent.distribution.binary.as_mut().unwrap().insert(
+            "another-platform".into(),
+            BinaryTarget {
+                cmd: "agent".into(),
+                args: vec!["--acp".into()],
+            },
+        );
+        assert!(registry_recipe(&agent, Some(&executable), false).is_none());
     }
 
     #[test]
@@ -741,8 +864,8 @@ mod tests {
         assert!(validate_custom(&agent, &registry, &prefs).is_err());
     }
 
-    #[test]
-    fn a_missing_override_is_never_marked_ready() {
+    #[tokio::test]
+    async fn a_missing_override_is_never_marked_ready() {
         let registry = snapshot();
         let mut prefs = Prefs::default();
         prefs.executables.insert(
@@ -750,6 +873,7 @@ mod tests {
             "/carbon-test-missing/Agent With Spaces".into(),
         );
         let agent = rows(&registry, &prefs)
+            .await
             .into_iter()
             .find(|agent| agent.id == "devin")
             .unwrap();
@@ -760,8 +884,8 @@ mod tests {
         assert_eq!(agent.args, ["acp"]);
     }
 
-    #[test]
-    fn an_unsupported_registry_entry_stays_visible_without_a_launch_recipe() {
+    #[tokio::test]
+    async fn an_unsupported_registry_entry_stays_visible_without_a_launch_recipe() {
         let registry = Registry {
             agents: vec![RegistryAgent {
                 id: "future-agent".into(),
@@ -772,7 +896,7 @@ mod tests {
                 distribution: Distribution::default(),
             }],
         };
-        let agents = rows(&registry, &Prefs::default());
+        let agents = rows(&registry, &Prefs::default()).await;
         assert_eq!(agents.len(), 1);
         assert!(!agents[0].supported);
         assert!(!agents[0].ready);

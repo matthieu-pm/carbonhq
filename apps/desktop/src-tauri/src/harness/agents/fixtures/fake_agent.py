@@ -27,6 +27,8 @@ def save_workflow():
 
 
 def workflow_options(session):
+    if session.get("withdrawn"):
+        return []
     return [
         {"id": "model", "name": "Model", "type": "select", "category": "model",
          "currentValue": session["model"], "options": [
@@ -74,6 +76,7 @@ def workflow_request(request):
         workflow_sessions[session_id] = {"model": "fake/model-a", "mode": "code", "thought": "off"}
         save_workflow()
         answer(request, {"sessionId": session_id, "configOptions": workflow_options(workflow_sessions[session_id])})
+        workflow_update(session_id, {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "review", "description": "Review changes"}]})
     elif method in ("session/resume", "session/load"):
         session_id = params["sessionId"]
         if session_id not in workflow_sessions:
@@ -97,7 +100,13 @@ def workflow_request(request):
     elif method == "session/prompt":
         text = "".join(part.get("text", "") for part in params.get("prompt", [])).strip()
         prompt = {"id": request["id"], "sessionId": params["sessionId"], "callId": "call-" + str(request["id"])}
-        if text == "hold":
+        if text == "withdraw":
+            workflow_sessions[params["sessionId"]]["withdrawn"] = True
+            save_workflow()
+            workflow_update(params["sessionId"], {"sessionUpdate": "config_option_update", "configOptions": []})
+            workflow_update(params["sessionId"], {"sessionUpdate": "available_commands_update", "availableCommands": []})
+            workflow_complete(prompt)
+        elif text == "hold":
             workflow_prompt = prompt
         elif text == "permission":
             workflow_prompt = prompt
@@ -145,6 +154,11 @@ for line in sys.stdin:
             send({"id": request["id"], "error": {"code": -32000, "message": "Authentication required"}})
         else:
             answer(request, {"sessionId": "fake-session", "authenticated": authenticated})
+            if scenario == "startup":
+                workflow_update("fake-session", {"sessionUpdate": "config_option_update", "configOptions": [{
+                    "id": "thinking", "name": "Thinking", "category": "thought_level", "type": "select",
+                    "currentValue": "adaptive", "options": [{"value": "off"}, {"value": "adaptive"}]}]})
+                workflow_update("fake-session", {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "startup-complete", "description": "Ready"}]})
     elif method == "authenticate":
         assert request["params"]["methodId"] == "browser"
         authenticated = True

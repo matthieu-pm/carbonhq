@@ -397,7 +397,7 @@ final class Store {
                 "prompt": .string(text),
                 "attachmentPaths": .array(attachments.map { .string($0) }),
                 "harness": .string(item.harness),
-                "model": .string(item.model),
+                "model": .string(Picks.isAcp(item.harness) ? "" : item.model),
                 "effort": Picks.isAcp(item.harness) ? .null : JSON(item.effort),
                 "permissionMode": .string(item.permissionMode),
                 "fast": .bool(item.fast ?? false),

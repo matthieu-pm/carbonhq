@@ -10,7 +10,8 @@ The initial port comes from monorepo-labs/dray#538 at
 
 `harness/agents/catalog.rs` reads a daily cached ACP registry with a bundled
 fallback and stores enabled IDs, custom commands, and executable overrides in
-`acp-agents.json`. Package-runner availability differs from installation:
+`acp-agents.json`, written privately at mode `0600` because custom environments
+may contain credentials. Package-runner availability differs from installation:
 `npx` and `uvx` may download the pinned package on first launch. The UI must say
 so. Unsupported platform entries stay visible.
 
@@ -25,6 +26,13 @@ the selected session's options; last-seen options are only a new-session hint.
 holds provisional-session choices until startup succeeds. A rejected explicit
 selection must prevent `session/prompt`. Published empty options replace the
 previous set. Agent-originated changes must update recorded settings too.
+Saved settings are restored where the agent still accepts them. Withdrawn
+remembered values fall back with a notice; explicit pending picks stay strict.
+Stopped sessions expose acknowledged values separately from `pendingValue` and
+`rejection`. `reset_agent_options` accepts an optional `configId` to discard one
+unapplied pick without clearing the others.
+New-composer explicit picks become remembered preferences after a successful
+send or a client reload.
 
 Tool inputs can arrive across several updates. `ToolCallUpdated` replaces the
 normalized input on its existing row without adding another call. Keep this

@@ -133,6 +133,8 @@ struct AgentOption: Decodable, Hashable, Identifiable {
     let description: String?
     let category: String?
     let currentValue: String?
+    let pendingValue: String?
+    let rejection: String?
     let options: [Choice]
 
     init(from decoder: Decoder) throws {
@@ -143,6 +145,8 @@ struct AgentOption: Decodable, Hashable, Identifiable {
         description = try? c.decode(String.self, forKey: "description")
         category = try? c.decode(String.self, forKey: "category")
         currentValue = try? c.decode(String.self, forKey: "currentValue")
+        pendingValue = try? c.decode(String.self, forKey: "pendingValue")
+        rejection = try? c.decode(String.self, forKey: "rejection")
         options = (try? c.decode([Choice].self, forKey: "options")) ?? []
     }
 

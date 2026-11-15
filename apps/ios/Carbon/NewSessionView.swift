@@ -27,6 +27,8 @@ struct NewSessionView: View {
     @State private var modelPicks = Prefs.map("models")
     @State private var effortPicks = Prefs.map("efforts")
     @State private var agentOptionPicks = Prefs.map("agentOptions")
+    @State private var explicitAgentOptions: Set<String> = []
+    @State private var agentOptionNotice: String?
     @State private var agentOptions: [String: [AgentOption]] = [:]
     @State private var optionReads: [String: UUID] = [:]
     @State private var modelId = ""
@@ -51,6 +53,10 @@ struct NewSessionView: View {
     private var effort: String? { Picks.isAcp(harness) ? nil : (model.map { Picks.usableEffort($0, effortPicks[modelId]) } ?? effortPicks[modelId]) }
     private var options: [AgentOption] { (agentOptions[modelsKey] ?? []).filter { $0.isComposerOption && !$0.options.isEmpty } }
     private var agent: AgentAvailability? { agents.first { $0.harness == harness } }
+    private var selectedAgentOptions: [String: String] {
+        let prefix = "\(modelsKey)|"
+        return Dictionary(uniqueKeysWithValues: agentOptionPicks.filter { $0.key.hasPrefix(prefix) }.map { (String($0.key.dropFirst(prefix.count)), $0.value) })
+    }
     private var prompt: String { store.drafts[.newSession] ?? "" }
 
     var body: some View {
@@ -86,7 +92,7 @@ struct NewSessionView: View {
             .task(id: "\(modelsKey)|\(server.flatMap { store.agentOptionsRevision[$0] } ?? 0)") { await loadModels() }
             // At once, not when the list lands: the old agent's model must never
             // go out under the new agent's name.
-            .onChange(of: modelsKey) { modelId = Picks.usableModel(list, remembered, harness) }
+            .onChange(of: modelsKey) { modelId = Picks.usableModel(list, remembered, harness); agentOptionNotice = nil }
             .task(id: projectPath) { await loadBranches() }
             .confirmationDialog(
                 "\(branches?.dirty ?? 0) uncommitted \(branches?.dirty == 1 ? "file" : "files")",
@@ -177,9 +183,19 @@ struct NewSessionView: View {
                 if Picks.isAcp(harness) {
                     ForEach(options) { option in
                         AgentOptionPicker(option: option, value: Binding(
-                            get: { option.value(agentOptionPicks[option.preferenceKey(harness: harness, server: server)]) ?? "" },
+                            get: { agentOptionPicks[option.preferenceKey(harness: harness, server: server)] ?? option.currentValue ?? "" },
                             set: { pickAgentOption(option, value: $0) }
                         ))
+                    }
+                    ForEach(selectedAgentOptions.keys.sorted().filter { id in
+                        guard let value = selectedAgentOptions[id] else { return false }
+                        return !options.contains { $0.id == id && $0.options.contains { $0.value == value } }
+                    }, id: \.self) { id in
+                        Text("\(selectedAgentOptions[id] ?? id)\(options.isEmpty ? " selected; confirmed when the session opens." : " is no longer offered.")").foregroundStyle(Theme.destructive)
+                        Button("Use agent default") { resetAgentOption(id) }
+                    }
+                    if !selectedAgentOptions.isEmpty {
+                        Button("Use agent default") { resetAgentOptions() }
                     }
                 } else {
                     Picker("Model", selection: Binding(get: { modelId }, set: pickModel)) {
@@ -205,6 +221,7 @@ struct NewSessionView: View {
             } header: {
                 GroupLabel("Agent")
             } footer: {
+                if Picks.isAcp(harness), let agentOptionNotice { Text(agentOptionNotice) }
                 if let agent, !agent.available {
                     Text(agent.reason).font(Theme.Font.meta).foregroundStyle(Theme.tertiary)
                 }
@@ -304,8 +321,41 @@ struct NewSessionView: View {
     }
 
     private func pickAgentOption(_ option: AgentOption, value: String) {
-        agentOptionPicks[option.preferenceKey(harness: harness, server: server)] = value
+        let key = option.preferenceKey(harness: harness, server: server)
+        explicitAgentOptions.insert(key)
+        agentOptionNotice = nil
+        agentOptionPicks[key] = value
         Prefs.set(agentOptionPicks, "agentOptions")
+    }
+
+    private func resetAgentOptions() {
+        let prefix = "\(modelsKey)|"
+        agentOptionPicks = agentOptionPicks.filter { !$0.key.hasPrefix(prefix) }
+        explicitAgentOptions = explicitAgentOptions.filter { !$0.hasPrefix(prefix) }
+        agentOptionNotice = nil
+        failure = nil
+        Prefs.set(agentOptionPicks, "agentOptions")
+    }
+
+    private func resetAgentOption(_ id: String) {
+        let key = "\(modelsKey)|\(id)"
+        agentOptionPicks.removeValue(forKey: key)
+        explicitAgentOptions.remove(key)
+        Prefs.set(agentOptionPicks, "agentOptions")
+    }
+
+    private func reconcileAgentOptions(_ options: [AgentOption], key: String) {
+        guard !options.isEmpty else { return }
+        let prefix = "\(key)|"
+        let stale = agentOptionPicks.filter { pref in
+            guard pref.key.hasPrefix(prefix), !explicitAgentOptions.contains(pref.key) else { return false }
+            let id = String(pref.key.dropFirst(prefix.count))
+            return !options.contains { $0.id == id && $0.options.contains { $0.value == pref.value } }
+        }
+        guard !stale.isEmpty else { return }
+        for key in stale.keys { agentOptionPicks.removeValue(forKey: key) }
+        Prefs.set(agentOptionPicks, "agentOptions")
+        if key == modelsKey { agentOptionNotice = "The agent no longer offers \(stale.values.sorted().joined(separator: ", ")). Using its default." }
     }
 
     private func loadServer() async {
@@ -336,6 +386,7 @@ struct NewSessionView: View {
                 let next: [AgentOption] = try await store.call(server, "agent_options", ["harness": .string(readHarness)])
                 guard optionReads[key] == request else { return }
                 agentOptions[key] = next
+                reconcileAgentOptions(next, key: key)
                 models[key] = []
                 modelsFailed.remove(key)
             } catch {
@@ -416,10 +467,8 @@ struct NewSessionView: View {
         defer { sending = false }
         let id = UUID().uuidString.lowercased()
         let selectedHarness = harness
-        let settings = options.compactMap { option -> (String, String)? in
-            guard let value = agentOptionPicks[option.preferenceKey(harness: selectedHarness, server: server)],
-                  option.options.contains(where: { $0.value == value }) else { return nil }
-            return (option.id, value)
+        let settings = selectedAgentOptions.map { id, value in
+            (id, value, !explicitAgentOptions.contains("\(modelsKey)|\(id)"))
         }
         let args: [String: JSON] = [
             "sessionId": .string(id),
@@ -439,9 +488,10 @@ struct NewSessionView: View {
         ]
         do {
             if Picks.isAcp(selectedHarness) {
-                for (configId, value) in settings {
+                for (configId, value, remembered) in settings {
                     _ = try await store.call(server, "set_agent_option", [
                         "sessionId": .string(id), "configId": .string(configId), "value": .string(value),
+                        "remembered": .bool(remembered),
                     ], as: JSON.self)
                 }
             }

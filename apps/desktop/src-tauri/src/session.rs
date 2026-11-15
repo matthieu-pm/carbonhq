@@ -771,8 +771,9 @@ impl SessionManager {
         app: &Sink,
     ) -> Result<SendOutcome> {
         let _counted = Sending::enter().await;
-        let model = if matches!(harness, Harness::Acp(_)) && model.is_unset() {
-            get_session_index_item(session_id).await?.map(|i| i.model).unwrap_or_default()
+        let model = if matches!(harness, Harness::Acp(_)) && !is_new_session && !model.is_unset()
+            && get_session_index_item(session_id).await?.is_some_and(|item| item.model == model) {
+            ModelId::default()
         } else { model };
         // Resolved against whichever table can name it. The two single-vendor
         // harnesses have one written here; pi's list is answered by the machine,
@@ -1215,6 +1216,11 @@ impl SessionManager {
         }
 
         if let Some(s) = slot_guard.as_mut() {
+            if let Transport::Acp(session) = &s.stdin {
+                s.model = crate::harness::agents::options(session).iter()
+                    .find(|option| option.category.as_deref() == Some("model"))
+                    .and_then(|option| option.current_value.clone()).map(ModelId::new).unwrap_or_default();
+            }
             // A turn-end flush may have moved an fx child off the settings this
             // record holds; catch up before anything is compared against it.
             if let Transport::Fx(fx) = &s.stdin {
@@ -1834,17 +1840,25 @@ impl SessionManager {
 
     /// Reads options from the selected session rather than another session's cache.
     pub async fn agent_options(&self, session_id: &str) -> Option<Vec<crate::harness::agents::parser::ConfigOption>> {
-        let slot = self.existing(session_id).await?;
-        let guard = slot.lock().await;
-        if let Some(Session { stdin: Transport::Acp(session), .. }) = guard.as_ref() {
-            Some(crate::harness::agents::options(session))
-        } else { None }
+        if let Some(slot) = self.existing(session_id).await {
+            let mut guard = slot.lock().await;
+            if let Some(running) = guard.as_mut() {
+                if !matches!(running.child.try_wait(), Ok(Some(_))) {
+                    if let Transport::Acp(session) = &running.stdin {
+                        return Some(crate::harness::agents::options(session));
+                    }
+                }
+            }
+        }
+        let item = crate::store::get_session_index_item(session_id).await.ok().flatten()?;
+        Some(crate::harness::agents::saved_options(&item))
     }
 
     /// Applies before persisting; a rejected selection must never describe a running prompt.
-    pub async fn set_agent_option(&self, session_id: &str, config_id: &str, value: &str, app: &Sink) -> Result<()> {
+    pub async fn set_agent_option(&self, session_id: &str, config_id: &str, value: &str, remembered: bool, app: &Sink) -> Result<()> {
         if let Some(slot) = self.existing(session_id).await {
             let mut guard = slot.lock().await;
+            if guard.as_mut().is_some_and(|running| matches!(running.child.try_wait(), Ok(Some(_)))) { guard.take(); }
             if let Some(running) = guard.as_mut() {
                 if let Transport::Acp(session) = &running.stdin {
                     anyhow::ensure!(!running.status.lock().await.turn_in_flight(), "{} settings cannot change during a turn", running.harness.label());
@@ -1861,8 +1875,9 @@ impl SessionManager {
                 bail!("This session does not use a generic ACP agent.");
             }
         }
-        crate::store::set_pending_agent_config(session_id, config_id, value).await?;
-        crate::harness::agents::hold_option(session_id, config_id, value);
+        if !remembered { crate::store::set_pending_agent_config(session_id, config_id, value).await?; }
+        crate::harness::agents::hold_option(session_id, config_id, value, remembered);
+        app.emit("models_changed", serde_json::json!({"sessionId": session_id}))?;
         Ok(())
     }
 

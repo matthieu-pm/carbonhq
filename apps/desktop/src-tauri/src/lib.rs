@@ -695,8 +695,17 @@ async fn agent_options(harness: Harness, session_id: Option<String>) -> Vec<harn
 
 /// Applies one agent-owned selection before its next prompt.
 #[cfg_attr(feature = "desktop", tauri::command)]
-async fn set_agent_option(session_id: &str, config_id: &str, value: &str, sink: Sink) -> Result<(), Fail> {
-    Ok(manager().set_agent_option(session_id, config_id, value, &sink).await?)
+async fn set_agent_option(session_id: &str, config_id: &str, value: &str, remembered: Option<bool>, sink: Sink) -> Result<(), Fail> {
+    Ok(manager().set_agent_option(session_id, config_id, value, remembered.unwrap_or(false), &sink).await?)
+}
+
+/// Clears unapplied ACP selections so a failed open can use the agent defaults.
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn reset_agent_options(session_id: &str, config_id: Option<&str>, sink: Sink) -> Result<(), Fail> {
+    store::clear_pending_agent_config(session_id, config_id).await?;
+    harness::agents::reset_options(session_id, config_id);
+    sink.emit("models_changed", serde_json::json!({"sessionId": session_id}))?;
+    Ok(())
 }
 
 /// Moves a session onto one of its ACP agent's own modes. See

@@ -200,6 +200,10 @@ pub struct ConfigOption {
     pub current_value: Option<String>,
     #[serde(default, deserialize_with = "deserialize_choices")]
     pub options: Vec<ConfigChoice>,
+    #[serde(default, skip_deserializing)]
+    pub pending_value: Option<String>,
+    #[serde(default, skip_deserializing)]
+    pub rejection: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]

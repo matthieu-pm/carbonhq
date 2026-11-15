@@ -61,28 +61,57 @@ async fn cached<T: Clone>(slot: &'static OnceCell<T>, resolve: impl Future<Outpu
 /// Binaries ACP agents launch through, keyed by name — one slot per agent would
 /// be a static per registry entry. A miss is cached too, until
 /// [`forget_acp_agents`].
-static ACP_PATHS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, PathBuf>>> =
-    std::sync::LazyLock::new(Default::default);
+static ACP_PATHS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<OnceCell<Option<PathBuf>>>>>,
+> = std::sync::LazyLock::new(Default::default);
 
 /// The absolute path to an ACP agent's binary (or `npx`/`uvx`), or the bare
 /// name where it cannot be found.
 pub async fn acp_agent(bin: &str) -> PathBuf {
-    if let Some(hit) = ACP_PATHS.lock().unwrap().get(bin) {
-        return hit.clone();
-    }
-    let found = or_bare(bin).await;
-    ACP_PATHS.lock().unwrap().insert(bin.to_string(), found.clone());
-    found
+    acp_agent_path(bin)
+        .await
+        .unwrap_or_else(|| PathBuf::from(bin))
 }
 
-/// Whether `bin` resolves without spawning a login shell. For listing every
-/// registry agent at once, where a shell per miss would take seconds; a cached
-/// full answer wins where one exists.
-pub fn acp_agent_found(bin: &str) -> bool {
-    if let Some(hit) = ACP_PATHS.lock().unwrap().get(bin) {
-        return hit.is_absolute();
+/// Uses the launch resolver so a shell-only install is also ready in Settings.
+pub async fn acp_agent_found(bin: &str) -> bool {
+    acp_agent_path(bin).await.is_some()
+}
+
+/// Honors a custom agent's PATH before the same resolver used by registry agents.
+pub async fn resolve_acp_agent(bin: &str, custom_path: Option<&str>) -> Option<PathBuf> {
+    if !Path::new(bin).is_absolute() {
+        if let Some(path) = custom_path {
+            if let Some(found) = std::env::split_paths(path)
+                .filter(|dir| dir.is_absolute())
+                .map(|dir| dir.join(bin))
+                .find(|candidate| is_executable(candidate))
+            {
+                return Some(found);
+            }
+        }
     }
-    search_path(bin).or_else(|| search_known_dirs(bin)).is_some()
+    acp_agent_path(bin).await
+}
+
+async fn acp_agent_path(bin: &str) -> Option<PathBuf> {
+    if bin.is_empty() {
+        return None;
+    }
+    let slot = ACP_PATHS
+        .lock()
+        .unwrap()
+        .entry(bin.to_string())
+        .or_default()
+        .clone();
+    slot.get_or_init(|| async {
+        if Path::new(bin).is_absolute() {
+            return is_executable(Path::new(bin)).then(|| PathBuf::from(bin));
+        }
+        resolve(bin).await
+    })
+    .await
+    .clone()
 }
 
 /// Drops every cached ACP answer, so an agent installed while Carbon runs is
@@ -171,7 +200,10 @@ pub async fn codex() -> PathBuf {
 }
 
 async fn resolve_codex() -> PathBuf {
-    for candidate in [search_path("codex"), search_known_dirs("codex")].into_iter().flatten() {
+    for candidate in [search_path("codex"), search_known_dirs("codex")]
+        .into_iter()
+        .flatten()
+    {
         if is_executable(&candidate) && speaks_app_server(&candidate).await {
             return candidate;
         }
@@ -239,8 +271,13 @@ mod pi_resolution_tests {
     async fn where_pi_resolves_to() {
         println!("pi -> {}", super::pi().await.display());
         // The mise branch alone, since any earlier hit hides it above.
-        let mise = std::env::home_dir().unwrap().join(".local/share/mise/installs");
-        println!("mise pi -> {:?}", super::find_versioned(&mise, 2, &["bin", "", "pi"], "pi"));
+        let mise = std::env::home_dir()
+            .unwrap()
+            .join(".local/share/mise/installs");
+        println!(
+            "mise pi -> {:?}",
+            super::find_versioned(&mise, 2, &["bin", "", "pi"], "pi")
+        );
     }
 }
 
@@ -492,7 +529,11 @@ fn search_known_dirs(bin: &str) -> Option<PathBuf> {
             1,
             &["installation/bin"],
         ),
-        (home.join(".local/share/fnm/node-versions"), 1, &["installation/bin"]),
+        (
+            home.join(".local/share/fnm/node-versions"),
+            1,
+            &["installation/bin"],
+        ),
         // installs/<tool>/<version>/bin — `<tool>` is `nodejs` for an `npm -g`
         // under an asdf node, or the plugin's own name.
         (home.join(".asdf/installs"), 2, &["bin"]),
@@ -505,7 +546,11 @@ fn search_known_dirs(bin: &str) -> Option<PathBuf> {
         // across every tool rather than `installs/<bin>`, since a CLI lands
         // under `node` (npm -g), its registry name (`claude`, `claude-code`,
         // `codex`) or `npm-<package>` depending on how it was asked for.
-        (home.join(".local/share/mise/installs"), 2, &["bin", "", bin]),
+        (
+            home.join(".local/share/mise/installs"),
+            2,
+            &["bin", "", bin],
+        ),
     ];
     versioned
         .iter()
@@ -608,6 +653,40 @@ fn is_executable(path: &std::path::Path) -> bool {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn acp_readiness_and_launch_share_the_answer_until_rechecked() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("carbon-acp-path-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Agent With Spaces");
+        let command = path.to_str().unwrap();
+        assert!(!acp_agent_found(command).await);
+        std::fs::write(&path, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(!acp_agent_found(command).await);
+        forget_acp_agents();
+        assert!(acp_agent_found(command).await);
+        assert_eq!(acp_agent(command).await, path);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_acp_custom_path_takes_precedence_over_the_global_command() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir =
+            std::env::temp_dir().join(format!("carbon-acp-custom-path-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sh");
+        std::fs::write(&path, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(resolve_acp_agent("sh", dir.to_str()).await, Some(path));
+        let global = resolve_acp_agent("sh", None).await.unwrap();
+        assert!(!global.starts_with(&dir));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     /// The resolver must agree with the shell about where `claude` is. Skipped
     /// rather than failed where it isn't installed, so CI without the CLI stays
     /// green.
@@ -626,14 +705,18 @@ mod tests {
     /// path that fails only at spawn time.
     #[tokio::test]
     async fn a_missing_binary_resolves_to_none() {
-        assert!(resolve("carbon-definitely-not-a-real-binary").await.is_none());
+        assert!(resolve("carbon-definitely-not-a-real-binary")
+            .await
+            .is_none());
     }
 
     /// The marker is what separates the `PATH` from anything an rc file
     /// prints, so a parse that lost it would find nothing through this path.
     #[tokio::test]
     async fn the_login_shell_path_finds_a_binary() {
-        assert!(login_shell_which("sh").await.is_some_and(|p| p.is_absolute()));
+        assert!(login_shell_which("sh")
+            .await
+            .is_some_and(|p| p.is_absolute()));
     }
 
     /// mise's nesting is the layout that went missing: `installs/<tool>/<v>/`
@@ -659,7 +742,10 @@ mod tests {
 
         let layouts: &[&str] = &["bin", "", "pi"];
         assert_eq!(find_versioned(&root, 2, layouts, "pi"), Some(latest));
-        assert_eq!(find_versioned(&root, 2, &["bin"], "claude"), Some(under_node));
+        assert_eq!(
+            find_versioned(&root, 2, &["bin"], "claude"),
+            Some(under_node)
+        );
         assert_eq!(find_versioned(&root, 2, &["bin"], "pi"), None);
         assert_eq!(find_versioned(&root.join("nope"), 2, layouts, "pi"), None);
 

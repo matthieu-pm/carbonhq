@@ -1677,14 +1677,22 @@ pub async fn set_pending_agent_config(session_id: &str, config_id: &str, value: 
 }
 
 /// Consumes deferred settings only after every selection has succeeded.
-pub async fn clear_pending_agent_config(session_id: &str) -> Result<()> {
-    update_item(session_id, |item| item.pending_agent_config = None).await?;
+pub async fn clear_pending_agent_config(session_id: &str, config_id: Option<&str>) -> Result<()> {
+    update_item(session_id, |item| {
+        if let Some(id) = config_id {
+            if let Some(values) = &mut item.pending_agent_config { values.remove(id); }
+        } else { item.pending_agent_config = None; }
+    }).await?;
     Ok(())
 }
 
 /// Replaces published ACP state so withdrawn options do not return on resume.
-pub async fn replace_session_agent_config(session_id: &str, values: std::collections::BTreeMap<String, String>) -> Result<()> {
-    update_item(session_id, |item| item.agent_config = values).await?;
+pub async fn replace_session_agent_config(session_id: &str, values: std::collections::BTreeMap<String, String>, model: ModelId, mode: Option<String>) -> Result<()> {
+    update_item(session_id, |item| {
+        item.agent_config = values;
+        item.model = model;
+        item.agent_mode = mode;
+    }).await?;
     Ok(())
 }
 

@@ -644,7 +644,7 @@ export type ConfigChoice = { value: string, name: string | null, description: st
  * One session setting. ACP's `configOptions`, read by `category` — `model`,
  * `mode`, `thought_level` — since the `id` is the agent's to choose.
  */
-export type ConfigOption = { id: string, name: string, description: string | null, category: string | null, currentValue: string | null, options: Array<ConfigChoice>, };
+export type ConfigOption = { id: string, name: string, description: string | null, category: string | null, currentValue: string | null, options: Array<ConfigChoice>, pendingValue: string | null, rejection: string | null, };
 
 export type ContextBreakdown = { categories: Array<ContextCategory>, 
 /**

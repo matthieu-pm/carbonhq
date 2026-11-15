@@ -56,6 +56,73 @@ impl Drop for FakeAgent {
 }
 
 #[tokio::test]
+async fn startup_options_survive_before_the_session_attaches_without_another_line() {
+    let mut child = Command::new("python3")
+        .args([
+            "-u",
+            "-c",
+            include_str!("fixtures/fake_agent.py"),
+            "startup",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let client = RpcClient::new(child.stdin.take().unwrap());
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let harness = Harness::Acp("startup-publication-test");
+    let handles = ReaderHandles {
+        client: client.clone(),
+        session_id: uuid::Uuid::now_v7().to_string(),
+        session_cwd: "/startup-test".into(),
+        harness,
+        pending: Default::default(),
+        app: Sink::new(|_, _| {}),
+    };
+    let carbon_session_id = handles.session_id.clone();
+    let reader = tokio::spawn(read_stdout(
+        child.stdout.take().unwrap(),
+        handles,
+        ready_rx,
+        Arc::new(Mutex::new(StatusTracker::default())),
+        Arc::new(Mutex::new(vec![])),
+        Arc::new(AtomicU64::new(0)),
+    ));
+    client
+        .request("initialize", json!({"protocolVersion":1}))
+        .await
+        .unwrap();
+    let opened = client.request("session/new", json!({})).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while list_commands(harness, "/startup-test").is_err() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("startup publications were drained before attachment");
+    let session = AcpSession {
+        client,
+        id: opened["sessionId"].as_str().unwrap().into(),
+        harness,
+        carbon_session_id,
+        prompt_id: Default::default(),
+        options: Arc::new(std::sync::Mutex::new(SessionOptions::of(&opened))),
+    };
+    let (attached_tx, attached_rx) = tokio::sync::oneshot::channel();
+    ready_tx.send((session.clone(), attached_tx)).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), attached_rx)
+        .await
+        .expect("attachment needs no further stdout line")
+        .unwrap();
+    let offered = options(&session);
+    assert_eq!(offered.len(), 1);
+    assert_eq!(offered[0].current_value.as_deref(), Some("adaptive"));
+    child.kill().await.unwrap();
+    reader.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn authentication_retries_the_refused_open_only_after_sign_in() {
     let agent = FakeAgent::start("auth").await;
     let init = agent.initialize().await;

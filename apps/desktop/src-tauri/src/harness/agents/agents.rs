@@ -66,7 +66,13 @@ static COMMANDS: LazyLock<std::sync::Mutex<HashMap<String, Vec<SlashCommand>>>> 
 static PENDING_MODES: LazyLock<std::sync::Mutex<HashMap<String, String>>> =
     LazyLock::new(Default::default);
 
+static REMEMBERED_OPTIONS: LazyLock<std::sync::Mutex<HashMap<String, BTreeMap<String, String>>>> =
+    LazyLock::new(Default::default);
+
 static PENDING_OPTIONS: LazyLock<std::sync::Mutex<HashMap<String, BTreeMap<String, String>>>> =
+    LazyLock::new(Default::default);
+
+static REJECTIONS: LazyLock<std::sync::Mutex<HashMap<String, BTreeMap<String, String>>>> =
     LazyLock::new(Default::default);
 
 /// The connection every write is addressed to.
@@ -166,6 +172,21 @@ pub async fn init(
         }
     });
 
+    if let Some(package) = launch.package {
+        let event = mapper::Mapper::new(session_id.into(), harness, seq.clone()).synthesize(
+            AgentEventPayload::Notice {
+                text: format!("Starting {package}. First launch downloads it if it is not cached."),
+                model: None,
+            },
+        );
+        app.emit("agent_event", &event)?;
+        if is_new_session {
+            if let Err(error) = crate::store::append_session_event(session_id, event).await {
+                eprintln!("[acp launch notice write err] {error:#}");
+            }
+        }
+    }
+
     let opened = match open_session(&client, session_id, session_cwd, is_new_session).await {
         Ok(opened) => opened,
         Err(error) => {
@@ -186,12 +207,13 @@ pub async fn init(
         prompt_id: Arc::new(std::sync::Mutex::new(None)),
         options: Arc::new(std::sync::Mutex::new(opened.1)),
     };
-    learn(&session, app);
-
     let applied: Result<()> = async {
         let indexed = crate::store::get_session_index_item(session_id).await?;
-        let mut values = indexed.as_ref().map(|i| i.agent_config.clone()).unwrap_or_default();
-        if let Some(pending) = indexed.as_ref().and_then(|i| i.pending_agent_config.clone()) { values.extend(pending); }
+        let (attached_tx, attached_rx) = tokio::sync::oneshot::channel();
+        ready_tx.send((session.clone(), attached_tx)).map_err(|_| anyhow::anyhow!("The agent disconnected while opening the session"))?;
+        attached_rx.await.context("The agent disconnected while opening the session")?;
+        learn(&session, app);
+        let mut values = indexed.as_ref().and_then(|i| i.pending_agent_config.clone()).unwrap_or_default();
         values.extend(PENDING_OPTIONS.lock().unwrap().get(session_id).cloned().unwrap_or_default());
         if let Some(model) = model.filter(|m| !m.arg.is_empty() && !options(&session).iter().any(|o| o.category.as_deref() == Some("model") && values.contains_key(&o.id))) {
             set_model(&session, model, app).await?;
@@ -199,18 +221,56 @@ pub async fn init(
         if let Some(effort) = effort {
             set_effort(&session, effort, app).await?;
         }
-        let mode = PENDING_MODES.lock().unwrap().get(session_id).cloned()
-            .or_else(|| indexed.and_then(|i| i.agent_mode));
-        if let Some(mode) = mode { set_mode(&session, &mode, app).await?; }
-        for (config_id, value) in &values {
-            set_option(&session, config_id, value, app).await?;
+        let mode = PENDING_MODES.lock().unwrap().get(session_id).cloned();
+        if let Some(mode) = &mode { set_mode(&session, mode, app).await?; }
+        let mut remembered = indexed.as_ref().map(|item| item.agent_config.clone()).unwrap_or_default();
+        if let Some(item) = &indexed {
+            for option in options(&session) {
+                let value = match option.category.as_deref() {
+                    Some("model") if !item.model.is_unset() => Some(item.model.to_string()),
+                    Some("mode") => item.agent_mode.clone(),
+                    _ => None,
+                };
+                if let Some(value) = value { remembered.entry(option.id).or_insert(value); }
+            }
+        }
+        for option in options(&session) {
+            if matches!(option.category.as_deref(), Some("model")) && model.is_some()
+                || matches!(option.category.as_deref(), Some("thought_level")) && effort.is_some()
+                || matches!(option.category.as_deref(), Some("mode")) && mode.is_some() {
+                remembered.remove(&option.id);
+            }
+        }
+        remembered.extend(REMEMBERED_OPTIONS.lock().unwrap().get(session_id).cloned().unwrap_or_default());
+        let mut selections = remembered;
+        selections.extend(values.clone());
+        let mut selections: Vec<_> = selections.into_iter().collect();
+        selections.sort_by_key(|(id, _)| option_priority(&session, id));
+        for (config_id, value) in &selections {
+            if let Err(error) = set_option(&session, config_id, value, app).await {
+                if values.contains_key(config_id) {
+                    REJECTIONS.lock().unwrap().entry(session_id.into()).or_default().insert(config_id.clone(), format!("{error:#}"));
+                    app.emit("models_changed", json!({"harness": harness}))?;
+                    return Err(error);
+                }
+                let event = mapper::Mapper::new(session_id.into(), harness, seq.clone()).synthesize(AgentEventPayload::Notice {
+                    text: format!("{} no longer accepts {value} for {config_id}. Using its default. {error}", harness.label()), model: None,
+                });
+                app.emit("agent_event", &event)?;
+                crate::store::append_session_event(session_id, event).await?;
+            }
         }
         let acknowledged = options(&session);
         for (id, value) in &values {
-            anyhow::ensure!(acknowledged.iter().any(|o| o.id == *id && o.current_value.as_deref() == Some(value)), "The agent changed setting {id} while applying your selections. Your prompt was not sent.");
+            if !acknowledged.iter().any(|o| o.id == *id && o.current_value.as_deref() == Some(value)) {
+                let message = format!("The agent changed setting {id} while applying your selections. Your prompt was not sent.");
+                REJECTIONS.lock().unwrap().entry(session_id.into()).or_default().insert(id.clone(), message.clone());
+                app.emit("models_changed", json!({"harness": harness}))?;
+                bail!(message);
+            }
         }
         persist_options(&session).await?;
-        crate::store::clear_pending_agent_config(session_id).await?;
+        crate::store::clear_pending_agent_config(session_id, None).await?;
         Ok(())
     }.await;
     if let Err(error) = applied {
@@ -221,6 +281,8 @@ pub async fn init(
         return Err(error.context("Your selection could not be applied. Your prompt was not sent"));
     }
     PENDING_OPTIONS.lock().unwrap().remove(session_id);
+    REMEMBERED_OPTIONS.lock().unwrap().remove(session_id);
+    REJECTIONS.lock().unwrap().remove(session_id);
     PENDING_MODES.lock().unwrap().remove(session_id);
     let acknowledged_model = session
         .options
@@ -229,11 +291,6 @@ pub async fn init(
         .model
         .as_ref()
         .and_then(|s| s.current.clone());
-
-    if let Some(model) = &acknowledged_model {
-        crate::store::set_session_model(session_id, ModelId::new(model.clone())).await?;
-    }
-    let _ = ready_tx.send(session.clone());
 
     Ok(Session {
         id: session_id.to_string(),
@@ -298,6 +355,8 @@ fn option_list(options: &SessionOptions) -> Vec<parser::ConfigOption> {
                     category: Some(category.into()),
                     current_value: setting.current.clone(),
                     options: setting.choices.clone(),
+                    pending_value: None,
+                    rejection: None,
                 });
             }
         }
@@ -317,18 +376,19 @@ async fn persist_options(session: &AcpSession) -> Result<()> {
         })
         .filter_map(|o| o.current_value.clone().map(|value| (o.id.clone(), value)))
         .collect();
-    crate::store::replace_session_agent_config(&session.carbon_session_id, values).await?;
-    if let Some(model) = offered
+    let model = offered
         .iter()
         .find(|o| o.category.as_deref() == Some("model"))
         .and_then(|o| o.current_value.clone())
-    {
-        crate::store::set_session_model(&session.carbon_session_id, ModelId::new(model)).await?;
-    }
-    if let Some(mode) = current_mode(session) {
-        crate::store::set_session_agent_mode(&session.carbon_session_id, &mode).await?;
-    }
-    Ok(())
+        .map(ModelId::new)
+        .unwrap_or_default();
+    crate::store::replace_session_agent_config(
+        &session.carbon_session_id,
+        values,
+        model,
+        current_mode(session),
+    )
+    .await
 }
 
 /// Last observed options are a hint until a new session confirms them.
@@ -340,13 +400,137 @@ pub fn learned_options(harness: Harness) -> Vec<parser::ConfigOption> {
 }
 
 /// Keeps a new session's picks until its agent has advertised its options.
-pub fn hold_option(session_id: &str, config_id: &str, value: &str) {
-    PENDING_OPTIONS
+pub fn hold_option(session_id: &str, config_id: &str, value: &str, remembered: bool) {
+    if let Some(rejected) = REJECTIONS.lock().unwrap().get_mut(session_id) {
+        rejected.remove(config_id);
+    }
+    let pending = if remembered {
+        &REMEMBERED_OPTIONS
+    } else {
+        &PENDING_OPTIONS
+    };
+    pending
         .lock()
         .unwrap()
         .entry(session_id.into())
         .or_default()
         .insert(config_id.into(), value.into());
+}
+
+fn option_priority(session: &AcpSession, id: &str) -> u8 {
+    match options(session)
+        .iter()
+        .find(|o| o.id == id)
+        .and_then(|o| o.category.as_deref())
+    {
+        Some("model") => 0,
+        Some("mode") => 1,
+        Some("thought_level") => 2,
+        _ => 3,
+    }
+}
+
+/// Restores agent defaults after a rejected deferred selection.
+pub fn reset_options(session_id: &str, config_id: Option<&str>) {
+    for store in [&*PENDING_OPTIONS, &*REMEMBERED_OPTIONS, &*REJECTIONS] {
+        let mut pending = store.lock().unwrap();
+        if let Some(id) = config_id {
+            if let Some(values) = pending.get_mut(session_id) {
+                values.remove(id);
+            }
+        } else {
+            pending.remove(session_id);
+        }
+    }
+    if config_id.is_none() || config_id == Some("$mode") {
+        PENDING_MODES.lock().unwrap().remove(session_id);
+    }
+}
+
+/// A stopped session keeps its own values while borrowing only learned choices.
+pub fn saved_options(item: &crate::store::SessionIndexItem) -> Vec<parser::ConfigOption> {
+    let mut offered = learned_options(item.harness);
+    for option in &mut offered {
+        option.current_value =
+            item.agent_config.get(&option.id).cloned().or_else(|| {
+                match option.category.as_deref() {
+                    Some("model") if !item.model.is_unset() => Some(item.model.to_string()),
+                    Some("mode") => item.agent_mode.clone(),
+                    _ => None,
+                }
+            });
+    }
+    for (category, name, value) in [
+        (
+            "model",
+            "Model",
+            (!item.model.is_unset()).then(|| item.model.to_string()),
+        ),
+        ("mode", "Mode", item.agent_mode.clone()),
+    ] {
+        if !offered
+            .iter()
+            .any(|o| o.category.as_deref() == Some(category))
+        {
+            if let Some(value) = item
+                .agent_config
+                .get(&format!("${category}"))
+                .cloned()
+                .or(value)
+            {
+                offered.push(parser::ConfigOption {
+                    id: format!("${category}"),
+                    name: name.into(),
+                    category: Some(category.into()),
+                    description: None,
+                    current_value: Some(value.clone()),
+                    options: vec![parser::ConfigChoice {
+                        value,
+                        name: None,
+                        description: None,
+                    }],
+                    pending_value: None,
+                    rejection: None,
+                });
+            }
+        }
+    }
+    let mut pending = item.pending_agent_config.clone().unwrap_or_default();
+    pending.extend(
+        PENDING_OPTIONS
+            .lock()
+            .unwrap()
+            .get(&item.session_id)
+            .cloned()
+            .unwrap_or_default(),
+    );
+    let rejected = REJECTIONS
+        .lock()
+        .unwrap()
+        .get(&item.session_id)
+        .cloned()
+        .unwrap_or_default();
+    for (id, value) in pending {
+        let index = offered
+            .iter()
+            .position(|option| option.id == id)
+            .unwrap_or_else(|| {
+                offered.push(parser::ConfigOption {
+                    id: id.clone(),
+                    name: id.clone(),
+                    category: None,
+                    description: None,
+                    current_value: None,
+                    options: vec![],
+                    pending_value: None,
+                    rejection: None,
+                });
+                offered.len() - 1
+            });
+        offered[index].pending_value = Some(value);
+        offered[index].rejection = rejected.get(&id).cloned();
+    }
+    offered
 }
 
 /// Applies an agent's raw option value without interpreting vendor-specific levels.
@@ -426,7 +610,7 @@ async fn open_session(
     is_new_session: bool,
 ) -> Result<(String, SessionOptions)> {
     let init = client
-        .request(
+        .request_within(
             "initialize",
             json!({
                 "protocolVersion": PROTOCOL_VERSION,
@@ -436,6 +620,7 @@ async fn open_session(
                 "clientCapabilities": {},
                 "clientInfo": {"name": "carbon", "title": "Carbon", "version": env!("CARGO_PKG_VERSION")},
             }),
+            OPEN_TIMEOUT,
         )
         .await?;
     validate_initialize(&init)?;
@@ -523,23 +708,11 @@ fn learn(session: &AcpSession, app: &Sink) {
         return;
     };
     let options = session.options.lock().unwrap().clone();
-    let changed = {
-        let mut learned = LEARNED.lock().unwrap();
-        let before = learned.get(id).map(choice_values);
-        let after = choice_values(&options);
-        learned.insert(id.to_string(), options);
-        before.as_ref() != Some(&after)
-    };
-    if changed {
-        if let Err(err) = app.emit("models_changed", json!({"harness": session.harness})) {
-            eprintln!("[acp models_changed emit err] {err}");
-        }
+    LEARNED.lock().unwrap().insert(id.to_string(), options);
+    // Each session owns its current values even when another session matches them.
+    if let Err(err) = app.emit("models_changed", json!({"harness": session.harness})) {
+        eprintln!("[acp models_changed emit err] {err}");
     }
-}
-
-/// What changing would move the picker: the choices, not where they stand.
-fn choice_values(options: &SessionOptions) -> Value {
-    serde_json::to_value(option_list(options)).unwrap_or(Value::Null)
 }
 
 #[derive(Clone, Copy)]
@@ -822,12 +995,10 @@ fn remember_commands(harness: Harness, cwd: &str, published: Vec<parser::Availab
             name: c.name,
         })
         .collect();
-    if !rows.is_empty() {
-        COMMANDS
-            .lock()
-            .unwrap()
-            .insert(format!("{id}\0{cwd}"), rows);
-    }
+    COMMANDS
+        .lock()
+        .unwrap()
+        .insert(format!("{id}\0{cwd}"), rows);
 }
 
 struct ReaderHandles {
@@ -842,7 +1013,7 @@ struct ReaderHandles {
 async fn read_stdout(
     stdout: ChildStdout,
     handles: ReaderHandles,
-    ready: tokio::sync::oneshot::Receiver<AcpSession>,
+    ready: tokio::sync::oneshot::Receiver<(AcpSession, tokio::sync::oneshot::Sender<()>)>,
     status: Arc<Mutex<StatusTracker>>,
     queued: QueuedMessages,
     seq: Arc<AtomicU64>,
@@ -852,9 +1023,28 @@ async fn read_stdout(
     let mut mapper = mapper::Mapper::new(handles.session_id.clone(), harness, seq.clone());
     let mut ready = Some(ready);
     let mut transport: Option<Transport> = None;
+    let mut startup_options = None;
+    let mut startup_mode: Option<String> = None;
 
     loop {
-        let line = match lines.next_line().await {
+        let next_line = tokio::select! {
+            attached = async { ready.as_mut().unwrap().await }, if ready.is_some() => {
+                ready = None;
+                if let Ok((session, attached_tx)) = attached {
+                    if let Some(options) = startup_options.take() {
+                        *session.options.lock().unwrap() = options;
+                    }
+                    if let Some(mode) = startup_mode.take() {
+                        note_current(&session, Which::Mode, &mode);
+                    }
+                    transport = Some(Transport::Acp(session));
+                    let _ = attached_tx.send(());
+                }
+                continue;
+            }
+            line = lines.next_line() => line,
+        };
+        let line = match next_line {
             Ok(Some(line)) => line,
             Ok(None) => break,
             Err(err) => {
@@ -864,21 +1054,6 @@ async fn read_stdout(
         };
         if line.trim().is_empty() {
             continue;
-        }
-
-        // Nothing is mapped until the session is open, which is what drops
-        // `session/load`'s replay: it arrives before the load answers.
-        if transport.is_none() {
-            if let Some(rx) = &mut ready {
-                match rx.try_recv() {
-                    Ok(session) => {
-                        transport = Some(Transport::Acp(session));
-                        ready = None;
-                    }
-                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => ready = None,
-                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
-                }
-            }
         }
 
         let session = match transport.as_ref() {
@@ -914,11 +1089,15 @@ async fn read_stdout(
                                     continue;
                                 }
                                 SessionUpdate::ConfigOptionUpdate { config_options } => {
+                                    let next = SessionOptions::from_configs(&config_options);
                                     if let Some(session) = session {
-                                        let next = SessionOptions::from_configs(&config_options);
                                         *session.options.lock().unwrap() = next;
-                                        persist_options(session).await?;
+                                        if let Err(error) = persist_options(session).await {
+                                            eprintln!("[acp settings write err] {error:#}");
+                                        }
                                         learn(session, &handles.app);
+                                    } else {
+                                        startup_options = Some(next);
                                     }
                                     continue;
                                 }
@@ -929,7 +1108,9 @@ async fn read_stdout(
                                 } => {
                                     if let Some(session) = session {
                                         note_current(session, Which::Mode, &mode);
-                                        persist_options(session).await?;
+                                        if let Err(error) = persist_options(session).await {
+                                            eprintln!("[acp settings write err] {error:#}");
+                                        }
                                         let _ = crate::store::set_session_agent_mode(
                                             &handles.session_id,
                                             &mode,
@@ -938,6 +1119,8 @@ async fn read_stdout(
                                         let _ = handles
                                             .app
                                             .emit("models_changed", json!({"harness": harness}));
+                                    } else {
+                                        startup_mode = Some(mode);
                                     }
                                     continue;
                                 }
@@ -1196,6 +1379,121 @@ async fn raise_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stopped_sessions_keep_acknowledged_and_pending_values_separate() {
+        let harness = Harness::Acp("saved-options-test");
+        LEARNED.lock().unwrap().insert("saved-options-test".into(), SessionOptions::of(&json!({"configOptions": [{
+            "id":"model", "name":"Model", "type":"select", "category":"model", "currentValue":"other-session",
+            "options":[{"value":"mine"}, {"value":"other-session"}]
+        }]})));
+        let mut item = crate::store::SessionIndexItem::new(
+            "saved-options-session",
+            harness,
+            "/p",
+            "/p",
+            None,
+            None,
+            "Task",
+            ModelId::new("mine"),
+            None,
+            ApprovalPolicy::Manual,
+            false,
+            None,
+        );
+        item.agent_config.insert("model".into(), "mine".into());
+        item.pending_agent_config = Some(BTreeMap::from([
+            ("model".into(), "requested".into()),
+            ("withdrawn-id".into(), "old".into()),
+        ]));
+        REJECTIONS.lock().unwrap().insert(
+            item.session_id.clone(),
+            BTreeMap::from([("model".into(), "Refused model".into())]),
+        );
+        let offered = saved_options(&item);
+        assert_eq!(offered[0].current_value.as_deref(), Some("mine"));
+        assert_eq!(offered[0].pending_value.as_deref(), Some("requested"));
+        assert_eq!(offered[0].rejection.as_deref(), Some("Refused model"));
+        let removed = offered.iter().find(|o| o.id == "withdrawn-id").unwrap();
+        assert!(removed.options.is_empty());
+        assert_eq!(removed.pending_value.as_deref(), Some("old"));
+        hold_option(&item.session_id, "thought", "adaptive", false);
+        hold_option(&item.session_id, "model", "requested", false);
+        reset_options(&item.session_id, Some("model"));
+        let held = PENDING_OPTIONS
+            .lock()
+            .unwrap()
+            .get(&item.session_id)
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            held,
+            BTreeMap::from([("thought".into(), "adaptive".into())])
+        );
+        assert!(!REJECTIONS
+            .lock()
+            .unwrap()
+            .get(&item.session_id)
+            .unwrap()
+            .contains_key("model"));
+        reset_options(&item.session_id, None);
+    }
+
+    #[test]
+    fn empty_and_withheld_command_publications_remove_old_commands() {
+        let harness = Harness::Acp("commands-withdrawal-test");
+        let publish = |name: &str| {
+            vec![parser::AvailableCommand {
+                name: name.into(),
+                ..Default::default()
+            }]
+        };
+        remember_commands(harness, "/test", publish("review"));
+        assert_eq!(list_commands(harness, "/test").unwrap().len(), 1);
+        remember_commands(harness, "/test", vec![]);
+        assert!(list_commands(harness, "/test").unwrap().is_empty());
+        remember_commands(harness, "/test", publish("review"));
+        remember_commands(harness, "/test", publish("login"));
+        assert!(list_commands(harness, "/test").unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn each_session_notifies_even_when_another_session_has_the_same_options() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let session = AcpSession {
+            client: RpcClient::over(tx),
+            id: "a".into(),
+            carbon_session_id: "a".into(),
+            harness: Harness::Acp("per-session-refresh-test"),
+            prompt_id: Default::default(),
+            options: Arc::new(std::sync::Mutex::new(SessionOptions::of(
+                &json!({"modes": {
+                    "currentModeId": "code", "availableModes": [{"id":"code", "name":"Code"}, {"id":"plan", "name":"Plan"}]
+                }}),
+            ))),
+        };
+        let mut other = session.clone();
+        other.id = "b".into();
+        other.options = Arc::new(std::sync::Mutex::new(
+            session.options.lock().unwrap().clone(),
+        ));
+        let events = Arc::new(AtomicUsize::new(0));
+        let sink = Sink::new({
+            let events = events.clone();
+            move |name, _| {
+                if name == "models_changed" {
+                    events.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+        learn(&session, &sink);
+        note_current(&other, Which::Mode, "plan");
+        learn(&other, &sink);
+        note_current(&session, Which::Mode, "plan");
+        learn(&session, &sink);
+        assert_eq!(events.load(Ordering::Relaxed), 3);
+    }
 
     /// What a Devin session teaches the picker: its model and its five modes,
     /// under Devin's own names.
