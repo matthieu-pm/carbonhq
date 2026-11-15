@@ -5,6 +5,7 @@ import { Features } from "@/components/home/Features";
 import { Hero } from "@/components/home/Hero";
 import { Island } from "@/components/home/Island";
 import { Orchestrate } from "@/components/home/Orchestrate";
+import { Testimonials } from "@/components/home/Testimonials";
 import { REPO, SITE } from "@/lib/links";
 
 const SCHEMA = JSON.stringify({
@@ -47,6 +48,7 @@ export default function Home() {
         <Everywhere />
         <Features />
         <Island />
+        <Testimonials />
         <Faq />
       </main>
       <Closing />
