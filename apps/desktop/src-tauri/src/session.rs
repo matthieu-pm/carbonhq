@@ -1624,6 +1624,8 @@ impl SessionManager {
         }
         append_session_index_item(item.clone()).await?;
 
+        crate::issues::drafting::copy_conversation(session_id, fork_id).await.map_err(anyhow::Error::msg)?;
+
         Ok(SessionSnapshot {
             index_item: item,
             events,
@@ -3224,6 +3226,7 @@ async fn deliver_prompt(
     let prepared = attachments::prepare(session_id, prompt, attachment_paths, harness).await?;
     let text = prepared.text;
     let sent = crate::mcp_mentions::with_hint(&text, mcp_servers);
+    let sent = crate::issues::drafting::with_context(session_id, &sent).await.map_err(anyhow::Error::msg)?;
 
     // Ahead of the event for a second reason, and this one is about failure
     // rather than content. Codex resolves a leading `/skill` by asking its own

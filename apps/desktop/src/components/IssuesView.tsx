@@ -167,6 +167,8 @@ export default function IssuesView({
   onQueryChange,
   tracker: tabTracker,
   onTrackerChange,
+  appliedQuery = null,
+  searchRequest = 0,
 }: {
   /// The page is the thing on screen. Hidden pages do not read, for the reason
   /// the right panel's own `active` exists.
@@ -196,6 +198,8 @@ export default function IssuesView({
   refreshRef?: MutableRefObject<(() => void) | null>;
   /// The list tab's saved query, read once on mount.
   initialQuery?: IssueQuery | null;
+  appliedQuery?: IssueQuery | null;
+  searchRequest?: number;
   /// Hands the query and the name it gives the tab up to the tab strip, which
   /// stores both.
   onQueryChange?: (query: IssueQuery, label: string) => void;
@@ -228,7 +232,11 @@ export default function IssuesView({
   const needsConnecting = !connected[tracker];
 
   const { issues, settled, filters, query, setQuery, loading, loaded, unavailable, refresh } =
-    useIssues(active && !needsConnecting, tracker, initialQuery);
+    useIssues(active && !needsConnecting, tracker, initialQuery, appliedQuery);
+
+  useEffect(() => {
+    if (searchRequest) (document.getElementById(searchId) as HTMLInputElement | null)?.select();
+  }, [searchId, searchRequest]);
 
   const reportQuery = useRef(onQueryChange);
   reportQuery.current = onQueryChange;

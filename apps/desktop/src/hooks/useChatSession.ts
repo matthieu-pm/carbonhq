@@ -20,6 +20,7 @@ import { qualify, serverOfSession } from "@/lib/transport";
 export const ChatSessionContext = createContext<{
   cwd: string | null;
   sessionId: string | null;
+  issueDrafting?: boolean;
 }>({ cwd: null, sessionId: null });
 
 export function useChatSession() {

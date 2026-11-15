@@ -1326,6 +1326,9 @@ pub async fn delete_session(session_id: &str) -> Result<bool> {
         Err(e) => return Err(e).context("failed to delete session log"),
     }
 
+    if uuid::Uuid::parse_str(session_id).is_ok() {
+        crate::issues::drafting::delete_conversation(session_id).await.map_err(anyhow::Error::msg)?;
+    }
     Ok(existed)
 }
 
