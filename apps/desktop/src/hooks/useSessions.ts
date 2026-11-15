@@ -24,8 +24,10 @@ import { repoChanged } from "@/lib/prSync";
 import { dropHeld, dropHeldAsks, heldFor, holdEarlyEvent, isAsk } from "@/lib/earlyEvents";
 import { fastFor, fastNotice } from "@/lib/fastMode";
 import { isWindowFocused, onFocusChange } from "@/lib/focus";
+import { isAcp } from "@/lib/acpAgents";
+import { pendingAgentOptions } from "@/lib/agentOptions";
 import { lockedMidTurn } from "@/lib/liveControls";
-import { DEFAULT_MODEL_FOR, fxListFor, isUnsetModel, landedFxModel, rememberedModel, seededFxModel, usableEffort, usableFxModel, usableModel } from "@/lib/model";
+import { defaultModel, fxListFor, isUnsetModel, landedFxModel, rememberedModel, seededFxModel, usableEffort, usableFxModel, usableModel } from "@/lib/model";
 import { islandOn } from "@/lib/island";
 import { notifyOS } from "@/lib/notify";
 import { setOlderLoader } from "@/lib/olderPages";
@@ -986,6 +988,13 @@ const handleSendMsg = async (
         if (uploadsAhead.get(sessionId) === settled) uploadsAhead.delete(sessionId);
       }
     }
+    // An ACP agent's mode is its own, not a `send_msg` argument, so a new
+    // session's pick is held in Rust ahead of the spawn that reads it.
+    if (isNewSession && isAcp(harness)) {
+      for (const [configId, value] of Object.entries(pendingAgentOptions(server, harness))) {
+        await invoke("set_agent_option", { sessionId, configId, value }, server);
+      }
+    }
     // Nothing awaited between here and the dispatch, so a send queued behind
     // this one cannot overtake it.
     const outcome = await invoke<SendOutcome>("send_msg", {
@@ -993,8 +1002,8 @@ const handleSendMsg = async (
       prompt: message,
       attachmentPaths: sentPaths,
       harness,
-      model: modelId,
-      effort,
+      model: isAcp(harness) ? "" : modelId,
+      effort: isAcp(harness) ? null : effort,
       // What will actually happen, not what the picker last held. A stance can
       // reach here that this harness never offered — a spawned session takes
       // its parent's — and the index is read back, by a later build and by
@@ -1319,7 +1328,7 @@ const restoreSessionControls = (
   // own harness, since a model belongs to exactly one — and for a harness that
   // names no default the sentinel stands, which is what the picker reads as
   // "not chosen yet".
-  const restored = isUnsetModel(item.model) ? DEFAULT_MODEL_FOR[item.harness] : item.model;
+  const restored = isUnsetModel(item.model) ? defaultModel(item.harness) : item.model;
   setModelId(restored);
   // The index stores one model/effort pair, so it can only seed that model's
   // entry; the rest comes from the reader's defaults. Rebuilt from prefs rather

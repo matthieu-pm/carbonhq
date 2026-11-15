@@ -912,3 +912,18 @@ describe("segmentMedia", () => {
     ]);
   });
 });
+
+describe("incremental tool arguments", () => {
+  it("replaces a call's arguments without mutating source events or adding rows", () => {
+    const opened = callStarted(2, "edit", { path: "/a.txt" });
+    const source = [prompt(1, "edit", false), opened, event(3, {
+      type: "tool_call_updated", callId: "edit", input: { file_path: "/a.txt", old_string: "x", new_string: "y" },
+    })];
+    const transcript = buildTranscript(source, true);
+    const call = transcript.events.find((e) => e.payload.type === "tool_call_started");
+    expect(call?.payload.type === "tool_call_started" && call.payload.input).toEqual({ file_path: "/a.txt", old_string: "x", new_string: "y" });
+    expect(opened.payload.type === "tool_call_started" && opened.payload.input).toEqual({ path: "/a.txt" });
+    expect(transcript.turns[0].toolCalls).toBe(1);
+    expect(transcript.events.some((e) => e.payload.type === "tool_call_updated")).toBe(false);
+  });
+});

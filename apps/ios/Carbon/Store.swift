@@ -42,6 +42,7 @@ final class Store {
     /// An older page that could not be read; the newer turns stay on screen.
     private(set) var olderErrors: [SessionKey: String] = [:]
     private(set) var tasks: [SessionKey: Int] = [:]
+    private(set) var agentOptionsRevision: [UUID: Int] = [:]
 
     /// For a client that reacts beside drawing: the Island opens itself on a card.
     @ObservationIgnored var asksChanged: () -> Void = {}
@@ -112,6 +113,7 @@ final class Store {
         for key in marks.keys where key.server == s.id { marks[key] = nil }
         projects[s.id] = nil
         loadErrors[s.id] = nil
+        agentOptionsRevision[s.id] = nil
         save()
     }
 
@@ -193,6 +195,7 @@ final class Store {
     /// A fresh connection re-reads the index and the tail of every open
     /// transcript, so nothing that happened while it was down is missed.
     private func connected(_ server: UUID) async {
+        agentOptionsRevision[server, default: 0] += 1
         // Heard on the old socket, so older than the read below — and a read
         // never moves `modified`, so a stale `completed` would win the tie.
         for key in statuses.keys where key.server == server { statuses[key] = nil }
@@ -395,7 +398,7 @@ final class Store {
                 "attachmentPaths": .array(attachments.map { .string($0) }),
                 "harness": .string(item.harness),
                 "model": .string(item.model),
-                "effort": JSON(item.effort),
+                "effort": Picks.isAcp(item.harness) ? .null : JSON(item.effort),
                 "permissionMode": .string(item.permissionMode),
                 "fast": .bool(item.fast ?? false),
                 "cwd": .string(item.cwd),
@@ -463,6 +466,8 @@ final class Store {
     private func handle(_ server: UUID, _ name: String, _ data: Data) {
         let decoder = JSONDecoder()
         switch name {
+        case "models_changed":
+            agentOptionsRevision[server, default: 0] += 1
         case "secret_requests_changed":
             guard let change = try? decoder.decode(EventFrame<SecretRequestsChanged>.self, from: data).payload else { return }
             secrets[SessionKey(server: server, id: change.sessionId)] = change.requests

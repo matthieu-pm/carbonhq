@@ -119,6 +119,45 @@ struct Welcome: Decodable {
     let dictation: Bool?
 }
 
+struct AgentOption: Decodable, Hashable, Identifiable {
+    struct Choice: Decodable, Hashable {
+        let value: String
+        let name: String?
+        let description: String?
+
+        var label: String { name?.isEmpty == false ? name! : value }
+    }
+
+    let id: String
+    let name: String
+    let description: String?
+    let category: String?
+    let currentValue: String?
+    let options: [Choice]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        id = try c.decode(String.self, forKey: "id")
+        let label = try? c.decode(String.self, forKey: "name")
+        name = label?.isEmpty == false ? label! : id
+        description = try? c.decode(String.self, forKey: "description")
+        category = try? c.decode(String.self, forKey: "category")
+        currentValue = try? c.decode(String.self, forKey: "currentValue")
+        options = (try? c.decode([Choice].self, forKey: "options")) ?? []
+    }
+
+    func value(_ picked: String?) -> String? {
+        if let picked, options.contains(where: { $0.value == picked }) { return picked }
+        return currentValue
+    }
+
+    var isComposerOption: Bool { ["model", "mode", "thought_level"].contains(category ?? "") }
+
+    func preferenceKey(harness: String, server: UUID?) -> String {
+        "\(Picks.preferenceKey(harness, server: server))|\(id)"
+    }
+}
+
 struct SessionItem: Decodable, Hashable {
     let sessionId: String
     let harness: String
@@ -324,6 +363,7 @@ enum Payload: Decodable {
     case userMessage(text: String, fromTitle: String?, fromId: String?, queued: Bool, images: [ImageRef], mcpServers: [String])
     case assistantText(String)
     case toolStarted(callId: String, name: String, toolType: String, input: JSON, title: String?)
+    case toolUpdated(callId: String, input: JSON)
     case toolCompleted(callId: String, result: ToolResult)
     case permissionRequested(PermissionRequest)
     case questionsAsked(QuestionsRequest)
@@ -369,6 +409,10 @@ enum Payload: Decodable {
                 self = .toolCompleted(
                     callId: try c.decode(String.self, forKey: "callId"),
                     result: try c.decode(ToolResult.self, forKey: "result"))
+            case "tool_call_updated":
+                self = .toolUpdated(
+                    callId: try c.decode(String.self, forKey: "callId"),
+                    input: try c.decode(JSON.self, forKey: "input"))
             case "permission_requested":
                 self = .permissionRequested(try PermissionRequest(from: decoder))
             case "questions_asked":

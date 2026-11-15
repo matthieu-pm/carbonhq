@@ -26,6 +26,9 @@ struct NewSessionView: View {
     @AppStorage("new.harness") private var harness = "claude_code"
     @State private var modelPicks = Prefs.map("models")
     @State private var effortPicks = Prefs.map("efforts")
+    @State private var agentOptionPicks = Prefs.map("agentOptions")
+    @State private var agentOptions: [String: [AgentOption]] = [:]
+    @State private var optionReads: [String: UUID] = [:]
     @State private var modelId = ""
     @AppStorage("new.stance") private var stance = "auto"
     @AppStorage("new.fast") private var fast = false
@@ -45,7 +48,8 @@ struct NewSessionView: View {
     private var modelsKey: String { "\(server?.uuidString ?? "")|\(harness)" }
     private var list: [Model] { models[modelsKey] ?? [] }
     private var model: Model? { list.first { $0.id == modelId } }
-    private var effort: String? { model.map { Picks.usableEffort($0, effortPicks[modelId]) } ?? effortPicks[modelId] }
+    private var effort: String? { Picks.isAcp(harness) ? nil : (model.map { Picks.usableEffort($0, effortPicks[modelId]) } ?? effortPicks[modelId]) }
+    private var options: [AgentOption] { (agentOptions[modelsKey] ?? []).filter { $0.isComposerOption && !$0.options.isEmpty } }
     private var agent: AgentAvailability? { agents.first { $0.harness == harness } }
     private var prompt: String { store.drafts[.newSession] ?? "" }
 
@@ -79,7 +83,7 @@ struct NewSessionView: View {
                 }
             }
             .task(id: server) { await loadServer() }
-            .task(id: modelsKey) { await loadModels() }
+            .task(id: "\(modelsKey)|\(server.flatMap { store.agentOptionsRevision[$0] } ?? 0)") { await loadModels() }
             // At once, not when the list lands: the old agent's model must never
             // go out under the new agent's name.
             .onChange(of: modelsKey) { modelId = Picks.usableModel(list, remembered, harness) }
@@ -170,15 +174,24 @@ struct NewSessionView: View {
                         Text(a.available ? a.label : "\(a.label) (unavailable)").tag(a.harness)
                     }
                 }
-                Picker("Model", selection: Binding(get: { modelId }, set: pickModel)) {
-                    if Picks.defaultModel[harness]?.isEmpty ?? false {
-                        Text("Default").tag("")
+                if Picks.isAcp(harness) {
+                    ForEach(options) { option in
+                        AgentOptionPicker(option: option, value: Binding(
+                            get: { option.value(agentOptionPicks[option.preferenceKey(harness: harness, server: server)]) ?? "" },
+                            set: { pickAgentOption(option, value: $0) }
+                        ))
                     }
-                    ForEach(list, id: \.id) { Text($0.label).tag($0.id) }
-                }
-                if let model, !model.efforts.isEmpty {
-                    Picker("Effort", selection: Binding(get: { effort ?? "" }, set: pickEffort)) {
-                        ForEach(model.efforts, id: \.self) { Text(Picks.effortLabels[$0] ?? $0).tag($0) }
+                } else {
+                    Picker("Model", selection: Binding(get: { modelId }, set: pickModel)) {
+                        if Picks.defaultModel[harness]?.isEmpty ?? false {
+                            Text("Default").tag("")
+                        }
+                        ForEach(list, id: \.id) { Text($0.label).tag($0.id) }
+                    }
+                    if let model, !model.efforts.isEmpty {
+                        Picker("Effort", selection: Binding(get: { effort ?? "" }, set: pickEffort)) {
+                            ForEach(model.efforts, id: \.self) { Text(Picks.effortLabels[$0] ?? $0).tag($0) }
+                        }
                     }
                 }
                 if Picks.offersFast(harness, model) {
@@ -265,7 +278,7 @@ struct NewSessionView: View {
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var remembered: String { modelPicks[harness] ?? Picks.defaultModel[harness] ?? "" }
+    private var remembered: String { modelPicks[Picks.preferenceKey(harness, server: server)] ?? Picks.defaultModel[harness] ?? "" }
 
     /// Whether a reply read for this server and project still describes what is
     /// on screen. A call outlives the task that made it, so a late one from a
@@ -281,13 +294,18 @@ struct NewSessionView: View {
 
     private func pickModel(_ id: String) {
         modelId = id
-        modelPicks[harness] = id
+        modelPicks[Picks.preferenceKey(harness, server: server)] = id
         Prefs.set(modelPicks, "models")
     }
 
     private func pickEffort(_ level: String) {
         effortPicks[modelId] = level
         Prefs.set(effortPicks, "efforts")
+    }
+
+    private func pickAgentOption(_ option: AgentOption, value: String) {
+        agentOptionPicks[option.preferenceKey(harness: harness, server: server)] = value
+        Prefs.set(agentOptionPicks, "agentOptions")
     }
 
     private func loadServer() async {
@@ -310,6 +328,24 @@ struct NewSessionView: View {
     private func loadModels() async {
         guard let server else { return }
         let key = modelsKey
+        let readHarness = harness
+        if Picks.isAcp(readHarness) {
+            let request = UUID()
+            optionReads[key] = request
+            do {
+                let next: [AgentOption] = try await store.call(server, "agent_options", ["harness": .string(readHarness)])
+                guard optionReads[key] == request else { return }
+                agentOptions[key] = next
+                models[key] = []
+                modelsFailed.remove(key)
+            } catch {
+                guard optionReads[key] == request else { return }
+                modelsFailed.insert(key)
+                if key == modelsKey { failure = error.localizedDescription }
+            }
+            if key == modelsKey { modelId = "" }
+            return
+        }
         if models[key] == nil {
             do {
                 models[key] = try await store.call(server, "list_models", ["harness": .string(harness)])
@@ -379,23 +415,37 @@ struct NewSessionView: View {
         failure = nil
         defer { sending = false }
         let id = UUID().uuidString.lowercased()
+        let selectedHarness = harness
+        let settings = options.compactMap { option -> (String, String)? in
+            guard let value = agentOptionPicks[option.preferenceKey(harness: selectedHarness, server: server)],
+                  option.options.contains(where: { $0.value == value }) else { return nil }
+            return (option.id, value)
+        }
+        let args: [String: JSON] = [
+            "sessionId": .string(id),
+            "prompt": .string(prompt),
+            "attachmentPaths": [],
+            "harness": .string(selectedHarness),
+            "model": .string(modelId),
+            "effort": JSON(effort),
+            "permissionMode": .string(Picks.stanceFor(selectedHarness, stance)),
+            "fast": .bool(fast && Picks.offersFast(selectedHarness, model)),
+            "cwd": .string(cwd),
+            "branch": worktree ? nil : JSON(branches?.current),
+            "useWorktree": .bool(worktree),
+            "worktreeName": nil,
+            "baseRef": nil,
+            "isNewSession": true,
+        ]
         do {
-            let outcome: SendOutcome = try await store.call(server, "send_msg", [
-                "sessionId": .string(id),
-                "prompt": .string(prompt),
-                "attachmentPaths": [],
-                "harness": .string(harness),
-                "model": .string(modelId),
-                "effort": JSON(effort),
-                "permissionMode": .string(Picks.stanceFor(harness, stance)),
-                "fast": .bool(fast && Picks.offersFast(harness, model)),
-                "cwd": .string(cwd),
-                "branch": worktree ? nil : JSON(branches?.current),
-                "useWorktree": .bool(worktree),
-                "worktreeName": nil,
-                "baseRef": nil,
-                "isNewSession": true,
-            ])
+            if Picks.isAcp(selectedHarness) {
+                for (configId, value) in settings {
+                    _ = try await store.call(server, "set_agent_option", [
+                        "sessionId": .string(id), "configId": .string(configId), "value": .string(value),
+                    ], as: JSON.self)
+                }
+            }
+            let outcome: SendOutcome = try await store.call(server, "send_msg", args)
             if let item = outcome.snapshot { store.created(server, item) }
             store.drafts[.newSession] = nil
             Haptic.success()

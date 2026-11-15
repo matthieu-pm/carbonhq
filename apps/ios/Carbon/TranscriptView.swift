@@ -634,6 +634,9 @@ struct Composer: View {
                     if dictating {
                         DictationBar(draft: key)
                     } else {
+                        if let item = store.items[key], Picks.isAcp(item.harness) {
+                            AgentControls(key: key, busy: busy).id(key)
+                        }
                         Spacer(minLength: 0)
                         DictateButton(server: key.server, draft: key)
                         if busy && text.isEmpty {

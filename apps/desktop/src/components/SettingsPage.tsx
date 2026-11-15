@@ -2,6 +2,7 @@ import type { ProfileAppearance, ProfileAppearances } from "@/lib/profileAppeara
 import { Fragment, useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import {
   BoltIcon,
+  CpuChipIcon,
   ChatBubbleBottomCenterTextIcon,
   ComputerDesktopIcon,
   InformationCircleIcon,
@@ -54,6 +55,7 @@ import {
   pickFileOpener,
 } from "@/lib/openWith";
 import AccountsSettings from "@/components/settings/AccountsSettings";
+import AgentsSettings from "@/components/settings/AgentsSettings";
 import McpSettings from "@/components/settings/McpSettings";
 import SkillsSettings from "@/components/settings/SkillsSettings";
 import { CubesGlyph18, Plug2Glyph18 } from "@/components/icons/nucleo";
@@ -227,6 +229,7 @@ export default function SettingsPage({
         ),
         servers: <ServersSettings />,
         accounts: <AccountsSettings cwd={cwd} />,
+        agents: <AgentsSettings cwd={cwd} />,
         mcp: <McpSettings projects={projects} />,
         skills: <SkillsSettings />,
         transcription: (
@@ -1304,6 +1307,7 @@ const ALL_TABS = [
   { id: "spaces", label: "Profiles", Icon: Square3Stack3DIcon },
   { id: "servers", label: "Servers", Icon: ServerStackIcon },
   { id: "accounts", label: "Accounts", Icon: KeyIcon },
+  { id: "agents", label: "Agents", Icon: CpuChipIcon },
   { id: "mcp", label: "MCP", Icon: Plug2Glyph18 },
   { id: "skills", label: "Skills", Icon: CubesGlyph18 },
   { id: "transcription", label: "Transcription", Icon: MicrophoneIcon },
@@ -1325,6 +1329,7 @@ const SETTINGS_TABS = ALL_TABS.filter((t) => IS_MAC || t.id !== "island");
 /// which nothing on the page itself would show.
 const TAB_SUBTITLES: Partial<Record<SettingsTab, string>> = {
   accounts: "Manage each harness's sign-in. Switch one off to hide it from the model picker.",
+  agents: "Choose ACP agents for the agent picker, or add your own command.",
   mcp: "MCP servers on This Mac, read from each agent’s config. New sessions pick up changes.",
   skills: "Skills on This Mac, read from each agent’s resources. New sessions pick up changes.",
   composer:

@@ -50,6 +50,12 @@ struct CloneProgress: Decodable {
 /// other: `permission.ts`, `fastMode.ts` and `model.ts`. A new session runs no
 /// turn yet, so nothing in `liveControls.ts` locks here.
 enum Picks {
+    static func isAcp(_ harness: String) -> Bool { harness.hasPrefix("acp:") }
+
+    static func preferenceKey(_ harness: String, server: UUID?) -> String {
+        isAcp(harness) ? "\(server?.uuidString ?? "")|\(harness)" : harness
+    }
+
     /// `DEFAULT_MODEL_FOR`. Empty is "let the harness decide", which pi and fx
     /// answer from their own settings.
     static let defaultModel = ["claude_code": "opus", "codex": "gpt-6-sol", "pi": "", "fx": "", "grok": "grok-4.7"]
@@ -66,7 +72,8 @@ enum Picks {
     ]
 
     static func honours(_ harness: String, _ mode: String) -> Bool {
-        honoured[harness]?.contains(mode) ?? true
+        if isAcp(harness) { return false }
+        return honoured[harness]?.contains(mode) ?? true
     }
 
     /// One honoured stance is not a menu, and pi honours none.

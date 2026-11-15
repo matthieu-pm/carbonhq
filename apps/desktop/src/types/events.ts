@@ -57,6 +57,17 @@ canChangeMethod: boolean, };
 export type AccountState = "logged_in" | "logged_out" | "unknown";
 
 /**
+ * One row of Settings → Agents.
+ */
+export type AcpAgent = { harness: Harness, id: string, name: string, description: string, website: string | null, icon: string | null, enabled: boolean, custom: boolean, installed: boolean, ready: boolean, supported: boolean, executable: string, args: Array<string>, package: string | null, runner: string | null, overridden: boolean, 
+/**
+ * The command as a reader would type it, for the row's own line.
+ */
+command: string, };
+
+export type AcpAgentCatalog = { agents: Array<AcpAgent>, error: string | null, };
+
+/**
  * One harness's whole answer: can it run here, who is it, and what may be added.
  */
 export type AgentAccounts = { harness: Harness, label: string, 
@@ -255,7 +266,7 @@ input: JsonValue,
  * Input that isn't JSON at all — Codex's `custom_tool_call.input` is raw
  * JS source.
  */
-rawInput: string | null, title: string | null, } | { "type": "tool_call_completed", callId: string, result: ToolResult, } | { "type": "file_edits", callId: string | null, edits: Array<FileEdit>, } | { "type": "subagent_started", agentId: string, label: string, description: string | null, prompt: string | null, } | { "type": "subagent_progress", agentId: string, 
+rawInput: string | null, title: string | null, } | { "type": "tool_call_updated", callId: string, input: JsonValue, } | { "type": "tool_call_completed", callId: string, result: ToolResult, } | { "type": "file_edits", callId: string | null, edits: Array<FileEdit>, } | { "type": "subagent_started", agentId: string, label: string, description: string | null, prompt: string | null, } | { "type": "subagent_progress", agentId: string, 
 /**
  * What the subagent is doing right now — Claude Code rewrites this per
  * progress event, so it drives a live status line without expanding
@@ -372,6 +383,20 @@ reason: string | null, } | { "type": "context_compacted",
  * `manual` or `auto`.
  */
 trigger: string | null, preTokens: number | null, postTokens: number | null, durationMs: number | null, } | { "type": "error", source: ErrorSource, message: string, fatal: boolean, } | { "type": "turn_replayed", promptEventId: string, replacementEventId: string, } | { "type": "replay_unsafe", reason: string, } | { "type": "unrecognized" };
+
+/**
+ * One of an agent's own permission modes.
+ */
+export type AgentMode = { id: string, name: string, description: string | null, };
+
+/**
+ * What the stance picker draws for an ACP agent.
+ */
+export type AgentModes = { modes: Array<AgentMode>, 
+/**
+ * Where the agent's last session started, which is its default.
+ */
+current: string | null, };
 
 export type AgentUpdate = { harness: Harness, label: string, current: string, latest: string, };
 
@@ -613,6 +638,14 @@ authorEmail: string,
  */
 authoredAt: string, };
 
+export type ConfigChoice = { value: string, name: string | null, description: string | null, };
+
+/**
+ * One session setting. ACP's `configOptions`, read by `category` — `model`,
+ * `mode`, `thought_level` — since the `id` is the agent's to choose.
+ */
+export type ConfigOption = { id: string, name: string, description: string | null, category: string | null, currentValue: string | null, options: Array<ConfigChoice>, };
+
 export type ContextBreakdown = { categories: Array<ContextCategory>, 
 /**
  * The `used` categories summed; the buffer and deferred tools are outside it.
@@ -626,6 +659,15 @@ usedTokens: number, maxTokens: number, };
 export type ContextCategory = { id: string, name: string, tokens: number, kind: string, };
 
 export type ContextWindow = { usedTokens: number, maxTokens: number, };
+
+/**
+ * An agent the reader added by hand: any command speaking ACP over stdio.
+ */
+export type CustomAgent = { 
+/**
+ * Lowercase letters, digits and dashes. Also its harness name, `acp:<id>`.
+ */
+id: string, name: string, command: string, args: Array<string>, env: { [key in string]: string }, };
 
 /**
  * Incremental content for a block.
@@ -809,7 +851,7 @@ path: string | null, };
  *
  * [`SessionIndexItem.unknown`]: crate::store::SessionIndexItem
  */
-export type Harness = "claude_code" | "codex" | "pi" | "fx" | "grok";
+export type Harness = "claude_code" | "codex" | "pi" | "fx" | "grok" | `acp:${string}`;
 
 export type ImageRef = { path: string | null, url: string | null, mimeType: string | null, };
 
@@ -1956,6 +1998,11 @@ forkFrom: string | null,
  */
 threadId: string | null, 
 /**
+ * An ACP agent's own permission mode, by the agent's id for it. ACP agents
+ * name their own stances, which `permission_mode`'s closed set cannot.
+ */
+agentMode?: string | null, agentConfig?: { [key in string]: string }, pendingAgentConfig?: { [key in string]: string } | null, 
+/**
  * The issues this session's work is against, newest link last.
  *
  * A list because one session really does carry several — three tags in one
@@ -2125,6 +2172,11 @@ forkFrom: string | null,
  * written *before* the child answers. This is read by resume alone.
  */
 threadId: string | null, 
+/**
+ * An ACP agent's own permission mode, by the agent's id for it. ACP agents
+ * name their own stances, which `permission_mode`'s closed set cannot.
+ */
+agentMode?: string | null, agentConfig?: { [key in string]: string }, pendingAgentConfig?: { [key in string]: string } | null, 
 /**
  * The issues this session's work is against, newest link last.
  *

@@ -329,7 +329,7 @@ pub fn providers_of(harness: Harness) -> Vec<ProviderChoice> {
             .map(|entry| choice(entry.id, entry.label))
             .collect(),
         // One credential, so there is nothing to pick between.
-        Harness::ClaudeCode | Harness::Codex | Harness::Grok | Harness::Other(_) => Vec::new(),
+        Harness::ClaudeCode | Harness::Codex | Harness::Grok | Harness::Acp(_) | Harness::Other(_) => Vec::new(),
     }
 }
 
@@ -443,7 +443,7 @@ pub fn auth_options(harness: Harness, provider: Option<&str>) -> Vec<AuthOption>
                 Some("For a machine with no browser. Finish the sign-in elsewhere."),
             ),
         ],
-        Harness::Other(_) => Vec::new(),
+        Harness::Acp(_) | Harness::Other(_) => Vec::new(),
     }
 }
 
@@ -455,7 +455,7 @@ async fn probe(harness: Harness, cwd: &str) -> anyhow::Result<Vec<Account>> {
         Harness::Fx => fx(cwd).await,
         Harness::Grok => grok().await,
         // Nothing to ask: this build cannot name the CLI, let alone drive it.
-        Harness::Other(_) => Ok(Vec::new()),
+        Harness::Acp(_) | Harness::Other(_) => Ok(Vec::new()),
     }
 }
 
@@ -1203,6 +1203,7 @@ pub async fn sign_out_agent(harness: Harness, provider: Option<String>) -> Resul
             }
             return pi_forget_provider(provider);
         }
+        Harness::Acp(_) => return Err(format!("Sign out of {} from the agent itself.", harness.label())),
         Harness::Other(_) => return Err("Carbon cannot drive that agent.".to_string()),
     };
 

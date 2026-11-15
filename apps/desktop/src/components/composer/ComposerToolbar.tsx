@@ -4,6 +4,8 @@ import BranchSelector from "@/components/composer/BranchSelector";
 import BranchSwitchDialog from "@/components/composer/BranchSwitchDialog";
 import ContextMeter from "@/components/composer/ContextMeter";
 import ModelSelector from "@/components/composer/ModelSelector";
+import AgentModeSelector from "@/components/composer/AgentModeSelector";
+import { isAcp } from "@/lib/acpAgents";
 import PermissionSelector, {
   offersPermissionModes,
 } from "@/components/composer/PermissionSelector";
@@ -89,6 +91,7 @@ type ComposerToolbarProps = {
   /// reads it — it is the one control here that moves the child on the click
   /// rather than at the next send.
   busy: boolean;
+  sessionId?: string | null;
 
   /// Puts the model picker at the row's right end instead of its start. The
   /// new-task card shares this row with dictation and Send, and the row reads
@@ -137,6 +140,7 @@ export default function ComposerToolbar({
   contextUsage,
   isNewSession,
   busy,
+  sessionId = null,
   modelLast = false,
 }: ComposerToolbarProps) {
   const model = (
@@ -144,9 +148,9 @@ export default function ComposerToolbar({
       server={server}
       harness={harness}
       onHarnessChange={onHarnessChange}
-      models={models}
+      models={isAcp(harness) ? [] : models}
       modelId={modelId}
-      effort={effort}
+      effort={isAcp(harness) ? null : effort}
       fast={fast}
       fastNote={fastNote}
       onFastChange={onFastChange}
@@ -245,6 +249,15 @@ export default function ComposerToolbar({
           harness={harness}
           value={permissionMode}
           onChange={onPermissionModeChange}
+          locked={lockedMidTurn(harness, "stance", busy)}
+        />
+      )}
+      {isAcp(harness) && (
+        <AgentModeSelector
+          key={`${server}:${sessionId ?? harness}`}
+          server={server}
+          harness={harness}
+          sessionId={sessionId}
           locked={lockedMidTurn(harness, "stance", busy)}
         />
       )}

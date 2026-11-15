@@ -59,7 +59,8 @@ Run decoding and formatting tests without a server:
 xcodebuild -project Carbon.xcodeproj -scheme Carbon -destination 'platform=iOS Simulator,id=<simulator-id>' -only-testing:CarbonTests test
 ```
 
-`CarbonTests` covers image decoding, MCP mentions and PR rules.
+`CarbonTests` covers image decoding, MCP mentions, PR rules and generic ACP
+agent options, host-scoped preferences, permission controls and tool updates.
 `CarbonUITests` uses live server fixtures. Test methods skip when their
 required variables are missing; an all-green run with skips is not live
 acceptance evidence. Pass variables through `TEST_RUNNER_`, for example:
@@ -79,3 +80,20 @@ sessions and may perform PR actions, so inspect the selected test first.
 Inspect the test result screenshots and exercise connection failure,
 reconnect, permission/question cards and the changed flow. A simulator build
 alone cannot verify camera pairing, device recording or TestFlight behavior.
+
+The generic-agent UI test has its own loopback serve-protocol stand-in. It
+tests the phone's raw option controls, rejected settings and mid-turn locks;
+it does not run Carbon's Rust server or an agent:
+
+```bash
+uv run --with websockets python scripts/acp-ui-fixture.py
+```
+
+In another terminal, run:
+
+```bash
+TEST_RUNNER_CARBON_ACP_URL=ws://127.0.0.1:7438 TEST_RUNNER_CARBON_ACP_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa xcodebuild -project Carbon.xcodeproj -scheme Carbon -destination 'platform=iOS Simulator,id=<simulator-id>' -only-testing:CarbonUITests/AgentTests test
+```
+
+The fixture keeps call traces in `/tmp/carbon-cbn60-ios-fixture.jsonl` and
+accepts any token. Keep it on loopback and stop it after the test.

@@ -95,6 +95,11 @@ impl<K: Eq + Hash, E: Display> Pending<K, E> {
         rx
     }
 
+    /// Wakes every caller when a peer exits without answering.
+    pub fn clear(&self) {
+        self.0.lock().unwrap().clear();
+    }
+
     /// Hands `id`'s slot back, for a line that was never written.
     pub fn forget(&self, id: &K) {
         self.0.lock().unwrap().remove(id);
