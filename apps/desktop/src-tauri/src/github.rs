@@ -796,6 +796,7 @@ pub(crate) async fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
     }
 
     let out = Command::new(bin)
+        .kill_on_drop(true)
         .args(args)
         .current_dir(cwd)
         .env("GIT_OPTIONAL_LOCKS", "0")

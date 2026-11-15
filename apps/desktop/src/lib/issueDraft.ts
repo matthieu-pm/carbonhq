@@ -11,7 +11,7 @@ export type IssueCreationOptions = { destinations: IssueDestination[]; projects:
 export type IssueDraftContext = { tracker: IssueTracker; destination: string; projectId: string | null };
 export type IssueProposal = { sourceKey: string; title: string; description: string };
 export type IssueReviewInput = IssueProposal & IssueDraftContext;
-export type IssueReview = { requestId: string; draft: IssueReviewInput; submitted: CreateIssueInput | null; created: IssueRef | null };
+export type IssueReview = { requestId: string; draft: IssueReviewInput; submitted: CreateIssueInput | null; created: IssueRef | null; linked?: boolean };
 type ReviewState = { value: IssueReview | null; error: string | null; saving: boolean; loaded: boolean };
 
 const EMPTY: ReviewState = { value: null, error: null, saving: false, loaded: false };
@@ -49,24 +49,35 @@ export function usePendingIssueConversation(sessionId: string): IssueDraftContex
   return useSyncExternalStore(changed.subscribe, () => pendingIssueConversation(sessionId));
 }
 
-export function issueProposal(title: string, description: string): IssueProposal {
+export function issueProposal(title: string, description: string, seq?: number): IssueProposal {
   let hash = 0xcbf29ce484222325n;
   for (const char of JSON.stringify([title, description])) hash = BigInt.asUintN(64, (hash ^ BigInt(char.codePointAt(0)!)) * 0x100000001b3n);
-  return { title, description, sourceKey: hash.toString(16) };
+  return { title, description, sourceKey: `${seq === undefined ? "" : `${seq}:`}${hash.toString(16)}` };
 }
 
 /// Only the dedicated fence is interpreted; ordinary JSON and code examples remain Markdown.
-export function splitIssueProposal(text: string, streaming = false): { text: string; proposal: IssueProposal | null } {
+export function splitIssueProposal(text: string, streaming = false, seq?: number): { text: string; proposal: IssueProposal | null } {
   let proposal: IssueProposal | null = null;
   const cleaned = text.replace(/^```carbon-issue[\t ]*\r?\n([\s\S]*?)^```[\t ]*$/gm, (block, json: string) => {
     try {
       const value = JSON.parse(json);
       if (typeof value.title !== "string" || !value.title.trim() || value.title.length > 256 || typeof value.description !== "string" || value.description.length > 60_000) return block;
-      proposal = issueProposal(value.title, value.description);
+      proposal = issueProposal(value.title, value.description, seq);
       return "";
     } catch { return block; }
   });
   return { text: (streaming ? cleaned.replace(/^```carbon-issue[\t ]*\r?\n[\s\S]*$/m, "") : cleaned).trim(), proposal };
+}
+
+/// An older transcript tail must not replace a newer draft recovered from the server.
+export function adoptIssueProposal(draft: IssueReviewInput, proposal: IssueProposal): IssueReviewInput {
+  if (draft.sourceKey === proposal.sourceKey) return draft;
+  const order = (key: string) => /^(\d+):/.exec(key)?.[1];
+  const before = order(draft.sourceKey);
+  const next = order(proposal.sourceKey);
+  if (before && (!next || Number(next) <= Number(before))) return draft;
+  if (!before && proposal.sourceKey.endsWith(`:${draft.sourceKey}`) && draft.sourceKey) return { ...draft, sourceKey: proposal.sourceKey };
+  return { ...draft, ...proposal };
 }
 
 function put(sessionId: string, state: ReviewState) {
@@ -86,13 +97,26 @@ function startListening() {
   void listen<{ sessionId: string; review: IssueReview }>("issue_review_changed", ({ payload }) => {
     if (!dirty.has(payload.sessionId) && !queued.has(payload.sessionId)) rememberIssueReview(payload.sessionId, payload.review);
   }).catch(() => { listening = false; });
+  void listen("live_state", ({ server }) => {
+    for (const sessionId of reviews.keys()) {
+      if (serverOfSession(sessionId) === server) void refreshIssueReview(sessionId);
+    }
+  }).catch(() => { listening = false; });
 }
 
 export async function refreshIssueReview(sessionId: string): Promise<void> {
+  const pending = dirty.has(sessionId) || queued.has(sessionId);
   const generation = generations.get(sessionId) ?? 0;
   try {
     const value = await invoke<IssueReview | null>("get_issue_review", { sessionId }, serverOfSession(sessionId));
-    if ((generations.get(sessionId) ?? 0) === generation && !dirty.has(sessionId)) put(sessionId, { value, error: null, saving: false, loaded: true });
+    if ((generations.get(sessionId) ?? 0) !== generation) return;
+    if (value?.submitted || value?.created) {
+      dirty.delete(sessionId);
+      clearTimeout(timers.get(sessionId));
+      rememberIssueReview(sessionId, value);
+    } else if (!pending && !dirty.has(sessionId) && !queued.has(sessionId)) {
+      put(sessionId, { value, error: null, saving: false, loaded: true });
+    }
   } catch (e) {
     if ((generations.get(sessionId) ?? 0) === generation) put(sessionId, { ...(reviews.get(sessionId) ?? EMPTY), error: String(e), loaded: true });
   }

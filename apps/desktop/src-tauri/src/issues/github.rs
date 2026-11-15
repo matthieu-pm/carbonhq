@@ -75,7 +75,9 @@ pub(super) async fn neutral_dir() -> Result<String, IssueUnavailable> {
 /// Everything else keeps `gh`'s own sentence, which is what they would see in
 /// their own terminal.
 pub(super) async fn run(cwd: &str, args: &[&str]) -> Result<String, IssueUnavailable> {
-    github::gh(cwd, args).await.map_err(|message| {
+    tokio::time::timeout(std::time::Duration::from_secs(20), github::gh(cwd, args))
+        .await.map_err(|_| IssueUnavailable::Offline("GitHub request timed out.".into()))?
+        .map_err(|message| {
         let lower = message.to_lowercase();
         if message.starts_with(github::NO_CLI)
             || lower.contains("gh auth login")

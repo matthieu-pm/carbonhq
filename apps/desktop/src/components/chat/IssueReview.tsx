@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { forgetIssues } from "@/hooks/useIssues";
 import { openIssue } from "@/lib/issue";
-import { editIssueReview, flushIssueReview, refreshIssueReview, rememberIssueReview, type IssueCreationOptions, type IssueProposal, type IssueReview as Review } from "@/lib/issueDraft";
+import { adoptIssueProposal, editIssueReview, flushIssueReview, refreshIssueReview, rememberIssueReview, type IssueCreationOptions, type IssueProposal, type IssueReview as Review } from "@/lib/issueDraft";
 import { invoke, serverOfSession } from "@/lib/transport";
 
 const field = "w-full rounded-lg border border-input bg-transparent px-3 py-2 text-ui text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50";
@@ -32,7 +32,8 @@ export default function IssueReview({ sessionId, proposal, review, error: saveEr
 
   useEffect(() => {
     if (draft.sourceKey !== proposal.sourceKey && !review.submitted && !review.created) {
-      editIssueReview(sessionId, { ...draft, ...proposal });
+      const next = adoptIssueProposal(draft, proposal);
+      if (next !== draft) editIssueReview(sessionId, next);
     }
   }, [sessionId, proposal.sourceKey, draft.sourceKey, review.submitted, review.created]);
 
@@ -93,6 +94,11 @@ export default function IssueReview({ sessionId, proposal, review, error: saveEr
         <button type="button" onClick={() => openIssue(review.created!)} className="mt-1 flex max-w-full items-center gap-1.5 text-sm text-accent-issue hover:underline">
           <span className="truncate">{review.created.identifier} {review.created.title}</span><ExternalLink className="size-3 shrink-0" />
         </button>
+        {!review.linked && <div className="mt-3 flex flex-col items-start gap-2">
+          <p className="text-ui text-muted-foreground">The issue is created. Retry to finish linking it to this conversation.</p>
+          {(error || saveError) && <p role="alert" className="text-ui text-destructive">{error || saveError}</p>}
+          <Button size="sm" disabled={creating || busy} onClick={() => void create()}>{creating ? "Linking…" : "Retry session link"}</Button>
+        </div>}
       </div>
     </div>
   );

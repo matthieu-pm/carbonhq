@@ -1767,6 +1767,7 @@ const forkSession = async (sessionId: string, worktree: boolean) => {
 
   let snapshot: SessionSnapshot;
   try {
+    await flushIssueReview(sessionId);
     snapshot = await invoke<SessionSnapshot>("fork_session", {
       sessionId,
       forkId,

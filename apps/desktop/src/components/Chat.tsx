@@ -246,11 +246,11 @@ export default function Chat({
     for (const turn of turns) {
       for (const item of turn.work) {
         if ("payload" in item && item.payload.type === "assistant_text") {
-          const proposal = splitIssueProposal(item.payload.text).proposal;
+          const proposal = splitIssueProposal(item.payload.text, false, item.seq).proposal;
           if (proposal) latest = { turnKey: turn.key, proposal };
         }
       }
-      const final = splitIssueProposal(turn.finalText ?? "").proposal;
+      const final = splitIssueProposal(turn.finalText ?? "", false, turn.completed?.seq ?? Math.max(0, ...turn.work.flatMap((item) => "seq" in item ? [item.seq] : []))).proposal;
       if (final) latest = { turnKey: turn.key, proposal: final };
     }
     return latest;
@@ -737,6 +737,10 @@ export default function Chat({
               </div>
             ))}
 
+            {reviewState.value && (reviewState.value.draft.title || reviewState.value.created) && !shownTurns.some((turn) => turn.key === proposal?.turnKey) && (
+              <div className="mt-4"><IssueReview sessionId={session.sessionId} proposal={proposal?.proposal ?? reviewState.value.draft}
+                review={reviewState.value} error={reviewState.error} saving={reviewState.saving} busy={busy} /></div>
+            )}
             <SecretRequests sessionId={session.sessionId} active={active} />
             {cards.map((ask) =>
               ask.type === "questions_asked" ? (

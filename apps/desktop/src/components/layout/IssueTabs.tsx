@@ -30,7 +30,7 @@ const MARK = "size-3.5 shrink-0 text-muted-foreground";
 /// The issues page's titlebar strip: list tabs and issue tabs in one row the
 /// reader arranges, + at the end for another list. Lines up with the sheet the
 /// way the session's view tabs do.
-export default function IssueTabs({ state, alignX = 0, visible = true, onNavigate }: { state: IssueTabsState; alignX?: number; visible?: boolean; onNavigate?: () => void }) {
+export default function IssueTabs({ state, alignX = 0, visible = true }: { state: IssueTabsState; alignX?: number; visible?: boolean }) {
   const { tabs, active } = state;
   const drag = useDragReorder(
     tabs,
@@ -39,7 +39,7 @@ export default function IssueTabs({ state, alignX = 0, visible = true, onNavigat
     "x",
   );
 
-  const pick = (id: string) => { onNavigate?.(); editIssueTabs((s) => activateIssueTab(s, id)); };
+  const pick = (id: string) => { editIssueTabs((s) => activateIssueTab(s, id)); };
   const pickAt = (i: number) => drag.shown[i] && pick(drag.shown[i].id);
   useDigitHotkey("tab.pick", (slot) => pickAt(slot === 8 ? drag.shown.length - 1 : slot), { enabled: visible });
   const step = (delta: number) => {
@@ -50,7 +50,7 @@ export default function IssueTabs({ state, alignX = 0, visible = true, onNavigat
   useHotkey("tab.next", () => step(1), { enabled: visible });
 
   // On the reader's latest pick, which every list's switch writes through to.
-  const newList = () => { onNavigate?.(); editIssueTabs((s) => addListTab(s, newListTabId(), readIssueTracker())); };
+  const newList = () => { editIssueTabs((s) => addListTab(s, newListTabId(), readIssueTracker())); };
   const lone = tabs.length === 1;
 
   return (
@@ -71,7 +71,7 @@ export default function IssueTabs({ state, alignX = 0, visible = true, onNavigat
           label={tabTitle(tab)}
           active={tab.id === active}
           onPick={() => pick(tab.id)}
-          onClose={lone ? undefined : () => { onNavigate?.(); editIssueTabs((s) => closeIssueTab(s, tab.id)); }}
+          onClose={lone ? undefined : () => { editIssueTabs((s) => closeIssueTab(s, tab.id)); }}
           rename={
             tab.kind === "list"
               ? {

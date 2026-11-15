@@ -1635,9 +1635,8 @@ impl SessionManager {
         if parent.harness == Harness::Codex {
             item.thread_id = parent.thread_id.clone();
         }
-        append_session_index_item(item.clone()).await?;
-
         crate::issues::drafting::copy_conversation(session_id, fork_id).await.map_err(anyhow::Error::msg)?;
+        append_session_index_item(item.clone()).await?;
 
         Ok(SessionSnapshot {
             index_item: item,

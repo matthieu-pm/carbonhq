@@ -333,6 +333,10 @@
    looking at, not a fallback nothing reaches. The two ported themes name their own
    rungs over the top of it. */
 [data-mode="light"] {
+  --profile-orange: #e5660c;
+  --profile-green: #0e9f63;
+  --profile-teal: #0496a2;
+  --profile-blue: #0e8fd0;
   --hue: 0;
   --chroma: 0;
 

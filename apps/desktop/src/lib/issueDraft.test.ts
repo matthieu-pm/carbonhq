@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { issueProposal, splitIssueProposal } from "@/lib/issueDraft";
+import { adoptIssueProposal, issueProposal, splitIssueProposal } from "@/lib/issueDraft";
 
 const fence = (title: string, description: string) => `\`\`\`carbon-issue\n${JSON.stringify({ title, description })}\n\`\`\``;
 
@@ -26,5 +26,14 @@ describe("inline issue proposals", () => {
     const result = splitIssueProposal(`${fence("Before", "Old")}\n${fence("After", "New")}`);
     expect(result.proposal).toEqual(issueProposal("After", "New"));
     expect(issueProposal("After", "New").sourceKey).not.toBe(issueProposal("After", "Edited").sourceKey);
+  });
+
+  it("does not let an older transcript replace a newer recovered draft", () => {
+    const draft = { ...issueProposal("New proposal", "Details", 200), tracker: "github" as const,
+      destination: "acme/web", projectId: null, title: "Manual edit" };
+    expect(adoptIssueProposal(draft, issueProposal("Old proposal", "Old details", 100))).toBe(draft);
+    expect(adoptIssueProposal(draft, issueProposal("Next proposal", "Updated", 300)).title).toBe("Next proposal");
+    const legacy = { ...draft, sourceKey: issueProposal("New proposal", "Details").sourceKey };
+    expect(adoptIssueProposal(legacy, issueProposal("New proposal", "Details", 200)).title).toBe("Manual edit");
   });
 });

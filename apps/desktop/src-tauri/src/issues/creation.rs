@@ -1,4 +1,8 @@
-use std::sync::LazyLock;
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{Arc, LazyLock, Weak},
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -7,7 +11,25 @@ use tokio::sync::Mutex;
 use super::{github, linear, linear_key, IssueRef, IssueTracker, IssueUnavailable};
 use crate::store;
 
-static WRITING: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+static WRITING: LazyLock<Mutex<HashMap<String, Weak<Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Serializes one conversation or receipt without blocking unrelated sessions.
+pub(super) async fn writing(key: &str) -> tokio::sync::OwnedMutexGuard<()> {
+    let lock = {
+        let mut locks = WRITING.lock().await;
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        match locks.get(key).and_then(Weak::upgrade) {
+            Some(lock) => lock,
+            None => {
+                let lock = Arc::new(Mutex::new(()));
+                locks.insert(key.into(), Arc::downgrade(&lock));
+                lock
+            }
+        }
+    };
+    lock.lock_owned().await
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -243,7 +265,7 @@ pub async fn create_issue(input: CreateIssueInput) -> Result<IssueRef, CreateIss
 
 async fn create(input: CreateIssueInput) -> Result<IssueRef, String> {
     validate(&input)?;
-    let _guard = WRITING.lock().await;
+    let _guard = writing(&input.request_id).await;
     let dir = store::get_home_app_dir()
         .await
         .map_err(|e| e.to_string())?
@@ -277,27 +299,19 @@ async fn create(input: CreateIssueInput) -> Result<IssueRef, String> {
     let issue = if input.tracker == IssueTracker::Linear {
         let key = linear_key().await.map_err(tracker_error)?;
         if previous.is_some() {
-            let data = linear::query(&key, FIND, json!({"id": input.request_id}))
-                .await
-                .map_err(|_| {
-                    "Creation is unconfirmed. Check Linear before starting another issue."
-                        .to_string()
-                })?;
-            linear_ref(&data["issue"])?
+            match linear::query(&key, FIND, json!({"id": input.request_id})).await {
+                Ok(data) if !data["issue"].is_null() => linear_ref(&data["issue"]),
+                Ok(_) => create_linear(&key, &input, &path).await,
+                Err(IssueUnavailable::Other(message))
+                    if message.to_lowercase().contains("not found") =>
+                {
+                    create_linear(&key, &input, &path).await
+                }
+                Err(error) => Err(tracker_error(error)),
+            }?
         } else {
             save(&receipt)?;
-            let data = linear::query(&key, CREATE, json!({"input": {
-                "id": input.request_id, "teamId": input.destination, "projectId": input.project_id,
-                "title": input.title.trim(), "description": input.description,
-            }})).await.map_err(|e| format!("Creation is unconfirmed. Check Linear, then use Check creation. {}", tracker_error(e)))?;
-            if data["issueCreate"]["success"] != true {
-                let _ = tokio::fs::remove_file(&path).await;
-                return Err(
-                    "Linear refused to create the issue. Check your write access and destination."
-                        .into(),
-                );
-            }
-            linear_ref(&data["issueCreate"]["issue"])?
+            create_linear(&key, &input, &path).await?
         }
     } else {
         let dir = github::neutral_dir().await.map_err(tracker_error)?;
@@ -342,13 +356,11 @@ async fn create(input: CreateIssueInput) -> Result<IssueRef, String> {
                     &format!("body={body}"),
                 ],
             )
-            .await
-            .map_err(|e| {
-                format!(
-                    "Creation is unconfirmed. Check GitHub, then use Check creation. {}",
-                    tracker_error(e)
-                )
-            })?;
+            .await;
+            let out = match out {
+                Ok(out) => out,
+                Err(error) => return Err(failed_write(&path, IssueTracker::Github, error).await),
+            };
             github_ref(
                 &serde_json::from_str::<Value>(&out).map_err(|e| e.to_string())?,
                 &input.destination,
@@ -363,9 +375,120 @@ async fn create(input: CreateIssueInput) -> Result<IssueRef, String> {
     Ok(issue)
 }
 
+fn definitive_refusal(tracker: IssueTracker, error: &IssueUnavailable) -> bool {
+    match error {
+        IssueUnavailable::NotConnected | IssueUnavailable::Unauthorized => true,
+        IssueUnavailable::Offline(_) => false,
+        IssueUnavailable::Other(message) => {
+            let lower = message.to_lowercase();
+            if tracker == IssueTracker::Github {
+                (400..500).any(|status| status != 408 && lower.contains(&format!("http {status}")))
+            } else {
+                ![
+                    "internal",
+                    "server error",
+                    "timeout",
+                    "timed out",
+                    "connection",
+                    "temporarily",
+                    "500",
+                    "502",
+                    "503",
+                    "504",
+                ]
+                .iter()
+                .any(|text| lower.contains(text))
+            }
+        }
+    }
+}
+
+async fn failed_write(path: &Path, tracker: IssueTracker, error: IssueUnavailable) -> String {
+    if definitive_refusal(tracker, &error) {
+        let _ = tokio::fs::remove_file(path).await;
+        tracker_error(error)
+    } else {
+        format!(
+            "Creation is unconfirmed. Use Check creation. {}",
+            tracker_error(error)
+        )
+    }
+}
+
+async fn create_linear(
+    key: &str,
+    input: &CreateIssueInput,
+    path: &Path,
+) -> Result<IssueRef, String> {
+    let result = linear::query(
+        key,
+        CREATE,
+        json!({"input": {
+            "id": input.request_id, "teamId": input.destination, "projectId": input.project_id,
+            "title": input.title.trim(), "description": input.description,
+        }}),
+    )
+    .await;
+    let data = match result {
+        Ok(data) => data,
+        Err(error) => return Err(failed_write(path, IssueTracker::Linear, error).await),
+    };
+    if data["issueCreate"]["success"] == false {
+        let _ = tokio::fs::remove_file(path).await;
+        return Err(
+            "Linear refused to create the issue. Check your write access and destination.".into(),
+        );
+    }
+    linear_ref(&data["issueCreate"]["issue"])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn unrelated_conversations_do_not_wait_for_an_active_creation() {
+        let first = writing("test-first").await;
+        let other =
+            tokio::time::timeout(std::time::Duration::from_millis(100), writing("test-other"))
+                .await;
+        assert!(other.is_ok());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), writing("test-first"))
+                .await
+                .is_err()
+        );
+        drop(first);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), writing("test-first"))
+                .await
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn refusals_remain_editable_but_network_and_server_failures_stay_uncertain() {
+        assert!(definitive_refusal(
+            IssueTracker::Linear,
+            &IssueUnavailable::Other("You do not have permission to create issues".into())
+        ));
+        assert!(definitive_refusal(
+            IssueTracker::Github,
+            &IssueUnavailable::Other("gh: Validation Failed (HTTP 422)".into())
+        ));
+        assert!(!definitive_refusal(
+            IssueTracker::Github,
+            &IssueUnavailable::Other("gh: Bad Gateway (HTTP 502)".into())
+        ));
+        assert!(!definitive_refusal(
+            IssueTracker::Linear,
+            &IssueUnavailable::Other("Internal server error".into())
+        ));
+        assert!(!definitive_refusal(
+            IssueTracker::Linear,
+            &IssueUnavailable::Offline("timeout".into())
+        ));
+    }
 
     fn input() -> CreateIssueInput {
         CreateIssueInput {
