@@ -1510,9 +1510,9 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         prepare_issue_conversation(session_id: String, context: issues::drafting::IssueDraftContext) =>
             issues::drafting::prepare_issue_conversation(session_id, context).await;
         get_issue_review(session_id: String) => issues::drafting::get_issue_review(session_id).await;
-        save_issue_review(session_id: String, draft: issues::drafting::IssueReviewInput) =>
-            issues::drafting::save_issue_review(sink.clone(), session_id, draft).await;
-        create_conversation_issue(session_id: String) => issues::drafting::create_conversation_issue(sink.clone(), session_id).await;
+        save_issue_review(session_id: String, draft: issues::drafting::IssueReviewInput, expected_revision: Option<u64>) =>
+            issues::drafting::save_issue_review(sink.clone(), session_id, draft, expected_revision).await;
+        create_conversation_issue(session_id: String, expected_revision: Option<u64>) => issues::drafting::create_conversation_issue(sink.clone(), session_id, expected_revision).await;
         reopen_issue_review(session_id: String) => issues::drafting::reopen_issue_review(sink.clone(), session_id).await;
         unlink_issue(session_id: String, key: String) => issues::unlink_issue(session_id, key).await;
     }

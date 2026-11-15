@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { forgetIssues } from "@/hooks/useIssues";
 import { openIssue } from "@/lib/issue";
-import { adoptIssueProposal, editIssueReview, flushIssueReview, refreshIssueReview, rememberIssueReview, type IssueCreationOptions, type IssueProposal, type IssueReview as Review } from "@/lib/issueDraft";
+import { adoptIssueProposal, editIssueReview, flushIssueReview, readIssueReview, refreshIssueReview, rememberIssueReview, type IssueCreationOptions, type IssueProposal, type IssueReview as Review } from "@/lib/issueDraft";
 import { invoke, serverOfSession } from "@/lib/transport";
 
 const field = "w-full rounded-lg border border-input bg-transparent px-3 py-2 text-ui text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50";
@@ -65,7 +65,8 @@ export default function IssueReview({ sessionId, proposal, review, error: saveEr
     setError(null);
     try {
       await flushIssueReview(sessionId);
-      const next = await invoke<Review>("create_conversation_issue", { sessionId }, serverOfSession(sessionId));
+      const expectedRevision = readIssueReview(sessionId)?.revision ?? 0;
+      const next = await invoke<Review>("create_conversation_issue", { sessionId, expectedRevision }, serverOfSession(sessionId));
       rememberIssueReview(sessionId, next);
       forgetIssues();
     } catch (e) {

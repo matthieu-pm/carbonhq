@@ -11,7 +11,7 @@ export type IssueCreationOptions = { destinations: IssueDestination[]; projects:
 export type IssueDraftContext = { tracker: IssueTracker; destination: string; projectId: string | null };
 export type IssueProposal = { sourceKey: string; title: string; description: string };
 export type IssueReviewInput = IssueProposal & IssueDraftContext;
-export type IssueReview = { requestId: string; draft: IssueReviewInput; submitted: CreateIssueInput | null; created: IssueRef | null; linked?: boolean };
+export type IssueReview = { requestId: string; draft: IssueReviewInput; submitted: CreateIssueInput | null; created: IssueRef | null; linked?: boolean; revision?: number };
 type ReviewState = { value: IssueReview | null; error: string | null; saving: boolean; loaded: boolean };
 
 const EMPTY: ReviewState = { value: null, error: null, saving: false, loaded: false };
@@ -90,6 +90,10 @@ export function rememberIssueReview(sessionId: string, value: IssueReview): void
   put(sessionId, { value, error: null, saving: false, loaded: true });
 }
 
+export function readIssueReview(sessionId: string): IssueReview | null {
+  return reviews.get(sessionId)?.value ?? null;
+}
+
 let listening = false;
 function startListening() {
   if (listening) return;
@@ -152,12 +156,23 @@ export async function flushIssueReview(sessionId: string): Promise<void> {
   const generation = generations.get(sessionId);
   const operation = (async () => {
     try {
-      const value = await invoke<IssueReview>("save_issue_review", { sessionId, draft: state.value!.draft }, serverOfSession(sessionId));
+      const value = await invoke<IssueReview>("save_issue_review", { sessionId, draft: state.value!.draft, expectedRevision: state.value!.revision ?? 0 }, serverOfSession(sessionId));
       if (generations.get(sessionId) === generation) {
         dirty.delete(sessionId);
         put(sessionId, { value, error: null, saving: false, loaded: true });
+      } else {
+        const latest = reviews.get(sessionId);
+        if (latest?.value?.requestId === value.requestId && (latest.value.revision ?? 0) <= (value.revision ?? 0)) {
+          put(sessionId, { ...latest, value: { ...latest.value, revision: value.revision } });
+        }
       }
     } catch (e) {
+      if (String(e).startsWith("Issue review changed elsewhere.")) {
+        dirty.delete(sessionId);
+        clearTimeout(timers.get(sessionId));
+        const latest = await invoke<IssueReview | null>("get_issue_review", { sessionId }, serverOfSession(sessionId)).catch(() => null);
+        if (latest) rememberIssueReview(sessionId, latest);
+      }
       put(sessionId, { ...(reviews.get(sessionId) ?? state), error: String(e), saving: false });
       throw e;
     }

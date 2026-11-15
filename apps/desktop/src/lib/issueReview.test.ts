@@ -17,7 +17,7 @@ describe("issue review persistence", () => {
     let calls = 0;
     invoke.mockImplementation(async (_cmd, { draft }) => {
       if (++calls === 1) await new Promise<void>((resolve) => { release = resolve; });
-      return { ...review, draft };
+      return { ...review, revision: calls, draft };
     });
     editIssueReview(sessionId, { ...review.draft, title: "First edit" });
     const first = flushIssueReview(sessionId);
@@ -28,6 +28,7 @@ describe("issue review persistence", () => {
     await Promise.all([first, second]);
     expect(invoke).toHaveBeenCalledTimes(2);
     expect(invoke.mock.calls[1][1].draft.title).toBe("Latest edit");
+    expect(invoke.mock.calls[1][1].expectedRevision).toBe(1);
   });
 
   it("keeps a saved manual edit when a refresh starts while the edit is pending", async () => {
@@ -66,6 +67,24 @@ describe("issue review persistence", () => {
     handlers.get("live_state")!({ server: "local" });
     await vi.waitFor(() => expect(useIssueReview(sessionId, true).value?.created?.id).toBe("I_1"));
     expect(useIssueReview(sessionId, true).saving).toBe(false);
+  });
+
+  it("reloads the newer server review when another client wins the save", async () => {
+    const sessionId = crypto.randomUUID();
+    const review: IssueReview = { requestId: crypto.randomUUID(), submitted: null, created: null, revision: 1,
+      draft: { sourceKey: "200:old", tracker: "github", destination: "acme/web", projectId: null, title: "Old title", description: "Details" } };
+    rememberIssueReview(sessionId, review);
+    const remote = { ...review, revision: 3, draft: { ...review.draft, sourceKey: "300:new", title: "Other client's manual edit" } };
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "get_issue_review") return remote;
+      expect(args.expectedRevision).toBe(1);
+      throw "Issue review changed elsewhere. Your changes were not saved.";
+    });
+    editIssueReview(sessionId, { ...review.draft, title: "Stale automatic adoption" });
+    await expect(flushIssueReview(sessionId)).rejects.toContain("changed elsewhere");
+    expect(useIssueReview(sessionId, true).value).toEqual(remote);
+    expect(useIssueReview(sessionId, true).saving).toBe(false);
+    expect(useIssueReview(sessionId, true).error).toContain("not saved");
   });
 
 });

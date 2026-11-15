@@ -40,6 +40,8 @@ pub struct IssueReview {
     pub created: Option<IssueRef>,
     #[serde(default)]
     pub linked: bool,
+    #[serde(default)]
+    pub revision: u64,
 }
 
 async fn path(session_id: &str) -> Result<PathBuf, String> {
@@ -62,8 +64,9 @@ pub async fn get_issue_review(session_id: String) -> Result<Option<IssueReview>,
     }
 }
 
-async fn save(session_id: &str, review: &IssueReview) -> Result<(), String> {
+async fn save(session_id: &str, review: &mut IssueReview) -> Result<(), String> {
     let path = path(session_id).await?;
+    review.revision += 1;
     tokio::fs::create_dir_all(path.parent().ok_or("Missing draft directory.")?)
         .await
         .map_err(|e| e.to_string())?;
@@ -90,7 +93,7 @@ pub async fn prepare_issue_conversation(
     if let Some(review) = get_issue_review(session_id.clone()).await? {
         return Ok(review);
     }
-    let review = IssueReview {
+    let mut review = IssueReview {
         request_id: uuid::Uuid::now_v7().to_string(),
         draft: IssueReviewInput {
             source_key: String::new(),
@@ -103,8 +106,9 @@ pub async fn prepare_issue_conversation(
         submitted: None,
         created: None,
         linked: false,
+        revision: 0,
     };
-    save(&session_id, &review).await?;
+    save(&session_id, &mut review).await?;
     Ok(review)
 }
 
@@ -113,6 +117,7 @@ pub async fn save_issue_review(
     sink: Sink,
     session_id: String,
     draft: IssueReviewInput,
+    expected_revision: Option<u64>,
 ) -> Result<IssueReview, String> {
     if draft.title.chars().count() > 256
         || draft.description.len() > 60_000
@@ -127,8 +132,11 @@ pub async fn save_issue_review(
     if review.submitted.is_some() || review.created.is_some() {
         return Err("This issue was already submitted. Check creation before editing it.".into());
     }
+    if expected_revision.unwrap_or(0) != review.revision {
+        return Err("Issue review changed elsewhere. Your changes were not saved.".into());
+    }
     review.draft = draft;
-    save(&session_id, &review).await?;
+    save(&session_id, &mut review).await?;
     announce(&sink, &session_id, &review);
     Ok(review)
 }
@@ -137,10 +145,12 @@ pub async fn save_issue_review(
 pub async fn create_conversation_issue(
     sink: Sink,
     session_id: String,
+    expected_revision: Option<u64>,
 ) -> Result<IssueReview, creation::CreateIssueError> {
     async fn create(
         sink: &Sink,
         session_id: &str,
+        expected_revision: Option<u64>,
     ) -> Result<IssueReview, creation::CreateIssueError> {
         let _guard = creation::writing(&format!("session:{session_id}")).await;
         let error = |message: String| creation::CreateIssueError {
@@ -158,6 +168,15 @@ pub async fn create_conversation_issue(
             .await
             .map_err(error)?
             .ok_or_else(|| error("This conversation is not drafting an issue.".into()))?;
+        if review.submitted.is_none()
+            && review.created.is_none()
+            && expected_revision.unwrap_or(0) != review.revision
+        {
+            return Err(error(
+                "Issue review changed elsewhere. Review the latest draft before creating it."
+                    .into(),
+            ));
+        }
         let input = review
             .submitted
             .clone()
@@ -170,7 +189,7 @@ pub async fn create_conversation_issue(
                 description: review.draft.description.clone(),
             });
         review.submitted = Some(input.clone());
-        save(session_id, &review).await.map_err(error)?;
+        save(session_id, &mut review).await.map_err(error)?;
         let result = match &review.created {
             Some(issue) => Ok(issue.clone()),
             None => creation::create_issue(input).await,
@@ -178,12 +197,12 @@ pub async fn create_conversation_issue(
         match result {
             Ok(issue) => {
                 review.created = Some(issue.clone());
-                save(session_id, &review)
-                    .await
-                    .map_err(|message| creation::CreateIssueError {
+                save(session_id, &mut review).await.map_err(|message| {
+                    creation::CreateIssueError {
                         message,
                         uncertain: true,
-                    })?;
+                    }
+                })?;
                 let issues = store::link_session_issue(session_id, issue)
                     .await
                     .map_err(|e| creation::CreateIssueError {
@@ -191,12 +210,12 @@ pub async fn create_conversation_issue(
                         uncertain: true,
                     })?;
                 review.linked = true;
-                save(session_id, &review)
-                    .await
-                    .map_err(|message| creation::CreateIssueError {
+                save(session_id, &mut review).await.map_err(|message| {
+                    creation::CreateIssueError {
                         message,
                         uncertain: true,
-                    })?;
+                    }
+                })?;
                 let _ = sink.emit(
                     ISSUES_CHANGED,
                     &IssuesChangedEvent {
@@ -210,14 +229,14 @@ pub async fn create_conversation_issue(
             Err(error) => {
                 if !error.uncertain {
                     review.submitted = None;
-                    let _ = save(session_id, &review).await;
+                    let _ = save(session_id, &mut review).await;
                 }
                 announce(sink, session_id, &review);
                 Err(error)
             }
         }
     }
-    create(&sink, &session_id).await
+    create(&sink, &session_id, expected_revision).await
 }
 
 /// Reopens an uncertain review only after the user has checked that the issue is missing.
@@ -231,7 +250,7 @@ pub async fn reopen_issue_review(sink: Sink, session_id: String) -> Result<Issue
     }
     review.request_id = uuid::Uuid::now_v7().to_string();
     review.submitted = None;
-    save(&session_id, &review).await?;
+    save(&session_id, &mut review).await?;
     announce(&sink, &session_id, &review);
     Ok(review)
 }
@@ -266,7 +285,7 @@ pub async fn copy_conversation(from: &str, to: &str) -> Result<(), String> {
     }
     let _guard = creation::writing(&format!("session:{from}")).await;
     if let Some(review) = get_issue_review(from.into()).await? {
-        save(to, &fork_review(review)).await?;
+        save(to, &mut fork_review(review)).await?;
     }
     Ok(())
 }
@@ -319,6 +338,7 @@ mod tests {
             submitted: None,
             created: None,
             linked: false,
+            revision: 0,
         };
         let fork = fork_review(review.clone());
         assert_ne!(fork.request_id, review.request_id);
@@ -352,6 +372,7 @@ mod tests {
             submitted: None,
             created: None,
             linked: false,
+            revision: 0,
         };
         let prompt = prompt_context(&review, "Add reproduction steps");
         assert!(prompt.contains("My edited title"));
