@@ -139,6 +139,14 @@ pub struct SessionIndexItem {
     /// written *before* the child answers. This is read by resume alone.
     #[serde(default)]
     pub thread_id: Option<String>,
+    /// An ACP agent's own permission mode, by the agent's id for it. ACP agents
+    /// name their own stances, which `permission_mode`'s closed set cannot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub agent_config: std::collections::BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_agent_config: Option<std::collections::BTreeMap<String, String>>,
     /// The issues this session's work is against, newest link last.
     ///
     /// A list because one session really does carry several — three tags in one
@@ -676,6 +684,9 @@ impl SessionIndexItem {
             // Nothing has spawned yet, so no harness has minted anything. A
             // Codex session fills this when `thread/start` answers.
             thread_id: None,
+            agent_mode: None,
+            agent_config: Default::default(),
+            pending_agent_config: None,
             cwd: cwd.to_string(),
             project_path: project_path.to_string(),
             // A worktree's branch is the CLI's to name, so it's derived rather
@@ -740,6 +751,9 @@ impl SessionIndexItem {
             // the parent's here would make the fork's first send resume the
             // parent's thread and write into the conversation it copied.
             thread_id: None,
+            agent_mode: None,
+            agent_config: Default::default(),
+            pending_agent_config: None,
             cwd: match worktree_name {
                 Some(name) => worktree_path(&self.project_path, name),
                 None => self.cwd.clone(),
@@ -1658,6 +1672,44 @@ pub async fn rename_session(session_id: &str, title: &str) -> Result<Option<Sess
 pub async fn set_session_thread_id(session_id: &str, thread_id: &str) -> Result<()> {
     update_item(session_id, |item| item.thread_id = Some(thread_id.to_string())).await?;
     Ok(())
+}
+
+/// Keeps deferred selections separate from values the agent has acknowledged.
+pub async fn set_pending_agent_config(session_id: &str, config_id: &str, value: &str) -> Result<bool> {
+    Ok(update_item(session_id, |item| { item.pending_agent_config.get_or_insert_with(Default::default).insert(config_id.into(), value.into()); }).await?.is_some())
+}
+
+/// Consumes deferred settings only after every selection has succeeded.
+pub async fn clear_pending_agent_config(session_id: &str, config_id: Option<&str>) -> Result<()> {
+    update_item(session_id, |item| {
+        if let Some(id) = config_id {
+            if let Some(values) = &mut item.pending_agent_config { values.remove(id); }
+        } else { item.pending_agent_config = None; }
+    }).await?;
+    Ok(())
+}
+
+/// Replaces published ACP state so withdrawn options do not return on resume.
+pub async fn replace_session_agent_config(session_id: &str, values: std::collections::BTreeMap<String, String>, model: ModelId, mode: Option<String>) -> Result<()> {
+    update_item(session_id, |item| {
+        item.agent_config = values;
+        item.model = model;
+        item.agent_mode = mode;
+    }).await?;
+    Ok(())
+}
+
+/// Stores acknowledged raw ACP settings without constraining vendor values.
+pub async fn set_session_agent_config(session_id: &str, config_id: &str, value: &str) -> Result<bool> {
+    Ok(update_item(session_id, |item| { item.agent_config.insert(config_id.to_string(), value.to_string()); }).await?.is_some())
+}
+
+/// Records an ACP agent's mode on the session. `false` where there is no entry
+/// yet, which is a new session whose index row the first send writes.
+pub async fn set_session_agent_mode(session_id: &str, mode: &str) -> Result<bool> {
+    Ok(update_item(session_id, |item| item.agent_mode = Some(mode.to_string()))
+        .await?
+        .is_some())
 }
 
 /// A level no shipped build can spell, written as one every build can.

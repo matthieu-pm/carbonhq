@@ -772,7 +772,23 @@ function build(
   // Events arrive in `seq` order, so the copy and sort are skipped where the
   // log already is — the common case — rather than paid on every build.
   const sorted = source.every((e, i) => i === 0 || source[i - 1].seq <= e.seq);
-  const events = sorted ? source : [...source].sort(bySeq);
+  const ordered = sorted ? source : [...source].sort(bySeq);
+  const events: AgentEvent[] = [];
+  const positions = new Map<string, number>();
+  for (const event of ordered) {
+    if (event.payload.type === "tool_call_updated") {
+      const position = positions.get(event.payload.callId);
+      if (position !== undefined) {
+        const call = events[position];
+        if (call.payload.type === "tool_call_started") {
+          events[position] = { ...call, payload: { ...call.payload, input: event.payload.input } };
+        }
+      }
+      continue;
+    }
+    if (event.payload.type === "tool_call_started") positions.set(event.payload.callId, events.length);
+    events.push(event);
+  }
 
   const resultByCallId = new Map<string, ToolResult>();
   const editsByCallId = new Map<string, FileEdit[]>();

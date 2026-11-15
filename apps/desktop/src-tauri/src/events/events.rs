@@ -225,6 +225,11 @@ pub enum AgentEventPayload {
         raw_input: Option<String>,
         title: Option<String>,
     },
+    /// Replaces normalized arguments when an ACP tool reveals them after opening.
+    ToolCallUpdated {
+        call_id: String,
+        input: Value,
+    },
     ToolCallCompleted {
         call_id: String,
         result: ToolResult,

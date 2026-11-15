@@ -143,8 +143,11 @@ func buildTurns(_ events: [AgentEvent], busy: Bool) -> [Turn] {
     }
     let main = events.filter { $0.subagent == nil && !removed.contains($0.id) }
     var results: [String: ToolResult] = [:]
+    var inputs: [String: JSON] = [:]
     for e in main {
         if case .toolCompleted(let id, let r) = e.payload { results[id] = r }
+        if case .toolStarted(let id, _, _, let input, _) = e.payload { inputs[id] = input }
+        if case .toolUpdated(let id, let input) = e.payload { inputs[id] = input }
     }
     // A prompt abandons every call still open before it: no result is coming.
     var abandoned: Set<String> = []
@@ -215,7 +218,7 @@ func buildTurns(_ events: [AgentEvent], busy: Bool) -> [Turn] {
             let r = results[callId]
             let state: ToolState = r.map { $0.isError ? .failed : .done }
                 ?? (busy && !abandoned.contains(callId) ? .pending : .done)
-            let call = ToolCall(id: e.id, name: name, toolType: toolType, input: input,
+            let call = ToolCall(id: e.id, name: name, toolType: toolType, input: inputs[callId] ?? input,
                                 title: title, output: r?.text, state: state, images: r?.images ?? [])
             // A delegated run keeps its own row, as the desktop's panel link does, and so
             // does a call carrying a picture: a closed group would hide it.

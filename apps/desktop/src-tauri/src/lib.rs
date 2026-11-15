@@ -314,6 +314,20 @@ async fn agent_availability() -> Vec<AgentAvailability> {
             login_hint: harness.login_hint().map(str::to_string),
         });
     }
+    // The ACP agents the reader switched on. The registry names no installer,
+    // so the agent's own page is the cure.
+    for agent in harness::agents::catalog::list().await.into_iter().filter(|a| a.enabled && a.supported) {
+        out.push(AgentAvailability {
+            harness: agent.harness,
+            available: agent.ready,
+            label: agent.name.clone(),
+            reason: if agent.ready { String::new() } else { format!("{} could not start: {} is not available on this server.", agent.name, agent.executable) },
+            install_command: None,
+            docs_url: agent.website,
+            login_command: String::new(),
+            login_hint: None,
+        });
+    }
     out
 }
 
@@ -392,6 +406,7 @@ async fn list_models(sink: Sink, harness: Option<harness::Harness>) -> Vec<Model
         harness::Harness::Grok => harness::grok::models::list().await,
         harness::Harness::Codex => harness::codex::models::list().await,
         harness::Harness::ClaudeCode => harness::claude_code::models::list(&sink).await,
+        acp @ harness::Harness::Acp(_) => harness::agents::list_models(acp),
         other => models::models_for(other),
     }
 }
@@ -502,6 +517,8 @@ async fn list_slash_commands(cwd: &str, harness: Harness) -> Result<Vec<SlashCom
         // probe that has not landed: the menu stays shut rather than claiming
         // grok has no commands. See `harness/grok/commands.rs`.
         Harness::Grok => harness::grok::commands::list_commands(cwd).await?,
+        // The wire's, like grok's, and pending until a session has published it.
+        acp @ Harness::Acp(_) => harness::agents::list_commands(acp, cwd)?,
         Harness::Other(_) => Vec::new(),
     })
 }
@@ -654,6 +671,48 @@ async fn interrupt_session(
     sink: Sink,
 ) -> Result<(), Fail> {
     Ok(manager().interrupt(session_id, &sink).await?)
+}
+
+/// An ACP agent's own permission modes, as its last session reported them,
+/// with `current` answered for `session_id` where one is named.
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn agent_modes(harness: Harness, session_id: Option<String>) -> harness::agents::AgentModes {
+    let mut modes = harness::agents::modes(harness);
+    if let Some(id) = session_id {
+        modes.current = manager().agent_mode(&id).await.or(modes.current);
+    }
+    modes
+}
+
+/// Uses the selected session's acknowledged raw options, or a new-session hint.
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn agent_options(harness: Harness, session_id: Option<String>) -> Vec<harness::agents::parser::ConfigOption> {
+    if let Some(id) = session_id {
+        if let Some(options) = manager().agent_options(&id).await { return options; }
+    }
+    harness::agents::learned_options(harness)
+}
+
+/// Applies one agent-owned selection before its next prompt.
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn set_agent_option(session_id: &str, config_id: &str, value: &str, remembered: Option<bool>, sink: Sink) -> Result<(), Fail> {
+    Ok(manager().set_agent_option(session_id, config_id, value, remembered.unwrap_or(false), &sink).await?)
+}
+
+/// Clears unapplied ACP selections so a failed open can use the agent defaults.
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn reset_agent_options(session_id: &str, config_id: Option<&str>, sink: Sink) -> Result<(), Fail> {
+    store::clear_pending_agent_config(session_id, config_id).await?;
+    harness::agents::reset_options(session_id, config_id);
+    sink.emit("models_changed", serde_json::json!({"sessionId": session_id}))?;
+    Ok(())
+}
+
+/// Moves a session onto one of its ACP agent's own modes. See
+/// [`session::SessionManager::set_agent_mode`].
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn set_agent_mode(session_id: &str, mode: &str, sink: Sink) -> Result<(), Fail> {
+    Ok(manager().set_agent_mode(session_id, mode, &sink).await?)
 }
 
 /// Stops one background task without touching the rest of the session.
