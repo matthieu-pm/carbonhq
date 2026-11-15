@@ -26,6 +26,11 @@ struct NewSessionView: View {
     @AppStorage("new.harness") private var harness = "claude_code"
     @State private var modelPicks = Prefs.map("models")
     @State private var effortPicks = Prefs.map("efforts")
+    @State private var agentOptionPicks = Prefs.map("agentOptions")
+    @State private var explicitAgentOptions: Set<String> = []
+    @State private var agentOptionNotice: String?
+    @State private var agentOptions: [String: [AgentOption]] = [:]
+    @State private var optionReads: [String: UUID] = [:]
     @State private var modelId = ""
     @AppStorage("new.stance") private var stance = "auto"
     @AppStorage("new.fast") private var fast = false
@@ -45,8 +50,13 @@ struct NewSessionView: View {
     private var modelsKey: String { "\(server?.uuidString ?? "")|\(harness)" }
     private var list: [Model] { models[modelsKey] ?? [] }
     private var model: Model? { list.first { $0.id == modelId } }
-    private var effort: String? { model.map { Picks.usableEffort($0, effortPicks[modelId]) } ?? effortPicks[modelId] }
+    private var effort: String? { Picks.isAcp(harness) ? nil : (model.map { Picks.usableEffort($0, effortPicks[modelId]) } ?? effortPicks[modelId]) }
+    private var options: [AgentOption] { (agentOptions[modelsKey] ?? []).filter { $0.isComposerOption && !$0.options.isEmpty } }
     private var agent: AgentAvailability? { agents.first { $0.harness == harness } }
+    private var selectedAgentOptions: [String: String] {
+        let prefix = "\(modelsKey)|"
+        return Dictionary(uniqueKeysWithValues: agentOptionPicks.filter { $0.key.hasPrefix(prefix) }.map { (String($0.key.dropFirst(prefix.count)), $0.value) })
+    }
     private var prompt: String { store.drafts[.newSession] ?? "" }
 
     var body: some View {
@@ -79,10 +89,10 @@ struct NewSessionView: View {
                 }
             }
             .task(id: server) { await loadServer() }
-            .task(id: modelsKey) { await loadModels() }
+            .task(id: "\(modelsKey)|\(server.flatMap { store.agentOptionsRevision[$0] } ?? 0)") { await loadModels() }
             // At once, not when the list lands: the old agent's model must never
             // go out under the new agent's name.
-            .onChange(of: modelsKey) { modelId = Picks.usableModel(list, remembered, harness) }
+            .onChange(of: modelsKey) { modelId = Picks.usableModel(list, remembered, harness); agentOptionNotice = nil }
             .task(id: projectPath) { await loadBranches() }
             .confirmationDialog(
                 "\(branches?.dirty ?? 0) uncommitted \(branches?.dirty == 1 ? "file" : "files")",
@@ -170,15 +180,34 @@ struct NewSessionView: View {
                         Text(a.available ? a.label : "\(a.label) (unavailable)").tag(a.harness)
                     }
                 }
-                Picker("Model", selection: Binding(get: { modelId }, set: pickModel)) {
-                    if Picks.defaultModel[harness]?.isEmpty ?? false {
-                        Text("Default").tag("")
+                if Picks.isAcp(harness) {
+                    ForEach(options) { option in
+                        AgentOptionPicker(option: option, value: Binding(
+                            get: { agentOptionPicks[option.preferenceKey(harness: harness, server: server)] ?? option.currentValue ?? "" },
+                            set: { pickAgentOption(option, value: $0) }
+                        ))
                     }
-                    ForEach(list, id: \.id) { Text($0.label).tag($0.id) }
-                }
-                if let model, !model.efforts.isEmpty {
-                    Picker("Effort", selection: Binding(get: { effort ?? "" }, set: pickEffort)) {
-                        ForEach(model.efforts, id: \.self) { Text(Picks.effortLabels[$0] ?? $0).tag($0) }
+                    ForEach(selectedAgentOptions.keys.sorted().filter { id in
+                        guard let value = selectedAgentOptions[id] else { return false }
+                        return !options.contains { $0.id == id && $0.options.contains { $0.value == value } }
+                    }, id: \.self) { id in
+                        Text("\(selectedAgentOptions[id] ?? id)\(options.isEmpty ? " selected; confirmed when the session opens." : " is no longer offered.")").foregroundStyle(Theme.destructive)
+                        Button("Use agent default") { resetAgentOption(id) }
+                    }
+                    if !selectedAgentOptions.isEmpty {
+                        Button("Use agent default") { resetAgentOptions() }
+                    }
+                } else {
+                    Picker("Model", selection: Binding(get: { modelId }, set: pickModel)) {
+                        if Picks.defaultModel[harness]?.isEmpty ?? false {
+                            Text("Default").tag("")
+                        }
+                        ForEach(list, id: \.id) { Text($0.label).tag($0.id) }
+                    }
+                    if let model, !model.efforts.isEmpty {
+                        Picker("Effort", selection: Binding(get: { effort ?? "" }, set: pickEffort)) {
+                            ForEach(model.efforts, id: \.self) { Text(Picks.effortLabels[$0] ?? $0).tag($0) }
+                        }
                     }
                 }
                 if Picks.offersFast(harness, model) {
@@ -192,6 +221,7 @@ struct NewSessionView: View {
             } header: {
                 GroupLabel("Agent")
             } footer: {
+                if Picks.isAcp(harness), let agentOptionNotice { Text(agentOptionNotice) }
                 if let agent, !agent.available {
                     Text(agent.reason).font(Theme.Font.meta).foregroundStyle(Theme.tertiary)
                 }
@@ -265,7 +295,7 @@ struct NewSessionView: View {
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var remembered: String { modelPicks[harness] ?? Picks.defaultModel[harness] ?? "" }
+    private var remembered: String { modelPicks[Picks.preferenceKey(harness, server: server)] ?? Picks.defaultModel[harness] ?? "" }
 
     /// Whether a reply read for this server and project still describes what is
     /// on screen. A call outlives the task that made it, so a late one from a
@@ -281,13 +311,51 @@ struct NewSessionView: View {
 
     private func pickModel(_ id: String) {
         modelId = id
-        modelPicks[harness] = id
+        modelPicks[Picks.preferenceKey(harness, server: server)] = id
         Prefs.set(modelPicks, "models")
     }
 
     private func pickEffort(_ level: String) {
         effortPicks[modelId] = level
         Prefs.set(effortPicks, "efforts")
+    }
+
+    private func pickAgentOption(_ option: AgentOption, value: String) {
+        let key = option.preferenceKey(harness: harness, server: server)
+        explicitAgentOptions.insert(key)
+        agentOptionNotice = nil
+        agentOptionPicks[key] = value
+        Prefs.set(agentOptionPicks, "agentOptions")
+    }
+
+    private func resetAgentOptions() {
+        let prefix = "\(modelsKey)|"
+        agentOptionPicks = agentOptionPicks.filter { !$0.key.hasPrefix(prefix) }
+        explicitAgentOptions = explicitAgentOptions.filter { !$0.hasPrefix(prefix) }
+        agentOptionNotice = nil
+        failure = nil
+        Prefs.set(agentOptionPicks, "agentOptions")
+    }
+
+    private func resetAgentOption(_ id: String) {
+        let key = "\(modelsKey)|\(id)"
+        agentOptionPicks.removeValue(forKey: key)
+        explicitAgentOptions.remove(key)
+        Prefs.set(agentOptionPicks, "agentOptions")
+    }
+
+    private func reconcileAgentOptions(_ options: [AgentOption], key: String) {
+        guard !options.isEmpty else { return }
+        let prefix = "\(key)|"
+        let stale = agentOptionPicks.filter { pref in
+            guard pref.key.hasPrefix(prefix), !explicitAgentOptions.contains(pref.key) else { return false }
+            let id = String(pref.key.dropFirst(prefix.count))
+            return !options.contains { $0.id == id && $0.options.contains { $0.value == pref.value } }
+        }
+        guard !stale.isEmpty else { return }
+        for key in stale.keys { agentOptionPicks.removeValue(forKey: key) }
+        Prefs.set(agentOptionPicks, "agentOptions")
+        if key == modelsKey { agentOptionNotice = "The agent no longer offers \(stale.values.sorted().joined(separator: ", ")). Using its default." }
     }
 
     private func loadServer() async {
@@ -310,6 +378,25 @@ struct NewSessionView: View {
     private func loadModels() async {
         guard let server else { return }
         let key = modelsKey
+        let readHarness = harness
+        if Picks.isAcp(readHarness) {
+            let request = UUID()
+            optionReads[key] = request
+            do {
+                let next: [AgentOption] = try await store.call(server, "agent_options", ["harness": .string(readHarness)])
+                guard optionReads[key] == request else { return }
+                agentOptions[key] = next
+                reconcileAgentOptions(next, key: key)
+                models[key] = []
+                modelsFailed.remove(key)
+            } catch {
+                guard optionReads[key] == request else { return }
+                modelsFailed.insert(key)
+                if key == modelsKey { failure = error.localizedDescription }
+            }
+            if key == modelsKey { modelId = "" }
+            return
+        }
         if models[key] == nil {
             do {
                 models[key] = try await store.call(server, "list_models", ["harness": .string(harness)])
@@ -379,23 +466,36 @@ struct NewSessionView: View {
         failure = nil
         defer { sending = false }
         let id = UUID().uuidString.lowercased()
+        let selectedHarness = harness
+        let settings = selectedAgentOptions.map { id, value in
+            (id, value, !explicitAgentOptions.contains("\(modelsKey)|\(id)"))
+        }
+        let args: [String: JSON] = [
+            "sessionId": .string(id),
+            "prompt": .string(prompt),
+            "attachmentPaths": [],
+            "harness": .string(selectedHarness),
+            "model": .string(modelId),
+            "effort": JSON(effort),
+            "permissionMode": .string(Picks.stanceFor(selectedHarness, stance)),
+            "fast": .bool(fast && Picks.offersFast(selectedHarness, model)),
+            "cwd": .string(cwd),
+            "branch": worktree ? nil : JSON(branches?.current),
+            "useWorktree": .bool(worktree),
+            "worktreeName": nil,
+            "baseRef": nil,
+            "isNewSession": true,
+        ]
         do {
-            let outcome: SendOutcome = try await store.call(server, "send_msg", [
-                "sessionId": .string(id),
-                "prompt": .string(prompt),
-                "attachmentPaths": [],
-                "harness": .string(harness),
-                "model": .string(modelId),
-                "effort": JSON(effort),
-                "permissionMode": .string(Picks.stanceFor(harness, stance)),
-                "fast": .bool(fast && Picks.offersFast(harness, model)),
-                "cwd": .string(cwd),
-                "branch": worktree ? nil : JSON(branches?.current),
-                "useWorktree": .bool(worktree),
-                "worktreeName": nil,
-                "baseRef": nil,
-                "isNewSession": true,
-            ])
+            if Picks.isAcp(selectedHarness) {
+                for (configId, value, remembered) in settings {
+                    _ = try await store.call(server, "set_agent_option", [
+                        "sessionId": .string(id), "configId": .string(configId), "value": .string(value),
+                        "remembered": .bool(remembered),
+                    ], as: JSON.self)
+                }
+            }
+            let outcome: SendOutcome = try await store.call(server, "send_msg", args)
             if let item = outcome.snapshot { store.created(server, item) }
             store.drafts[.newSession] = nil
             Haptic.success()

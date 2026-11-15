@@ -1,0 +1,39 @@
+---
+title: Agents
+description: Enable ACP agents, add custom commands, and choose the settings each agent supports.
+sidebar:
+  order: 3
+---
+
+Settings → **Agents** lists agents from the public ACP registry. They start off. Enable the ones you want in the agent picker; `⌘⇧A` also cycles through enabled agents.
+
+Claude Code, Codex, pi, fx, and Grok keep their native integrations. Their registry adapters do not appear a second time.
+
+## Launch an agent
+
+Each row shows how Carbon will start it on the selected server:
+
+- **Installed** means its executable is available.
+- **Ready to download** names the package and version that `npx` or `uvx` will run. The first launch downloads the package if it is not cached.
+- A missing executable or package runner needs to be installed before starting a session.
+- An agent without a launch recipe for the server's platform remains visible but cannot be enabled there.
+
+Use the row's menu to **Choose executable** when you installed it somewhere else. **Use catalog command** removes that override. Refresh checks the registry and installed commands again. A failed refresh keeps the available list and shows an error.
+
+The registry provides launch information. An entry in this list does not mean its complete workflow has been tested in Carbon.
+
+## Add a custom agent
+
+Choose **Add agent**, then enter its name, ID, executable, and arguments. Put one argument on each line. Paths and arguments containing spaces stay intact; Carbon does not run the command through a shell.
+
+Environment entries use one `KEY=value` per line. Each agent needs a unique ID. Saved sessions use that ID, so use another ID for a different agent.
+
+## Session settings
+
+Generic agents use their own model, mode, and thinking options. Those controls appear after an agent publishes them. New tasks use the last options seen on that server as a hint; the agent confirms selections when the session opens. **Use agent default** clears remembered picks for a new task.
+
+Settings cannot change during a turn. If an agent refuses a selection, Carbon shows the error instead of sending the prompt with a different setting. Sign-in follows the agent's supported flow; some agents require signing in through their terminal interface first.
+
+A pending session choice is marked **Not applied**. If it is refused, open that control and choose **Discard pick** to remove it while keeping your other choices. Remembered values an agent no longer accepts fall back with a notice.
+
+Carbon supports ACP major version 1. Reopening a session requires the agent to support resume or load. Generic agents do not currently support Carbon's fork, `@` file expansion, or injected system prompt.

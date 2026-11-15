@@ -2813,7 +2813,7 @@ function App() {
   const composingNewSession = !selectedSessionId && !issuesOpen;
   // Steps the picker's own row in its own order, rather than toggling between
   // two — a toggle written when there were two silently never reached pi.
-  const enabledAgents = useEnabledAgents();
+  const enabledAgents = useEnabledAgents(activeServer);
   useHotkey("harness.next", () => setHarness(nextHarness(harness, enabledAgents)), {
     enabled: composingNewSession,
   });
@@ -2846,7 +2846,7 @@ function App() {
     const index = cycle.findIndex((m) => m.id === modelId);
     const next = cycle[(index + 1) % cycle.length];
     handleModelChange(next.id, null);
-  }, { enabled: !lockedMidTurn(harness, "model", busy) });
+  }, { enabled: !harness.startsWith("acp:") && !lockedMidTurn(harness, "model", busy) });
   // ⌘⇧E for effort, beside ⌘E for the right pane — near enough to remember and
   // no collision, since `useHotkey` matches Shift exactly and neither listener
   // answers the other's chord. No `code`: that option is for a chord whose
@@ -2855,7 +2855,7 @@ function App() {
   useHotkey("effort.next", () => {
     const next = nextEffort(models.find((m) => m.id === modelId), effort);
     if (next) handleModelChange(modelId, next);
-  }, { enabled: !lockedMidTurn(harness, "effort", busy) });
+  }, { enabled: !harness.startsWith("acp:") && !lockedMidTurn(harness, "effort", busy) });
   // Shares ⌘⇧F with `issues.search`, which is the one documented pair in
   // `SHARED_CHORDS`: that binding is enabled only while the issues page is up
   // and this one only while it is not, so the chord belongs to whichever is on
@@ -3575,6 +3575,7 @@ function App() {
               onMentionPage={pagesEnabled ? () => setPagePickerOpen(true) : undefined}
               onAttach={() => void pickAttachments(attachmentKey(composerKey, composerCwd))}
               contextUsage={contextUsage}
+              sessionId={selectedSessionId}
               isNewSession={!selectedSessionId}
               busy={busy}
               modelLast={!shownSession}

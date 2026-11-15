@@ -600,7 +600,7 @@ async fn read_stdout(
                         // the one way this hangs, which is why a request that
                         // cannot be read is declined below rather than dropped.
                         if let Err(err) =
-                            raise_permission(&handles, &mut mapper, id, kind, params).await
+                            raise_permission(&handles, &mut mapper, id.clone(), kind, params).await
                         {
                             record_failure(Codex,
                                 &handles.session_id,
@@ -874,7 +874,7 @@ pub async fn interrupt_turn(thread: &Thread) -> Result<()> {
 async fn raise_permission(
     handles: &ReaderHandles,
     mapper: &mut mapper::Mapper,
-    rpc_id: i64,
+    rpc_id: crate::harness::codex::rpc::RequestId,
     kind: ApprovalKind,
     params: Value,
 ) -> Result<()> {
@@ -989,7 +989,7 @@ mod tests {
             ("allow", json!({"action": "accept", "content": {}})),
             ("deny", json!({"action": "decline"})),
         ] {
-            raise_permission(&handles, &mut mapper, 0, kind, request["params"].clone())
+            raise_permission(&handles, &mut mapper, 0.into(), kind, request["params"].clone())
                 .await
                 .unwrap();
 
@@ -1293,7 +1293,7 @@ mod tests {
     #[test]
     fn the_captured_approval_becomes_a_card_and_an_answer() {
         let request = captured_approval();
-        let (pending, options) = permissions::pending_for(&request, ApprovalKind::COMMAND, 0);
+        let (pending, options) = permissions::pending_for(&request, ApprovalKind::COMMAND, 0.into());
 
         assert!(
             options

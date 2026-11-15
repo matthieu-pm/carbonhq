@@ -27,6 +27,11 @@ For build, test and wire-maintenance steps, read [README.md](README.md).
   sharing and stop-sharing controls (`LocalServers.swift`).
 - **New session** with the desktop composer's picks: project, harness, model,
   effort, stance, fast mode, worktree, branch.
+- **Generic ACP agents** enabled on the owning server join the agent picker.
+  Their model, mode and thinking pickers use the options the agent publishes;
+  Carbon's native permissions, effort ladder and fast mode stay hidden. Agent
+  settings beside the reply composer use acknowledged session values and lock
+  while a turn runs. New-session picks stay scoped to their server and agent.
 - **Pairing** by paste or by QR, and every server's name, token and removal
   in one Settings screen.
 - **Pull request** sheet from the session view: readiness in the desktop's
@@ -129,6 +134,11 @@ Commands used: `list_session_index_items`, `get_session_by_id`,
 `add_project`, `github_repos`, `clone_github_repo`, `recheck_gh`, `pr_marks`,
 `transcribe_upload`, `list_local_servers`, `share_ready`, `share_port`, `stop_share`,
 `list_secret_requests`, `answer_secret_request`, `deny_secret_request`.
+
+Generic ACP sessions also use `agent_options` and `set_agent_option`. The first
+reads live options for an existing session and last-seen options for a new one.
+The second applies a raw config id/value, or holds it for a provisional session
+before `send_msg`. A rejected option prevents that prompt from running.
 
 **New session restates the desktop composer's rules** (`Picks` in
 `NewSessionView.swift`): which stances each harness honours (`permission.ts`),

@@ -78,7 +78,7 @@ struct ConsentSchema {
 /// Keeps tool consent distinct from MCP forms that require user-supplied data.
 pub fn pending_for_mcp(
     params: Value,
-    rpc_id: i64,
+    rpc_id: crate::harness::codex::rpc::RequestId,
     request_id: &str,
 ) -> Result<(PendingRequest, AgentEventPayload)> {
     let request: McpApproval = serde_json::from_value(params)?;
@@ -154,7 +154,7 @@ pub fn pending_for_mcp(
 pub fn pending_for(
     request: &ApprovalRequest,
     kind: ApprovalKind,
-    rpc_id: i64,
+    rpc_id: crate::harness::codex::rpc::RequestId,
 ) -> (PendingRequest, Vec<PermissionOption>) {
     let resolved = build_options(request);
     let offered = resolved.iter().map(|r| r.option.clone()).collect();
@@ -331,13 +331,13 @@ mod tests {
             let mut params = captured["params"].clone();
             *params.pointer_mut(field).unwrap() = value;
             assert!(
-                pending_for_mcp(params, 0, "request-1").is_err(),
+                pending_for_mcp(params, 0.into(), "request-1").is_err(),
                 "accepted unsupported {field}"
             );
         }
         let mut params = captured["params"].clone();
         params.as_object_mut().unwrap().remove("_meta");
-        assert!(pending_for_mcp(params, 0, "request-1").is_err());
+        assert!(pending_for_mcp(params, 0.into(), "request-1").is_err());
     }
 
     fn request_offering(decisions: Value) -> ApprovalRequest {
@@ -360,7 +360,7 @@ mod tests {
             "cancel"
         ]));
 
-        let (pending, offered) = pending_for(&request, ApprovalKind::COMMAND, 7);
+        let (pending, offered) = pending_for(&request, ApprovalKind::COMMAND, 7.into());
 
         let labels: Vec<&str> = offered.iter().map(|o| o.label.as_str()).collect();
         assert_eq!(
@@ -374,7 +374,7 @@ mod tests {
         assert!(offered
             .iter()
             .any(|o| o.behavior == PermissionBehavior::Deny));
-        assert_eq!(pending.reply, Reply::Rpc(7));
+        assert_eq!(pending.reply, Reply::Rpc(7.into()));
         assert_eq!(pending.tool_use_id, "exec-1");
     }
 
@@ -385,7 +385,7 @@ mod tests {
         let amendment = json!({"acceptWithExecpolicyAmendment": {"execpolicy_amendment": ["/bin/zsh"]}});
         let request = request_offering(json!(["accept", amendment.clone(), "decline"]));
 
-        let (pending, offered) = pending_for(&request, ApprovalKind::COMMAND, 1);
+        let (pending, offered) = pending_for(&request, ApprovalKind::COMMAND, 1.into());
         let always = offered
             .iter()
             .find(|o| o.kind == PermissionOptionKind::AlwaysRule)
@@ -408,7 +408,7 @@ mod tests {
             "decline"
         ]));
 
-        let (_, offered) = pending_for(&request, ApprovalKind::COMMAND, 1);
+        let (_, offered) = pending_for(&request, ApprovalKind::COMMAND, 1.into());
         let labels: Vec<&str> = offered.iter().map(|o| o.label.as_str()).collect();
         assert_eq!(
             labels,
@@ -426,7 +426,7 @@ mod tests {
             ..Default::default()
         };
 
-        let (pending, _) = pending_for(&request, ApprovalKind::FILE_CHANGE, 2);
+        let (pending, _) = pending_for(&request, ApprovalKind::FILE_CHANGE, 2.into());
         assert_eq!(pending.tool_name, "apply_patch");
     }
 }
