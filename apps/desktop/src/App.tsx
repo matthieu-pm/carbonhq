@@ -89,7 +89,6 @@ import Sidebar, {
   SEARCH_INPUT_ID,
   SettingsButton,
   SidebarToggle,
-  SpaceSwitcher,
   filterSessions,
   placeDrafts,
   sessionUnits,
@@ -203,6 +202,7 @@ import {
   SPACE_KEY,
   SPACE_LIST_KEY,
 } from "@/lib/space";
+import { PROFILE_APPEARANCE_KEY, moveProfileAppearance, type ProfileAppearance, type ProfileAppearances } from "@/lib/profileAppearance";
 import { worktreeNoticeDetail } from "@/lib/worktree";
 import { useEnabledAgents } from "@/hooks/useEnabledAgents";
 import { useHandoffConfig } from "@/hooks/useHandoffConfig";
@@ -535,6 +535,9 @@ function App() {
     SPACE_LIST_KEY,
     [],
   );
+  const [profileAppearances, setProfileAppearances] = useLocalStorage<ProfileAppearances>(PROFILE_APPEARANCE_KEY, {});
+  const setProfileAppearance = (name: string, appearance: ProfileAppearance) =>
+    setProfileAppearances((prev) => ({ ...prev, [name]: appearance }));
   const spaces = useMemo(
     () => spaceNames(projects, declaredSpaces),
     [projects, declaredSpaces],
@@ -681,14 +684,9 @@ function App() {
   // The visible section also belongs to history. Closing resets the next
   // open to Appearance; Back and Forward restore their own section instead.
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("appearance");
-  // Whether that open should land with the new-space field already up. Same
-  // reset as the tab, and for the same reason: it describes the way in, not the
-  // dialog.
-  const [namingSpace, setNamingSpace] = useState(false);
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
     setSettingsTab("appearance");
-    setNamingSpace(false);
   }, []);
   const openChangelog = useCallback(() => {
     setSettingsTab("changelog");
@@ -2200,7 +2198,6 @@ function App() {
     if (target.page === "settings") {
       setSettingsTab(target.tab);
       setSettingsOpen(true);
-      setNamingSpace(false);
     } else closeSettings();
     const page = target.page === "settings" ? target.returnTo : target;
     setSpacesOpen(page.page === "spaces");
@@ -2416,7 +2413,8 @@ function App() {
   /// there would count one space as two. Judged against `spaces`, the union —
   /// re-declaring a name some project already carries as a tag is not a new
   /// space to the reader, whatever the declared half of the list says.
-  const createSpace = (name: string) => {
+  const createSpace = (name: string, appearance: ProfileAppearance) => {
+    if (!spaces.includes(name)) setProfileAppearance(name, appearance);
     setDeclaredSpaces((prev) => (prev.includes(name) ? prev : [...prev, name]));
     if (!spaces.includes(name)) trackFeature("space_created");
   };
@@ -2441,6 +2439,7 @@ function App() {
   const renameSpace = async (from: string, to: string) => {
     if (!(await retagSpace(from, to))) return;
     setDeclaredSpaces((prev) => [...new Set(prev.map((s) => (s === from ? to : s)))]);
+    setProfileAppearances((prev) => moveProfileAppearance(prev, from, to));
     // Groups are filed by the space's name, so they follow it — left tagged
     // with the old one they would vanish, and come back under a later space
     // that happened to take the name.
@@ -2454,6 +2453,7 @@ function App() {
   const removeSpace = async (name: string) => {
     if (!(await retagSpace(name, null))) return;
     setDeclaredSpaces((prev) => prev.filter((s) => s !== name));
+    setProfileAppearances((prev) => moveProfileAppearance(prev, name, null));
     // Its groups go where its projects go: under none, which is every project.
     setGroups((prev) => prev.map((g) => (g.space === name ? { ...g, space: null } : g)));
     if (storedSpace === name) changeSpace(null);
@@ -2500,14 +2500,6 @@ function App() {
     // this on every one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [space, projects, spaceProjects, projectPath, selectedSessionId, selectedSession, sessionIndexItems]);
-
-  /// The sidebar's own "New space", which is a request for the field rather
-  /// than for a space — naming it is Settings' job, so this only opens the tab.
-  const openNewSpace = () => {
-    setSettingsTab("spaces");
-    setNamingSpace(true);
-    setSettingsOpen(true);
-  };
 
   /// Leaves the issues page for the empty composer, with the issue tagged in
   /// the draft.
@@ -3069,6 +3061,9 @@ function App() {
           onSearchOpenChange={setSearchOpen}
           projects={spaceProjects}
           space={space}
+          profiles={spaces}
+          profileAppearances={profileAppearances}
+          onProfileChange={changeSpace}
           projectFilter={projectFilter}
           onProjectFilterChange={changeProjectFilter}
           onStepProjectFilter={stepProjectFilter}
@@ -3140,28 +3135,6 @@ function App() {
             {navigation}
             <SidebarToggle onToggle={toggleSidebar} />
           </div>
-
-          {/* Over the sidebar's right end, out of the flow so the tabs do not
-              move. It belongs to the sidebar, so it goes when the sidebar does —
-              and on a hidden session, whose way back to its parent runs
-              through this same strip. Only once a space exists: before that
-              it has nothing to switch, and New space lives in Settings. */}
-          {sidebarDrawn > 0 && spaces.length > 0 && !(!issuesOpen && shownSession && hiddenParent) && (
-            <div
-              className="absolute top-1/2 flex shrink-0 -translate-y-1/2 items-center gap-1"
-              style={{ right: `calc(100% - ${RAIL_W + sidebarDrawn}px + 0.5rem)` }}
-            >
-              <SpaceSwitcher
-                spaces={spaces}
-                value={space}
-                // Only while the dialog is actually up: it is cleared on close,
-                // so a cancelled naming puts the switcher back on All Spaces.
-                naming={settingsOpen && namingSpace}
-                onChange={changeSpace}
-                onNew={openNewSpace}
-              />
-            </div>
-          )}
 
           {/* Divides the buttons from the tabs. Over the sidebar's edge it
               continues the strip's border up through the titlebar; with no
@@ -3820,7 +3793,8 @@ function App() {
       // somebody opens it to move.
       projects={projects}
       spaces={spaces}
-      startNamingSpace={namingSpace}
+      profileAppearances={profileAppearances}
+      onProfileAppearanceChange={setProfileAppearance}
       onSetProjectSpace={setProjectSpace}
       onRemoveProject={handleRemoveProject}
       onCreateSpace={createSpace}

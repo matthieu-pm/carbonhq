@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import ProfileAppearancePicker from "@/components/settings/ProfileAppearancePicker";
+import { DEFAULT_PROFILE_APPEARANCE, newProfileAppearance, profileAppearance, type ProfileAppearance, type ProfileAppearances } from "@/lib/profileAppearance";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { ConfirmOrKeep } from "@/components/settings/InRowConfirm";
@@ -28,7 +30,8 @@ import type { Project } from "@/types/events";
 export default function SpacesSettings({
   projects,
   spaces,
-  startNaming = false,
+  appearances,
+  onAppearanceChange,
   onSetProjectSpace,
   onRemoveProject,
   onCreateSpace,
@@ -39,13 +42,11 @@ export default function SpacesSettings({
 }: {
   projects: Project[];
   spaces: string[];
-  /// Opens with the new-space field already up. The sidebar's own "New profile"
-  /// lands here, and it would otherwise leave the reader on a tab to find the
-  /// button they just pressed.
-  startNaming?: boolean;
+  appearances: ProfileAppearances;
+  onAppearanceChange: (name: string, appearance: ProfileAppearance) => void;
   onSetProjectSpace: (path: string, space: string | null) => void;
   onRemoveProject: (path: string) => void;
-  onCreateSpace: (name: string) => void;
+  onCreateSpace: (name: string, appearance: ProfileAppearance) => void;
   onRenameSpace: (from: string, to: string) => void;
   onRemoveSpace: (name: string) => void;
   /// Steps a space one place. Order is the sidebar switcher's, which walks the
@@ -59,7 +60,8 @@ export default function SpacesSettings({
   // The space being named — `""` for a new one, an existing name for a rename.
   // One at a time and held here rather than per row, so opening a second closes
   // the first instead of leaving two half-typed names on screen.
-  const [naming, setNaming] = useState<string | null>(startNaming ? "" : null);
+  const [newAppearance, setNewAppearance] = useState(DEFAULT_PROFILE_APPEARANCE);
+  const [naming, setNaming] = useState<string | null>(null);
   // Which space has been asked about. Removal takes projects out of a space, so
   // it asks first — in the row, since a modal takes the whole window over
   // something that costs one dropdown to put back.
@@ -79,7 +81,7 @@ export default function SpacesSettings({
     setNaming(null);
     if (!name || name === previous) return;
     if (previous) onRenameSpace(previous, name);
-    else onCreateSpace(name);
+    else onCreateSpace(name, newAppearance);
   };
 
   return (
@@ -95,6 +97,7 @@ export default function SpacesSettings({
             size="sm"
             onClick={() => {
               setConfirming(null);
+              setNewAppearance(newProfileAppearance(appearances, spaces));
               setNaming("");
             }}
             className="h-7 gap-1 px-2 text-ui text-muted-foreground hover:text-foreground"
@@ -107,11 +110,12 @@ export default function SpacesSettings({
         <p className="text-ui text-muted-foreground">
           Switching profile in the sidebar shows that set of projects alone.
           Everything else keeps running, out of sight and quiet. Drag to
-          reorder; the switcher steps through profiles in this order.
+          reorder. Click an icon to change its icon and color.
         </p>
 
         {naming === "" && (
           <SpaceNameField
+            leading={<ProfileAppearancePicker value={newAppearance} label="Choose profile icon and color" onChange={setNewAppearance} />}
             label="New profile"
             initial=""
             action="Create"
@@ -131,6 +135,7 @@ export default function SpacesSettings({
             // passing it, so the rows' measured places stay true.
             <div key={name} style={spaceDrag.row(i, "").style}>
               <SpaceNameField
+                leading={<ProfileAppearancePicker value={profileAppearance(appearances, name)} label={`Change icon for ${name}`} onChange={(value) => onAppearanceChange(name, value)} />}
                 label={`Rename ${name}`}
                 initial={name}
                 action="Save"
@@ -145,6 +150,7 @@ export default function SpacesSettings({
                   label={`Reorder ${name}`}
                   onKeyDown={(e) => spaceDrag.onGripKey(e, i)}
                 />
+                <ProfileAppearancePicker value={profileAppearance(appearances, name)} label={`Change icon for ${name}`} onChange={(value) => onAppearanceChange(name, value)} />
                 <span className="min-w-0 flex-1 truncate text-ui">{name}</span>
               </div>
 
@@ -318,6 +324,7 @@ export function SpaceNameField({
   action,
   placeholder = "Profile name",
   allowEmpty = false,
+  leading,
   onCommit,
   onCancel,
 }: {
@@ -327,6 +334,7 @@ export function SpaceNameField({
   placeholder?: string;
   /// For a name with a default behind it, where empty means "use that".
   allowEmpty?: boolean;
+  leading?: ReactNode;
   onCommit: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -346,6 +354,7 @@ export function SpaceNameField({
     // One row: the field takes what the two answers leave, which is the shape
     // every other row on this tab already has.
     <div className="flex items-center gap-2">
+      {leading}
       {/* The app's own field, not a hand-rolled one: height, fill and the focus
           ring are all it, so this cannot drift from every other input. */}
       <Input

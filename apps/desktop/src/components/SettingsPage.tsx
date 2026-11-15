@@ -1,3 +1,4 @@
+import type { ProfileAppearance, ProfileAppearances } from "@/lib/profileAppearance";
 import { Fragment, useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import {
   BoltIcon,
@@ -106,7 +107,8 @@ export default function SettingsPage({
   fullscreen,
   projects,
   spaces,
-  startNamingSpace,
+  profileAppearances,
+  onProfileAppearanceChange,
   onSetProjectSpace,
   onRemoveProject,
   onCreateSpace,
@@ -140,12 +142,11 @@ export default function SettingsPage({
   /// filed into a space, so a narrowed list would hide the rows to move.
   projects: Project[];
   spaces: string[];
-  /// Opens the Spaces tab with its new-space field already up, which is where
-  /// the sidebar's own "New profile" lands.
-  startNamingSpace?: boolean;
+  profileAppearances: ProfileAppearances;
+  onProfileAppearanceChange: (name: string, appearance: ProfileAppearance) => void;
   onSetProjectSpace: (path: string, space: string | null) => void;
   onRemoveProject: (path: string) => void;
-  onCreateSpace: (name: string) => void;
+  onCreateSpace: (name: string, appearance: ProfileAppearance) => void;
   onRenameSpace: (from: string, to: string) => void;
   onRemoveSpace: (name: string) => void;
   onMoveSpace: (name: string, delta: number) => void;
@@ -213,7 +214,8 @@ export default function SettingsPage({
           <SpacesSettings
             projects={projects}
             spaces={spaces}
-            startNaming={startNamingSpace}
+            appearances={profileAppearances}
+            onAppearanceChange={onProfileAppearanceChange}
             onSetProjectSpace={onSetProjectSpace}
             onRemoveProject={onRemoveProject}
             onCreateSpace={onCreateSpace}

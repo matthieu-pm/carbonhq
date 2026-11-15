@@ -141,6 +141,14 @@
    a tint on the near-white foreground, and text faintly carrying the theme's hue
    looks like a rendering fault rather than a palette. */
 [data-mode="dark"] {
+  --profile-gray: var(--muted-foreground);
+  --profile-red: oklch(0.82 0.13 25);
+  --profile-orange: oklch(0.82 0.13 55);
+  --profile-green: oklch(0.82 0.13 150);
+  --profile-teal: oklch(0.82 0.13 190);
+  --profile-blue: oklch(0.82 0.13 245);
+  --profile-purple: oklch(0.82 0.13 285);
+  --profile-pink: oklch(0.82 0.13 350);
   --hue: 0;
   --chroma: 0;
 
@@ -324,6 +332,14 @@
    looking at, not a fallback nothing reaches. The two ported themes name their own
    rungs over the top of it. */
 [data-mode="light"] {
+  --profile-gray: var(--muted-foreground);
+  --profile-red: oklch(0.55 0.16 25);
+  --profile-orange: oklch(0.55 0.16 55);
+  --profile-green: oklch(0.55 0.16 150);
+  --profile-teal: oklch(0.55 0.16 190);
+  --profile-blue: oklch(0.55 0.16 245);
+  --profile-purple: oklch(0.55 0.16 285);
+  --profile-pink: oklch(0.55 0.16 350);
   --hue: 0;
   --chroma: 0;
 
