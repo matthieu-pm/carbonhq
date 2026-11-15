@@ -1505,6 +1505,15 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
             issues::update_issue(identifier, id, state_id, priority).await;
         fetch_issue_asset(url: String) => issues::fetch_issue_asset(url).await;
         list_issue_filters(tracker: IssueTracker, repo: Option<String>) => issues::list_issue_filters(tracker, repo).await;
+        issue_creation_options(tracker: IssueTracker) => issues::creation::issue_creation_options(tracker).await;
+        create_issue(input: issues::creation::CreateIssueInput) => issues::creation::create_issue(input).await;
+        prepare_issue_conversation(session_id: String, context: issues::drafting::IssueDraftContext) =>
+            issues::drafting::prepare_issue_conversation(session_id, context).await;
+        get_issue_review(session_id: String) => issues::drafting::get_issue_review(session_id).await;
+        save_issue_review(session_id: String, draft: issues::drafting::IssueReviewInput, expected_revision: Option<u64>) =>
+            issues::drafting::save_issue_review(sink.clone(), session_id, draft, expected_revision).await;
+        create_conversation_issue(session_id: String, expected_revision: Option<u64>) => issues::drafting::create_conversation_issue(sink.clone(), session_id, expected_revision).await;
+        reopen_issue_review(session_id: String) => issues::drafting::reopen_issue_review(sink.clone(), session_id).await;
         unlink_issue(session_id: String, key: String) => issues::unlink_issue(session_id, key).await;
     }
 }

@@ -117,12 +117,16 @@ import DictateControl from "@/components/composer/DictateControl";
 import AppShell from "@/components/layout/AppShell";
 import Rail, { RAIL_W } from "@/components/layout/Rail";
 import IssueTabs, { HeaderIconButton } from "@/components/layout/IssueTabs";
+import IssuesSidebar from "@/components/IssuesSidebar";
+import { applyIssueView, type SavedIssueView } from "@/lib/issueViews";
+import { beginIssueConversation, cancelPendingIssueConversation, usePendingIssueConversation } from "@/lib/issueDraft";
+import { setIssueTracker } from "@/lib/issueTracker";
 import SpaceTabs from "@/components/layout/SpaceTabs";
 import { useSpaceTabs } from "@/lib/spaceTabs";
 import NavButtons from "@/components/layout/NavButtons";
 import WindowToolbar from "@/components/layout/WindowToolbar";
 import { placeKey, step as stepHistory, visit as visitPlace, type NavHistory, type Place } from "@/lib/navHistory";
-import { closeIssueTab, editIssueTabs, openIssueTab, updateListTab, useIssueTabs } from "@/lib/issueTabs";
+import { addListTab, closeIssueTab, editIssueTabs, newListTabId, openIssueTab, updateListTab, useIssueTabs } from "@/lib/issueTabs";
 import { CaretMaximizeDiagonalOutline12 } from "@/components/icons/nucleo";
 import { offersFast } from "@/lib/fastMode";
 import { lockedMidTurn } from "@/lib/liveControls";
@@ -173,7 +177,7 @@ import AgentUpdateLine from "@/components/composer/AgentUpdateLine";
 import { useAgentUpdates } from "@/hooks/useAgentUpdates";
 import LoginExpiredNotice from "@/components/composer/LoginExpiredNotice";
 import AutoContinueNotice from "@/components/composer/AutoContinueNotice";
-import type { Attachment, IssueRef, SessionIndexItem, WorktreeDisposition } from "@/types/events";
+import type { Attachment, IssueQuery, IssueRef, SessionIndexItem, WorktreeDisposition } from "@/types/events";
 import { useSlashCommands } from "@/hooks/useSlashCommands";
 import { useMcpMentions } from "@/hooks/useMcpMentions";
 import { useRecorder } from "@/hooks/useTranscription";
@@ -626,6 +630,34 @@ function App() {
   // Spaces closes its own tabs, since only it can flush an editor first.
   const spaceTabCloser = useRef<(id: string) => void>(() => {});
   const activeIssueTab = issueTabs.tabs.find((t) => t.id === issueTabs.active) ?? issueTabs.tabs[0];
+  const pendingIssue = usePendingIssueConversation(newTaskId);
+  const [appliedIssueQueries, setAppliedIssueQueries] = useState<Record<string, IssueQuery>>({});
+  const [issueSearchRequest, setIssueSearchRequest] = useState<{ tabId: string; serial: number } | null>(null);
+  const issueListContext = activeIssueTab.kind === "list" ? activeIssueTab : issueTabs.tabs.find((t) => t.kind === "list");
+  const newIssue = () => {
+    const query = issueListContext?.kind === "list" ? issueListContext.query : null;
+    goToSession(handleNewSession);
+    beginIssueConversation(newTaskId, { tracker: query?.tracker ?? (activeIssueTab.kind === "list" ? activeIssueTab.tracker : activeIssueTab.ref.tracker), destination: query?.teamId ?? "", projectId: query?.projectId ?? null });
+    const prompt = "Help me create a new issue. Ask clarifying questions if needed, then prepare a title and description for me to review.";
+    const draft = readDraft(null);
+    if (!draft.startsWith(prompt)) writeDraft(null, `${prompt}\n\n${draft}`);
+    focusComposer();
+  };
+  const applySavedIssueView = (view: SavedIssueView) => {
+    setIssueTracker(view.query.tracker);
+    editIssueTabs((state) => {
+      const next = applyIssueView(state, view);
+      const tab = next.tabs.find((t) => t.id === next.active);
+      if (tab?.kind === "list" && tab.query) setAppliedIssueQueries((all) => ({ ...all, [tab.id]: tab.query! }));
+      return next;
+    });
+  };
+  const searchIssues = () => {
+    const tabId = issueListContext?.id ?? newListTabId();
+    if (issueListContext) editIssueTabs((s) => ({ ...s, active: tabId }));
+    else editIssueTabs((s) => addListTab(s, tabId, activeIssueTab.kind === "issue" ? activeIssueTab.ref.tracker : "linear"));
+    setIssueSearchRequest((prev) => ({ tabId, serial: (prev?.serial ?? 0) + 1 }));
+  };
   const issueTabRefreshRef = useRef<(() => void) | null>(null);
   const [pickedByTab, setPickedByTab] = useState<Record<string, IssueRef | null>>({});
   const setPickedFor = (tabId: string, issue: IssueRef | null) =>
@@ -2159,6 +2191,7 @@ function App() {
 
   const showNewTaskComposer = () => setViewTabs((prev) => ({ ...prev, [newTaskId]: "chat" }));
   const handleNewSession = () => {
+    cancelPendingIssueConversation(newTaskId);
     resetSession();
     showNewTaskComposer();
   };
@@ -2600,11 +2633,12 @@ function App() {
   // field this press mounts; the select covers the one already on screen, which
   // is also what makes ⌘F on a query a replace rather than an append.
   useHotkey("search", () => {
+    if (issuesOpen) return searchIssues();
     setCollapsed(false);
     setSearchOpen(true);
     document.querySelector<HTMLInputElement>(`#${SEARCH_INPUT_ID}`)?.select();
   });
-  useHotkey("session.new", () => goToSession(handleNewSession));
+  useHotkey("session.new", () => issuesOpen ? newIssue() : goToSession(handleNewSession));
   // Steps the composer's project picker, and only while that picker is on
   // screen: it is drawn for a new task alone, and `enabled` unregisters rather
   // than no-opping, so a session's composer doesn't have ⌘⌥P eaten from it.
@@ -2846,7 +2880,7 @@ function App() {
     const index = cycle.findIndex((m) => m.id === modelId);
     const next = cycle[(index + 1) % cycle.length];
     handleModelChange(next.id, null);
-  }, { enabled: !harness.startsWith("acp:") && !lockedMidTurn(harness, "model", busy) });
+  }, { enabled: !issuesOpen && !harness.startsWith("acp:") && !lockedMidTurn(harness, "model", busy) });
   // ⌘⇧E for effort, beside ⌘E for the right pane — near enough to remember and
   // no collision, since `useHotkey` matches Shift exactly and neither listener
   // answers the other's chord. No `code`: that option is for a chord whose
@@ -2855,7 +2889,7 @@ function App() {
   useHotkey("effort.next", () => {
     const next = nextEffort(models.find((m) => m.id === modelId), effort);
     if (next) handleModelChange(modelId, next);
-  }, { enabled: !harness.startsWith("acp:") && !lockedMidTurn(harness, "effort", busy) });
+  }, { enabled: !issuesOpen && !harness.startsWith("acp:") && !lockedMidTurn(harness, "effort", busy) });
   // Shares ⌘⇧F with `issues.search`, which is the one documented pair in
   // `SHARED_CHORDS`: that binding is enabled only while the issues page is up
   // and this one only while it is not, so the chord belongs to whichever is on
@@ -3053,6 +3087,10 @@ function App() {
       summaryKey={summaryId ?? undefined}
       overlay={singleDrop && <DropZone region={singleDrop.region} label={singleDrop.label} />}
       sidebar={
+        issuesOpen ? <IssuesSidebar floating={sidebarMode !== "docked"}
+          query={issueListContext?.kind === "list" ? issueListContext.query : null}
+          label={issueListContext?.kind === "list" ? issueListContext.name || issueListContext.label : "Issues"}
+          onNewIssue={newIssue} onSearch={searchIssues} onApply={applySavedIssueView} /> :
         <Sidebar
           items={searchedSessions}
           search={search}
@@ -3417,6 +3455,7 @@ function App() {
         // unmounts crossing the empty state.
         issuesOpen || viewTab !== "chat" ? null : (
         <ChatInput
+          placeholder={!selectedSessionId && pendingIssue ? "Describe an issue. @files. /skills." : undefined}
           onSend={(message, attachments) => void sendFromComposer(message, attachments)}
           commands={slashCommands}
           commandsLoading={slashCommandsLoading}
@@ -3605,6 +3644,8 @@ function App() {
                   // The shown list alone answers ⌘R and the toolbar's Refresh.
                   refreshRef={shown ? issuesRefreshRef : undefined}
                   initialQuery={tab.query}
+                  appliedQuery={appliedIssueQueries[tab.id] ?? null}
+                  searchRequest={issueSearchRequest?.tabId === tab.id ? issueSearchRequest.serial : 0}
                   tracker={tab.tracker}
                   onTrackerChange={(tracker) => editIssueTabs((s) => updateListTab(s, tab.id, { tracker }))}
                   onQueryChange={(query, label) =>

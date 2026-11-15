@@ -590,11 +590,13 @@ export function useIssues(
   active: boolean,
   tracker: IssueQuery["tracker"] = "linear",
   initial: IssueQuery | null = null,
+  applied: IssueQuery | null = null,
 ) {
   const [query, setQuery] = useState<IssueQuery>(() =>
     initial && initial.tracker === tracker ? initial : defaultQuery(tracker),
   );
   const [filters, setFilters] = useState<IssueFilters | null>(null);
+  const [lastApplied, setLastApplied] = useState(applied);
 
   // A tracker switch is a different workspace, so both the narrowing and the
   // options it was built from stop meaning anything: a Linear team id under
@@ -605,6 +607,10 @@ export function useIssues(
   if (query.tracker !== tracker) {
     setQuery(defaultQuery(tracker));
     setFilters(null);
+  }
+  if (applied !== lastApplied) {
+    setLastApplied(applied);
+    if (applied) setQuery(applied);
   }
   /// Bumped to force a read the query alone would not trigger — the refresh
   /// button, and a connection that just changed under the page. It is what

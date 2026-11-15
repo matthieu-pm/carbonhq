@@ -39,7 +39,7 @@ export default function IssueTabs({ state, alignX = 0, visible = true }: { state
     "x",
   );
 
-  const pick = (id: string) => editIssueTabs((s) => activateIssueTab(s, id));
+  const pick = (id: string) => { editIssueTabs((s) => activateIssueTab(s, id)); };
   const pickAt = (i: number) => drag.shown[i] && pick(drag.shown[i].id);
   useDigitHotkey("tab.pick", (slot) => pickAt(slot === 8 ? drag.shown.length - 1 : slot), { enabled: visible });
   const step = (delta: number) => {
@@ -50,7 +50,7 @@ export default function IssueTabs({ state, alignX = 0, visible = true }: { state
   useHotkey("tab.next", () => step(1), { enabled: visible });
 
   // On the reader's latest pick, which every list's switch writes through to.
-  const newList = () => editIssueTabs((s) => addListTab(s, newListTabId(), readIssueTracker()));
+  const newList = () => { editIssueTabs((s) => addListTab(s, newListTabId(), readIssueTracker())); };
   const lone = tabs.length === 1;
 
   return (
@@ -71,7 +71,7 @@ export default function IssueTabs({ state, alignX = 0, visible = true }: { state
           label={tabTitle(tab)}
           active={tab.id === active}
           onPick={() => pick(tab.id)}
-          onClose={lone ? undefined : () => editIssueTabs((s) => closeIssueTab(s, tab.id))}
+          onClose={lone ? undefined : () => { editIssueTabs((s) => closeIssueTab(s, tab.id)); }}
           rename={
             tab.kind === "list"
               ? {

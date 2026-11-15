@@ -1,15 +1,15 @@
 ---
 title: Issues
-description: "Connect Linear with an API key or GitHub through gh, browse and filter issues on the Issues page, change status and priority, tag issues in prompts with #, and see the issues linked to a session."
+description: "Create Linear and GitHub issues with an agent, save filtered views, browse issues, change status and priority, and link issues to sessions."
 sidebar:
   order: 2
 ---
 
-Carbon reads issues from Linear and GitHub. You browse them on the Issues page, tag them into a prompt with `#`, and see the ones a session is working on in its right panel. Carbon changes two things on an issue — its status and its priority — and nothing else.
+Carbon reads and creates issues in Linear and GitHub. Describe a new issue in chat, review the draft, then create it. You can also browse existing issues, change status and priority, tag issues into a prompt with `#`, and see a session's linked issues in its right panel.
 
 ## Connect a tracker
 
-Connecting happens on the Issues page, not in Settings. Click **Issues** in the sidebar, under **New task**, or press `⌘I`.
+Connecting happens on the Issues page. Click **Issues** in the navigation rail, or press `⌘I`.
 
 At the top left of the page are two marks, Linear and GitHub. Click the one you want. If it is not connected yet, the page shows how to connect it.
 
@@ -17,7 +17,7 @@ At the top left of the page are two marks, Linear and GitHub. Click the one you 
 
 <Steps>
   <Step title="Make a key">
-    Click **Create a key in Linear** to open Linear's security settings, and create a personal API key. A key with read and write access lets you change status and priority from Carbon. A read-only key works too; you just cannot change a status or priority.
+    Click **Create a key in Linear** to open Linear's security settings, and create a personal API key. Read and write access lets you create issues and change status and priority from Carbon. A read-only key lets you browse issues.
   </Step>
   <Step title="Paste it">
     Paste the key into the field (it starts `lin_api_`) and press **Connect**. Carbon checks the key with Linear before saving it.
@@ -41,6 +41,30 @@ If `gh` is still missing or signed out, the page stays as it is. Sign out with `
 ## The Issues page
 
 The page fills the main column. It is not a session, and the right panel is hidden while it is up.
+
+Its sidebar contains **New issue**, **Search**, and **Saved views**. Search focuses the current list's search field. **Assigned to me** and **Created** stay on the list itself.
+
+### Create an issue
+
+1. Click **New issue** in the Issues sidebar. Carbon opens the regular Tasks composer with an editable starter prompt.
+2. Add details about the bug or idea and choose an agent and model. The prompt stays unsent until you send it, creating a normal conversation in the task list.
+3. The agent's draft appears in an inline **Review issue** card. Edit its title and Markdown description, or send follow-up messages to refine it.
+4. Check the tracker and destination: a Linear team and optional project, or a GitHub repository. The current list supplies the defaults. GitHub repositories come from projects attached in Carbon.
+5. Press **Create issue**. The card shows the issue link, and the conversation stays open. Carbon also links the issue to this session.
+
+This is a regular task conversation, with the same streaming, attachments, model controls, and **Stop** button. Its history and issue review are saved with the session. After creation, you can continue the conversation or click the issue link to open it on the Issues page.
+
+Each conversation reviews one issue. Use **New issue** to start another. If the tracker creates the issue but Carbon cannot save its session link, **Retry session link** finishes linking it without creating another issue.
+
+If another client changes the review before your edit is saved, Carbon loads the latest review and tells you that your change was not saved.
+
+If the tracker may have created an issue but Carbon did not receive its reply, **Check creation** looks for the original issue. It does not submit another one. Check the tracker before starting a new attempt.
+
+### Save a view
+
+Set the current list's tracker, search, and filters, then press the **+** beside **Saved views**. Give the view a name and press **Save**.
+
+Selecting a saved view applies it to the current list tab. Other tabs keep their own filters. If an individual issue is open, Carbon returns to an existing list, or opens a list if none remains. Use a saved view's menu to rename or delete it. Saved views are stored on this device.
 
 {/* screenshot: the Issues page with Linear connected, grouped by state, one issue open in the pane beside it */}
 
@@ -118,8 +142,8 @@ A GitHub issue is always named `owner/repo#123`; a bare `#123` is refused, becau
 
 ## Limits
 
-- Carbon changes status and priority only. Comments, assignees, labels and titles are edited in the tracker.
-- The `carbon` CLI never changes an issue. It only records links.
+- Carbon creates issues with a title, description, and destination. After creation, status and priority can be changed here; other fields are edited in the tracker.
+- The `carbon` CLI links issues and can post Linear comments and change Linear status. Issue creation uses the app's **New issue** flow.
 - The connection is workspace-wide. There is no mapping from a project to a Linear team.
 - GitHub Projects are not read, and GitHub has no priority.
 - GitHub Enterprise hosts are not supported.

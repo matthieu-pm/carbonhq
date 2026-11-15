@@ -61,7 +61,7 @@ pub fn forget_account() {
 /// `gh api user` does not read the working directory, but [`github::gh`]
 /// refuses to spawn into one that is gone — the trap a removed worktree leaves
 /// — so this needs a directory that always exists. `~/.carbon` is made at launch.
-async fn neutral_dir() -> Result<String, IssueUnavailable> {
+pub(super) async fn neutral_dir() -> Result<String, IssueUnavailable> {
     get_home_app_dir()
         .await
         .map(|dir| dir.to_string_lossy().into_owned())
@@ -74,8 +74,10 @@ async fn neutral_dir() -> Result<String, IssueUnavailable> {
 /// says what to do about either, and neither is an error the reader caused.
 /// Everything else keeps `gh`'s own sentence, which is what they would see in
 /// their own terminal.
-async fn run(cwd: &str, args: &[&str]) -> Result<String, IssueUnavailable> {
-    github::gh(cwd, args).await.map_err(|message| {
+pub(super) async fn run(cwd: &str, args: &[&str]) -> Result<String, IssueUnavailable> {
+    tokio::time::timeout(std::time::Duration::from_secs(20), github::gh(cwd, args))
+        .await.map_err(|_| IssueUnavailable::Offline("GitHub request timed out.".into()))?
+        .map_err(|message| {
         let lower = message.to_lowercase();
         if message.starts_with(github::NO_CLI)
             || lower.contains("gh auth login")

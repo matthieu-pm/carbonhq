@@ -35,7 +35,7 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 ///
 /// The key travels in `Authorization` bare, not as a `Bearer` — that is how
 /// Linear takes a *personal* key, and the OAuth spelling is refused.
-async fn query(key: &str, document: &str, variables: Value) -> Result<Value, IssueUnavailable> {
+pub(super) async fn query(key: &str, document: &str, variables: Value) -> Result<Value, IssueUnavailable> {
     let response = crate::http()
         .post(API)
         .timeout(TIMEOUT)

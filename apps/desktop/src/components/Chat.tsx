@@ -8,6 +8,7 @@ import ApiRetryIndicator from "@/components/chat/ApiRetryIndicator";
 import PermissionRequest from "@/components/chat/PermissionRequest";
 import QueuedMessages from "@/components/chat/QueuedMessages";
 import QuestionRequest from "@/components/chat/QuestionRequest";
+import IssueReview from "@/components/chat/IssueReview";
 import SecretRequests from "@/components/chat/SecretRequests";
 import Reasoning from "@/components/chat/Reasoning";
 import WorkingIndicator, { OrbLine } from "@/components/chat/WorkingIndicator";
@@ -28,6 +29,7 @@ import { useStreamingBlock, useStreamingKind } from "@/hooks/useStreamingBlock";
 import { planAsked, setPlan } from "@/lib/plan";
 import { toolArgument } from "@/lib/tools";
 import { buildTranscript, type PendingAsk } from "@/lib/transcript";
+import { splitIssueProposal, useIssueReview } from "@/lib/issueDraft";
 import { loadOlder } from "@/lib/olderPages";
 import { firstMount, grow, mountedTurns } from "@/lib/turnWindow";
 import type { SessionSnapshot } from "@/types/events";
@@ -238,6 +240,21 @@ export default function Chat({
   );
 
   const cards = useLingeringCards(pendingAsks);
+  const reviewState = useIssueReview(session?.sessionId ?? null, active);
+  const proposal = useMemo(() => {
+    let latest: { turnKey: string; proposal: NonNullable<ReturnType<typeof splitIssueProposal>["proposal"]> } | null = null;
+    for (const turn of turns) {
+      for (const item of turn.work) {
+        if ("payload" in item && item.payload.type === "assistant_text") {
+          const proposal = splitIssueProposal(item.payload.text, false, item.seq).proposal;
+          if (proposal) latest = { turnKey: turn.key, proposal };
+        }
+      }
+      const final = splitIssueProposal(turn.finalText ?? "", false, turn.completed?.seq ?? Math.max(0, ...turn.work.flatMap((item) => "seq" in item ? [item.seq] : []))).proposal;
+      if (final) latest = { turnKey: turn.key, proposal: final };
+    }
+    return latest;
+  }, [turns]);
 
   // The plan is copied out of the ask because the ask is the only place it
   // exists: a permission request is never persisted, and the `exit_plan_mode`
@@ -637,9 +654,10 @@ export default function Chat({
   // every message reads this context, and a fresh value re-renders all of them
   // through `Markdown`'s memo.
   const cwd = session?.cwd;
+  const issueDrafting = !!reviewState.value || (!reviewState.loaded && !!proposal);
   const chatSession = useMemo(
-    () => ({ cwd: cwd ?? null, sessionId }),
-    [cwd, sessionId],
+    () => ({ cwd: cwd ?? null, sessionId, issueDrafting }),
+    [cwd, sessionId, issueDrafting],
   );
 
   // The shell hands these down as fresh arrows on every render, which would
@@ -712,9 +730,17 @@ export default function Chat({
                     )
                   }
                 />
+                {proposal?.turnKey === turn.key && reviewState.value && (
+                  <div className="mt-4"><IssueReview sessionId={session.sessionId} proposal={proposal.proposal}
+                    review={reviewState.value} error={reviewState.error} saving={reviewState.saving} busy={busy} /></div>
+                )}
               </div>
             ))}
 
+            {reviewState.value && (reviewState.value.draft.title || reviewState.value.created) && !shownTurns.some((turn) => turn.key === proposal?.turnKey) && (
+              <div className="mt-4"><IssueReview sessionId={session.sessionId} proposal={proposal?.proposal ?? reviewState.value.draft}
+                review={reviewState.value} error={reviewState.error} saving={reviewState.saving} busy={busy} /></div>
+            )}
             <SecretRequests sessionId={session.sessionId} active={active} />
             {cards.map((ask) =>
               ask.type === "questions_asked" ? (

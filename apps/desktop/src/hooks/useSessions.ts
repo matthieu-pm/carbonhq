@@ -8,6 +8,7 @@ import { appendStreamingText, peekStreamingBlock, retireStreamingBlock, startStr
 import { useComposerPrefs, type EffortByModel } from "@/hooks/useComposerPrefs";
 import { forgetDocs } from "@/hooks/useDocs";
 import { forgetIssues } from "@/hooks/useIssues";
+import { flushIssueReview, hasPendingIssueReview, prepareIssueConversation } from "@/lib/issueDraft";
 import { useDockBadge } from "@/hooks/useDockBadge";
 import { readLocalStorage, useLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 import { forgetOpenFiles } from "@/hooks/useOpenFiles";
@@ -969,11 +970,14 @@ const handleSendMsg = async (
     const remote = attachments.length > 0 && server !== LOCAL;
     const ahead = uploadsAhead.get(sessionId);
     let sentPaths = attachmentPaths;
-    if (remote || ahead) {
+    if (remote || ahead || hasPendingIssueReview(sessionId)) {
       if (remote) waitFor(provisional, server, attachmentPaths);
       const gate = (async () => {
         await ahead;
-        return remote ? Promise.all(attachments.map((a) => upload(server, a.path, a.size))) : attachmentPaths;
+        const paths = remote ? await Promise.all(attachments.map((a) => upload(server, a.path, a.size))) : attachmentPaths;
+        await prepareIssueConversation(sessionId);
+        await flushIssueReview(sessionId);
+        return paths;
       })();
       const settled = gate.then(
         () => {},
@@ -1763,6 +1767,7 @@ const forkSession = async (sessionId: string, worktree: boolean) => {
 
   let snapshot: SessionSnapshot;
   try {
+    await flushIssueReview(sessionId);
     snapshot = await invoke<SessionSnapshot>("fork_session", {
       sessionId,
       forkId,
