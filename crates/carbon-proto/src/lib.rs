@@ -1253,13 +1253,25 @@ mod tests {
             machine: "vps".into(), request: Box::new(pages.clone()),
         });
         assert_eq!(Envelope::new(page_elsewhere).v, 14);
+        let secret = Request::Secret(SecretRequest::Status {
+            session_id: "s".into(), id: "secret".into(),
+        });
+        assert_eq!(Envelope::new(secret.clone()).v, 15);
+        let secret_elsewhere = Request::OnMachine(OnMachine {
+            machine: "vps".into(), request: Box::new(secret.clone()),
+        });
+        let encoded = encode_line(&Envelope::new(secret_elsewhere)).unwrap();
+        let decoded: Envelope = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.v, 15);
+        assert!(matches!(decoded.request, Request::OnMachine(on)
+            if matches!(*on.request, Request::Secret(SecretRequest::Status { .. }))));
         let newest = old
             .iter()
             .chain(&drafts)
             .chain([&share])
             .chain(&servers)
             .chain(&sessions)
-            .chain([&remote, &elsewhere, &write, &pages])
+            .chain([&remote, &elsewhere, &write, &pages, &secret])
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));

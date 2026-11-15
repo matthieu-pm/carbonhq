@@ -22,6 +22,33 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.30.0-beta.6 · 2026-11-15 · notify
+
+### New
+
+- **More coding agents.** Run ACP-compatible agents through Carbon, with model
+  choices, permission requests, session recovery and tool activity.
+- **Secret hand-offs.** Give an agent credentials through a dedicated card for
+  an approved command, env file or browser form. Secret values stay out of the
+  conversation and CLI arguments.
+- **Create issues in a conversation.** Describe a Linear or GitHub issue in
+  Tasks, review and edit its details, then create it from the inline card.
+- **Saved issue views.** Keep useful issue filters in the sidebar and return
+  to them with keyboard shortcuts.
+
+### Improved
+
+- **Profile switching.** Switch profiles from the sidebar footer, choose an
+  icon and use the new profile colors.
+- **Pinned summary.** Drag sections into the order that suits your work.
+- **Agent guidance.** Updated bundled instructions explain current CLI
+  capabilities, remote commands and protocol compatibility.
+
+### Fixed
+
+- Issue drafts keep edits across refresh, reconnect and fork. Stale saves are
+  rejected, and interrupted issue creation can recover without creating a duplicate.
+
 ## 0.30.0-beta.5 · 2026-11-13 · notify
 
 ### New
