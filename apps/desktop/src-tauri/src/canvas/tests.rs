@@ -21,8 +21,10 @@ impl Fixture {
         }
     }
     async fn canvas(&self) -> Canvas {
+        let project = self.store.root.join("project-without-git");
+        fs::create_dir_all(&project).await.unwrap();
         self.store
-            .create("/project-without-git".into(), "Explorations".into())
+            .create(project.to_string_lossy().into(), "Explorations".into())
             .await
             .unwrap()
     }
@@ -97,7 +99,7 @@ async fn reopen_preserves_identity_nodes_css_geometry_and_history_without_git() 
     assert_eq!(
         fixture
             .store
-            .list(Some("/project-without-git"))
+            .list(Some(&original.project_key))
             .await
             .unwrap()
             .files
@@ -644,12 +646,16 @@ async fn ordinary_folders_symlinks_and_linked_git_worktrees_share_project_identi
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    assert_eq!(project(root.to_str().unwrap()).await.unwrap(), canonical);
+    assert_eq!(
+        project(root.to_str().unwrap()).await.unwrap().path,
+        canonical
+    );
     std::os::unix::fs::symlink(&root, fixture.store.root.join("alias")).unwrap();
     assert_eq!(
         project(fixture.store.root.join("alias").to_str().unwrap())
             .await
-            .unwrap(),
+            .unwrap()
+            .path,
         canonical
     );
     let output = tokio::process::Command::new("git")
@@ -686,7 +692,10 @@ async fn ordinary_folders_symlinks_and_linked_git_worktrees_share_project_identi
         .await
         .unwrap();
     assert!(output.status.success(), "{:?}", output);
-    assert_eq!(project(linked.to_str().unwrap()).await.unwrap(), canonical);
+    assert_eq!(
+        project(linked.to_str().unwrap()).await.unwrap().key,
+        project(root.to_str().unwrap()).await.unwrap().key
+    );
 }
 
 #[tokio::test]
@@ -897,4 +906,346 @@ async fn recovery_counter_prevents_reuse_even_when_the_latest_snapshot_is_damage
         .edit(&canvas.id, 3, Default::default(), Default::default())
         .await
         .is_err());
+}
+
+#[tokio::test]
+async fn a_deep_tree_is_either_rejected_or_reopens_after_publication() {
+    let fixture = Fixture::new();
+    let canvas = fixture.canvas().await;
+    let mut deep = frame();
+    let mut node = CanvasNode::Text {
+        id: id(),
+        name: "Text".into(),
+        text: "Deep".into(),
+        extra: Default::default(),
+    };
+    for _ in 0..64 {
+        node = CanvasNode::Element {
+            id: id(),
+            name: "Container".into(),
+            tag: "div".into(),
+            attributes: Default::default(),
+            styles: Default::default(),
+            children: vec![node],
+            extra: Default::default(),
+        };
+    }
+    deep.content.nodes = vec![node];
+    match fixture
+        .store
+        .edit(
+            &canvas.id,
+            1,
+            CanvasEdit {
+                frames: Some(vec![deep]),
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .await
+    {
+        Ok(saved) => assert_eq!(
+            fixture.store.read(&canvas.id).await.unwrap().frames,
+            saved.frames
+        ),
+        Err(_) => assert_eq!(fixture.store.read(&canvas.id).await.unwrap().revision, 1),
+    }
+}
+
+async fn git_at(path: &std::path::Path, args: &[&str]) {
+    let output = tokio::process::Command::new("git")
+        .args(args)
+        .current_dir(path)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+async fn initial_commit(path: &std::path::Path) {
+    git_at(
+        path,
+        &[
+            "-c",
+            "user.name=Canvas test",
+            "-c",
+            "user.email=canvas@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Initial",
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn subprojects_stay_distinct_and_follow_their_relative_paths_across_worktrees() {
+    let fixture = Fixture::new();
+    let root = fixture.store.root.join("main");
+    let linked = fixture.store.root.join("linked");
+    fs::create_dir_all(root.join("a")).await.unwrap();
+    fs::create_dir_all(root.join("b")).await.unwrap();
+    git_at(&root, &["init", "-q"]).await;
+    initial_commit(&root).await;
+    git_at(
+        &root,
+        &["worktree", "add", "--detach", linked.to_str().unwrap()],
+    )
+    .await;
+    fs::create_dir_all(linked.join("a")).await.unwrap();
+    let a = project(root.join("a").to_str().unwrap()).await.unwrap();
+    let b = project(root.join("b").to_str().unwrap()).await.unwrap();
+    assert_ne!(a.key, b.key);
+    assert_eq!(
+        a.path,
+        fs::canonicalize(root.join("a"))
+            .await
+            .unwrap()
+            .to_string_lossy()
+    );
+    assert_eq!(
+        project(linked.join("a").to_str().unwrap())
+            .await
+            .unwrap()
+            .key,
+        a.key
+    );
+    fixture
+        .store
+        .create(a.path, "Only project A".into())
+        .await
+        .unwrap();
+    assert!(fixture
+        .store
+        .list(Some(&b.key))
+        .await
+        .unwrap()
+        .files
+        .is_empty());
+}
+
+#[tokio::test]
+async fn separate_git_metadata_does_not_split_worktree_project_identity() {
+    let fixture = Fixture::new();
+    let root = fixture.store.root.join("main");
+    let linked = fixture.store.root.join("linked");
+    let git_data = fixture.store.root.join("metadata");
+    fs::create_dir_all(&root).await.unwrap();
+    git_at(
+        &root,
+        &["init", "--separate-git-dir", git_data.to_str().unwrap()],
+    )
+    .await;
+    initial_commit(&root).await;
+    git_at(
+        &root,
+        &["worktree", "add", "--detach", linked.to_str().unwrap()],
+    )
+    .await;
+    let main = project(root.to_str().unwrap()).await.unwrap();
+    assert_eq!(
+        project(linked.to_str().unwrap()).await.unwrap().key,
+        main.key
+    );
+    assert_eq!(
+        main.path,
+        fs::canonicalize(root).await.unwrap().to_string_lossy()
+    );
+}
+
+#[tokio::test]
+async fn listing_reports_missing_frame_content_without_hiding_other_files() {
+    let fixture = Fixture::new();
+    let damaged = fixture.populated().await;
+    let healthy = fixture.canvas().await;
+    let mut entries = fs::read_dir(fixture.store.dir(&damaged.id).unwrap().join("content"))
+        .await
+        .unwrap();
+    let blob = entries.next_entry().await.unwrap().unwrap().path();
+    fs::remove_file(blob).await.unwrap();
+    let list = fixture.store.list(None).await.unwrap();
+    assert_eq!(list.files.len(), 1);
+    assert_eq!(list.files[0].id, healthy.id);
+    assert_eq!(list.problems.len(), 1);
+    assert_eq!(list.problems[0].id, damaged.id);
+}
+
+#[tokio::test]
+async fn damaged_image_bytes_refuse_recovery_and_file_duplication() {
+    let fixture = Fixture::new();
+    let canvas = fixture.populated().await;
+    let with_image = fixture
+        .store
+        .upload(
+            &canvas.id,
+            2,
+            CanvasAssetUpload {
+                asset_id: id(),
+                name: "image.png".into(),
+                offset: 0,
+                data: PNG.into(),
+                complete: true,
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap()
+        .canvas
+        .unwrap();
+    let dir = fixture.store.dir(&canvas.id).unwrap();
+    let asset = &with_image.assets[0];
+    let mut bytes = fs::read(dir.join("assets").join(&asset.hash))
+        .await
+        .unwrap();
+    bytes[20] ^= 1;
+    atomic(dir.join("assets").join(&asset.hash), bytes)
+        .await
+        .unwrap();
+    assert!(fixture
+        .store
+        .duplicate(&canvas.id, 3, "Invalid copy".into())
+        .await
+        .unwrap_err()
+        .contains("checksum"));
+    atomic(dir.join("canvas.json"), b"damaged manifest".to_vec())
+        .await
+        .unwrap();
+    assert!(fixture
+        .store
+        .recover(&canvas.id)
+        .await
+        .unwrap_err()
+        .contains("checksum"));
+    assert_eq!(
+        fs::read(dir.join("canvas.json")).await.unwrap(),
+        b"damaged manifest"
+    );
+}
+
+#[tokio::test]
+async fn decoded_upload_chunk_limit_is_enforced_before_writing_pending_bytes() {
+    let fixture = Fixture::new();
+    let canvas = fixture.canvas().await;
+    let upload = CanvasAssetUpload {
+        asset_id: id(),
+        name: "image.png".into(),
+        offset: 0,
+        data: base64::engine::general_purpose::STANDARD.encode(vec![0u8; 256 * 1024 + 1]),
+        complete: false,
+    };
+    let error = fixture
+        .store
+        .upload(&canvas.id, 1, upload, Default::default())
+        .await
+        .err()
+        .unwrap();
+    assert!(error.contains("256 KiB"));
+    assert_eq!(fixture.store.read(&canvas.id).await.unwrap().revision, 1);
+}
+
+#[tokio::test]
+async fn a_shared_store_deletion_emits_one_tombstone_instead_of_a_missing_file_problem() {
+    let fixture = Fixture::new();
+    let canvas = fixture.populated().await;
+    let emitted = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = emitted.clone();
+    let sink = crate::sink::Sink::new(move |event, payload| {
+        recorded.lock().unwrap().push((event.to_string(), payload))
+    });
+    let mut observed = BTreeMap::new();
+    super::watch::refresh(&fixture.store, &sink, &mut observed, canvas.id.clone()).await;
+    let peer = Store::at(fixture.store.root.clone());
+    let deleted = peer.delete(&canvas.id, 2).await.unwrap();
+    super::watch::refresh(&fixture.store, &sink, &mut observed, canvas.id.clone()).await;
+    super::watch::refresh(&fixture.store, &sink, &mut observed, canvas.id.clone()).await;
+    let events = emitted.lock().unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|(event, _)| event == "canvas_deleted")
+            .count(),
+        1
+    );
+    assert!(!events.iter().any(|(event, _)| event == "canvas_problem"));
+    assert_eq!(
+        events
+            .iter()
+            .find(|(event, _)| event == "canvas_deleted")
+            .unwrap()
+            .1["revision"],
+        deleted.revision
+    );
+}
+
+#[tokio::test]
+async fn the_documented_layer_depth_boundary_roundtrips_and_one_more_level_is_rejected() {
+    let fixture = Fixture::new();
+    let canvas = fixture.canvas().await;
+    let mut deepest = CanvasNode::Text {
+        id: id(),
+        name: "Leaf".into(),
+        text: "Deep".into(),
+        extra: Default::default(),
+    };
+    for _ in 1..MAX_LAYER_DEPTH {
+        deepest = CanvasNode::Element {
+            id: id(),
+            name: "Container".into(),
+            tag: "div".into(),
+            attributes: Default::default(),
+            styles: Default::default(),
+            children: vec![deepest],
+            extra: Default::default(),
+        };
+    }
+    let mut nested = frame();
+    nested.content.nodes = vec![deepest.clone()];
+    let saved = fixture
+        .store
+        .edit(
+            &canvas.id,
+            1,
+            CanvasEdit {
+                frames: Some(vec![nested.clone()]),
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture.store.read(&canvas.id).await.unwrap().frames,
+        saved.frames
+    );
+    nested.content.nodes = vec![CanvasNode::Element {
+        id: id(),
+        name: "Too deep".into(),
+        tag: "div".into(),
+        attributes: Default::default(),
+        styles: Default::default(),
+        children: vec![deepest],
+        extra: Default::default(),
+    }];
+    assert!(fixture
+        .store
+        .edit(
+            &canvas.id,
+            2,
+            CanvasEdit {
+                frames: Some(vec![nested]),
+                ..Default::default()
+            },
+            Default::default()
+        )
+        .await
+        .unwrap_err()
+        .contains("nested"));
+    assert_eq!(fixture.store.read(&canvas.id).await.unwrap().revision, 2);
 }

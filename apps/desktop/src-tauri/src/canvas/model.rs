@@ -7,6 +7,8 @@ use ts_rs::TS;
 pub(super) const READER: u32 = 1;
 pub(super) const MAX_JSON: u64 = 8 * 1024 * 1024;
 pub(super) const MAX_ASSET: usize = 20 * 1024 * 1024;
+// Leave room for arrays, attributes and command envelopes within serde_json's nesting limit.
+pub(super) const MAX_LAYER_DEPTH: usize = 48;
 pub(super) type Extensions = BTreeMap<String, Value>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
@@ -129,6 +131,8 @@ pub struct CanvasChange {
 pub struct Canvas {
     pub id: String,
     pub project_path: String,
+    #[serde(default)]
+    pub project_key: String,
     pub name: String,
     pub revision: u64,
     pub created: String,
@@ -149,6 +153,8 @@ pub struct Canvas {
 pub struct CanvasSummary {
     pub id: String,
     pub project_path: String,
+    #[serde(default)]
+    pub project_key: String,
     pub name: String,
     pub revision: u64,
     pub modified: String,
@@ -161,6 +167,7 @@ impl From<&Canvas> for CanvasSummary {
         Self {
             id: canvas.id.clone(),
             project_path: canvas.project_path.clone(),
+            project_key: canvas.project_key.clone(),
             name: canvas.name.clone(),
             revision: canvas.revision,
             modified: canvas.modified.clone(),
@@ -251,6 +258,7 @@ pub(super) fn check_revision(canvas: &Canvas, expected: u64) -> Result<(), Strin
     }
 }
 
+/// Reject invalid identities, references and limits before a revision can become visible.
 pub(super) fn validate(canvas: &Canvas) -> Result<(), String> {
     uuid(&canvas.id)?;
     name(&canvas.name)?;
@@ -309,6 +317,7 @@ pub(super) fn validate(canvas: &Canvas) -> Result<(), String> {
     Ok(())
 }
 
+/// Canonical image URLs must agree with the explicit file-owned asset references.
 fn validate_asset_urls(content: &CanvasContent) -> Result<(), String> {
     fn check(value: &str, assets: &[String]) -> Result<(), String> {
         for suffix in value.split("carbon-canvas-asset://").skip(1) {
@@ -356,6 +365,7 @@ fn unique(id: &str, ids: &mut BTreeSet<String>) -> Result<(), String> {
     }
 }
 
+/// Enforce one identity namespace and one depth budget across every frame in the file.
 fn validate_node(
     node: &CanvasNode,
     ids: &mut BTreeSet<String>,
@@ -363,7 +373,7 @@ fn validate_node(
     depth: usize,
 ) -> Result<(), String> {
     *count += 1;
-    if depth > 64 || *count > 100_000 {
+    if depth >= MAX_LAYER_DEPTH || *count > 100_000 {
         return Err("Canvas layer tree is too large or deeply nested.".into());
     }
     match node {
@@ -405,6 +415,7 @@ pub(super) fn digest(value: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// Only layer identities change; HTML attributes and file-local resource links stay intact.
 pub(super) fn remap_frames(frames: &mut [CanvasFrame]) {
     for frame in frames {
         frame.id = uuid::Uuid::now_v7().to_string();

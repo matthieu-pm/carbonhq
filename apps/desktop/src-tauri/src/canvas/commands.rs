@@ -7,6 +7,7 @@ use crate::sink::Sink;
 
 pub const CANVAS_CHANGED: &str = "canvas_changed";
 pub const CANVAS_PROBLEM: &str = "canvas_problem";
+pub const CANVAS_DELETED: &str = "canvas_deleted";
 
 pub(super) fn announce(sink: &Sink, canvas: &Canvas) {
     let _ = sink.emit(CANVAS_CHANGED, CanvasSummary::from(canvas));
@@ -16,7 +17,7 @@ pub(super) fn announce(sink: &Sink, canvas: &Canvas) {
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_canvases(project_path: Option<String>) -> Result<CanvasList, String> {
     let project = match project_path {
-        Some(path) => Some(project(&path).await?),
+        Some(path) => Some(project(&path).await?.key),
         None => None,
     };
     Store::open().await?.list(project.as_deref()).await
@@ -35,10 +36,7 @@ pub async fn create_canvas(
     project_path: String,
     name: String,
 ) -> Result<Canvas, String> {
-    let canvas = Store::open()
-        .await?
-        .create(project(&project_path).await?, name)
-        .await?;
+    let canvas = Store::open().await?.create(project_path, name).await?;
     announce(&sink, &canvas);
     Ok(canvas)
 }
@@ -94,7 +92,7 @@ pub async fn duplicate_canvas_frame(
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn delete_canvas(sink: Sink, id: String, revision: u64) -> Result<(), String> {
     let deleted = Store::open().await?.delete(&id, revision).await?;
-    let _ = sink.emit("canvas_deleted", deleted);
+    let _ = sink.emit(CANVAS_DELETED, deleted);
     Ok(())
 }
 

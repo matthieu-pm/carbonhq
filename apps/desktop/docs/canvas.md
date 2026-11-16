@@ -4,7 +4,7 @@ CBN-80 supplies the file format and server API. The Canvas rail page, HTML impor
 
 ## Ownership and identity
 
-Files live under `store::config_dir()/canvases/<file-id>`. Every dev worktree uses the shared config directory, while an explicit `CARBON_HOME` still isolates a server. The project path is metadata, not the storage directory. Linked Git worktrees resolve to the main repository's path. A folder without Git works too. File names can change without changing identity.
+Files live under `store::config_dir()/canvases/<file-id>`. Every dev worktree uses the shared config directory, while an explicit `CARBON_HOME` still isolates a server. The project path is metadata, not the storage directory. The recorded `projectPath` stays the reader's attached folder. A separate `projectKey` combines the canonical Git common directory and the subproject's relative path, so linked worktrees share designs even with separate Git metadata. `apps/web` and `apps/desktop` retain distinct identities. Folders without Git use their canonical path as the key. File names can change without changing identity.
 
 Frames and layers have canonical UUIDs. Layer IDs are separate from an element's HTML `id` attribute. Save and reopen preserve IDs. Duplicating a file or frame creates fresh frame/layer IDs, retains HTML attributes, CSS and tokens, and preserves file-local asset references. A frame duplicate is placed beyond the rightmost frame. A file duplicate copies its image bytes, so deleting the original cannot break it.
 
@@ -28,7 +28,7 @@ A frame has an ID, name, geometry (`x`, `y`, `width`, `height`) and content. Con
 
 Canonical image references use `carbon-canvas-asset://<asset-id>`. URLs in attributes, styles and CSS must name an image in that frame's `assetIds`; every declared asset must exist in the canvas. The owning canvas resolves the URL. A future renderer must isolate untrusted HTML/CSS; storage validation is not a browser sanitizer.
 
-Limits: 8 MiB of Canvas JSON, 1,000 frames, 100,000 layers, 64 levels of layer nesting, 4,096 images, 20 MiB per image and 256 KiB per decoded upload chunk. Uploads accept PNG, JPEG, GIF, WebP and AVIF signatures. Inline SVG can be represented as element nodes.
+Limits: 8 MiB of Canvas JSON, 1,000 frames, 100,000 layers, 48 levels of layer nesting, 4,096 images, 20 MiB per image and 256 KiB per decoded upload chunk. Uploads accept PNG, JPEG, GIF, WebP and AVIF signatures. Inline SVG can be represented as element nodes.
 
 ## Commits and history
 
@@ -42,7 +42,7 @@ Deletion is permanent, including content, images and history. It first records a
 
 ## Recovery
 
-Reads never replace a bad manifest with an empty canvas. Listing returns unreadable files as `problems`. Explicit recovery first preserves the original bytes as `canvas.json.broken-<uuid>`. If that backup or checkpoint validation fails, recovery leaves the original manifest untouched.
+Reads never replace a bad manifest with an empty canvas. Listing validates manifests and frame content and returns unreadable files as `problems`. Image bytes are checksum-verified when read, copied or recovered. Explicit recovery first preserves the original bytes as `canvas.json.broken-<uuid>`. If that backup or checkpoint validation fails, recovery leaves the original manifest untouched.
 
 Recovery uses the last confirmed checkpoint, validates its content/assets, and publishes a new revision above the reserved revision counter and all readable snapshot numbers. The counter advances before a manifest is published, so damaging a recent snapshot cannot make its revision number reusable. An unreadable counter refuses recovery. Revision numbers can skip after recovery; follow the before/after links. It does not adopt orphan snapshot content. This prevents an old expected revision from becoming current again. The original bytes and immutable snapshots remain available for inspection. If a process died between publishing the manifest and refreshing its checkpoint, recovery may use the previous checkpoint; it reports the restored revision in `change.restoredFrom`.
 
@@ -67,7 +67,7 @@ All commands are registered in `serve.rs` and run on the owning server:
 
 `update_canvas` accepts a patch for name, frames, tokens and camera, plus `clearCamera`. Image reads return exact base64 bytes and MIME metadata, optionally at a historical version; arbitrary paths are not exposed.
 
-`watch_canvases(scope, ids)` replaces that scope's visible set; an empty set releases it. Watches poll manifest/edit metadata every 750 ms and parse only changed files, including atomic renames from another worktree server. `canvas_changed` carries a summary, `canvas_deleted` a tombstone summary and `canvas_problem` an actionable file error. A client reads and reconciles on open/reconnect, then watches its visible files and re-reads after notifications. Durable state and edit errors are reconstructed from disk; events are invalidations, not the sole copy of a design. The watcher does not keep a React-visible frame tree in memory.
+`watch_canvases(scope, ids)` replaces that scope's visible set; an empty set releases it. Watches poll manifest/edit metadata every 750 ms and parse only changed files, including atomic renames from another worktree server. `canvas_changed` carries a summary, `canvas_deleted` a tombstone summary (also on other servers watching the shared store) and `canvas_problem` an actionable file error. A client reads and reconciles on open/reconnect, then watches its visible files and re-reads after notifications. Durable state and edit errors are reconstructed from disk; events are invalidations, not the sole copy of a design. The watcher does not keep a React-visible frame tree in memory.
 
 ## Verification
 

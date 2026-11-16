@@ -560,7 +560,7 @@ defaultBase: string | null,
  */
 dirty: number, };
 
-export type Canvas = { id: string, projectPath: string, name: string, revision: number, created: string, modified: string, frames: Array<CanvasFrame>, camera: CanvasCamera | null, tokens: { [key in string]: string }, assets: Array<CanvasAsset>, change: CanvasChange, };
+export type Canvas = { id: string, projectPath: string, projectKey: string, name: string, revision: number, created: string, modified: string, frames: Array<CanvasFrame>, camera: CanvasCamera | null, tokens: { [key in string]: string }, assets: Array<CanvasAsset>, change: CanvasChange, };
 
 export type CanvasAsset = { id: string, name: string, mimeType: string, size: number, hash: string, };
 
@@ -596,7 +596,7 @@ export type CanvasProblem = { id: string, path: string, message: string, };
 
 export type CanvasReconciliation = { canvas: Canvas, problems: Array<CanvasProblem>, };
 
-export type CanvasSummary = { id: string, projectPath: string, name: string, revision: number, modified: string, frameCount: number, change: CanvasChange, };
+export type CanvasSummary = { id: string, projectPath: string, projectKey: string, name: string, revision: number, modified: string, frameCount: number, change: CanvasChange, };
 
 /**
  * Everything that changed between two snapshots.

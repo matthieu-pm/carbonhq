@@ -66,6 +66,8 @@ struct Snapshot {
 struct CanvasMetadata {
     id: String,
     project_path: String,
+    #[serde(default)]
+    project_key: String,
     name: String,
     revision: u64,
     created: String,
@@ -83,6 +85,7 @@ impl Snapshot {
         CanvasSummary {
             id: self.canvas.id.clone(),
             project_path: self.canvas.project_path.clone(),
+            project_key: self.canvas.project_key.clone(),
             name: self.canvas.name.clone(),
             revision: self.canvas.revision,
             modified: self.canvas.modified.clone(),
@@ -108,6 +111,7 @@ pub(super) async fn atomic(path: PathBuf, bytes: Vec<u8>) -> Result<(), String> 
     .map_err(|e| e.to_string())?
 }
 
+/// Refuse non-files and oversized data before any parser or image consumer reads it.
 pub(super) async fn read_bytes(path: &Path, max: u64) -> Result<Vec<u8>, String> {
     let meta = fs::symlink_metadata(path)
         .await
@@ -127,6 +131,7 @@ async fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
         .map_err(|e| format!("Invalid Canvas JSON at {}: {e}", path.display()))
 }
 
+/// A successful metadata write must remain within the limit used when reopening it.
 pub(super) async fn json(path: PathBuf, value: &impl Serialize) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
     if bytes.len() as u64 > MAX_JSON {
@@ -135,6 +140,7 @@ pub(super) async fn json(path: PathBuf, value: &impl Serialize) -> Result<(), St
     atomic(path, bytes).await
 }
 
+/// Additive formats remain readable only while their declared minimum reader is supported.
 fn compatible(version: u32, minimum: u32) -> Result<(), String> {
     if minimum == 0 || version == 0 || minimum > version {
         return Err("Invalid Canvas format version.".into());
@@ -146,6 +152,7 @@ fn compatible(version: u32, minimum: u32) -> Result<(), String> {
 }
 
 impl Store {
+    /// Shared config storage keeps designs independent of the server or worktree lifetime.
     pub async fn open() -> Result<Self, String> {
         let root = crate::store::config_dir()
             .await
@@ -204,6 +211,7 @@ impl Store {
         })
     }
 
+    /// A deletion tombstone remains authoritative even while directory cleanup is pending.
     async fn head(&self, id: &str) -> Result<Head, String> {
         uuid(id)?;
         if fs::try_exists(self.root.join("deleted").join(format!("{id}.json")))
@@ -217,6 +225,7 @@ impl Store {
         Ok(head)
     }
 
+    /// Reject incompatible or mismatched pointers before trusting their snapshot reference.
     fn validate_head(&self, head: &Head, id: &str) -> Result<(), String> {
         compatible(head.format_version, head.min_reader_version)?;
         uuid(&head.commit)?;
@@ -226,11 +235,18 @@ impl Store {
         Ok(())
     }
 
+    /// Commit identity and revision links must agree before trusting any stored references.
     async fn snapshot(&self, id: &str, commit: &str) -> Result<Snapshot, String> {
         uuid(commit)?;
-        let snapshot: Snapshot =
+        let mut snapshot: Snapshot =
             read_json(&self.dir(id)?.join("history").join(format!("{commit}.json"))).await?;
         compatible(snapshot.format_version, snapshot.min_reader_version)?;
+        if snapshot.canvas.project_key.is_empty() {
+            snapshot.canvas.project_key = project(&snapshot.canvas.project_path)
+                .await
+                .map(|identity| identity.key)
+                .unwrap_or_else(|_| format!("path:{}", snapshot.canvas.project_path));
+        }
         if snapshot.canvas.id != id
             || snapshot.canvas.change.id != commit
             || snapshot.canvas.revision == 0
@@ -245,6 +261,7 @@ impl Store {
         Ok(snapshot)
     }
 
+    /// Reconstruct only checksum-matching content and reject broken references before returning a design.
     async fn inflate(&self, snapshot: Snapshot) -> Result<Canvas, String> {
         let dir = self.dir(&snapshot.canvas.id)?;
         let mut frames = Vec::with_capacity(snapshot.frames.len());
@@ -274,6 +291,7 @@ impl Store {
         let canvas = Canvas {
             id: meta.id,
             project_path: meta.project_path,
+            project_key: meta.project_key,
             name: meta.name,
             revision: meta.revision,
             created: meta.created,
@@ -297,6 +315,7 @@ impl Store {
         Ok(canvas)
     }
 
+    /// Freeze the manifest pointer before reading its immutable snapshot and content.
     pub async fn read(&self, id: &str) -> Result<Canvas, String> {
         let head = self.head(id).await?;
         let snapshot = self.snapshot(id, &head.commit).await?;
@@ -313,6 +332,40 @@ impl Store {
             return Err("Canvas manifest and snapshot revisions differ.".into());
         }
         Ok(snapshot.summary())
+    }
+
+    /// Image bytes must match their immutable reference before copy, recovery or delivery.
+    pub(super) async fn asset_bytes(
+        &self,
+        id: &str,
+        asset: &CanvasAsset,
+    ) -> Result<Vec<u8>, String> {
+        let bytes = read_bytes(
+            &self.dir(id)?.join("assets").join(&asset.hash),
+            MAX_ASSET as u64,
+        )
+        .await?;
+        if bytes.len() as u64 != asset.size || hash(&bytes) != asset.hash {
+            return Err(format!(
+                "Canvas asset {} checksum does not match.",
+                asset.id
+            ));
+        }
+        Ok(bytes)
+    }
+
+    /// Shared-store observers need the committed deletion even after its directory is removed.
+    pub async fn deleted(&self, id: &str) -> Result<Option<CanvasSummary>, String> {
+        uuid(id)?;
+        let path = self.root.join("deleted").join(format!("{id}.json"));
+        if !fs::try_exists(&path).await.map_err(|e| e.to_string())? {
+            return Ok(None);
+        }
+        let summary: CanvasSummary = read_json(&path).await?;
+        if summary.id != id {
+            return Err("Canvas deletion identity does not match.".into());
+        }
+        Ok(Some(summary))
     }
 
     /// Compare inode, length and timestamps so an idle canvas does not reparse every frame.
@@ -359,6 +412,7 @@ impl Store {
         Ok(hash(stamp.as_bytes()))
     }
 
+    /// Metadata alone cannot classify a file with missing frame content as readable.
     pub async fn list(&self, project: Option<&str>) -> Result<CanvasList, String> {
         let mut list = CanvasList {
             files: Vec::new(),
@@ -374,11 +428,17 @@ impl Store {
             if uuid(&id).is_err() || !entry.file_type().await.map_err(|e| e.to_string())?.is_dir() {
                 continue;
             }
-            match self.summary(&id).await {
-                Ok(summary) if project.is_none_or(|p| p == summary.project_path) => {
-                    list.files.push(summary)
+            let checked: Result<Option<CanvasSummary>, String> = async {
+                let summary = self.summary(&id).await?;
+                if project.is_some_and(|p| p != summary.project_key) {
+                    return Ok(None);
                 }
-                Ok(_) => {}
+                Ok(Some(CanvasSummary::from(&self.read(&id).await?)))
+            }
+            .await;
+            match checked {
+                Ok(Some(summary)) => list.files.push(summary),
+                Ok(None) => {}
                 Err(message) if message == "This canvas was deleted." => {}
                 Err(message) => list.problems.push(CanvasProblem {
                     id,
@@ -444,6 +504,7 @@ impl Store {
             canvas: CanvasMetadata {
                 id: canvas.id.clone(),
                 project_path: canvas.project_path.clone(),
+                project_key: canvas.project_key.clone(),
                 name: canvas.name.clone(),
                 revision: canvas.revision,
                 created: canvas.created.clone(),
@@ -485,12 +546,15 @@ impl Store {
         Ok(())
     }
 
+    /// Publish the initial revision without requiring a session or Git repository.
     pub async fn create(&self, project_path: String, name: String) -> Result<Canvas, String> {
+        let identity = project(&project_path).await?;
         let _guard = self.lock().await?;
         let now = crate::events::now_rfc3339();
         let canvas = Canvas {
             id: uuid::Uuid::now_v7().to_string(),
-            project_path,
+            project_path: identity.path,
+            project_key: identity.key,
             name,
             revision: 1,
             created: now.clone(),
@@ -506,6 +570,7 @@ impl Store {
         Ok(canvas)
     }
 
+    /// Hold both locks across the revision check and commit so stale saves cannot win.
     pub async fn edit(
         &self,
         id: &str,
@@ -536,6 +601,7 @@ impl Store {
         Ok(canvas)
     }
 
+    /// Follow committed ancestry only; orphan snapshots never become visible history.
     async fn snapshots(&self, id: &str, version: Option<u64>) -> Result<Vec<Snapshot>, String> {
         let head = self.head(id).await?;
         let mut next = Some(head.commit);
@@ -569,6 +635,7 @@ impl Store {
         Ok(history)
     }
 
+    /// Expand only the requested committed versions instead of every intermediate frame tree.
     pub async fn history(&self, id: &str, version: Option<u64>) -> Result<Vec<Canvas>, String> {
         let mut versions = Vec::new();
         for snapshot in self.snapshots(id, version).await? {
@@ -587,6 +654,7 @@ impl Store {
             .collect())
     }
 
+    /// Historical design state becomes a new revision while the current camera stays put.
     pub async fn restore(
         &self,
         id: &str,
@@ -606,11 +674,11 @@ impl Store {
         Ok(restored)
     }
 
+    /// Fresh layer identities and owned image copies keep deletion of the source harmless.
     pub async fn duplicate(&self, id: &str, revision: u64, name: String) -> Result<Canvas, String> {
         let _guard = self.lock().await?;
         let mut copy = self.read(id).await?;
         check_revision(&copy, revision)?;
-        let source = self.dir(id)?;
         copy.id = uuid::Uuid::now_v7().to_string();
         copy.name = name;
         copy.revision = 1;
@@ -624,14 +692,14 @@ impl Store {
             .await
             .map_err(|e| e.to_string())?;
         for asset in &copy.assets {
-            let bytes =
-                read_bytes(&source.join("assets").join(&asset.hash), MAX_ASSET as u64).await?;
+            let bytes = self.asset_bytes(id, asset).await?;
             atomic(dir.join("assets").join(&asset.hash), bytes).await?;
         }
         self.commit(&copy, None, None).await?;
         Ok(copy)
     }
 
+    /// Share file-owned assets while assigning fresh identities and a position beyond existing frames.
     pub async fn duplicate_frame(
         &self,
         id: &str,
@@ -753,6 +821,9 @@ impl Store {
             return Err("Canvas recovery checkpoint does not match its snapshot.".into());
         }
         let mut canvas = self.inflate(snapshot).await?;
+        for asset in &canvas.assets {
+            self.asset_bytes(id, asset).await?;
+        }
         let restored = canvas.revision;
         let mut highest = restored.max(read_json::<u64>(&dir.join("revision.json")).await?);
         let mut entries = fs::read_dir(dir.join("history"))
@@ -818,6 +889,7 @@ impl Store {
         })
     }
 
+    /// File reconciliation uses the same ordered write lane as manual saves and history.
     pub async fn reconcile(&self, id: &str) -> Result<(Canvas, Vec<CanvasProblem>), String> {
         let _guard = self.lock().await?;
         let mut canvas = self.read(id).await?;
@@ -861,6 +933,7 @@ impl Store {
         Ok((canvas, problems))
     }
 
+    /// Persist an exact-byte receipt with the commit so restarts cannot replay an accepted edit.
     async fn reconcile_file(
         &self,
         current: &Canvas,
@@ -914,12 +987,14 @@ impl Store {
         Ok(Some(canvas))
     }
 
+    /// The upload caller holds both locks until image metadata is published with the revision.
     pub(super) async fn asset_commit(&self, canvas: &Canvas) -> Result<(), String> {
         let head = self.head(&canvas.id).await?;
         self.commit(canvas, Some(head), None).await
     }
 }
 
+/// Revisions must stay monotonic and exactly representable by every JSON client.
 pub(super) fn advance(
     canvas: &mut Canvas,
     author: CanvasAuthor,
@@ -945,28 +1020,50 @@ fn change(before: u64, author: CanvasAuthor, restored_from: Option<u64>) -> Canv
     }
 }
 
-/// Resolve linked worktrees to their shared repository, while ordinary folders need no Git.
-pub(super) async fn project(path: &str) -> Result<String, String> {
+pub(super) struct ProjectIdentity {
+    pub path: String,
+    pub key: String,
+}
+
+/// Git metadata identifies a repository without replacing the reader's attached project path.
+pub(super) async fn project(path: &str) -> Result<ProjectIdentity, String> {
     let path = fs::canonicalize(path)
         .await
         .map_err(|e| format!("Cannot open Canvas project: {e}"))?;
     if !path.is_dir() {
         return Err("Canvas project must be a directory.".into());
     }
-    let output = tokio::process::Command::new("git")
+    let mut top_command = tokio::process::Command::new("git");
+    top_command
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(&path);
+    let mut common_command = tokio::process::Command::new("git");
+    common_command
         .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .current_dir(&path)
-        .output()
-        .await;
-    if let Ok(output) = output {
-        if output.status.success() {
-            let common = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-            if common.file_name().is_some_and(|name| name == ".git") {
-                if let Some(root) = common.parent() {
-                    return Ok(root.to_string_lossy().into());
-                }
-            }
+        .current_dir(&path);
+    let (top, common) = tokio::join!(top_command.output(), common_command.output());
+    if let (Ok(top), Ok(common)) = (top, common) {
+        if top.status.success() && common.status.success() {
+            let top = fs::canonicalize(PathBuf::from(
+                String::from_utf8_lossy(&top.stdout).trim_end_matches('\n'),
+            ))
+            .await
+            .map_err(|e| e.to_string())?;
+            let common = fs::canonicalize(PathBuf::from(
+                String::from_utf8_lossy(&common.stdout).trim_end_matches('\n'),
+            ))
+            .await
+            .map_err(|e| e.to_string())?;
+            let relative = path.strip_prefix(top).map_err(|e| e.to_string())?;
+            let identity = serde_json::to_vec(&(common, relative)).map_err(|e| e.to_string())?;
+            return Ok(ProjectIdentity {
+                path: path.to_string_lossy().into(),
+                key: format!("git:{}", hash(&identity)),
+            });
         }
     }
-    Ok(path.to_string_lossy().into())
+    Ok(ProjectIdentity {
+        path: path.to_string_lossy().into(),
+        key: format!("path:{}", path.display()),
+    })
 }

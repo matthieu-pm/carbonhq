@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -28,16 +28,16 @@ async function waitFor(read, predicate, description, timeout = 10_000) {
   throw new Error(`Timed out: ${description}\n${log}`);
 }
 
-async function start() {
-  await rm(join(home, 'serve-port'), { force: true });
+async function start(homeDir = home) {
+  await rm(join(homeDir, 'serve-port'), { force: true });
   const server = spawn(binary, ['--port', '0'], {
-    env: { ...process.env, CARBON_HOME: home, CARBON_NO_ANALYTICS: '1' },
+    env: { ...process.env, CARBON_HOME: homeDir, CARBON_NO_ANALYTICS: '1' },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   children.add(server);
   server.stderr.on('data', data => { log += data; });
   server.on('error', error => { log += error.message; });
-  await waitFor(() => readFile(join(home, 'serve-port'), 'utf8'), Boolean, 'server readiness');
+  await waitFor(() => readFile(join(homeDir, 'serve-port'), 'utf8'), Boolean, 'server readiness');
   return server;
 }
 
@@ -48,9 +48,9 @@ async function stop(server) {
   children.delete(server);
 }
 
-async function connect() {
-  const port = Number((await readFile(join(home, 'serve-port'), 'utf8')).split('\n')[0]);
-  const token = (await readFile(join(home, 'serve-token'), 'utf8')).trim();
+async function connect(homeDir = home) {
+  const port = Number((await readFile(join(homeDir, 'serve-port'), 'utf8')).split('\n')[0]);
+  const token = (await readFile(join(homeDir, 'serve-token'), 'utf8')).trim();
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   sockets.add(ws);
   const pending = new Map();
@@ -85,6 +85,16 @@ async function connect() {
   };
 }
 
+async function git(cwd, args) {
+  const child = spawn('git', args, { cwd, stdio: ['ignore', 'ignore', 'pipe'] });
+  children.add(child);
+  let errors = '';
+  child.stderr.on('data', data => { errors += data; });
+  const [code] = await once(child, 'exit');
+  children.delete(child);
+  assert.equal(code, 0, errors);
+}
+
 try {
   let server = await start();
   let client = await connect();
@@ -97,6 +107,24 @@ try {
   assert.equal(saved.change.author.turnId, 'turn-one');
   assert.deepEqual(saved.frames, [frame]);
   checks.push('create, stable node tree, tokens and turn metadata');
+
+  for (const separate of [false, true]) {
+    const repository = join(root, separate ? 'separate' : 'repository');
+    const linked = `${repository}-linked`;
+    await mkdir(repository);
+    await git(repository, separate ? ['init', '--separate-git-dir', `${repository}-gitdata`] : ['init']);
+    await git(repository, ['-c', 'user.name=Canvas test', '-c', 'user.email=canvas@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'Initial']);
+    await git(repository, ['worktree', 'add', '--detach', linked]);
+    await mkdir(join(repository, 'a'));
+    await mkdir(join(repository, 'b'));
+    await mkdir(join(linked, 'a'));
+    const design = await client.call('create_canvas', { projectPath: join(repository, 'a'), name: 'Project A' });
+    assert.equal(design.projectPath, await realpath(join(repository, 'a')));
+    assert.equal((await client.call('list_canvases', { projectPath: join(repository, 'b') })).files.length, 0);
+    assert.equal((await client.call('list_canvases', { projectPath: join(linked, 'a') })).files[0].id, design.id);
+    checks.push(separate ? 'separate Git metadata shares the subproject across worktrees' : 'distinct subprojects retain their owner and share only their own worktrees');
+  }
+
 
   const contenders = await Promise.allSettled(['First', 'Second'].map(name => client.call('update_canvas', { id: canvas.id, revision: 2, edit: { name } })));
   assert.equal(contenders.filter(r => r.status === 'fulfilled').length, 1);
@@ -164,6 +192,41 @@ try {
   saved = await client.call('restore_canvas_version', { id: canvas.id, revision: saved.revision, version: withImage });
   checks.push('frame/file duplication, assets and history restore without Git');
 
+  const missing = await client.call('create_canvas', { projectPath: project, name: 'Missing content' });
+  const withContent = await client.call('update_canvas', { id: missing.id, revision: 1, edit: { frames: [frame] } });
+  const contentDir = join(home, 'canvases', missing.id, 'content');
+  await rm(join(contentDir, (await readdir(contentDir))[0]));
+  const listed = await client.call('list_canvases', { projectPath: project });
+  assert.ok(listed.problems.some(problem => problem.id === missing.id));
+  assert.ok(!listed.files.some(file => file.id === missing.id));
+  assert.equal(withContent.revision, 2);
+  checks.push('listing reports broken frame content without hiding healthy files');
+
+  const damaged = await client.call('create_canvas', { projectPath: project, name: 'Damaged image' });
+  const uploaded = await client.call('write_canvas_asset', { id: damaged.id, revision: 1, upload: { assetId: randomUUID(), name: 'pixel.png', offset: 0, data: png, complete: true } });
+  const damagedDir = join(home, 'canvases', damaged.id);
+  const imagePath = join(damagedDir, 'assets', uploaded.canvas.assets[0].hash);
+  const altered = await readFile(imagePath);
+  altered[20] ^= 1;
+  await writeFile(imagePath, altered);
+  await assert.rejects(client.call('duplicate_canvas', { id: damaged.id, revision: 2, name: 'Rejected copy' }), /checksum/);
+  await writeFile(join(damagedDir, 'canvas.json'), 'preserve this manifest');
+  await assert.rejects(client.call('recover_canvas', { id: damaged.id }), /checksum/);
+  assert.equal(await readFile(join(damagedDir, 'canvas.json'), 'utf8'), 'preserve this manifest');
+  checks.push('same-size image corruption refuses recovery and duplication without replacing the manifest');
+
+  const deepCanvas = await client.call('create_canvas', { projectPath: project, name: 'Depth boundary' });
+  let deepNode = { kind: 'text', id: randomUUID(), name: 'Text', text: 'Deep' };
+  for (let depth = 1; depth < 48; depth++) deepNode = { kind: 'element', id: randomUUID(), name: 'Container', tag: 'div', attributes: {}, styles: {}, children: [deepNode] };
+  const nestedFrame = { ...frame, id: randomUUID(), content: { nodes: [deepNode], css: '', assetIds: [] } };
+  const boundary = await client.call('update_canvas', { id: deepCanvas.id, revision: 1, edit: { frames: [nestedFrame] } });
+  assert.deepEqual((await client.call('read_canvas', { id: deepCanvas.id })).frames, boundary.frames);
+  nestedFrame.content.nodes = [{ kind: 'element', id: randomUUID(), name: 'Too deep', tag: 'div', attributes: {}, styles: {}, children: [deepNode] }];
+  await assert.rejects(client.call('update_canvas', { id: deepCanvas.id, revision: 2, edit: { frames: [nestedFrame] } }), /nested/);
+  await client.call('delete_canvas', { id: deepCanvas.id, revision: 2 });
+  checks.push('maximum supported tree depth reopens and a deeper write is rejected before publication');
+
+
   client.close();
   await stop(server);
   server = await start();
@@ -190,10 +253,21 @@ try {
   assert.equal(await readFile(manifest, 'utf8'), unsupported);
   checks.push('unsupported future files are never overwritten');
 
-  await client.call('delete_canvas', { id: copy.id, revision: copy.revision });
+  const peerHome = join(root, 'peer-home');
+  await mkdir(peerHome);
+  await symlink(join(home, 'canvases'), join(peerHome, 'canvases'));
+  await symlink(join(home, 'canvas.lock'), join(peerHome, 'canvas.lock'));
+  const peerServer = await start(peerHome);
+  const peer = await connect(peerHome);
+  await client.call('watch_canvases', { scope: 'peer-deletion', ids: [copy.id] });
+  await peer.call('delete_canvas', { id: copy.id, revision: copy.revision });
+  await waitFor(async () => client.events, events => events.some(event => event.event === 'canvas_deleted' && event.payload.id === copy.id), 'shared-store deletion event');
+  assert.ok(!client.events.some(event => event.event === 'canvas_problem' && event.payload.id === copy.id));
+  peer.close();
+  await stop(peerServer);
   assert.equal((await client.call('list_canvases', { projectPath: project })).files.length, 0);
   await assert.rejects(readFile(join(home, 'canvases', copy.id, 'canvas.json')), /ENOENT/);
-  checks.push('permanent deletion removes only the target file and its assets');
+  checks.push('permanent deletion removes file-owned assets and notifies a second server watching the shared store');
   client.close();
   await stop(server);
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

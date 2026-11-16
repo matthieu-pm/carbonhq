@@ -54,6 +54,9 @@ impl Store {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(upload.data)
             .map_err(|_| "Invalid Canvas asset base64.")?;
+        if bytes.len() > CHUNK {
+            return Err("Canvas upload chunks must be 256 KiB or smaller.".into());
+        }
         let _guard = self.lock().await?;
         let mut canvas = self.read(id).await?;
         check_revision(&canvas, revision)?;
@@ -120,6 +123,7 @@ impl Store {
         })
     }
 
+    /// Historical and current reads both verify the bytes against the published image reference.
     pub async fn read_asset(
         &self,
         id: &str,
@@ -136,14 +140,7 @@ impl Store {
             .into_iter()
             .find(|a| a.id == asset_id)
             .ok_or("No Canvas asset with this ID at this revision.")?;
-        let bytes = read_bytes(
-            &self.dir(id)?.join("assets").join(&asset.hash),
-            MAX_ASSET as u64,
-        )
-        .await?;
-        if hash(&bytes) != asset.hash {
-            return Err("Canvas asset checksum does not match.".into());
-        }
+        let bytes = self.asset_bytes(id, &asset).await?;
         Ok(CanvasAssetData {
             asset,
             data: base64::engine::general_purpose::STANDARD.encode(bytes),
