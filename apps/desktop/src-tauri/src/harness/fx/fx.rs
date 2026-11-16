@@ -14,7 +14,6 @@
 
 pub mod commands;
 pub mod mapper;
-pub mod mcp;
 pub mod models;
 pub mod parser;
 pub mod permissions;
@@ -231,7 +230,9 @@ pub async fn init(
     session_cwd: &str,
     is_new_session: bool,
     app: &Sink,
+    mcp: &crate::mcp::proxy::SessionProxy,
 ) -> Result<Session> {
+    let mcp_servers = mcp.acp_merged()?;
     // Ahead of the spawn: everything between the spawn and the kill-wrapped
     // `open_session` below has to be infallible, or a `?` returns leaving a
     // child nothing can reach.
@@ -306,7 +307,7 @@ pub async fn init(
         }
     });
 
-    let (fx_id, answer) = match open_session(&client, session_id, session_cwd, is_new_session).await
+    let (fx_id, answer) = match open_session(&client, session_id, session_cwd, is_new_session, mcp_servers).await
     {
         Ok(opened) => opened,
         Err(error) => {
@@ -399,6 +400,7 @@ pub async fn init(
     let _ = ready_tx.send(session.clone());
 
     Ok(Session {
+        mcp: None,
         id: session_id.to_string(),
         child,
         stdin: Transport::Fx(session),
@@ -600,6 +602,7 @@ async fn open_session(
     session_id: &str,
     session_cwd: &str,
     is_new_session: bool,
+    mcp_servers: Vec<Value>,
 ) -> Result<(String, Value)> {
     let hello = client
         .request(
@@ -615,11 +618,7 @@ async fn open_session(
         )
         .await?;
 
-    // Read once and sent on both paths. `fx acp` reads no MCP config of its
-    // own, so this list is the only thing standing between a session and the
-    // servers the reader's `fx` shell already has — and a resumed session is
-    // handed them again, since fx keeps none of it across the connection.
-    let mcp_servers = mcp::configured_servers().await;
+    // A resume needs the proxy entries again; ACP does not retain client transports.
 
     if is_new_session {
         let answer =

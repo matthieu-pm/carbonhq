@@ -1,0 +1,33 @@
+# MCP proxy
+
+CBN-58 makes Carbon the owner of MCP definitions and authentication for Carbon-launched agents. Discovery and conflict resolution are automatic. The reader only signs in. Every chat gets a separate upstream connection; no sharing switch is exposed.
+
+`mcp/config.rs` imports supported user files into `mcp.json` under `store::config_dir`, with owner-only permissions. First definition wins within a scope, in `McpFile::ALL` order. Project definitions override global ones. Imports are recorded even when another definition wins, so removing a server cannot resurrect it from a second file. Original files are never changed. Checked-in project commands require a trust decision already recorded by their owning agent; discovery does not grant trust. Claude's private project-local definitions are user configuration.
+
+`mcp/proxy.rs` binds one loopback listener in the background server. Each chat owns unpredictable per-server routes. A route forwards one server's JSON-RPC messages, instructions, capabilities and results. HTTP keeps upstream session headers and streams SSE; stdio and legacy SSE use a request demultiplexer and a notification stream. The route carries no upstream credential. Browser-origin requests are refused. Dropping the chat's lease removes its routes and kills its stdio process groups. Connection failures become persisted chat notices through that chat's event counter.
+
+`mcp/auth.rs` uses the official Rust MCP SDK for discovery, client registration, PKCE, issuer binding and token refresh. Grants live in owner-only `mcp-auth-<resource digest>.json` files, separate from agent and tracker credentials. A file lock spans refresh and save. A generation prevents a pending login or refresh from restoring a signed-out grant. The settings callback uses a temporary loopback listener; the app opens the returned authorization URL in the system browser. Only the login outcome crosses the app transport. Removing the last definition for an endpoint clears its grant. Sign-out withholds that endpoint from future sessions, including definitions with static credentials.
+
+## Launch adapters
+
+- Claude Code gets named HTTP entries through `--mcp-config` and `--strict-mcp-config`.
+- Codex gets `config.mcp_servers` on thread start, resume and fork. Process-level `-c` is insufficient for thread configuration. Native names omitted from Carbon are disabled. An existing stdio transport keeps stdio through Carbon's bridge, because Codex deep-merges transport fields; an HTTP URL alone would leave the old command in place. Existing per-tool policy fields remain in the agent's merge.
+- fx and Grok get named HTTP entries over ACP on creation and resume. Empty endpoints shadow removed or disabled native definitions where these agents merge project or user files. fx 0.0.17 connects lazily on its first prompt.
+- Other ACP agents get HTTP where their handshake advertises it, and Carbon's stdio bridge otherwise. The bridge is the same app or headless binary with `--mcp-bridge`, before desktop initialization.
+- Pi gets a per-process extension and `--no-mcp`, so a native file cannot override a proxy entry. The extension registers named tools through Pi's extension API and appends each server's instructions. Pi's permission extensions still see the original tool names. Plan sessions keep MCP disabled.
+
+The `$` picker reads the same effective catalog for every harness, without a CLI probe or stale cache. Settings probes the real upstreams separately from reading the list.
+
+## Boundaries and verification
+
+Agents started in a terminal keep their own configuration. Agent plugins and hosted connectors remain agent-owned; their private credentials are not extracted. This Mac's settings do not configure remote machines.
+
+Codex's installed computer-use helper runs from `~/.codex/computer-use`. Discovery resolves that working directory for the known bundled command, including existing imports, without changing enabled state or custom paths.
+
+Some providers restrict client registration. For the canonical Figma endpoint only, an unauthenticated direct initialize falls back to the actual installed Codex CLI, version 0.169.0 or later. `mcp/native_codex.rs` runs one ephemeral native MCP thread in a separate process per chat route. It disables unrelated servers, apps, plugins and connection sharing, sends no model turn, and reuses Codex's existing MCP grant under its native server name. New native sign-ins return a browser URL and retain the callback and credentials in Codex. Carbon does not register under another client's name or copy its tokens.
+
+The Figma fallback exposes tools and resource reads, with original names and input schemas. It omits upstream instructions and MCP prompts. Tool results retain content, structuredContent, isError and metadata as exposed by Codex. Server elicitations travel on the tool call's SSE response to the calling agent; Carbon never approves them automatically. Clients without the required elicitation capability receive a decline. The calling agent's permission checks remain the gate before the native direct-call API.
+
+Cancelling a call or dropping its response closes that chat's worker. The next call opens a fresh connection, and other chats stay connected. Codex does not expose per-call upstream cancellation, so closing the worker cannot guarantee that the remote server stops work already underway. Signing out closes all Carbon workers for that shared endpoint before `codex mcp logout`, including workers still starting; an epoch and revocation guard prevent those workers from restoring the connection. The relay checks current native auth status before each tool or resource call, so terminal logout also prevents use of a cached token in a live worker. A later native sign-in is visible to Carbon. Removing a Carbon definition does not sign terminal Codex out.
+
+Runtime tests cover independent state and process reuse, cleanup, HTTP headers and credential isolation, notifications, failed connections, automatic import and deletion tombstones, project trust, and OAuth refresh rotation and sign-out generations. Native relay regressions cover schemas, structured results, resource reads, elicitation denial, cancellation isolation and sign-out races. Installed-client tests use a local OAuth provider to complete sign-in and prove a second Codex process sees the shared grant and loses it after logout. A separate installed-client test reads Figma through Carbon's endpoint and verifies Claude Code's deny rule. These tests never start a model turn. The settings demo covers sign-in pending/completion, shared sign-out copy, add/edit and disabled rows at desktop and narrow widths.

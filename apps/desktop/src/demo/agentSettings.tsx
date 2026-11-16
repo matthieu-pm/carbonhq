@@ -17,21 +17,18 @@ const server: McpServerEntry = {
   args: [], env: [], headers: [{ name: "Authorization", value: "Bearer fixture-token" }], enabled: true, inherited: false,
 };
 const sources: McpSource[] = [
-  { id: "claude", file: "claude_user", owner: "claude_code", readers: ["claude_code", "grok"], project: null,
-    path: "/Users/demo/.claude.json", label: null, servers: [server], error: null, transports: ["stdio", "http", "sse"] },
-  { id: "codex", file: "codex", owner: "codex", readers: ["codex"], project: null,
-    path: "/Users/demo/.codex/config.toml", label: null, servers: [], error: null, transports: ["stdio", "http"] },
-  { id: "project", file: "codex_project", owner: "codex", readers: ["codex"], project,
-    path: `${project}/.codex/config.toml`, label: null, servers: [{ ...server, name: "docs", headers: [] }], error: null, transports: ["stdio", "http"] },
-  { id: "grok", file: "grok_user", owner: "grok", readers: ["grok"], project: null,
-    path: "/Users/demo/.grok/config.toml", label: null, servers: [], error: "Invalid TOML at line 4", transports: ["stdio", "http"] },
-  { id: "pi", file: "pi_user", owner: "pi", readers: ["pi"], project: null,
-    path: "/Users/demo/.pi/agent/mcp.json", label: null, servers: [{ ...server, name: "pi-docs", headers: [] }], error: null, transports: ["stdio", "http"] },
-  { id: "pi-project", file: "pi_project", owner: "pi", readers: ["pi"], project,
-    path: `${project}/.pi/mcp.json`, label: null, servers: [{ ...server, name: "pi-docs", url: null, headers: [], enabled: false, inherited: true }], error: null, transports: ["stdio", "http"] },
-  { id: "fx", file: "fx", owner: "fx", readers: ["fx"], project: null,
-    path: "/Users/demo/.fx/mcp.json", label: null, servers: [{ ...server, name: "filesystem", transport: "stdio", command: "npx", args: ["-y", "server-filesystem"], url: null, headers: [], env: [{ name: "API_KEY", value: "fixture-key" }] }], error: null, transports: ["stdio", "http", "sse"] },
+  { id: "carbon:", file: "carbon", owner: "claude_code", readers: ["claude_code", "codex", "grok", "fx", "pi"], project: null,
+    path: "/Users/demo/.carbon/mcp.json", label: "Carbon", servers: [
+      { ...server, headers: [] },
+      { ...server, name: "Figma", url: "https://mcp.figma.com/mcp", headers: [] },
+      { ...server, name: "filesystem", transport: "stdio", command: "npx", args: ["-y", "server-filesystem"], url: null, headers: [] },
+      { ...server, name: "paused", enabled: false, headers: [] },
+    ], error: null, transports: ["stdio", "http", "sse"] },
+  { id: "carbon:project", file: "carbon", owner: "claude_code", readers: ["claude_code", "codex", "grok", "fx", "pi"], project,
+    path: "/Users/demo/.carbon/mcp.json", label: "Carbon", servers: [{ ...server, name: "docs", headers: [] }], error: null, transports: ["stdio", "http", "sse"] },
 ];
+const signedIn = new Set(["docs", "Figma"]);
+let loginPolls = 0;
 const claudeRoot = "/Users/demo/.claude/skills";
 const entry = (folder: string, name: string, description: string, over: Partial<SkillEntry> = {}): SkillEntry => ({
   name, description, path: `${folder}/${name}`, locked: null, linked: false, shared: false, shareable: false, ...over,
@@ -77,13 +74,23 @@ function addSkill(to: string, doc: SkillDocument, shared: boolean) {
 // Only the bridge is faked; the forms, hooks and header portal are shipping code.
 mockIPC(async (command, payload) => {
   if (command === "plugin:dialog|open") return "/tmp/imported-skill";
-  if (command === "plugin:opener|reveal_item_in_dir") return;
+  if (command.startsWith("plugin:opener|")) return;
   const request = payload as { cmd: string; args: Record<string, unknown> };
   const { cmd, args } = command === "server_invoke" ? request : { cmd: command, args: payload as Record<string, unknown> };
   switch (cmd) {
     case "agent_availability": return (["claude_code", "codex", "grok", "fx", "pi"] as Harness[]).map((harness) => ({ harness, available: true }));
     case "list_mcp_servers": return structuredClone(sources);
-    case "mcp_server_status": return { statuses: [{ owner: "claude_code", project: null, name: "linear", status: "connected" }], extras: [], errors: [] };
+    case "mcp_server_status": return { statuses: sources.flatMap((source) => source.servers.map((server) => ({
+      owner: "claude_code", project: source.project, name: server.name,
+      status: !server.enabled ? "disabled" : server.transport === "stdio" || signedIn.has(server.name) ? "connected" : "needs_auth",
+    }))), extras: [], errors: [] };
+    case "start_mcp_login": loginPolls = 0; return { id: String(args.name), url: "https://example.com/sign-in" };
+    case "mcp_login_status": {
+      if (++loginPolls < (new URLSearchParams(location.search).has("slowAuth") ? 15 : 3)) return { status: "waiting" };
+      signedIn.add(String(args.id));
+      return { status: "complete" };
+    }
+    case "logout_mcp_server": signedIn.delete(String(args.name)); return;
     case "save_mcp_server": {
       const target = args.target as McpTarget;
       const entry = args.server as McpServerEntry;

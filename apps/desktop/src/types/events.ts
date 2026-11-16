@@ -1250,10 +1250,14 @@ export type LinearPageLink = { documentId: string, url: string, lastSyncedAt: st
 
 export type LinearProject = { id: string, name: string, };
 
+export type LoginStatus = { "status": "waiting" } | { "status": "complete" } | { "status": "failed", message: string, };
+
 /**
  * Where a server is written, which is also what decides who reads it.
  */
-export type McpFile = "claude_user" | "claude_local" | "claude_project" | "codex" | "codex_project" | "grok_user" | "grok_project" | "fx" | "pi_user" | "pi_project";
+export type McpFile = "carbon" | "claude_user" | "claude_local" | "claude_project" | "codex" | "codex_project" | "grok_user" | "grok_project" | "fx" | "pi_user" | "pi_project";
+
+export type McpLogin = { id: string, url: string, };
 
 /**
  * One row of the `$` picker.

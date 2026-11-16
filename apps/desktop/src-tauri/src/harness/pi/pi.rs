@@ -106,6 +106,7 @@ pub async fn init(
     session_cwd: &str,
     is_new_session: bool,
     app: &Sink,
+    mcp_extension: Option<&std::path::Path>,
 ) -> Result<Session> {
     // The session *file*, not the session id, is pi's resume handle. pi mints
     // its own id and reports it back — `session_id_not_adopted.jsonl` pins that
@@ -154,6 +155,8 @@ pub async fn init(
 
     let bin = crate::binpath::pi().await;
     let mut command = Command::new(&bin);
+    command.arg("--no-mcp");
+    if let Some(extension) = mcp_extension { command.arg("--extension").arg(extension); }
 
     // Which app the agent's own `carbon` calls reach. Dev and release builds
     // listen on different sockets and the CLI's default names the release one.
@@ -300,6 +303,7 @@ pub async fn init(
     }
 
     Ok(Session {
+        mcp: None,
         id: session_id.to_string(),
         child,
         stdin: Transport::Pi(client),

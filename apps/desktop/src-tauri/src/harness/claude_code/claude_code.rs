@@ -63,7 +63,9 @@ pub async fn init(
     // [`SessionIndexItem::fork_from`](crate::store::SessionIndexItem::fork_from).
     fork_from: Option<&str>,
     app: &Sink,
+    mcp: &crate::mcp::proxy::SessionProxy,
 ) -> Result<Session> {
+    let mcp_config = mcp.claude();
     let mut args = vec![
         "-p",
         "--input-format",
@@ -74,6 +76,9 @@ pub async fn init(
         "--include-partial-messages",
         "--model",
         &model.arg,
+        "--strict-mcp-config",
+        "--mcp-config",
+        &mcp_config,
     ];
 
     // Omitted for models with no effort levels. The CLI accepts and ignores the
@@ -220,6 +225,7 @@ pub async fn init(
     });
 
     Ok(Session {
+        mcp: None,
         id: session_id.to_string(),
         child,
         stdin: crate::session::Transport::Lines(stdin),

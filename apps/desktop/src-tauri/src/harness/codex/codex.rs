@@ -99,6 +99,7 @@ impl Thread {
 /// the turns after it, which is why a resume needs no separate copy of them.
 #[derive(Clone, Debug)]
 pub struct TurnSettings {
+    mcp_config: Option<Value>,
     pub model: String,
     pub effort: Option<&'static str>,
     pub approval_policy: &'static str,
@@ -173,6 +174,7 @@ impl TurnSettings {
         let (approval_policy, sandbox) = approval_for(permission_mode);
 
         Self {
+            mcp_config: None,
             model: model.arg.clone(),
             effort: effort.map(Effort::as_arg),
             approval_policy,
@@ -220,7 +222,7 @@ impl TurnSettings {
     /// `ThreadStartParams` has no such field, and one sent anyway is accepted
     /// and dropped, so it rides every `turn/start` instead.
     fn thread_params(&self) -> Value {
-        json!({
+        let mut params = json!({
             "model": self.model,
             "approvalPolicy": self.approval_policy,
             "sandbox": self.sandbox,
@@ -231,7 +233,9 @@ impl TurnSettings {
             // set, not with what was asked for.
             "serviceTier": self.service_tier,
             "developerInstructions": DEVELOPER_INSTRUCTIONS,
-        })
+        });
+        if let Some(config) = &self.mcp_config { params["config"] = config.clone(); }
+        params
     }
 }
 
@@ -246,12 +250,14 @@ pub async fn init(
     is_new_session: bool,
     fork_from: Option<&str>,
     app: &Sink,
+    mcp: &crate::mcp::proxy::SessionProxy,
 ) -> Result<Session> {
     // Ahead of the spawn, and for one reason: everything between the spawn
     // and the kill-wrapped `open_thread` below has to be infallible, or a `?`
     // returns leaving a child nothing can reach. An unreadable log is a
     // refusal that owes the caller no process.
     let mut settings = TurnSettings::new(model, effort, permission_mode, fast);
+    settings.mcp_config = Some(mcp.codex_config(session_cwd).await?);
     let seq_start = if is_new_session {
         0
     } else {
@@ -358,6 +364,7 @@ pub async fn init(
     let _ = ready_tx.send(thread.clone());
 
     Ok(Session {
+        mcp: None,
         id: session_id.to_string(),
         child,
         stdin: Transport::Rpc(thread),
@@ -960,6 +967,7 @@ mod tests {
         let kind = ApprovalKind::for_method(request["method"].as_str().unwrap()).unwrap();
         let model = crate::models::find_model(&crate::models::ModelId::new("gpt-6.1-sol")).unwrap();
         let mut session = Session {
+            mcp: None,
             id: handles.session_id.clone(),
             child: Command::new("true").spawn().unwrap(),
             stdin: Transport::Rpc(Thread {
