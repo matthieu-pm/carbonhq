@@ -1621,6 +1621,28 @@ export type PrMarkState = "OPEN" | "MERGED";
 export type PrUnavailable = { "kind": "no_cli" } | { "kind": "not_authenticated" } | { "kind": "no_remote" } | { "kind": "other", "detail": string };
 
 /**
+ * What a project runs to preview: a folder relative to the session's
+ * checkout (`""` for its root) and a shell command, where `{port}` is
+ * replaced by the port Carbon picked. `PORT` carries it too.
+ */
+export type PreviewConfig = { directory: string, command: string, };
+
+/**
+ * What the first-start form needs: the project's saved config, if any, and a
+ * command read off `package.json` in the chosen folder (`""` for none).
+ */
+export type PreviewSetup = { config: PreviewConfig | null, suggestedCommand: string, };
+
+/**
+ * One session's preview. `url` is set only while running and is always an
+ * explicit loopback address (`http://127.0.0.1:<port>` or
+ * `http://[::1]:<port>`); `message` says why a run stopped or failed.
+ */
+export type PreviewState = { sessionId: string, status: PreviewStatus, config: PreviewConfig, port: number, url: string | null, message: string | null, };
+
+export type PreviewStatus = "starting" | "running" | "stopped" | "failed";
+
+/**
  * A directory the user attached, and the root a session runs in. Distinct from
  * [`crate::store::SessionIndexItem::project_path`], which records where a
  * session *did* run — a project can be detached without rewriting history.

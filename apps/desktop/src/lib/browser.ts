@@ -44,6 +44,15 @@ function start() {
   started = true;
   void listen<{ sessionId: string; tabs: BrowserTab[] }>("browser_tabs", (e) => {
     const { sessionId, tabs } = e.payload;
+    const preview = previewTabs.get(sessionId);
+    if (preview && preview.id === null) {
+      const opened = tabs.find((tab) => {
+        if (!tab.active || driven.has(tab.id)) return false;
+        try { return new URL(tab.url).origin === new URL(preview.url).origin; }
+        catch { return false; }
+      });
+      if (opened) preview.id = opened.id;
+    }
     // A tab arriving is what the new tab on screen was waiting for, whoever
     // opened it — the URL bar, a link in the chat, a popup. It becomes that
     // page; the other blank tabs stay where they are.
@@ -264,6 +273,22 @@ export function openInBrowser(sessionId: string, url: string, newTab = false, fr
     notify();
     throw e;
   });
+}
+
+const previewTabs = new Map<string, { id: number | null; url: string }>();
+
+/// Reuses a session's preview tab when its dev server restarts on another port.
+export async function openPreviewInBrowser(sessionId: string, url: string) {
+  start();
+  const previous = previewTabs.get(sessionId);
+  let tab = tabsBySession.get(sessionId)?.find((tab) => tab.id === previous?.id && !driven.has(tab.id));
+  if (tab) {
+    try { await activateTab(sessionId, tab.id); }
+    catch { tab = undefined; }
+  }
+  previewTabs.set(sessionId, { id: tab?.id ?? null, url });
+  try { await openInBrowser(sessionId, url, !tab); }
+  catch (e) { previewTabs.delete(sessionId); throw e; }
 }
 
 /// Marks the tab active here at once, ahead of the event saying so, or a

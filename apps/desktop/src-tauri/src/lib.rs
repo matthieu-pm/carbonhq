@@ -48,6 +48,9 @@ pub mod headless;
 #[cfg_attr(not(any(feature = "cef", feature = "serve")), allow(dead_code))]
 pub mod recording;
 mod local_servers;
+pub mod preview;
+#[cfg(any(feature = "serve", feature = "desktop"))]
+pub mod preview_tunnel;
 pub mod docs;
 pub mod pages;
 pub mod pages_linear;
@@ -987,6 +990,7 @@ pub fn run() {
             servers::ignore_server_update,
             servers::check_server_update,
             servers::forward_port,
+            servers::preview_forward,
             servers::add_ssh_server,
             servers::set_server_on,
             servers::rename_server,

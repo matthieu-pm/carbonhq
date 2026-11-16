@@ -238,6 +238,8 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 
 [profiles.html](apps/desktop/demo/profiles.html) mounts profile settings and the footer switcher with saved demo profiles, for icon and color selection, keyboard access and overflow at different sidebar widths.
 
+[preview.html](apps/desktop/demo/preview.html) mounts the managed preview control against a throwaway `carbon-serve`, using `server` and `token` query parameters. It runs real dev commands and shows the resulting app in an iframe so setup, logs, failure and stop can be checked without starting the desktop app.
+
 [main-font.html](apps/desktop/demo/main-font.html) mounts the real font picker beside interface, chat and code samples. Its **Run keyboard checks** button verifies IME confirmation, WebKit's composition Enter, unmatched searches and keyboard selection.
 
 [font-sizes.html](apps/desktop/demo/font-sizes.html) mounts the UI and code font size rows above chrome, chat, a raw `text-sm` button, tool output, an Edit diff and the virtualized Files view. Its **Run size check** reads every computed size back at two non-default pairs and checks the Files view's row pitch matches its line height.
