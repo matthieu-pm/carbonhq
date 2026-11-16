@@ -49,7 +49,8 @@ use std::path::PathBuf;
 /// repeat work while reporting success, so only keyed requests require v16.
 /// v17 adds managed preview commands.
 /// v18 adds durable delivery acceptance and delivery status/cancellation.
-pub const PROTOCOL_VERSION: u32 = 18;
+/// v19 adds opt-in delegated tasks and immutable completion results.
+pub const PROTOCOL_VERSION: u32 = 19;
 
 /// A CLI readiness wait fits inside the socket and remote request deadlines.
 pub const PREVIEW_WAIT_SECS: u64 = 150;
@@ -105,6 +106,9 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
+            Request::Task(_) => 19,
+            Request::CreateSession(create) if create.task.is_some() => 19,
+            Request::SendMessage(send) if send.task.is_some() => 19,
             Request::DeliveryStatus(_) | Request::CancelDelivery(_) => 18,
             Request::SendMessage(send) if send.durable => 18,
             Request::LookupReceipt(lookup) => lookup.request.version().max(16),
@@ -148,6 +152,7 @@ impl Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
+    Task(TaskRequest),
     DeliveryStatus(DeliveryRef),
     CancelDelivery(DeliveryRef),
     LookupReceipt(ReceiptLookup),
@@ -689,6 +694,8 @@ pub enum BrowserAction {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSession {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<TaskOptions>,
     // New defaulted fields must omit their default on serialization, or a
     // compatible update changes fingerprints of requests already on disk.
     /// Stable across retries of this exact payload; absent keeps legacy behavior.
@@ -835,6 +842,8 @@ pub struct IssueInput {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<TaskOptions>,
     /// A durable inbox is required; older receivers must refuse before ignoring it.
     #[serde(default, skip_serializing_if = "is_false")]
     pub durable: bool,
@@ -913,12 +922,75 @@ pub struct DeliverySummary {
     pub detail: Option<String>,
 }
 
+/// Tracking and reporting are opt-in; awaiting also holds the caller's active task open.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskOptions {
+    #[serde(default)]
+    pub awaited: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum TaskRequest {
+    Status { task_id: String },
+    Result { task_id: String },
+    Wait { task_id: String, timeout_secs: u64 },
+    Cancel { task_id: String },
+}
+
+impl TaskRequest {
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Status { task_id } | Self::Result { task_id }
+            | Self::Wait { task_id, .. } | Self::Cancel { task_id } => task_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskState { Queued, Running, Waiting, Blocked, Succeeded, Failed, Canceled, Interrupted }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskResult {
+    pub outcome: TaskState,
+    pub text: String,
+    pub source_session_id: String,
+    pub cwd: Option<String>,
+    pub branch: Option<String>,
+    pub commit: Option<String>,
+    pub tree: Option<String>,
+    pub references: Vec<String>,
+    pub event_id: Option<String>,
+    pub completed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskSummary {
+    pub task_id: String,
+    pub operation_id: String,
+    pub parent_session_id: String,
+    pub child_session_id: String,
+    pub parent_task_id: Option<String>,
+    pub awaited_task_ids: Vec<String>,
+    pub state: TaskState,
+    pub result: Option<TaskResult>,
+    pub questions: Vec<serde_json::Value>,
+    pub completion_delivery: Option<DeliverySummary>,
+    pub delivery_error: Option<String>,
+    pub completion_acknowledged: bool,
+}
+
 /// Tagged rather than an `ok` boolean beside a bag of optional payloads: the
 /// three answers carry disjoint fields, and a struct that can hold all of them
 /// at once can also hold none of them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
+    Task { task: TaskSummary },
     Delivery {
         delivery: DeliverySummary,
     },
@@ -1427,6 +1499,7 @@ mod tests {
             .chain(&sessions)
             .chain([&remote, &elsewhere, &write, &pages, &secret, &preview])
             .chain(&keyed)
+            .chain([&Request::Task(TaskRequest::Status { task_id: "task".into() })])
             .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
             .map(Request::version)
             .max();
@@ -1470,6 +1543,7 @@ mod tests {
     #[test]
     fn a_request_on_another_machine_round_trips() {
         let send = Request::SendMessage(SendMessage {
+            task: None,
             durable: false,
             session_id: "s".into(),
             prompt: "hi".into(),
@@ -1507,6 +1581,24 @@ mod tests {
         }
         let legacy = serde_json::to_value(SendMessage::default()).unwrap();
         assert!(legacy.get("durable").is_none());
+    }
+
+    #[test]
+    fn task_tracking_requires_v19_without_changing_legacy_fingerprints() {
+        assert!(serde_json::to_value(CreateSession::default()).unwrap().get("task").is_none());
+        assert!(serde_json::to_value(SendMessage::default()).unwrap().get("task").is_none());
+        let requests = [
+            Request::CreateSession(CreateSession { task: Some(TaskOptions::default()), ..Default::default() }),
+            Request::SendMessage(SendMessage { task: Some(TaskOptions { awaited: true }), ..Default::default() }),
+            Request::Task(TaskRequest::Wait { task_id: "task".into(), timeout_secs: 1 }),
+        ];
+        for request in requests {
+            assert_eq!(request.version(), 19);
+            let wire = encode_line(&Envelope::new(Request::OnMachine(OnMachine { machine: "vps".into(), request: Box::new(request) }))).unwrap();
+            let decoded: Envelope = serde_json::from_str(&wire).unwrap();
+            assert_eq!(decoded.v, 19);
+            assert_eq!(wire, encode_line(&decoded).unwrap());
+        }
     }
 
     #[test]

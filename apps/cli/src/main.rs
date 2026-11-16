@@ -14,6 +14,7 @@ mod draft;
 mod pages;
 mod secret;
 mod preview;
+mod task;
 mod machine;
 mod setup;
 use carbon_proto::{
@@ -62,6 +63,9 @@ enum Command {
     /// Start, list and message sessions, and settle or rename them.
     #[command(subcommand, arg_required_else_help = true)]
     Session(SessionCommand),
+    /// Inspect, wait for or cancel an opt-in delegated task.
+    #[command(subcommand, arg_required_else_help = true)]
+    Task(task::TaskCommand),
     /// Tag a session with an issue, or comment on a Linear issue and change its status.
     #[command(subcommand, arg_required_else_help = true)]
     Issue(IssueCommand),
@@ -175,6 +179,14 @@ struct Settle {
 
 #[derive(Args)]
 struct New {
+    /// Track this delegation and deliver its immutable result to the calling session.
+    #[arg(long)]
+    task: bool,
+
+    /// Make the calling session's active task await this task.
+    #[arg(long = "await", requires = "task")]
+    awaited: bool,
+
     /// Reuse this ID and the same arguments to retry without creating another session.
     #[arg(long)]
     request_id: Option<String>,
@@ -243,6 +255,14 @@ struct Update {
 
 #[derive(Args)]
 struct Send {
+    /// Track this delegation and deliver its immutable result to the calling session.
+    #[arg(long)]
+    task: bool,
+
+    /// Make the calling session's active task await this task.
+    #[arg(long = "await", requires = "task")]
+    awaited: bool,
+
     /// Reuse this ID and the same arguments to retry without submitting another message.
     #[arg(long)]
     request_id: Option<String>,
@@ -446,6 +466,7 @@ fn run() -> Result<(), String> {
         if !matches!(
             cli.command,
             Command::Session(_)
+                | Command::Task(_)
                 | Command::Issue(_)
                 | Command::Draft(_)
                 | Command::Pages(_)
@@ -457,12 +478,13 @@ fn run() -> Result<(), String> {
                 | Command::Ls(_)
                 | Command::Send(_)
         ) {
-            return Err("--machine takes session, draft, issue, pages, secret, preview, browser and share commands".into());
+            return Err("--machine takes session, task, draft, issue, pages, secret, preview, browser and share commands".into());
         }
         let _ = MACHINE.set(machine);
     }
     match cli.command {
         Command::Session(command) => session(command),
+        Command::Task(command) => task::run(command),
         Command::Issue(IssueCommand::Link(args)) => link_issues(args, false),
         Command::Issue(IssueCommand::Unlink(args)) => link_issues(args, true),
         Command::Issue(IssueCommand::Comment(args)) => {
@@ -570,7 +592,8 @@ fn session(command: SessionCommand) -> Result<(), String> {
 
 fn new(args: New) -> Result<(), String> {
     let request = Request::CreateSession(CreateSession {
-        request_id: args.request_id,
+        task: args.task.then_some(carbon_proto::TaskOptions { awaited: args.awaited }),
+        request_id: args.request_id.or_else(|| args.task.then(|| uuid::Uuid::new_v4().to_string())),
         prompt: args.prompt,
         project_path: resolve_project(args.project),
         model: args.model,
@@ -588,6 +611,11 @@ fn new(args: New) -> Result<(), String> {
     });
 
     match send(request)? {
+        Response::Task { task } => {
+            println!("{}", task.task_id);
+            eprintln!("Tracking session {}. Inspect with `carbon task status {}`.", task.child_session_id, task.task_id);
+            Ok(())
+        }
         Response::Created { session, base_ref } => {
             // The id alone on stdout, so `$(carbon session new …)` captures something
             // usable; everything a human wants goes to stderr beside it.
@@ -709,6 +737,7 @@ fn write_issue(request: Request) -> Result<(), String> {
 
 fn send_message(args: Send) -> Result<(), String> {
     let request = Request::SendMessage(SendMessage {
+        task: args.task.then_some(carbon_proto::TaskOptions { awaited: args.awaited }),
         durable: true,
         request_id: Some(args.request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
         session_id: args.session_id,
@@ -717,6 +746,11 @@ fn send_message(args: Send) -> Result<(), String> {
     });
 
     match send(request)? {
+        Response::Task { task } => {
+            println!("{}", task.task_id);
+            eprintln!("Tracking session {}. Inspect with `carbon task status {}`.", task.child_session_id, task.task_id);
+            Ok(())
+        }
         Response::Delivery { delivery } => {
             println!("{}", delivery.message_id);
             let state = serde_json::to_string(&delivery.state).map_err(|error| error.to_string())?;

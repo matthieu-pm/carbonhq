@@ -105,15 +105,12 @@ impl Dispatch {
             .await
     }
 
-    /// Persist intent before publishing a prepared prompt, which cannot be retracted.
-    pub(crate) async fn begin(&mut self, harness: Harness, thread_id: Option<&str>) -> Result<()> {
-        let history = NativeHistory {
-            harness,
-            thread_id: thread_id.map(str::to_owned),
-        };
+    /// Native-history discovery must not hold the task cancellation fence.
+    async fn prepare_evidence(&mut self, harness: Harness, thread_id: Option<&str>) -> Result<()> {
+        let history = NativeHistory { harness, thread_id: thread_id.map(str::to_owned) };
         self.record.evidence = evidence_paths(&history, self.session_id()).await?;
         self.record.native_history = Some(history);
-        self.transition(DeliveryState::Submitting, None).await
+        Ok(())
     }
 
     /// A published prompt cannot be retracted when the server restarts.
@@ -123,7 +120,12 @@ impl Dispatch {
         thread_id: Option<&str>,
         app: &Sink,
     ) -> Result<()> {
-        self.begin(event.harness, thread_id).await?;
+        self.prepare_evidence(event.harness, thread_id).await?;
+        let Some(_fence) = super::tasks::prompt(self.session_id(), self.message_id(), &event.id).await? else {
+            self.cancel("The delegated task was canceled.").await?;
+            bail!("the delegated task was canceled before submission");
+        };
+        self.transition(DeliveryState::Submitting, None).await?;
         app.emit("agent_event", &event)?;
         store::append_session_event(self.session_id(), event).await
     }
@@ -420,10 +422,46 @@ fn native_evidence(paths: &[PathBuf], marker: &str) -> bool {
     })
 }
 
+/// Accepted follow-ups belong to the current task until the session consumes them.
+pub(super) async fn pending_deliveries() -> Result<Vec<DeliverySummary>> {
+    static FINISHED: std::sync::LazyLock<tokio::sync::Mutex<std::collections::HashSet<PathBuf>>> = std::sync::LazyLock::new(Default::default);
+    let mut finished = FINISHED.lock().await;
+    let root = root().await?;
+    let mut pending = Vec::new();
+    let mut entries = match tokio::fs::read_dir(root).await {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(pending),
+        Err(error) => return Err(error.into()),
+    };
+    while let Some(entry) = entries.next_entry().await? {
+        if finished.contains(&entry.path()) || entry.path().extension().is_none_or(|e| e != "json") { continue; }
+        let record: Record = serde_json::from_slice(&tokio::fs::read(entry.path()).await?)?;
+        if matches!(record.summary.state, DeliveryState::Accepted | DeliveryState::Submitting | DeliveryState::Uncertain) {
+            pending.push(record.summary);
+        } else { finished.insert(entry.path()); }
+    }
+    Ok(pending)
+}
+
+/// Reconcile ambiguous submissions before task replay or either worker can dispatch.
+pub(super) async fn recover_startup() -> Result<()> { recover(&root().await?).await }
+
+/// Cancel the pending work covered by a task's durable cancellation fence.
+pub(super) async fn cancel_pending(session: &str, all: bool, operation: &str) -> Result<()> {
+    let root = root().await?;
+    for summary in scan(&root, &mut std::collections::HashSet::new()).await? {
+        if summary.session_id == session && (all || summary.message_id == operation) && summary.state == DeliveryState::Accepted {
+            if let Some(mut dispatch) = load(&root, &summary.message_id).await? {
+                if dispatch.record.summary.state == DeliveryState::Accepted { dispatch.cancel("The delegated task was canceled.").await?; }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// One worker per recipient preserves ordering while unrelated recipients dispatch independently.
 pub(super) async fn start(app: Sink) -> Result<()> {
     let root = root().await?;
-    recover(&root).await?;
     tokio::spawn(async move {
         let mut finished = std::collections::HashSet::new();
         let mut workers = std::collections::HashMap::<String, tokio::task::JoinHandle<()>>::new();
@@ -459,7 +497,7 @@ pub(super) async fn start(app: Sink) -> Result<()> {
                             if let Err(error) = manager().send_inbox(&mut dispatch, &app).await {
                                 let state = match dispatch.record.summary.state {
                                     DeliveryState::Accepted => DeliveryState::Failed,
-                                    DeliveryState::Submitted => return Ok(()),
+                                    DeliveryState::Submitted | DeliveryState::Canceled => return Ok(()),
                                     _ => DeliveryState::Uncertain,
                                 };
                                 dispatch
