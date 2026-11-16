@@ -294,10 +294,14 @@ pub async fn init(
         let queued = queued.clone();
         let seq = seq.clone();
         async move {
-            if let Err(error) = read_stdout(stdout, reader, ready_rx, status, queued, seq).await
+            let exit_id = reader.session_id.clone();
+            let exit_app = reader.app.clone();
+            if let Err(error) = read_stdout(stdout, reader, ready_rx, status.clone(), queued.clone(), seq.clone()).await
             {
                 eprintln!("Failed to read fx stdout: {error}");
             }
+            crate::session::settle_dead_child(&exit_id, Fx, &seq, &status, &queued,
+                "fx stopped before the turn finished", &exit_app).await;
         }
     });
 
@@ -1139,46 +1143,8 @@ async fn read_stdout(
         }
     }
 
-    // The child's stdout has ended. If a prompt was still in flight its answer
-    // will never arrive, so close the turn as a failure — without which the
-    // session hangs `in_progress` forever, its queue with no boundary to drain
-    // at. The queue is stranded *first* (reported and cleared), so the closing
-    // turn's boundary flush finds nothing to hand the dead child.
-    if let Some(transport @ Transport::Fx(session)) = transport.as_ref() {
-        // Clear it either way — the child is gone, so a Stop pressed now names
-        // nothing — and remember whether a turn was open to close it below.
-        let outstanding = session
-            .prompt_id
-            .lock()
-            .expect("fx prompt id poisoned")
-            .take()
-            .is_some();
-
-        crate::session::strand_queue_on_exit(
-            &handles.session_id,
-            Fx,
-            &queued,
-            &seq,
-            &handles.app,
-        )
-        .await;
-
-        if outstanding {
-            let ingest = crate::session::Ingest {
-                session_id: &handles.session_id,
-                harness: Fx,
-                session_cwd: &handles.session_cwd,
-                status: &status,
-                queued: &queued,
-                flush_seq: &seq,
-                flush_transport: transport,
-            };
-            for agent_event in mapper.map(parser::FxEvent::PromptFailed {
-                message: "fx exited before finishing this turn.".to_string(),
-            }) {
-                crate::session::ingest(&ingest, agent_event, &handles.app).await;
-            }
-        }
+    if let Some(Transport::Fx(session)) = transport.as_ref() {
+        session.prompt_id.lock().expect("prompt id poisoned").take();
     }
 
     Ok(())

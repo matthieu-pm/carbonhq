@@ -204,11 +204,15 @@ pub async fn init(
         let seq = seq.clone();
         let window = window.clone();
         async move {
+            let exit_id = reader.session_id.clone();
+            let exit_app = reader.app.clone();
             if let Err(error) =
-                read_stdout(stdout, reader, ready_rx, status, queued, seq, window).await
+                read_stdout(stdout, reader, ready_rx, status.clone(), queued.clone(), seq.clone(), window).await
             {
                 eprintln!("Failed to read grok stdout: {error}");
             }
+            crate::session::settle_dead_child(&exit_id, Grok, &seq, &status, &queued,
+                "grok stopped before the turn finished", &exit_app).await;
         }
     });
 
@@ -963,44 +967,8 @@ async fn read_stdout(
         }
     }
 
-    // The child's stdout has ended. If a prompt was still in flight its answer
-    // will never arrive, so close the turn as a failure — without which the
-    // session hangs `in_progress` forever, its queue with no boundary to drain
-    // at. The queue is stranded *first*, so the closing turn's boundary flush
-    // finds nothing to hand the dead child.
-    if let Some(transport @ Transport::Grok(session)) = transport.as_ref() {
-        let outstanding = session
-            .prompt_id
-            .lock()
-            .expect("grok prompt id poisoned")
-            .take()
-            .is_some();
-
-        crate::session::strand_queue_on_exit(
-            &handles.session_id,
-            Grok,
-            &queued,
-            &seq,
-            &handles.app,
-        )
-        .await;
-
-        if outstanding {
-            let ingest = crate::session::Ingest {
-                session_id: &handles.session_id,
-                harness: Grok,
-                session_cwd: &handles.session_cwd,
-                status: &status,
-                queued: &queued,
-                flush_seq: &seq,
-                flush_transport: transport,
-            };
-            for agent_event in mapper.map(parser::GrokEvent::PromptFailed {
-                message: "Grok exited before finishing this turn.".to_string(),
-            }) {
-                crate::session::ingest(&ingest, agent_event, &handles.app).await;
-            }
-        }
+    if let Some(Transport::Grok(session)) = transport.as_ref() {
+        session.prompt_id.lock().expect("prompt id poisoned").take();
     }
 
     Ok(())

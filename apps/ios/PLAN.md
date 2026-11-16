@@ -20,6 +20,8 @@ For build, test and wire-maintenance steps, read [README.md](README.md).
   highlighting. Prompt attachments, tool-result images and standalone Markdown
   images load through the owning server (see `Images.swift`).
 - **Reply** to a session, **Stop** a turn.
+- **Recovery** reasons and Inspect, Resume or Retry actions use the same server
+  report as desktop. Resume immediately sends a deduplicated continuation.
 - **Permission and question cards**, answered in place.
 - **One-use secret cards**, with values submitted to the owning server outside
   the prompt and event log (`SecretCard.swift`).
@@ -133,7 +135,8 @@ Commands used: `list_session_index_items`, `get_session_by_id`,
 `prs_for_branch`, `merge_pr`, `mark_pr_ready`, `reopen_pr`, `set_last_selected_project`,
 `add_project`, `github_repos`, `clone_github_repo`, `recheck_gh`, `pr_marks`,
 `transcribe_upload`, `list_local_servers`, `share_ready`, `share_port`, `stop_share`,
-`list_secret_requests`, `answer_secret_request`, `deny_secret_request`.
+`list_secret_requests`, `answer_secret_request`, `deny_secret_request`,
+`list_work_recovery`, `recover_work`, `dismiss_work_recovery`.
 
 Generic ACP sessions also use `agent_options` and `set_agent_option`. The first
 reads live options for an existing session and last-seen options for a new one.

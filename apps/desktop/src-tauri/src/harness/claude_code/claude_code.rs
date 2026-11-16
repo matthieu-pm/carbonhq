@@ -360,6 +360,7 @@ async fn read_stdout(
         ClaudeCode,
         &seq,
         &status,
+        &queued,
         "Claude Code stopped before the turn finished",
         app,
     )

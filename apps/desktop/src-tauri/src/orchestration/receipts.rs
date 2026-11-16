@@ -23,7 +23,7 @@ struct Record {
 }
 
 /// Hash the caller's original payload before forwarding rewrites paths or refs.
-pub(super) fn fingerprint(value: &impl Serialize) -> Result<String> {
+pub(crate) fn fingerprint(value: &impl Serialize) -> Result<String> {
     Ok(hash(&serde_json::to_vec(&canonical(
         serde_json::to_value(value)?,
     ))?))
@@ -103,7 +103,7 @@ pub(super) async fn lookup(
 }
 
 /// Scope each wait to its own request, leaving workers free to persist the owner’s reply.
-pub(super) async fn locked_path(
+pub(crate) async fn locked_path(
     root: &Path,
     request_id: &str,
 ) -> Result<(std::path::PathBuf, std::sync::Arc<std::fs::File>)> {
@@ -251,6 +251,68 @@ async fn save(path: &Path, record: &Record, lock: std::sync::Arc<std::fs::File>)
         Ok(())
     })
     .await?
+}
+
+/// Scope directories share the existing receipt format, including forwarded operations.
+async fn unfinished(root: &Path) -> Result<Vec<(std::path::PathBuf, Record)>> {
+    let mut found = vec![];
+    let mut scopes = match tokio::fs::read_dir(root).await {
+        Ok(scopes) => scopes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(found),
+        Err(error) => return Err(error.into()),
+    };
+    while let Some(scope) = scopes.next_entry().await? {
+        if !scope.file_type().await?.is_dir() { continue; }
+        let mut files = tokio::fs::read_dir(scope.path()).await?;
+        while let Some(file) = files.next_entry().await? {
+            if file.path().extension().is_none_or(|ext| ext != "json") { continue; }
+            let read: Result<Record> = async {
+                let record: Record = serde_json::from_slice(&tokio::fs::read(file.path()).await?)?;
+                if record.version != 1 { bail!("unsupported request receipt version; update Carbon"); }
+                Ok(record)
+            }.await;
+            match read {
+                Ok(record) if record.response.is_none() => found.push((file.path(), record)),
+                Ok(_) => {},
+                Err(error) => eprintln!("[receipt record {}] {error:#}", file.path().display()),
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// A reservation proves identity, never that its worktree or harness side effects did not run.
+pub(super) async fn recover_startup() -> Result<()> {
+    let root = crate::store::get_home_app_dir().await?.join("orchestration-requests");
+    for (path, mut record) in unfinished(&root).await? {
+        let recovered: Result<()> = async {
+        let (_, lock) = locked_path(path.parent().context("receipt has no scope")?, &record.receipt.request_id).await?;
+        let task = super::tasks::by_operation(&record.receipt.operation_id).await.unwrap_or_else(|error| {
+            eprintln!("[receipt task recovery] {error:#}"); None
+        });
+        record.response = if let Some(task) = task {
+            Some(Response::Task { task })
+        } else {
+            super::inbox::find(&record.receipt.operation_id).await?.map(|delivery| Response::Delivery { delivery })
+        };
+        if record.response.is_none() && record.error.is_none() {
+            record.error = Some("The server restarted before recording this operation's outcome. Its reserved session or worktree may already exist, and work may have started. Inspect before issuing a new request; this operation was not rerun.".into());
+        }
+        save(&path, &record, lock).await?;
+        Ok(())
+        }.await;
+        if let Err(error) = recovered { eprintln!("[receipt recovery {}] {error:#}", path.display()); }
+
+    }
+    Ok(())
+}
+
+/// Atomic receipt reads remain available while an unrelated request holds its execution lock.
+pub(crate) async fn interruptions() -> Result<Vec<(OperationReceipt, String)>> {
+    let root = crate::store::get_home_app_dir().await?.join("orchestration-requests");
+    Ok(unfinished(&root).await?.into_iter().filter_map(|(_, record)| {
+        record.error.map(|reason| (record.receipt, reason))
+    }).collect())
 }
 
 #[cfg(test)]

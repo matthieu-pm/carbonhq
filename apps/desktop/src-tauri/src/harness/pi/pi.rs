@@ -24,7 +24,7 @@ pub mod models;
 pub mod parser;
 pub mod rpc;
 
-use crate::events::{AgentEventPayload, ApprovalPolicy, TurnStatus};
+use crate::events::{AgentEventPayload, ApprovalPolicy};
 use crate::harness::claude_code::permissions::PendingPermissions;
 use crate::harness::{read_stderr, record_failure, Harness::Pi};
 use crate::models::{Effort, Model};
@@ -230,10 +230,10 @@ pub async fn init(
                 client,
                 session_id,
                 session_cwd,
-                status,
-                queued,
+                status.clone(),
+                queued.clone(),
                 pending,
-                seq,
+                seq.clone(),
                 context_window,
                 app,
             )
@@ -241,6 +241,9 @@ pub async fn init(
             {
                 eprintln!("Failed to read pi stdout: {error}");
             }
+
+            crate::session::settle_dead_child(&desk_id, Pi, &seq, &status, &queued,
+                "pi stopped before the turn finished", &teardown_app).await;
 
             // The reader ending is the one signal that covers every way a pi can
             // leave — asked to, killed, crashed, or never past the handshake —
@@ -743,36 +746,6 @@ async fn read_stdout(
         }
     }
 
-    // The child is gone. `agent_settled` is the only line that closes a turn,
-    // and a pi that dies mid-turn cannot send one — so without this the session
-    // sits `in_progress` forever with a complete-looking transcript, every tool
-    // row shimmering, and a Stop that answers success and does nothing.
-    //
-    // Emitted, never logged, for the reason Claude Code's drained task set is:
-    // this describes a child that no longer exists, a persisted copy would be
-    // replayed against a session that has already been reset to `idle` at
-    // startup, and this runs after a delete may have removed the file, where an
-    // append would quietly recreate it.
-    if status.lock().await.turn_in_flight() {
-        let closed = mapper.synthesize(AgentEventPayload::TurnCompleted {
-            status: TurnStatus::Error,
-            stop_reason: None,
-            // The one sentence that names what happened. `Turn failed` alone is
-            // the fallback for an errored turn carrying no text, and this turn
-            // has a reason worth reading.
-            final_text: Some("pi stopped before the turn finished".to_string()),
-            // A child that went away, which no login fixes.
-            auth_failed: false,
-            usage: None,
-            duration_ms: None,
-            head: None,
-        });
-
-        if let Err(err) = app.emit("agent_event", &closed) {
-            eprintln!("[pi emit err] {err}");
-        }
-        status.lock().await.on_event(&closed.payload);
-    }
 
     Ok(())
 }

@@ -898,6 +898,8 @@ export type InstallError = { "stage": "install", message: string, } | { "stage":
  */
 export type IntegrationsView = { linear: TrackerAccount | null, github: TrackerAccount | null, };
 
+export type Interruption = { id: string, reason: string, message: string, at: string, resumedAt: string | null, };
+
 /**
  * One row in a list, and everything a row draws.
  *
@@ -1830,6 +1832,8 @@ issues: Array<IssueRef>,
  */
 mcpServers: Array<string>, };
 
+export type RecoveryItem = { id: string, kind: string, sessionId: string, sessionExists: boolean, title: string, reason: string, action: string, details: JsonValue, };
+
 /**
  * An issue another one is tied to, carried whole enough to draw its row in a
  * hover card or menu and to open it: the [`IssueRef`] fields plus what those
@@ -2085,7 +2089,7 @@ continueOff: boolean,
  * put right by the next one. `None` until a turn ends or a startup counts
  * it; a session with no turns reads the same as one that spent nothing.
  */
-tokens?: number, };
+tokens?: number, interruption?: Interruption, };
 
 /**
  * Session-level facts, known at startup.
@@ -2260,7 +2264,7 @@ continueOff: boolean,
  * put right by the next one. `None` until a turn ends or a startup counts
  * it; a session with no turns reads the same as one that spent nothing.
  */
-tokens?: number, };
+tokens?: number, interruption?: Interruption, };
 
 /**
  * Driven by [`StatusTracker`](crate::session::StatusTracker). `Completed`

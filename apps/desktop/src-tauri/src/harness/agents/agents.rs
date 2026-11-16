@@ -162,9 +162,13 @@ pub async fn init(
     tokio::spawn({
         let (status, queued, seq) = (status.clone(), queued.clone(), seq.clone());
         async move {
-            if let Err(error) = read_stdout(stdout, handles, ready_rx, status, queued, seq).await {
+            let exit_id = handles.session_id.clone();
+            let exit_app = handles.app.clone();
+            if let Err(error) = read_stdout(stdout, handles, ready_rx, status.clone(), queued.clone(), seq.clone()).await {
                 eprintln!("Failed to read ACP agent stdout: {error}");
             }
+            crate::session::settle_dead_child(&exit_id, harness, &seq, &status, &queued,
+                "ACP agent stopped before the turn finished", &exit_app).await;
         }
     });
     tokio::spawn(async move {
@@ -1235,40 +1239,10 @@ async fn read_stdout(
 
     handles.client.disconnect();
 
-    // The child is gone. A prompt in flight will never answer, so the turn is
-    // closed as failed — after the queue is stranded, so its flush finds
-    // nothing to hand a dead child.
-    if let Some(transport @ Transport::Acp(session)) = transport.as_ref() {
-        let outstanding = session
-            .prompt_id
-            .lock()
-            .expect("acp prompt id poisoned")
-            .take()
-            .is_some();
-        crate::session::strand_queue_on_exit(
-            &handles.session_id,
-            harness,
-            &queued,
-            &seq,
-            &handles.app,
-        )
-        .await;
-        if outstanding {
-            let ingest = crate::session::Ingest {
-                session_id: &handles.session_id,
-                harness,
-                session_cwd: &handles.session_cwd,
-                status: &status,
-                queued: &queued,
-                flush_seq: &seq,
-                flush_transport: transport,
-            };
-            let message = format!("{} exited before finishing this turn.", harness.label());
-            for agent_event in mapper.map(AcpEvent::PromptFailed { message }) {
-                crate::session::ingest(&ingest, agent_event, &handles.app).await;
-            }
-        }
+    if let Some(Transport::Acp(session)) = transport.as_ref() {
+        session.prompt_id.lock().expect("prompt id poisoned").take();
     }
+
     Ok(())
 }
 

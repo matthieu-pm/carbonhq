@@ -35,6 +35,26 @@ pub enum SessionStatus {
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
 #[ts(export, export_to = "events.ts")]
 #[serde(rename_all = "camelCase")]
+pub struct Interruption {
+    pub id: String,
+    pub reason: String,
+    pub message: String,
+    pub at: String,
+    pub resumed_at: Option<String>,
+}
+
+impl Interruption {
+    /// A successful send retires only the interruption it observed before submission.
+    fn mark_resumed(&mut self, id: &str) -> bool {
+        if self.id != id || self.resumed_at.is_some() { return false; }
+        self.resumed_at = Some(now_rfc3339());
+        true
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "events.ts")]
+#[serde(rename_all = "camelCase")]
 pub struct SessionIndexItem {
     pub session_id: String,
     pub harness: Harness,
@@ -218,6 +238,9 @@ pub struct SessionIndexItem {
     #[serde(flatten)]
     #[ts(skip)]
     pub unknown: serde_json::Map<String, Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub interruption: Option<Interruption>,
 }
 
 /// What crosses the IPC boundary for one session: its index entry plus the
@@ -709,6 +732,7 @@ impl SessionIndexItem {
             permission_mode,
             fast,
             status: SessionStatus::default(),
+            interruption: None,
             issues: Vec::new(),
             fork_from: None,
             parent_session_id: parent_session_id.map(str::to_string),
@@ -788,6 +812,7 @@ impl SessionIndexItem {
             // inherited value is the one it is created with.
             fast: self.fast,
             status: SessionStatus::default(),
+            interruption: None,
             // Inherited: a fork continues the same conversation, so it is
             // against the same work. Tagging one afterwards leaves the other
             // alone — the copy is a session, not a view of its source.
@@ -1532,9 +1557,7 @@ fn mark_relocated(items: &mut [SessionIndexItem], dir_exists: impl Fn(&str) -> b
     changed
 }
 
-/// A persisted `in_progress` is a lie after a restart — no child survives the
-/// process — so every one resets to `idle` at startup. `completed` survives:
-/// unread is still unread.
+/// Keep the lost process's outcome separate from read/unread browsing state.
 pub async fn reset_in_progress_sessions() -> Result<()> {
     let _guard = INDEX_LOCK.lock().await;
 
@@ -1542,7 +1565,31 @@ pub async fn reset_in_progress_sessions() -> Result<()> {
     let mut changed = false;
     for item in sessions.iter_mut() {
         if item.status == SessionStatus::InProgress {
+            let page = match read_session_page(&item.session_id, None, 1).await {
+                Ok(page) => page,
+                Err(error) => {
+                    eprintln!("[session recovery {}] {error:#}", item.session_id);
+                    SessionPage { events: vec![], older_before: None }
+                }
+            };
+            let boundary = page.events.iter().rev().find(|event| event.subagent.is_none() && matches!(event.payload,
+                AgentEventPayload::TurnCompleted { .. } | AgentEventPayload::TurnStarted { .. } | AgentEventPayload::UserMessage { .. }
+            ));
+            if boundary.is_some_and(|event| matches!(event.payload, AgentEventPayload::TurnCompleted { .. })) {
+                item.status = SessionStatus::Completed;
+                changed = true;
+                continue;
+            }
             item.status = SessionStatus::Idle;
+            if !item.interruption.as_ref().is_some_and(|interruption| interruption.reason == "process_exited" && interruption.resumed_at.is_none()) {
+            item.interruption = Some(Interruption {
+                id: Uuid::now_v7().to_string(),
+                reason: "server_restart".into(),
+                message: "The server restarted while this session was working. Changes may already have been made. Inspect the work or resume to reconcile it before continuing.".into(),
+                at: now_rfc3339(),
+                resumed_at: None,
+            });
+            }
             changed = true;
         }
     }
@@ -1552,6 +1599,25 @@ pub async fn reset_in_progress_sessions() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Retain the reason after an explicit continuation or a new prompt takes over.
+pub async fn resolve_interruption(session_id: &str, id: &str) -> Result<Option<SessionIndexItem>> {
+    Ok(edit_item(session_id, |item| {
+        let changed = item.interruption.as_mut().is_some_and(|interruption| interruption.mark_resumed(id));
+        (changed.then(|| item.clone()), changed)
+    }).await?.flatten())
+}
+
+/// Called under the child-identity guard so an old reader cannot interrupt its replacement.
+pub async fn record_process_interruption(session_id: &str, why: &str) -> Result<Option<SessionIndexItem>> {
+    update_item(session_id, |item| {
+        item.interruption = Some(Interruption {
+            id: Uuid::now_v7().to_string(), reason: "process_exited".into(), message: why.into(),
+            at: now_rfc3339(), resumed_at: None,
+        });
+        item.clone()
+    }).await
 }
 
 /// A session's spend, counted off its log. A log that is not there yet is a
@@ -2445,6 +2511,21 @@ pub async fn get_session_path(session_id: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_old_send_cannot_retire_a_new_process_interruption() {
+        let mut interruption = Interruption {
+            id: "new-process-exit".into(), reason: "process_exited".into(), message: "Child died".into(),
+            at: now_rfc3339(), resumed_at: None,
+        };
+        assert!(!interruption.mark_resumed("earlier-restart"));
+        assert!(interruption.resumed_at.is_none());
+        assert!(interruption.mark_resumed("new-process-exit"));
+        let resumed_at = interruption.resumed_at.clone();
+        assert!(!interruption.mark_resumed("new-process-exit"));
+        assert_eq!(interruption.resumed_at, resumed_at);
+        assert_eq!(interruption.reason, "process_exited");
+    }
 
     #[test]
     fn a_worktree_build_names_its_own_dev_home() {

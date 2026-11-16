@@ -480,6 +480,24 @@ A prompt can name a session as `&Title (id)`, picked from the composer's `&`
 menu. The id in the parentheses is the address — use it as written rather than
 looking the session up again.
 
+## Recovering interrupted work
+
+```bash
+carbon recovery list                         # reasons, identities and available actions as JSON
+carbon recovery list <session-id>
+carbon recovery resume <session-id> <id>      # immediately sends a continuation, once per interruption
+carbon recovery retry <session-id> <id>       # only for a known failure before submission
+carbon recovery dismiss <session-id> <id>     # acknowledge an inspected outcome
+```
+
+Inspect uncertain effects before starting new work. Resume asks the agent to
+reconcile existing effects before continuing; it does not replay old commands or
+approval callbacks. Interrupted task results remain immutable. A reserved create
+with no recorded outcome is inspect-only; retry its original request ID to read
+the same outcome. Accepted messages and completion deliveries recover through
+the existing inbox. Dismiss hides an inspected outcome without changing its retry fence or immutable
+result. These commands also accept `--machine`.
+
 ## Managing a session
 
 ```bash

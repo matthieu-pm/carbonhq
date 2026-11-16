@@ -177,6 +177,7 @@ import AgentUpdateLine from "@/components/composer/AgentUpdateLine";
 import { useAgentUpdates } from "@/hooks/useAgentUpdates";
 import LoginExpiredNotice from "@/components/composer/LoginExpiredNotice";
 import AutoContinueNotice from "@/components/composer/AutoContinueNotice";
+import RecoveryNotice from "@/components/composer/RecoveryNotice";
 import type { Attachment, IssueQuery, IssueRef, SessionIndexItem, WorktreeDisposition } from "@/types/events";
 import { useSlashCommands } from "@/hooks/useSlashCommands";
 import { useMcpMentions } from "@/hooks/useMcpMentions";
@@ -3534,7 +3535,9 @@ function App() {
             ) : null
           }
           pending={
-            selectedItem?.continueAt && (
+            <>
+            {selectedSessionId && <RecoveryNotice key={`${activeServer}:${selectedSessionId}`} sessionId={selectedSessionId} server={activeServer} busy={busy} />}
+            {selectedItem?.continueAt && (
               <AutoContinueNotice
                 at={selectedItem.continueAt}
                 off={selectedItem.continueOff}
@@ -3544,7 +3547,8 @@ function App() {
                   )
                 }
               />
-            )
+            )}
+            </>
           }
           held={sendHeld}
           draftHint={

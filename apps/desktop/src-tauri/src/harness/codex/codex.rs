@@ -314,10 +314,14 @@ pub async fn init(
         let queued = queued.clone();
         let seq = seq.clone();
         async move {
-            if let Err(error) = read_stdout(stdout, reader, ready_rx, status, queued, seq).await
+            let exit_id = reader.session_id.clone();
+            let exit_app = reader.app.clone();
+            if let Err(error) = read_stdout(stdout, reader, ready_rx, status.clone(), queued.clone(), seq.clone()).await
             {
                 eprintln!("Failed to read Codex stdout: {error}");
             }
+            crate::session::settle_dead_child(&exit_id, Codex, &seq, &status, &queued,
+                "Codex stopped before the turn finished", &exit_app).await;
         }
     });
 

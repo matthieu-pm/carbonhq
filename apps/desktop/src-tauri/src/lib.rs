@@ -75,6 +75,7 @@ pub mod markdown_export;
 #[cfg(feature = "desktop")]
 pub mod notifications;
 pub mod orchestration;
+pub mod recovery;
 pub mod secrets;
 pub mod drafts;
 pub mod projects;
