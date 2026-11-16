@@ -770,6 +770,41 @@ impl SessionManager {
         claim_continue: Option<&str>,
         app: &Sink,
     ) -> Result<SendOutcome> {
+        self.send_msg_inner(
+            session_id, prompt, attachment_paths, issue_ids, harness, model, effort,
+            permission_mode, fast, cwd, branch, use_worktree, worktree_name, base_ref,
+            is_new_session, parent_session_id, hidden, title, from, claim_continue, app,
+            None, None,
+        ).await
+    }
+
+    /// A durable dispatch already owns the recipient's slot before reading its recorded pick.
+    async fn send_msg_inner(
+        &self,
+        session_id: &str,
+        prompt: &str,
+        attachment_paths: &[String],
+        issue_ids: &[String],
+        harness: Harness,
+        model: ModelId,
+        effort: Option<Effort>,
+        permission_mode: ApprovalPolicy,
+        fast: bool,
+        cwd: &str,
+        branch: Option<&str>,
+        use_worktree: bool,
+        worktree_name: Option<&str>,
+        base_ref: Option<&str>,
+        is_new_session: bool,
+        parent_session_id: Option<&str>,
+        hidden: bool,
+        title: Option<&str>,
+        from: Option<MessageSender>,
+        claim_continue: Option<&str>,
+        app: &Sink,
+        locked: Option<tokio::sync::OwnedMutexGuard<Option<Session>>>,
+        mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
+    ) -> Result<SendOutcome> {
         let _counted = Sending::enter().await;
         let model = if matches!(harness, Harness::Acp(_)) && !is_new_session && !model.is_unset()
             && get_session_index_item(session_id).await?.is_some_and(|item| item.model == model) {
@@ -1066,7 +1101,7 @@ impl SessionManager {
             // project's anyway.
             let mcp_servers = crate::mcp_mentions::mentioned(harness, spawn_cwd, prompt).await;
             if let Err(error) = session
-                .send_msg(prompt, attachment_paths, issues, &mcp_servers, baseline, from, app)
+                .send_msg(prompt, attachment_paths, issues, &mcp_servers, baseline, from, None, app)
                 .await
             {
                 // Nothing has this session yet — it is inserted below — so
@@ -1107,7 +1142,10 @@ impl SessionManager {
         // so two sends to one session cannot both respawn it — while every other
         // session's Stop and send carry on.
         let slot = self.slot(session_id).await;
-        let mut slot_guard = slot.lock().await;
+        let mut slot_guard = match locked {
+            Some(guard) => guard,
+            None => slot.lock_owned().await,
+        };
 
         // A child that exited on its own still sits in the slot, and writing to
         // it fails. Dropped here, so this send resumes it like any idle session.
@@ -1148,6 +1186,12 @@ impl SessionManager {
                 }
                 None => (false, false, false, false),
             };
+
+        // A notification can open a turn during preparation.
+        // Durable mail must never lose its dispatch in the composer queue.
+        if dispatch.is_some() && turn_in_flight {
+            return Ok(SendOutcome::default());
+        }
 
         // Effort is fixed at spawn — the CLI has no `set_effort` control request
         // — so changing it means replacing the child. Resuming by id keeps the
@@ -1364,7 +1408,7 @@ impl SessionManager {
             // but alive, so the narrower the gap the less of the user's own
             // editing lands on the turn's side of the diff.
             let baseline = git::snapshot_tree(&session_cwd).await;
-            s.send_msg(prompt, attachment_paths, issues, mcp_servers, baseline, from, app)
+            s.send_msg(prompt, attachment_paths, issues, mcp_servers, baseline, from, dispatch.as_deref_mut(), app)
                 .await?;
             return Ok(SendOutcome {
                 issues: linked,
@@ -1467,7 +1511,7 @@ impl SessionManager {
         }
 
         if let Err(error) = session
-            .send_msg(prompt, attachment_paths, issues, mcp_servers, baseline, from, app)
+            .send_msg(prompt, attachment_paths, issues, mcp_servers, baseline, from, dispatch.as_deref_mut(), app)
             .await
         {
             // Same reason as the creation path above: the insert is below, so
@@ -1480,6 +1524,55 @@ impl SessionManager {
             issues: linked,
             ..Default::default()
         })
+    }
+
+    /// Acceptance and deletion share the recipient lock, so a removed target cannot gain new mail.
+    pub(crate) async fn accept_inbox(
+        &self,
+        receipt: &carbon_proto::OperationReceipt,
+        prompt: &str,
+        sender: Option<MessageSender>,
+    ) -> Result<carbon_proto::DeliverySummary> {
+        let slot = self.slot(&receipt.session_id).await;
+        let _guard = slot.lock().await;
+        get_session_index_item(&receipt.session_id).await?.context("the recipient no longer exists")?;
+        crate::orchestration::inbox::accept(receipt, prompt, sender).await
+    }
+
+    /// Durable messages wait outside the composer queue and use the recipient's current pick.
+    pub(crate) async fn send_inbox(
+        &self,
+        dispatch: &mut crate::orchestration::inbox::Dispatch,
+        app: &Sink,
+    ) -> Result<bool> {
+        let id = dispatch.session_id().to_owned();
+        let slot = self.slot(&id).await;
+        let mut locked = slot.lock_owned().await;
+        if dispatch.target_deleted().await? {
+            dispatch.cancel("The recipient was deleted.").await?;
+            return Ok(true);
+        }
+        let Some(target) = get_session_index_item(&id).await? else {
+            dispatch.cancel("The recipient no longer exists.").await?;
+            return Ok(true);
+        };
+        if locked.as_mut().is_some_and(|session| matches!(session.child.try_wait(), Ok(Some(_)))) {
+            locked.take();
+        }
+        if target.archived || match locked.as_ref() {
+            Some(session) => session.status.lock().await.turn_in_flight(),
+            None => false,
+        } {
+            return Ok(false);
+        }
+        let prompt = dispatch.prompt().to_owned();
+        let from = dispatch.sender().cloned();
+        self.send_msg_inner(
+            &id, &prompt, &[], &[], target.harness, target.model, target.effort,
+            target.permission_mode, target.fast, &target.cwd, None, false, None, None,
+            false, None, false, None, from, None, app, Some(locked), Some(dispatch),
+        ).await?;
+        Ok(true)
     }
 
     /// Copies a session onto a new id, to be continued separately from the one
@@ -1737,7 +1830,7 @@ impl SessionManager {
             unreachable!()
         };
         let mcp_servers = crate::mcp_mentions::mentioned(item.harness, &item.cwd, prompt).await;
-        session.send_msg(prompt, &[], issues, &mcp_servers, Some(plan.baseline), None, app).await
+        session.send_msg(prompt, &[], issues, &mcp_servers, Some(plan.baseline), None, None, app).await
             .context("The old turn was rewound, but the revised prompt could not be sent. Your edit is preserved")?;
         let replacement = list_session_events(session_id)
             .await?
@@ -2105,6 +2198,11 @@ impl SessionManager {
     /// The child goes first and its lock is released before the disk work, so a
     /// dying process can't append one last event to a file we just removed.
     pub async fn delete(&self, session_id: &str) -> Result<bool> {
+        {
+            let slot = self.slot(session_id).await;
+            let _guard = slot.lock().await;
+            crate::orchestration::inbox::delete_target(session_id).await?;
+        }
         // A hidden child is drawn in this session's crew alone, so it goes with
         // it. Here rather than in the frontend, which holds one side of the
         // settled split and can miss a child sitting on the other.
@@ -2519,7 +2617,7 @@ impl Session {
     /// prompt reaches the child. It is passed in rather than taken here because
     /// only the manager knows which directory to snapshot: a worktree session's
     /// tree does not exist until the CLI creates it.
-    pub async fn send_msg(
+    pub(crate) async fn send_msg(
         &mut self,
         prompt: &str,
         attachment_paths: &[String],
@@ -2527,6 +2625,7 @@ impl Session {
         mcp_servers: &[String],
         baseline: Option<String>,
         from: Option<MessageSender>,
+        mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
         app: &Sink,
     ) -> Result<()> {
         let (_, runs) = deliver_prompt(
@@ -2543,6 +2642,7 @@ impl Session {
             from,
             &self.seq,
             &self.stdin,
+            dispatch.as_deref_mut(),
             app,
         )
         .await?;
@@ -2583,6 +2683,11 @@ impl Session {
 
         if let Some(next) = next {
             publish_status(&self.id, next, app).await;
+        }
+
+        // Saving the payload can outlast a fast result; finish turn bookkeeping before that await.
+        if let Some(dispatch) = dispatch {
+            dispatch.submitted().await?;
         }
 
         Ok(())
@@ -2707,6 +2812,7 @@ impl Session {
             from,
             &self.seq,
             &self.stdin,
+            None,
             app,
         )
         .await;
@@ -3383,6 +3489,7 @@ async fn deliver_prompt(
     from: Option<MessageSender>,
     seq: &Arc<AtomicU64>,
     transport: &Transport,
+    mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
     app: &Sink,
 ) -> Result<(String, bool)> {
     let seq = seq.fetch_add(1, Relaxed);
@@ -3394,6 +3501,11 @@ async fn deliver_prompt(
     let text = prepared.text;
     let sent = crate::mcp_mentions::with_hint(&text, mcp_servers);
     let sent = crate::issues::drafting::with_context(session_id, &sent).await.map_err(anyhow::Error::msg)?;
+
+    let sent = match dispatch.as_ref() {
+        Some(dispatch) => format!("[Carbon delivery {}]\n{}", dispatch.message_id(), sent),
+        None => sent,
+    };
 
     // Ahead of the event for a second reason, and this one is about failure
     // rather than content. Codex resolves a leading `/skill` by asking its own
@@ -3445,74 +3557,84 @@ async fn deliver_prompt(
         }
     }
 
-    app.emit("agent_event", &agent_event)?;
-
-    append_session_event(session_id, agent_event).await?;
+    if let Some(dispatch) = dispatch.as_deref_mut() {
+        let thread_id = match transport {
+            Transport::Rpc(thread) => Some(thread.id.as_str()),
+            _ => None,
+        };
+        dispatch.publish_prompt(agent_event, thread_id, app).await?;
+    } else {
+        app.emit("agent_event", &agent_event)?;
+        append_session_event(session_id, agent_event).await?;
+    }
 
     // Logged, not sent: the caller holds the text and opens the turn itself.
     if !send {
         return Ok((sent, true));
     }
 
-    // Codex takes a prompt as a request that opens a turn, so the write is the
-    // send rather than a line the child picks up on its own schedule. Its
-    // input was built above, images included, where a failure could still be
-    // a no-op.
-    if let Some((thread, input)) = codex {
-        crate::harness::codex::start_turn(thread, input).await?;
-        return Ok((sent, true));
-    }
-    // pi takes a prompt as a command whose answer says it was accepted, so the
-    // write is the send rather than a line the child picks up on its own
-    // schedule.
-    if let Transport::Pi(client) = transport {
-        let runs = crate::harness::pi::send_prompt(client, &sent, delivery, &prepared.images)
-            .await
-            .context(Undelivered)?;
-        return Ok((sent, runs));
-    }
-    // grok takes a prompt into the running turn through a method of its own;
-    // a second `session/prompt` would take over the id the turn settles on.
-    if let (Transport::Grok(session), crate::harness::pi::Delivery::Steer) = (transport, delivery) {
-        crate::harness::grok::interject(session, &sent, &prepared.images)
-            .await
-            .context(Undelivered)?;
-        return Ok((sent, true));
-    }
-    // fx and grok take a prompt as a request that blocks for the turn, so the
-    // write is the send and the reader settles the answer.
-    if let Some(opened) = transport.open_turn(&sent, &prepared.images).await {
-        opened?;
-        return Ok((sent, true));
-    }
-    let stdin = transport.lines()?;
-
-    // A bare string is the whole content when nothing is attached — the
-    // shape every fixture captures, kept rather than always sending the
-    // one-element block array it is sugar for.
-    let content = if prepared.images.is_empty() {
-        json!(sent)
-    } else {
-        let mut blocks = Vec::new();
-        if !sent.is_empty() {
-            blocks.push(json!({"type": "text", "text": sent}));
+    let submitted: Result<bool> = async {
+        // Codex takes a prompt as a request that opens a turn, so the write is the
+        // send rather than a line the child picks up on its own schedule. Its
+        // input was built above, images included, where a failure could still be
+        // a no-op.
+        if let Some((thread, input)) = codex {
+            crate::harness::codex::start_turn(thread, input).await?;
+            return Ok(true);
         }
-        for image in &prepared.images {
-            blocks.push(json!({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": image.mime_type,
-                    "data": image.data,
-                },
-            }));
+        // pi takes a prompt as a command whose answer says it was accepted, so the
+        // write is the send rather than a line the child picks up on its own
+        // schedule.
+        if let Transport::Pi(client) = transport {
+            let runs = crate::harness::pi::send_prompt(client, &sent, delivery, &prepared.images)
+                .await
+                .context(Undelivered)?;
+            return Ok(runs);
         }
-        json!(blocks)
-    };
+        // grok takes a prompt into the running turn through a method of its own;
+        // a second `session/prompt` would take over the id the turn settles on.
+        if let (Transport::Grok(session), crate::harness::pi::Delivery::Steer) = (transport, delivery) {
+            crate::harness::grok::interject(session, &sent, &prepared.images)
+                .await
+                .context(Undelivered)?;
+            return Ok(true);
+        }
+        // fx and grok take a prompt as a request that blocks for the turn, so the
+        // write is the send and the reader settles the answer.
+        if let Some(opened) = transport.open_turn(&sent, &prepared.images).await {
+            opened?;
+            return Ok(true);
+        }
+        let stdin = transport.lines()?;
 
-    let line = json!({"type":"user","message":{"role":"user","content": content}});
-    write_line(stdin, &line).await?;
-    Ok((sent, true))
+        // A bare string is the whole content when nothing is attached — the
+        // shape every fixture captures, kept rather than always sending the
+        // one-element block array it is sugar for.
+        let content = if prepared.images.is_empty() {
+            json!(sent)
+        } else {
+            let mut blocks = Vec::new();
+            if !sent.is_empty() {
+                blocks.push(json!({"type": "text", "text": sent}));
+            }
+            for image in &prepared.images {
+                blocks.push(json!({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image.mime_type,
+                        "data": image.data,
+                    },
+                }));
+            }
+            json!(blocks)
+        };
+
+        let line = json!({"type":"user","message":{"role":"user","content": content}});
+        write_line(stdin, &line).await?;
+        Ok(true)
+    }.await;
+    submitted.map(|runs| (sent, runs))
 }
 
 /// The handles a read loop needs once its harness has stopped being relevant.
@@ -4137,6 +4259,7 @@ async fn flush_one_per_turn(
                 message.from,
                 seq,
                 transport,
+                None,
                 app,
             )
             .await
@@ -4206,6 +4329,7 @@ async fn deliver_batch(
             message.from,
             seq,
             transport,
+            None,
             app,
         )
         .await

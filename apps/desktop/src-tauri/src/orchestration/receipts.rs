@@ -78,7 +78,7 @@ pub(super) async fn origin(home: &Path) -> Result<String> {
     .await?
 }
 
-fn hash(bytes: &[u8]) -> String {
+pub(super) fn hash(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -103,7 +103,7 @@ pub(super) async fn lookup(
 }
 
 /// Scope each wait to its own request, leaving workers free to persist the owner’s reply.
-async fn locked_path(
+pub(super) async fn locked_path(
     root: &Path,
     request_id: &str,
 ) -> Result<(std::path::PathBuf, std::sync::Arc<std::fs::File>)> {

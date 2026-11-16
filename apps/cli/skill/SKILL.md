@@ -78,10 +78,10 @@ and does not submit the request again. Inspect that session or worktree before
 starting another operation. A definite refusal says nothing was submitted;
 fix the cause and use a new ID, since the old ID retains that refusal.
 
-Without the flag, commands keep their previous behavior. A successful queued
-send acknowledges acceptance; preserving queued messages through a server crash
-is separate from retry protection. If the server is too old to honor the key,
-update the half named by the error; do not remove the flag to force it through.
+Creates without the flag keep their previous behavior. Sends always use a
+durable inbox and generate a retry key when none is supplied. Keep the key
+printed on stderr if you need to retry. If the server is too old to honor the
+request, update the half named by the error; do not remove the key to force it through.
 
 ### Fast mode
 
@@ -368,6 +368,8 @@ check on sessions you started — nothing reports back on its own, so poll
 
 ```bash
 carbon session send <session-id> "Code review is done. Two findings, both fixed."
+carbon session delivery <session-id> <message-id>
+carbon session cancel-delivery <session-id> <message-id>
 ```
 
 Works in both directions and between any two sessions:
@@ -375,10 +377,21 @@ Works in both directions and between any two sessions:
 - A session you created can report a summary back to the one that created it.
 - You can hand a session you created extra context after it has started.
 
-The message arrives as an ordinary prompt and **starts a turn** in the receiving
-session, so it wakes an idle agent up. If that session is mid-turn the message is
-queued and picked up at the next boundary — that is reported, and is not a
-failure.
+Send prints a message ID on stdout after persisting the message. The inbox
+survives a server restart. Messages wait for the recipient's turn to end, then
+start a turn using its recorded model, effort, permission mode and fast pick.
+Messages to a settled session wait until it is brought back.
+
+`delivery` prints JSON with `accepted`, `submitting`, `submitted`, `failed`,
+`uncertain` or `canceled`. Submitted means handed to the harness; it does not
+mean the recipient finished or its parent observed a result. After a crash,
+native harness history can confirm submission. An uncertain message stays
+visible and is never resent automatically. Read status on its owning machine;
+after deleting a remote recipient, name that machine with `--machine`.
+
+Stop retains pending deliveries. `cancel-delivery` retracts one that has not
+entered submission; deleting the recipient cancels pending deliveries. These
+messages are separate from the user's cancelable composer queue.
 
 The receiving agent is told which session the message came from, and is given its
 id — so it can answer with `carbon session send <that-id>` without looking anything up.

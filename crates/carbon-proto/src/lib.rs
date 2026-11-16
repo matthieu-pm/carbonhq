@@ -48,7 +48,8 @@ use std::path::PathBuf;
 /// v15 added one-use secret requests. v16 added retry keys: ignoring one would
 /// repeat work while reporting success, so only keyed requests require v16.
 /// v17 adds managed preview commands.
-pub const PROTOCOL_VERSION: u32 = 17;
+/// v18 adds durable delivery acceptance and delivery status/cancellation.
+pub const PROTOCOL_VERSION: u32 = 18;
 
 /// A CLI readiness wait fits inside the socket and remote request deadlines.
 pub const PREVIEW_WAIT_SECS: u64 = 150;
@@ -104,6 +105,8 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
+            Request::DeliveryStatus(_) | Request::CancelDelivery(_) => 18,
+            Request::SendMessage(send) if send.durable => 18,
             Request::LookupReceipt(lookup) => lookup.request.version().max(16),
             Request::CreateSession(create) if create.request_id.is_some() => 16,
             Request::SendMessage(send) if send.request_id.is_some() => 16,
@@ -145,6 +148,8 @@ impl Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
+    DeliveryStatus(DeliveryRef),
+    CancelDelivery(DeliveryRef),
     LookupReceipt(ReceiptLookup),
     CreateSession(CreateSession),
     ListSessions(ListSessions),
@@ -830,6 +835,9 @@ pub struct IssueInput {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessage {
+    /// A durable inbox is required; older receivers must refuse before ignoring it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub durable: bool,
     // New defaulted fields must omit their default to preserve retry fingerprints.
     /// Stable across retries of this exact payload; absent keeps legacy behavior.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -871,12 +879,49 @@ pub struct OperationReceipt {
     pub worktree_name: Option<String>,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryRef {
+    pub session_id: String,
+    pub message_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryState {
+    Accepted,
+    Submitting,
+    Submitted,
+    Failed,
+    Uncertain,
+    Canceled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliverySummary {
+    pub message_id: String,
+    pub request_id: String,
+    pub session_id: String,
+    pub from_session_id: Option<String>,
+    pub state: DeliveryState,
+    pub accepted_at: String,
+    pub detail: Option<String>,
+}
+
 /// Tagged rather than an `ok` boolean beside a bag of optional payloads: the
 /// three answers carry disjoint fields, and a struct that can hold all of them
 /// at once can also hold none of them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
+    Delivery {
+        delivery: DeliverySummary,
+    },
     /// Only an explicit miss permits a forwarding server to prepare a new operation.
     ReceiptMissing,
     /// Only keyed callers receive this wrapper; the stored inner response never changes.
@@ -1382,6 +1427,7 @@ mod tests {
             .chain(&sessions)
             .chain([&remote, &elsewhere, &write, &pages, &secret, &preview])
             .chain(&keyed)
+            .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));
@@ -1424,6 +1470,7 @@ mod tests {
     #[test]
     fn a_request_on_another_machine_round_trips() {
         let send = Request::SendMessage(SendMessage {
+            durable: false,
             session_id: "s".into(),
             prompt: "hi".into(),
             from_session_id: None,
@@ -1440,6 +1487,26 @@ mod tests {
         };
         assert_eq!(on.machine, "vps");
         assert!(matches!(*on.request, Request::SendMessage(ref s) if s.prompt == "hi"));
+    }
+
+    #[test]
+    fn durable_delivery_requests_require_v18_through_machine_forwarding() {
+        let reference = DeliveryRef { session_id: "recipient".into(), message_id: "delivery".into() };
+        let requests = [
+            Request::SendMessage(SendMessage { durable: true, request_id: Some("key".into()), ..Default::default() }),
+            Request::DeliveryStatus(reference.clone()),
+            Request::CancelDelivery(reference),
+        ];
+        for request in requests {
+            assert_eq!(request.version(), 18);
+            let forwarded = Request::OnMachine(OnMachine { machine: "remote".into(), request: Box::new(request) });
+            let line = encode_line(&Envelope::new(forwarded)).unwrap();
+            let decoded: Envelope = serde_json::from_str(&line).unwrap();
+            assert_eq!(decoded.v, 18);
+            assert_eq!(encode_line(&decoded).unwrap(), line);
+        }
+        let legacy = serde_json::to_value(SendMessage::default()).unwrap();
+        assert!(legacy.get("durable").is_none());
     }
 
     #[test]

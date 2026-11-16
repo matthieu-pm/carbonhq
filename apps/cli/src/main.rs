@@ -126,6 +126,10 @@ enum SessionCommand {
     Ls(Ls),
     /// Send a message into a session that already exists.
     Send(Send),
+    /// Read a durable message's delivery state as JSON.
+    Delivery(DeliveryArgs),
+    /// Cancel a durable message that has not entered submission.
+    CancelDelivery(DeliveryArgs),
     /// Rename a session. Its title stays yours: no generated one replaces it.
     Rename(Rename),
     /// Stop the turn a session is running, like its Stop button.
@@ -138,6 +142,12 @@ enum SessionCommand {
     SetAside(SessionArg),
     /// Take a session out of set-aside.
     UnsetAside(SessionArg),
+}
+
+#[derive(Args)]
+struct DeliveryArgs {
+    session_id: String,
+    message_id: String,
 }
 
 #[derive(Args)]
@@ -498,6 +508,8 @@ fn session(command: SessionCommand) -> Result<(), String> {
         SessionCommand::New(args) => return new(args),
         SessionCommand::Ls(args) => return ls(args),
         SessionCommand::Send(args) => return send_message(args),
+        SessionCommand::Delivery(args) => return delivery_status(args, false),
+        SessionCommand::CancelDelivery(args) => return delivery_status(args, true),
         SessionCommand::Rename(args) => (
             Request::RenameSession(RenameSession {
                 session_id: args.session_id,
@@ -697,13 +709,20 @@ fn write_issue(request: Request) -> Result<(), String> {
 
 fn send_message(args: Send) -> Result<(), String> {
     let request = Request::SendMessage(SendMessage {
-        request_id: args.request_id,
+        durable: true,
+        request_id: Some(args.request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
         session_id: args.session_id,
         prompt: args.prompt,
         from_session_id: parent_session_id(),
     });
 
     match send(request)? {
+        Response::Delivery { delivery } => {
+            println!("{}", delivery.message_id);
+            let state = serde_json::to_string(&delivery.state).map_err(|error| error.to_string())?;
+            eprintln!("Persisted; state {}. Inspect with `carbon session delivery {} {}`.", state.trim_matches('"'), delivery.session_id, delivery.message_id);
+            Ok(())
+        }
         // Queued is not a failure and must not read as one: the target had a
         // turn in flight, so the prompt waits for a boundary rather than
         // interrupting it.
@@ -716,6 +735,19 @@ fn send_message(args: Send) -> Result<(), String> {
                     "Delivered."
                 }
             );
+            Ok(())
+        }
+        Response::Error { message } => Err(message),
+        other => Err(unexpected(other)),
+    }
+}
+
+fn delivery_status(args: DeliveryArgs, cancel: bool) -> Result<(), String> {
+    let reference = carbon_proto::DeliveryRef { session_id: args.session_id, message_id: args.message_id };
+    let request = if cancel { Request::CancelDelivery(reference) } else { Request::DeliveryStatus(reference) };
+    match send(request)? {
+        Response::Delivery { delivery } => {
+            println!("{}", serde_json::to_string_pretty(&delivery).map_err(|error| error.to_string())?);
             Ok(())
         }
         Response::Error { message } => Err(message),
