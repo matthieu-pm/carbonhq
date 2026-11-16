@@ -54,7 +54,8 @@ use std::path::PathBuf;
 /// v18 adds durable delivery acceptance and delivery status/cancellation.
 /// v19 adds opt-in delegated tasks and immutable completion results.
 /// v20 adds discovery and creation receipts with effective configuration.
-pub const PROTOCOL_VERSION: u32 = 20;
+/// v21 adds explicit interruption recovery and deduplicated continuation.
+pub const PROTOCOL_VERSION: u32 = 21;
 
 /// A CLI readiness wait fits inside the socket and remote request deadlines.
 pub const PREVIEW_WAIT_SECS: u64 = 150;
@@ -112,6 +113,7 @@ impl Request {
         match self {
             Request::Discover(_) => 20,
             Request::CreateSession(create) if create.configuration => 20,
+            Request::Recovery(_) => 21,
             Request::Task(_) => 19,
             Request::CreateSession(create) if create.task.is_some() => 19,
             Request::SendMessage(send) if send.task.is_some() => 19,
@@ -159,6 +161,7 @@ impl Request {
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
     Discover(DiscoveryRequest),
+    Recovery(RecoveryRequest),
     Task(TaskRequest),
     DeliveryStatus(DeliveryRef),
     CancelDelivery(DeliveryRef),
@@ -210,6 +213,15 @@ impl Request {
             _ => false,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum RecoveryRequest {
+    Dismiss { session_id: String, id: String },
+    List { session_id: Option<String> },
+    Resume { session_id: String, id: String },
+    Retry { session_id: String, id: String },
 }
 
 /// Only names and destinations cross the agent wire; values arrive from the user's card.
@@ -1003,6 +1015,7 @@ pub struct TaskSummary {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
     Discovery { data: DiscoveryData },
+    Recovery { value: serde_json::Value },
     Task { task: TaskSummary },
     Delivery {
         delivery: DeliverySummary,
@@ -1515,6 +1528,7 @@ mod tests {
             .chain([&remote, &elsewhere, &write, &pages, &secret, &preview])
             .chain(&keyed)
             .chain([&Request::Task(TaskRequest::Status { task_id: "task".into() })])
+            .chain([&Request::Recovery(RecoveryRequest::List { session_id: None })])
             .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
             .chain([&Request::Discover(DiscoveryRequest::Harnesses)])
             .map(Request::version)

@@ -162,6 +162,8 @@ struct AgentOption: Decodable, Hashable, Identifiable {
     }
 }
 
+struct RecoveryChanged: Decodable { let sessionId: String }
+
 struct SessionItem: Decodable, Hashable {
     let sessionId: String
     let harness: String

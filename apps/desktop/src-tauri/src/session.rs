@@ -538,13 +538,14 @@ async fn close_unanswered_stop(
 /// reach here after that — where it would write `completed` over the
 /// replacement's running turn.
 ///
-/// Emitted, never logged: a delete may have removed the file, where an append
-/// would quietly recreate it.
+/// An attached child closes through ingestion so its final diff snapshot is frozen.
+/// Startup failures without an attached child retain the emitted-only fallback.
 pub async fn settle_dead_child(
     session_id: &str,
     harness: Harness,
-    seq: &AtomicU64,
+    seq: &Arc<AtomicU64>,
     status: &Arc<Mutex<StatusTracker>>,
+    queued: &QueuedMessages,
     why: &str,
     app: &Sink,
 ) {
@@ -561,6 +562,33 @@ pub async fn settle_dead_child(
         return;
     }
 
+    let item = match get_session_index_item(session_id).await {
+        Ok(Some(item)) => item,
+        _ => return,
+    };
+    strand_queue_on_exit(session_id, harness, queued, seq, app).await;
+    if let Some(session) = guard.as_ref().and_then(|slot| slot.as_ref()) {
+        let interrupted = status.lock().await.turn_in_flight();
+        if interrupted {
+            match crate::store::record_process_interruption(session_id, why).await {
+                Ok(Some(item)) => { app.emit(crate::orchestration::SESSION_CHANGED, &item).ok(); }
+                Ok(None) => {},
+                Err(error) => eprintln!("[process interruption err] {error:#}"),
+            }
+        }
+        let ctx = Ingest { session_id, harness, session_cwd: &item.cwd, status, queued,
+            flush_seq: seq, flush_transport: &session.stdin };
+        let backgrounds = !status.lock().await.background_task_ids().is_empty();
+        if backgrounds {
+            ingest(&ctx, AgentEvent::mint(session_id.into(), harness, seq.fetch_add(1, Relaxed), None, None,
+                AgentEventPayload::BackgroundTasksChanged { tasks: vec![] }), app).await;
+        }
+        if interrupted {
+            ingest(&ctx, AgentEvent::mint(session_id.into(), harness, seq.fetch_add(1, Relaxed), None, None,
+                closing_turn("process_exited", Some(why))), app).await;
+        }
+        return;
+    }
     let mint = |payload| {
         AgentEvent::mint(session_id.to_string(), harness, seq.fetch_add(1, Relaxed), None, None, payload)
     };
@@ -584,6 +612,9 @@ pub async fn settle_dead_child(
         next
     };
     if let Some(next) = next {
+        if let Ok(Some(item)) = crate::store::record_process_interruption(session_id, why).await {
+            app.emit(crate::orchestration::SESSION_CHANGED, &item).ok();
+        }
         publish_status(session_id, next, app).await;
     }
 }
@@ -1574,6 +1605,35 @@ impl SessionManager {
         get_session_index_item(&receipt.session_id).await?.context("the recipient no longer exists")?;
         let _fence = crate::orchestration::tasks::acceptance(&receipt.session_id, &receipt.operation_id).await?;
         crate::orchestration::inbox::accept(receipt, prompt, sender).await
+    }
+
+    /// Fence the recovery button against another send or a newer interruption.
+    pub(crate) async fn accept_interruption(&self, session_id: &str, id: &str) -> Result<carbon_proto::DeliverySummary> {
+        let _slot = self.slot(session_id).await.lock_owned().await;
+        let operation_id = format!("resume-{id}");
+        if let Some(delivery) = crate::orchestration::inbox::find(&operation_id).await? {
+            if delivery.session_id != session_id { bail!("continuation belongs to another session"); }
+            return Ok(delivery);
+        }
+        let item = get_session_index_item(session_id).await?.context("the session no longer exists")?;
+        crate::recovery::check_interruption(&item, id)?;
+        if !crate::recovery::list_work_recovery(Some(session_id.into())).await?.iter().any(|item| item.kind == crate::recovery::RecoveryKind::Session && item.id == id && item.action == crate::recovery::RecoveryAction::Resume) {
+            bail!("This session has pending or uncertain work. Inspect its recovery details before continuing.");
+        }
+        let _fence = crate::orchestration::tasks::acceptance(session_id, &operation_id).await?;
+        crate::orchestration::inbox::accept(&carbon_proto::OperationReceipt {
+            request_id: operation_id.clone(), operation_id, session_id: session_id.into(), worktree_name: None,
+        }, crate::recovery::CONTINUATION, None).await
+    }
+
+    /// Retrying mail shares the slot and task cancellation fence with ordinary acceptance.
+    pub(crate) async fn retry_delivery(&self, dispatch: &mut crate::orchestration::inbox::Dispatch) -> Result<carbon_proto::DeliverySummary> {
+        let session_id = dispatch.session_id().to_owned();
+        let _slot = self.slot(&session_id).await.lock_owned().await;
+        get_session_index_item(&session_id).await?.context("the recipient no longer exists")?;
+        if dispatch.target_deleted().await? { bail!("the recipient was deleted"); }
+        let _fence = crate::orchestration::tasks::acceptance(&session_id, dispatch.message_id()).await?;
+        dispatch.retry().await
     }
 
     /// Durable messages wait outside the composer queue and use the recipient's current pick.
@@ -2694,7 +2754,7 @@ impl Session {
         mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
         app: &Sink,
     ) -> Result<()> {
-        let (_, runs) = deliver_prompt(
+        let (_, runs, interruption_id) = deliver_prompt(
             &self.id,
             self.harness,
             prompt,
@@ -2755,6 +2815,7 @@ impl Session {
         if let Some(dispatch) = dispatch {
             dispatch.submitted().await?;
         }
+        retire_interruption(&self.id, interruption_id.as_deref(), app).await;
 
         Ok(())
     }
@@ -2883,6 +2944,10 @@ impl Session {
         )
         .await;
         match sent {
+            Ok((_, _, interruption_id)) => {
+                retire_interruption(&self.id, interruption_id.as_deref(), app).await;
+                Ok(())
+            }
             // Drawn beside the bubble, for `deliver_batch`'s reason: returned to
             // the composer, it leaves a message nothing answers, and a retry
             // draws it twice.
@@ -3557,7 +3622,7 @@ async fn deliver_prompt(
     transport: &Transport,
     mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
     app: &Sink,
-) -> Result<(String, bool)> {
+) -> Result<(String, bool, Option<String>)> {
     let seq = seq.fetch_add(1, Relaxed);
 
     // Ahead of the event, because it is what decides the event's own text:
@@ -3589,6 +3654,9 @@ async fn deliver_prompt(
         _ => None,
     };
 
+    // A child dying after this write can create a newer interruption before the send returns.
+    let interruption_id = get_session_index_item(session_id).await?.and_then(|item| item.interruption)
+        .filter(|interruption| interruption.resumed_at.is_none()).map(|interruption| interruption.id);
     let payload = AgentEventPayload::UserMessage {
         text,
         issues: issues.to_vec(),
@@ -3636,7 +3704,7 @@ async fn deliver_prompt(
 
     // Logged, not sent: the caller holds the text and opens the turn itself.
     if !send {
-        return Ok((sent, true));
+        return Ok((sent, true, interruption_id));
     }
 
     let submitted: Result<bool> = async {
@@ -3700,7 +3768,19 @@ async fn deliver_prompt(
         write_line(stdin, &line).await?;
         Ok(true)
     }.await;
-    submitted.map(|runs| (sent, runs))
+    let runs = submitted?;
+    Ok((sent, runs, interruption_id))
+}
+
+/// Retire only the recovery generation observed before a successful harness submission.
+async fn retire_interruption(session_id: &str, id: Option<&str>, app: &Sink) {
+    if let Some(id) = id {
+        match crate::store::resolve_interruption(session_id, id).await {
+            Ok(Some(item)) => { app.emit(crate::orchestration::SESSION_CHANGED, &item).ok(); }
+            Ok(None) => {},
+            Err(error) => eprintln!("[interruption resolve err] {error:#}"),
+        }
+    }
 }
 
 /// The handles a read loop needs once its harness has stopped being relevant.
@@ -4214,8 +4294,9 @@ pub async fn flush_queued(
     }
 
     let mut delivered = 0;
+    let mut interruptions = vec![];
     deliver_batch(
-        batch, session_id, harness, seq, transport, app, &mut delivered,
+        batch, session_id, harness, seq, transport, app, &mut delivered, &mut interruptions,
     )
     .await;
     // After delivery, so the pending row goes as its bubble lands.
@@ -4236,6 +4317,8 @@ pub async fn flush_queued(
     if let Some(next) = status.lock().await.on_send() {
         publish_status(session_id, next, app).await;
     }
+    for id in interruptions { retire_interruption(session_id, Some(&id), app).await; }
+
 }
 
 /// The fx flush: the **whole** queue as one turn, and the release symmetric to
@@ -4310,6 +4393,8 @@ async fn flush_one_per_turn(
         // draws what the reader typed, separately, in the order they typed it.
         // The text comes back prepared — a non-image attachment is an `@path` on
         // it by now — which is what may be joined.
+        let interruption_id = get_session_index_item(session_id).await.ok().flatten()
+            .and_then(|item| item.interruption).filter(|i| i.resumed_at.is_none()).map(|i| i.id);
         let mut texts = Vec::new();
         for message in batch {
             match deliver_prompt(
@@ -4332,7 +4417,7 @@ async fn flush_one_per_turn(
             )
             .await
             {
-                Ok((text, _)) => texts.push(text),
+                Ok((text, _, _)) => texts.push(text),
                 Err(err) => {
                     eprintln!("[queued flush err] {err}");
                     report_send_failure(session_id, harness, &err.to_string(), seq, app)
@@ -4351,7 +4436,10 @@ async fn flush_one_per_turn(
             transport.open_turn(&texts.join("\n\n"), &[]).await,
         ) {
             match sent {
-                Ok(()) => return,
+                Ok(()) => {
+                    retire_interruption(session_id, interruption_id.as_deref(), app).await;
+                    return;
+                },
                 Err(err) => {
                     eprintln!("[queued flush err] {err}");
                     report_send_failure(session_id, harness, &err.to_string(), seq, app)
@@ -4375,6 +4463,7 @@ async fn deliver_batch(
     transport: &Transport,
     app: &Sink,
     delivered: &mut usize,
+    interruptions: &mut Vec<String>,
 ) {
     for message in batch {
         // No baseline, and this is the load-bearing half of the queued case:
@@ -4402,7 +4491,10 @@ async fn deliver_batch(
         )
         .await
         {
-            Ok(_) => *delivered += 1,
+            Ok((_, _, interruption_id)) => {
+                *delivered += 1;
+                if let Some(id) = interruption_id { interruptions.push(id); }
+            },
             Err(err) => {
                 eprintln!("[queued flush err] {err}");
                 // Drawn, not only logged. The prompt is already on screen and in

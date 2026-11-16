@@ -16,6 +16,7 @@ mod pages;
 mod secret;
 mod preview;
 mod task;
+mod recovery;
 mod machine;
 mod setup;
 use carbon_proto::{
@@ -67,6 +68,9 @@ enum Command {
     /// Search models and their supported settings.
     #[command(subcommand, arg_required_else_help = true)]
     Model(discovery::ModelCommand),
+    /// Inspect interrupted work, resume a session or retry an unsubmitted message.
+    #[command(subcommand)]
+    Recovery(recovery::RecoveryCommand),
     /// Start, list and message sessions, and settle or rename them.
     #[command(subcommand, arg_required_else_help = true)]
     Session(SessionCommand),
@@ -478,6 +482,7 @@ fn run() -> Result<(), String> {
             Command::Harness(_)
                 | Command::Model(_)
                 | Command::Session(_)
+                | Command::Recovery(_)
                 | Command::Task(_)
                 | Command::Issue(_)
                 | Command::Draft(_)
@@ -498,6 +503,7 @@ fn run() -> Result<(), String> {
         Command::Harness(command) => discovery::harness(command),
         Command::Model(command) => discovery::model(command),
         Command::Session(command) => session(command),
+        Command::Recovery(command) => recovery::run(command),
         Command::Task(command) => task::run(command),
         Command::Issue(IssueCommand::Link(args)) => link_issues(args, false),
         Command::Issue(IssueCommand::Unlink(args)) => link_issues(args, true),

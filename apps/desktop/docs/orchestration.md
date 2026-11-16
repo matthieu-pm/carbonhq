@@ -18,7 +18,7 @@
 
 **The protocol version is checked before the request is even looked at**, and the refusal **names which half is behind** — `envelope.v < OLDEST_SPOKEN` means the CLI is behind, say `carbon update`; `>` means the app is behind, say update the app. Naming the wrong half is worse than naming neither, since only one cure is runnable from an agent. **The envelope must still parse at a version the app no longer speaks** — the check is a layer *above* parse, or a v1 line answers "could not parse the request" where it should answer "run `carbon update`". Both pinned by test.
 
-**Bump rule: bump when the default the old side falls back to is undetectable.** An old app ignoring `model` runs on its own default, which the caller can see and judge; an old app ignoring `from` starts the worktree at `origin/<default>` and answers *identically to success*, so a session spawned to review unpushed work reviews none of it and reports everything fine. Wrong work that looks like right work is what earns a bump. Currently **v20**: v2 = `from`, v3 = `issues` and `LinkIssues`, v4 = `LinkIssues.identifiers` → `issues` (renamed, not extended, so two shapes cannot be confused), v5 = `Browser`, v6 = `fast` — an old app ignores it and runs at ordinary speed, which answers identically to success since nothing in the transcript says which tier served the turn, v7 = the `carbon draft` requests, which an older app reads as a broken CLI rather than as an app to update, v8 = `carbon share`, for the same reason, v9 = the server list (now `carbon machine`), v10 = the session verbs, `share ls` across sessions, and `from` renamed `base` — a create or draft naming a base goes out as v10 and nothing else does, since an older app ignores `base` and starts at `origin/<default>`, v11 = `set_remote_access`, v12 = `on_machine`, since an app that ignored the machine would run the request on the Mac, v13 = `write_issue` — `carbon issue comment` and `carbon issue status`, which an older app cannot parse, so the refusal names the app rather than saying the request could not be parsed, v14 = the `carbon pages` requests, for the same reason; v15 = one-use secret requests; v16 = keyed session create/send, since ignoring the key would repeat work silently; v17 = managed preview commands; v18 = durable agent messages and delivery status/cancellation; v19 = opt-in delegated tasks and immutable results; v20 = capability discovery and JSON creation receipts. See [secrets.md](secrets.md) for the value-submission boundary. `OnMachine` stamps v12, or the inner request's version when that is newer, so a write sent with `--machine` is refused the same way. **The app answers every version from `OLDEST_SPOKEN` up to its own, and the CLI stamps each request with the oldest version that carries it whole** (`Request::version`), so a bump breaks only the requests that need it — a v7 CLI runs everything but `carbon draft` against a v6 app, and that one is refused naming the app. `OLDEST_SPOKEN` moves only for a rename, never for an addition.
+**Bump rule: bump when the default the old side falls back to is undetectable.** An old app ignoring `model` runs on its own default, which the caller can see and judge; an old app ignoring `from` starts the worktree at `origin/<default>` and answers *identically to success*, so a session spawned to review unpushed work reviews none of it and reports everything fine. Wrong work that looks like right work is what earns a bump. Currently **v21**: v2 = `from`, v3 = `issues` and `LinkIssues`, v4 = `LinkIssues.identifiers` → `issues` (renamed, not extended, so two shapes cannot be confused), v5 = `Browser`, v6 = `fast` — an old app ignores it and runs at ordinary speed, which answers identically to success since nothing in the transcript says which tier served the turn, v7 = the `carbon draft` requests, which an older app reads as a broken CLI rather than as an app to update, v8 = `carbon share`, for the same reason, v9 = the server list (now `carbon machine`), v10 = the session verbs, `share ls` across sessions, and `from` renamed `base` — a create or draft naming a base goes out as v10 and nothing else does, since an older app ignores `base` and starts at `origin/<default>`, v11 = `set_remote_access`, v12 = `on_machine`, since an app that ignored the machine would run the request on the Mac, v13 = `write_issue` — `carbon issue comment` and `carbon issue status`, which an older app cannot parse, so the refusal names the app rather than saying the request could not be parsed, v14 = the `carbon pages` requests, for the same reason; v15 = one-use secret requests; v16 = keyed session create/send, since ignoring the key would repeat work silently; v17 = managed preview commands; v18 = durable agent messages and delivery status/cancellation; v19 = opt-in delegated tasks and immutable results; v20 = capability discovery and JSON creation receipts; v21 = explicit work recovery and deduplicated continuation. See [secrets.md](secrets.md) for the value-submission boundary. `OnMachine` stamps v12, or the inner request's version when that is newer, so a write sent with `--machine` is refused the same way. **The app answers every version from `OLDEST_SPOKEN` up to its own, and the CLI stamps each request with the oldest version that carries it whole** (`Request::version`), so a bump breaks only the requests that need it — a v7 CLI runs everything but `carbon draft` against a v6 app, and that one is refused naming the app. `OLDEST_SPOKEN` moves only for a rename, never for an addition.
 
 
 ## The socket
@@ -233,3 +233,46 @@ acknowledged index only when the original reply was lost. Omitted on legacy
 requests, this new flag does not change existing retry fingerprints. Ordinary
 stdout stays the ID alone. No serve command or event schema changed, so the iOS
 client's existing Codable payloads are unchanged.
+## Interruption recovery
+
+Startup records an interruption beside each affected session's browsing status.
+Completed/unread sessions stay completed. A completed turn found in the transcript
+repairs a stale running status instead of producing a false interruption.
+
+The server reconciles inbox submissions, delegated tasks and reserved command
+receipts before accepting clients or starting workers. An accepted message can
+make its first delivery; an uncertain submission is never automatically repeated.
+A task with accepted follow-ups or a recorded result awaiting dependencies keeps
+that state. Dead-process questions and permissions expire; only a fresh harness
+request can ask again.
+
+Desktop, iPhone and the headless API read the same recovery report through
+`list_work_recovery`. Resume sends a continuation immediately through the durable
+inbox with a stable interruption ID. It asks the agent to verify existing effects
+before continuing. A new prompt retires the recovery action after submission,
+while the interruption reason remains stored. Retry is available only for a
+delivery that failed before publication; task-owned opening messages require
+inspection of the immutable task result.
+
+`carbon recovery list [session-id]`, `carbon recovery resume <session-id> <id>`
+and `carbon recovery retry <session-id> <message-id>` expose those same actions.
+These commands require protocol v21 and support `--machine`. Reserved creates
+whose outcome is unknown remain inspectable, including their reserved session,
+worktree and request IDs. Retrying their original request still returns its
+recorded outcome rather than creating a worker.
+
+Run `python3 scripts/test-recovery.py` after building `carbon-serve`. It kills and
+restarts the real server against a fixture harness, including concurrent Resume,
+expired callbacks, queued task follow-ups, reservations and uncertain deliveries.
+
+Recovery errors are isolated to the affected transcript, inbox record, receipt
+or task registry. Unreadable task entries stay opaque and survive registry
+writes; a malformed or unsupported registry stays untouched. Neither blocks
+server startup. Every harness reader settles a dead child through the same
+child-identity guard.
+
+Recovery notices belong to an existing session, not a new task's composer.
+Dismiss acknowledges an inspected outcome durably without changing its receipt,
+delivery fence or task result. An acknowledged uncertain delivery can no longer
+block an explicit continuation; its original message is never resubmitted.
+`carbon recovery dismiss <session-id> <id>` uses the same acknowledgement.

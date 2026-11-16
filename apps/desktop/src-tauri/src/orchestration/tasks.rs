@@ -50,6 +50,8 @@ struct Record {
 struct Registry {
     version: u32,
     tasks: BTreeMap<String, Record>,
+    #[serde(skip)]
+    opaque: BTreeMap<String, serde_json::Value>,
 }
 
 struct Locked {
@@ -65,9 +67,18 @@ impl Locked {
         let (path, lock) = receipts::locked_path(&root, "registry").await?;
         let registry = match tokio::fs::read(&path).await {
             Ok(bytes) => {
-                let registry: Registry = serde_json::from_slice(&bytes)?;
-                if registry.version != 1 {
-                    bail!("unsupported task registry version; update Carbon");
+                let raw: serde_json::Value = serde_json::from_slice(&bytes)?;
+                if raw["version"] != 1 { bail!("unsupported task registry version; update Carbon"); }
+                let entries = raw["tasks"].as_object().context("task registry has no task map")?;
+                let mut registry = Registry { version: 1, ..Default::default() };
+                for (id, value) in entries {
+                    match serde_json::from_value(value.clone()) {
+                        Ok(record) => { registry.tasks.insert(id.clone(), record); }
+                        Err(error) => {
+                            eprintln!("[task record {id}] {error:#}");
+                            registry.opaque.insert(id.clone(), value.clone());
+                        }
+                    }
                 }
                 registry
             }
@@ -86,10 +97,13 @@ impl Locked {
 
     /// The fsync retains ownership even when its awaiting task is canceled.
     async fn save(&self) -> Result<()> {
+        let mut value = serde_json::to_value(&self.registry)?;
+        let tasks = value["tasks"].as_object_mut().context("task registry has no task map")?;
+        for (id, raw) in &self.registry.opaque { tasks.insert(id.clone(), raw.clone()); }
         let (path, lock, bytes) = (
             self.path.clone(),
             self.lock.clone(),
-            serde_json::to_vec(&self.registry)?,
+            serde_json::to_vec(&value)?,
         );
         tokio::task::spawn_blocking(move || -> Result<()> {
             let _lock = lock;
@@ -288,6 +302,11 @@ pub(super) async fn by_operation(operation: &str) -> Result<Option<TaskSummary>>
         }
     }
     Ok(Some(summary))
+}
+
+/// Recovery reads immutable results without opening another task state machine.
+pub(crate) async fn recovery_summaries() -> Result<Vec<TaskSummary>> {
+    Ok(Locked::load().await?.registry.tasks.values().map(|record| record.summary.clone()).collect())
 }
 
 pub(crate) struct SubmissionGuard {
@@ -498,7 +517,7 @@ fn apply(record: &mut Record, event: &AgentEvent, completion_events: &HashMap<St
 }
 
 fn interrupted(reason: &str) -> bool {
-    matches!(reason, "interrupted" | "cancelled" | "canceled" | "aborted")
+    matches!(reason, "interrupted" | "cancelled" | "canceled" | "aborted" | "process_exited")
         || reason.starts_with("aborted_")
 }
 
@@ -704,7 +723,6 @@ async fn cancel(id: &str) -> Result<()> {
 
 /// Recovery replays complete boundaries first; work lost with a process becomes explicitly interrupted.
 pub(super) async fn start(app: Sink) -> Result<()> {
-    tick(&app, true).await?;
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
         loop {
@@ -715,6 +733,11 @@ pub(super) async fn start(app: Sink) -> Result<()> {
         }
     });
     Ok(())
+}
+
+/// Replay and publish recovered outcomes before any accepted message can dispatch.
+pub(super) async fn recover_startup(app: &Sink) -> Result<()> {
+    tick(app, true).await
 }
 
 /// The session slot precedes the registry lock, fencing finalization against queued follow-ups.
@@ -815,6 +838,9 @@ async fn tick(app: &Sink, recovering: bool) -> Result<()> {
                 d.session_id == record.summary.child_session_id
                     && !record.prior_deliveries.contains(&d.message_id)
             });
+        let recoverable = pending.iter().any(|d| d.session_id == record.summary.child_session_id
+            && d.state == carbon_proto::DeliveryState::Accepted
+            && !record.prior_deliveries.contains(&d.message_id));
         if !record.summary.questions.is_empty() {
             record.summary.state = TaskState::Blocked;
         } else if let Some(result) = record
@@ -827,7 +853,7 @@ async fn tick(app: &Sink, recovering: bool) -> Result<()> {
         } else if record.candidate.is_some() {
             record.summary.state = TaskState::Waiting;
         } else if record.started {
-            record.summary.state = TaskState::Running;
+            record.summary.state = if !activity.alive && recoverable { TaskState::Queued } else { TaskState::Running };
         }
         if !record.started && !record.create {
             match inbox::find(&record.summary.operation_id).await?.map(|d| d.state) {
@@ -839,10 +865,15 @@ async fn tick(app: &Sink, recovering: bool) -> Result<()> {
             }
         }
         if record.summary.result.is_none()
-            && (recovering || (record.started && !activity.alive && !in_flight))
+            && ((recovering && !recoverable) || (record.started && !activity.alive && !in_flight))
             && (record.started || record.create)
+            && record.candidate.is_none()
         {
-            finish(record, TaskState::Interrupted, "The child process ended before the delegated task published a result. Inspect the session before starting a new task.");
+            finish(record, TaskState::Interrupted, if recovering {
+                "The server restarted before the delegated task published a result. Previous permission and question callbacks have expired. Inspect the session before starting a new task."
+            } else {
+                "The child process ended before the delegated task published a result. Inspect the session before starting a new task."
+            });
         }
         if let Some(result) = record.summary.result.as_mut() {
             if let Some(item) =
@@ -1104,6 +1135,7 @@ mod tests {
     #[test]
     fn normalized_interruptions_cannot_publish_success() {
         for reason in [
+            "process_exited",
             "interrupted",
             "cancelled",
             "aborted_streaming",

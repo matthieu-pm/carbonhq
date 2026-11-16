@@ -16,7 +16,7 @@
 #[path = "orchestration/discovery.rs"]
 mod discovery;
 #[path = "orchestration/receipts.rs"]
-mod receipts;
+pub(crate) mod receipts;
 #[path = "orchestration/inbox.rs"]
 pub(crate) mod inbox;
 #[path = "orchestration/tasks.rs"]
@@ -172,7 +172,6 @@ pub async fn serve(app: Sink) -> Result<()> {
 
     restrict(&path)?;
 
-    inbox::recover_startup().await?;
     tasks::start(app.clone()).await?;
     inbox::start(app.clone()).await?;
 
@@ -193,6 +192,13 @@ pub async fn serve(app: Sink) -> Result<()> {
             }
         });
     }
+}
+
+/// Reconcile durable work before the server accepts clients or starts delivery workers.
+pub(crate) async fn recover_startup(app: &Sink) {
+    if let Err(error) = inbox::recover_startup().await { eprintln!("[inbox recovery err] {error:#}"); }
+    if let Err(error) = tasks::recover_startup(app).await { eprintln!("[task recovery err] {error:#}"); }
+    if let Err(error) = receipts::recover_startup().await { eprintln!("[receipt recovery err] {error:#}"); }
 }
 
 /// The permission bits on a directory, for the check above.
@@ -303,6 +309,8 @@ async fn route(request: Request, app: &Sink) -> Result<Response> {
 #[cfg(any(feature = "serve", feature = "desktop"))]
 fn session_named(request: &Request) -> Option<&str> {
     match request {
+        Request::Recovery(carbon_proto::RecoveryRequest::List { session_id }) => session_id.as_deref(),
+        Request::Recovery(carbon_proto::RecoveryRequest::Resume { session_id, .. } | carbon_proto::RecoveryRequest::Retry { session_id, .. } | carbon_proto::RecoveryRequest::Dismiss { session_id, .. }) => Some(session_id),
         Request::DeliveryStatus(r) | Request::CancelDelivery(r) => Some(&r.session_id),
         Request::SendMessage(r) => Some(&r.session_id),
         Request::LinkIssues(r) => Some(&r.session_id),
@@ -798,6 +806,16 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
 async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::OperationReceipt>, app: &Sink) -> Result<Response> {
     match request {
         Request::Discover(request) => discovery::request(request, app).await,
+        Request::Recovery(request) => {
+            use carbon_proto::RecoveryRequest;
+            let value = match request {
+                RecoveryRequest::Dismiss { session_id, id } => serde_json::to_value(crate::recovery::dismiss_work_recovery(session_id, id, app.clone()).await?)?,
+                RecoveryRequest::List { session_id } => serde_json::to_value(crate::recovery::list_work_recovery(session_id).await?)?,
+                RecoveryRequest::Resume { session_id, id } => crate::recovery::recover_work(session_id, id, crate::recovery::RecoveryAction::Resume, app.clone()).await?,
+                RecoveryRequest::Retry { session_id, id } => crate::recovery::recover_work(session_id, id, crate::recovery::RecoveryAction::Retry, app.clone()).await?,
+            };
+            Ok(Response::Recovery { value })
+        }
         Request::Task(request) => tasks::request(request).await,
         Request::DeliveryStatus(reference) => inbox::status(reference, false).await,
         Request::CancelDelivery(reference) => inbox::status(reference, true).await,

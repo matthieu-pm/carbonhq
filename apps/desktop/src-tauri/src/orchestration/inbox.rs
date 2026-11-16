@@ -13,6 +13,8 @@ use std::{
     sync::Arc,
 };
 
+static RETRY_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Record {
     version: u32,
@@ -134,6 +136,19 @@ impl Dispatch {
     pub(crate) async fn submitted(&mut self) -> Result<()> {
         self.transition(DeliveryState::Submitted, None).await
     }
+
+    /// Only a known pre-publication failure can re-enter the worker queue.
+    pub(crate) async fn retry(&mut self) -> Result<DeliverySummary> {
+        match self.record.summary.state {
+            DeliveryState::Failed => {
+                self.transition(DeliveryState::Accepted, None).await?;
+                RETRY_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            DeliveryState::Accepted => {},
+            _ => bail!("this delivery may already have been submitted; inspect it before continuing"),
+        }
+        Ok(self.record.summary.clone())
+    }
 }
 
 /// The operation ID is allocated by the retry receipt and survives every forwarding hop.
@@ -219,7 +234,7 @@ async fn load(root: &Path, id: &str) -> Result<Option<Dispatch>> {
 }
 
 /// Receipts are immutable; the inbox is the current delivery state behind their message ID.
-pub(super) async fn find(id: &str) -> Result<Option<DeliverySummary>> {
+pub(crate) async fn find(id: &str) -> Result<Option<DeliverySummary>> {
     let root = root().await?;
     let path = root.join(format!("{}.json", receipts::hash(id.as_bytes())));
     let bytes = match tokio::fs::read(path).await {
@@ -283,6 +298,19 @@ pub(crate) async fn delete_target(session_id: &str) -> Result<()> {
     persist(&deleted_path(&root, session_id)?, b"deleted".to_vec(), lock).await
 }
 
+/// Skip unreadable records during scans without replacing their durable retry fences.
+async fn scan_record(path: &Path) -> Option<Record> {
+    let result: Result<Record> = async {
+        let record: Record = serde_json::from_slice(&tokio::fs::read(path).await?)?;
+        if record.version != 1 { bail!("unsupported inbox version; update Carbon"); }
+        Ok(record)
+    }.await;
+    match result {
+        Ok(record) => Some(record),
+        Err(error) => { eprintln!("[inbox record {}] {error:#}", path.display()); None }
+    }
+}
+
 async fn records(root: &Path) -> Result<Vec<DeliverySummary>> {
     scan(root, &mut std::collections::HashSet::new()).await
 }
@@ -307,10 +335,7 @@ async fn scan(
             .extension()
             .is_some_and(|extension| extension == "json")
         {
-            let record: Record = serde_json::from_slice(&tokio::fs::read(entry.path()).await?)?;
-            if record.version != 1 {
-                bail!("unsupported inbox version; update Carbon");
-            }
+            let Some(record) = scan_record(&entry.path()).await else { continue; };
             if record.summary.state != DeliveryState::Accepted {
                 finished.insert(entry.path());
             }
@@ -331,6 +356,7 @@ async fn recover(root: &Path) -> Result<()> {
         if summary.state != DeliveryState::Submitting {
             continue;
         }
+        let recovered: Result<()> = async {
         let mut dispatch = load(root, &summary.message_id)
             .await?
             .context("inbox record vanished")?;
@@ -352,6 +378,10 @@ async fn recover(root: &Path) -> Result<()> {
             (DeliveryState::Uncertain, "The server stopped during submission. No conclusive harness evidence was found; this message was not resubmitted.")
         };
         dispatch.transition(state, Some(detail.into())).await?;
+        Ok(())
+        }.await;
+        if let Err(error) = recovered { eprintln!("[delivery recovery {}] {error:#}", summary.message_id); }
+
     }
     Ok(())
 }
@@ -424,8 +454,11 @@ fn native_evidence(paths: &[PathBuf], marker: &str) -> bool {
 
 /// Accepted follow-ups belong to the current task until the session consumes them.
 pub(super) async fn pending_deliveries() -> Result<Vec<DeliverySummary>> {
-    static FINISHED: std::sync::LazyLock<tokio::sync::Mutex<std::collections::HashSet<PathBuf>>> = std::sync::LazyLock::new(Default::default);
-    let mut finished = FINISHED.lock().await;
+    static FINISHED: std::sync::LazyLock<tokio::sync::Mutex<(u64, std::collections::HashSet<PathBuf>)>> = std::sync::LazyLock::new(Default::default);
+    let mut cached = FINISHED.lock().await;
+    let (revision, finished) = &mut *cached;
+    let latest = RETRY_REVISION.load(std::sync::atomic::Ordering::Relaxed);
+    if *revision != latest { finished.clear(); *revision = latest; }
     let root = root().await?;
     let mut pending = Vec::new();
     let mut entries = match tokio::fs::read_dir(root).await {
@@ -435,7 +468,7 @@ pub(super) async fn pending_deliveries() -> Result<Vec<DeliverySummary>> {
     };
     while let Some(entry) = entries.next_entry().await? {
         if finished.contains(&entry.path()) || entry.path().extension().is_none_or(|e| e != "json") { continue; }
-        let record: Record = serde_json::from_slice(&tokio::fs::read(entry.path()).await?)?;
+        let Some(record) = scan_record(&entry.path()).await else { continue; };
         if matches!(record.summary.state, DeliveryState::Accepted | DeliveryState::Submitting | DeliveryState::Uncertain) {
             pending.push(record.summary);
         } else { finished.insert(entry.path()); }
@@ -445,6 +478,18 @@ pub(super) async fn pending_deliveries() -> Result<Vec<DeliverySummary>> {
 
 /// Reconcile ambiguous submissions before task replay or either worker can dispatch.
 pub(super) async fn recover_startup() -> Result<()> { recover(&root().await?).await }
+
+/// Retry only a failure recorded before publication; uncertain submissions stay fenced.
+pub(crate) async fn retry_failed(session_id: &str, message_id: &str) -> Result<DeliverySummary> {
+    let mut dispatch = load(&root().await?, message_id).await?.context("delivery not found")?;
+    if dispatch.session_id() != session_id { bail!("delivery belongs to another session"); }
+    manager().retry_delivery(&mut dispatch).await
+}
+
+/// Diagnostic reads include terminal failures without changing worker ownership.
+pub(crate) async fn recovery_deliveries() -> Result<Vec<DeliverySummary>> {
+    records(&root().await?).await
+}
 
 /// Cancel the pending work covered by a task's durable cancellation fence.
 pub(super) async fn cancel_pending(session: &str, all: bool, operation: &str) -> Result<()> {
@@ -464,10 +509,13 @@ pub(super) async fn start(app: Sink) -> Result<()> {
     let root = root().await?;
     tokio::spawn(async move {
         let mut finished = std::collections::HashSet::new();
+        let mut retry_revision = RETRY_REVISION.load(std::sync::atomic::Ordering::Relaxed);
         let mut workers = std::collections::HashMap::<String, tokio::task::JoinHandle<()>>::new();
         let mut tick = tokio::time::interval(std::time::Duration::from_millis(250));
         loop {
             tick.tick().await;
+            let latest = RETRY_REVISION.load(std::sync::atomic::Ordering::Relaxed);
+            if latest != retry_revision { finished.clear(); retry_revision = latest; }
             workers.retain(|_, worker| !worker.is_finished());
             let summaries = match scan(&root, &mut finished).await {
                 Ok(summaries) => summaries,

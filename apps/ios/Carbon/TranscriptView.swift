@@ -54,6 +54,7 @@ struct TranscriptView: View {
                         default: EmptyView()
                         }
                     }
+                    RecoveryNotice(key: key)
                     ForEach(store.secrets[key] ?? []) { request in
                         SecretCard(key: key, request: request)
                     }
