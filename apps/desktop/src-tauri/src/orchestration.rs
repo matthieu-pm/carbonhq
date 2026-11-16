@@ -13,6 +13,8 @@
 //! access control is the containing directory's `0700` — see
 //! [`serve`](serve) for why the socket's own mode cannot be the boundary.
 
+#[path = "orchestration/discovery.rs"]
+mod discovery;
 #[path = "orchestration/receipts.rs"]
 mod receipts;
 #[path = "orchestration/inbox.rs"]
@@ -790,6 +792,7 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
 
 async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::OperationReceipt>, app: &Sink) -> Result<Response> {
     match request {
+        Request::Discover(request) => discovery::request(request, app).await,
         Request::Task(request) => tasks::request(request).await,
         Request::DeliveryStatus(reference) => inbox::status(reference, false).await,
         Request::CancelDelivery(reference) => inbox::status(reference, true).await,
@@ -1431,8 +1434,13 @@ async fn create_session(
     // Refresh tracked rows exposed during handshake; ordinary sessions are first announced here.
     app.emit(SESSION_CREATED, &item).ok();
 
-    if let Some(task) = tracked { return Ok(Response::Task { task }); }
+    let configuration = discovery::configuration(&item);
+    if let Some(task) = tracked {
+        let task = tasks::set_configuration(&task.task_id, configuration).await.map_err(|error| error.context(receipts::SubmissionStarted))?;
+        return Ok(Response::Task { task });
+    }
     Ok(Response::Created {
+        configuration: Some(configuration),
         session: summarize(item),
         base_ref,
     })
@@ -1598,6 +1606,7 @@ async fn start_session(draft: &StoredDraft, parent: Option<&str>, app: &Sink) ->
 
     app.emit(SESSION_CREATED, &item).ok();
     Ok(Response::Created {
+        configuration: Some(discovery::configuration(&item)),
         session: summarize(item),
         base_ref,
     })

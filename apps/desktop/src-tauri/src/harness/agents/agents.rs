@@ -393,6 +393,11 @@ async fn persist_options(session: &AcpSession) -> Result<()> {
     .await
 }
 
+/// An empty published catalog differs from an agent Carbon has never opened.
+pub fn has_learned_options(harness: Harness) -> bool {
+    agent_id(harness).ok().is_some_and(|id| LEARNED.lock().unwrap().contains_key(id))
+}
+
 /// Last observed options are a hint until a new session confirms them.
 pub fn learned_options(harness: Harness) -> Vec<parser::ConfigOption> {
     agent_id(harness)

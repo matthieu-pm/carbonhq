@@ -1,0 +1,85 @@
+{
+  "claude_code": {
+    "live": {
+      "model": "in_place",
+      "effort": "locked",
+      "stance": "in_place",
+      "fast": "in_place"
+    },
+    "modes": [
+      "plan",
+      "manual",
+      "auto",
+      "dontAsk",
+      "bypassPermissions"
+    ],
+    "fallbacks": {}
+  },
+  "grok": {
+    "live": {
+      "model": "in_place",
+      "effort": "in_place",
+      "stance": "locked",
+      "fast": "in_place"
+    },
+    "modes": [
+      "manual",
+      "auto",
+      "bypassPermissions"
+    ],
+    "fallbacks": {
+      "plan": "manual",
+      "dontAsk": "bypassPermissions"
+    }
+  },
+  "pi": {
+    "live": {
+      "model": "in_place",
+      "effort": "in_place",
+      "stance": "locked",
+      "fast": "locked"
+    },
+    "modes": [],
+    "fallbacks": {
+      "plan": "bypassPermissions",
+      "manual": "bypassPermissions",
+      "auto": "bypassPermissions",
+      "dontAsk": "bypassPermissions",
+      "bypassPermissions": "bypassPermissions"
+    }
+  },
+  "fx": {
+    "live": {
+      "model": "next_turn",
+      "effort": "next_turn",
+      "stance": "next_turn",
+      "fast": "next_turn"
+    },
+    "modes": [
+      "manual",
+      "auto",
+      "bypassPermissions"
+    ],
+    "fallbacks": {
+      "plan": "manual",
+      "dontAsk": "auto"
+    }
+  },
+  "codex": {
+    "live": {
+      "model": "locked",
+      "effort": "locked",
+      "stance": "locked",
+      "fast": "locked"
+    },
+    "modes": [
+      "bypassPermissions",
+      "manual",
+      "auto"
+    ],
+    "fallbacks": {
+      "plan": "bypassPermissions",
+      "dontAsk": "bypassPermissions"
+    }
+  }
+}

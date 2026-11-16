@@ -10,6 +10,7 @@
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
 
+mod discovery;
 mod draft;
 mod pages;
 mod secret;
@@ -60,6 +61,12 @@ static MACHINE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 #[derive(Subcommand)]
 enum Command {
+    /// Discover available harnesses and inspect their capabilities.
+    #[command(subcommand, arg_required_else_help = true)]
+    Harness(discovery::HarnessCommand),
+    /// Search models and their supported settings.
+    #[command(subcommand, arg_required_else_help = true)]
+    Model(discovery::ModelCommand),
     /// Start, list and message sessions, and settle or rename them.
     #[command(subcommand, arg_required_else_help = true)]
     Session(SessionCommand),
@@ -179,6 +186,9 @@ struct Settle {
 
 #[derive(Args)]
 struct New {
+    /// Print the creation receipt, including effective settings, as JSON.
+    #[arg(long)]
+    json: bool,
     /// Track this delegation and deliver its immutable result to the calling session.
     #[arg(long)]
     task: bool,
@@ -465,7 +475,9 @@ fn run() -> Result<(), String> {
         // These act on this machine, or on nothing a server answers.
         if !matches!(
             cli.command,
-            Command::Session(_)
+            Command::Harness(_)
+                | Command::Model(_)
+                | Command::Session(_)
                 | Command::Task(_)
                 | Command::Issue(_)
                 | Command::Draft(_)
@@ -478,11 +490,13 @@ fn run() -> Result<(), String> {
                 | Command::Ls(_)
                 | Command::Send(_)
         ) {
-            return Err("--machine takes session, task, draft, issue, pages, secret, preview, browser and share commands".into());
+            return Err("--machine takes harness, model, session, task, draft, issue, pages, secret, preview, browser and share commands".into());
         }
         let _ = MACHINE.set(machine);
     }
     match cli.command {
+        Command::Harness(command) => discovery::harness(command),
+        Command::Model(command) => discovery::model(command),
         Command::Session(command) => session(command),
         Command::Task(command) => task::run(command),
         Command::Issue(IssueCommand::Link(args)) => link_issues(args, false),
@@ -592,6 +606,7 @@ fn session(command: SessionCommand) -> Result<(), String> {
 
 fn new(args: New) -> Result<(), String> {
     let request = Request::CreateSession(CreateSession {
+        configuration: args.json,
         task: args.task.then_some(carbon_proto::TaskOptions { awaited: args.awaited }),
         request_id: args.request_id.or_else(|| args.task.then(|| uuid::Uuid::new_v4().to_string())),
         prompt: args.prompt,
@@ -610,13 +625,26 @@ fn new(args: New) -> Result<(), String> {
         hidden: args.hidden,
     });
 
-    match send(request)? {
+    let response = send(request)?;
+    if args.json {
+        match &response {
+            Response::Created { configuration: Some(_), .. }
+            | Response::Task { task: carbon_proto::TaskSummary { configuration: Some(_), .. } } => {
+                println!("{}", serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?);
+                return Ok(());
+            },
+            Response::Error { message } => return Err(message.clone()),
+            Response::Created { .. } | Response::Task { .. } => return Err("The server created the session but returned no effective configuration. Update the owning Carbon server; inspect the session before retrying.".into()),
+            other => return Err(unexpected(other.clone())),
+        }
+    }
+    match response {
         Response::Task { task } => {
             println!("{}", task.task_id);
             eprintln!("Tracking session {}. Inspect with `carbon task status {}`.", task.child_session_id, task.task_id);
             Ok(())
         }
-        Response::Created { session, base_ref } => {
+        Response::Created { session, base_ref, .. } => {
             // The id alone on stdout, so `$(carbon session new …)` captures something
             // usable; everything a human wants goes to stderr beside it.
             println!("{}", session.session_id);

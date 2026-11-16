@@ -207,6 +207,7 @@ pub(super) async fn register(
     }
     let task_id = uuid::Uuid::now_v7().to_string();
     let summary = TaskSummary {
+        configuration: None,
         task_id: task_id.clone(),
         operation_id: receipt.operation_id.clone(),
         parent_session_id: parent.into(),
@@ -269,6 +270,16 @@ pub(super) async fn register(
             clear_pending: false,
         },
     );
+    locked.save().await?;
+    Ok(summary)
+}
+
+/// The creation receipt keeps the settings that were applied to its first prompt.
+pub(super) async fn set_configuration(id: &str, configuration: carbon_proto::EffectiveConfiguration) -> Result<TaskSummary> {
+    let mut locked = Locked::load().await?;
+    let record = locked.registry.tasks.get_mut(id).context("task disappeared during creation")?;
+    record.summary.configuration = Some(configuration);
+    let summary = record.summary.clone();
     locked.save().await?;
     Ok(summary)
 }
@@ -1054,6 +1065,7 @@ mod tests {
     fn record() -> Record {
         Record {
             summary: TaskSummary {
+                configuration: None,
                 task_id: "task".into(),
                 operation_id: "operation".into(),
                 parent_session_id: "parent".into(),

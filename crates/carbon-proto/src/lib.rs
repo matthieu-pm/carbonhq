@@ -9,6 +9,9 @@
 //! Deliberately thin: serde, and the one function that decides where to
 //! connect. No tokio and no tauri, so the CLI links none of either.
 
+mod discovery;
+pub use discovery::*;
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -50,7 +53,8 @@ use std::path::PathBuf;
 /// v17 adds managed preview commands.
 /// v18 adds durable delivery acceptance and delivery status/cancellation.
 /// v19 adds opt-in delegated tasks and immutable completion results.
-pub const PROTOCOL_VERSION: u32 = 19;
+/// v20 adds discovery and creation receipts with effective configuration.
+pub const PROTOCOL_VERSION: u32 = 20;
 
 /// A CLI readiness wait fits inside the socket and remote request deadlines.
 pub const PREVIEW_WAIT_SECS: u64 = 150;
@@ -106,6 +110,8 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
+            Request::Discover(_) => 20,
+            Request::CreateSession(create) if create.configuration => 20,
             Request::Task(_) => 19,
             Request::CreateSession(create) if create.task.is_some() => 19,
             Request::SendMessage(send) if send.task.is_some() => 19,
@@ -152,6 +158,7 @@ impl Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
+    Discover(DiscoveryRequest),
     Task(TaskRequest),
     DeliveryStatus(DeliveryRef),
     CancelDelivery(DeliveryRef),
@@ -694,6 +701,9 @@ pub enum BrowserAction {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSession {
+    /// Require a receipt containing the configuration Carbon selected.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub configuration: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<TaskOptions>,
     // New defaulted fields must omit their default on serialization, or a
@@ -970,6 +980,8 @@ pub struct TaskResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<EffectiveConfiguration>,
     pub task_id: String,
     pub operation_id: String,
     pub parent_session_id: String,
@@ -990,6 +1002,7 @@ pub struct TaskSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
+    Discovery { data: DiscoveryData },
     Task { task: TaskSummary },
     Delivery {
         delivery: DeliverySummary,
@@ -1008,6 +1021,8 @@ pub enum Response {
     },
     Created {
         session: SessionSummary,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        configuration: Option<EffectiveConfiguration>,
         /// What `from` resolved to, echoed back because the caller asked with a
         /// string and the answer is a branch: `--from <session-id>` names a
         /// session, and only the app can say which branch that session's work
@@ -1501,6 +1516,7 @@ mod tests {
             .chain(&keyed)
             .chain([&Request::Task(TaskRequest::Status { task_id: "task".into() })])
             .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
+            .chain([&Request::Discover(DiscoveryRequest::Harnesses)])
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));

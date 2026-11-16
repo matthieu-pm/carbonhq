@@ -1137,6 +1137,7 @@ impl SessionManager {
             // back rather than returning empty — otherwise the frontend's first
             // render drops the user's own message.
             let events = list_session_events(session_id).await?;
+            let applied = (session.effort, session.fast);
             match task_creation.as_mut() {
                 Some(guard) => **guard = Some(session),
                 None => *self.slot(session_id).await.lock().await = Some(session),
@@ -1144,7 +1145,10 @@ impl SessionManager {
 
             // Returned so the frontend learns the resolved worktree name and
             // the backend-truncated title rather than guessing either.
-            let item = get_session_index_item(session_id).await?.unwrap_or(item);
+            let mut item = get_session_index_item(session_id).await?.unwrap_or(item);
+            // A nonfatal startup refusal must not leave the creation receipt naming the rejected pick.
+            item.effort = applied.0;
+            item.fast = applied.1;
             return Ok(SendOutcome {
                 issues: item.issues.clone(),
                 snapshot: Some(SessionSnapshot {
@@ -1327,7 +1331,7 @@ impl SessionManager {
             // its model, so nothing can move it — the composer locks those
             // controls mid-turn instead.
             let applied = !turn_in_flight
-                || matches!(s.harness, Harness::ClaudeCode | Harness::Grok | Harness::Pi);
+                || s.harness.applies_controls_mid_turn();
             if applied {
                 apply_live_controls(s, session_id, &model, model_spec.as_ref(), effort, permission_mode, fast, app)
                     .await?;

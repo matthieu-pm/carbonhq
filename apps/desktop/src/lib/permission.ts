@@ -1,4 +1,5 @@
 import type { ApprovalPolicy, Harness } from "@/types/events";
+import controls from "./harnessControls.json";
 
 /// The stances a harness can actually honour, for one that cannot honour them
 /// all. Absent means every stance in the picker applies.
@@ -25,30 +26,9 @@ import type { ApprovalPolicy, Harness } from "@/types/events";
 ///
 /// fx exposes three modes over ACP — `auto`, `ask` and `full-access` — since
 /// 0.0.14; earlier builds had no bypass. It has no plan mode and no `dontAsk`.
-const HONOURED: Partial<Record<Harness, ApprovalPolicy[]>> = {
-  codex: ["bypassPermissions", "manual", "auto"],
-  pi: [],
-  fx: ["manual", "auto", "bypassPermissions"],
-  // Three, and `plan` is the one missing: grok has a plan *mode* of its own
-  // that it enters by asking (`_x.ai/exit_plan_mode` raises the card), which is
-  // the model's decision rather than a stance the composer can set it to.
-  grok: ["manual", "auto", "bypassPermissions"],
-};
-
-/// The stance a harness actually runs when handed one it does not honour.
-///
-/// fx: `dontAsk` falls to `auto`, which fx.rs runs it as. `plan` is narrower
-/// than anything fx has and falls the other way, to `manual` — fx.rs runs
-/// that as `ask`, and a spawned session inheriting `plan` must never come out
-/// freer than its parent.
-const FALLBACK: Partial<Record<Harness, (mode: ApprovalPolicy) => ApprovalPolicy>> = {
-  fx: (mode) => (mode === "plan" ? "manual" : "auto"),
-  // `plan` is the only stance grok does not honour, and it must fall to the
-  // *narrowest* thing grok has rather than to the default below it: a spawned
-  // session inherits its parent's stance, so a `plan` parent landing on
-  // `bypassPermissions` would come out ungated by inheriting a narrower one.
-  grok: (mode) => (mode === "plan" ? "manual" : "bypassPermissions"),
-};
+const HONOURED = Object.fromEntries(
+  Object.entries(controls).map(([harness, policy]) => [harness, policy.modes]),
+) as Partial<Record<Harness, ApprovalPolicy[]>>;
 
 /// Whether this harness honours this stance.
 export function honoursMode(harness: Harness, mode: ApprovalPolicy): boolean {
@@ -77,5 +57,6 @@ export function stanceFor(harness: Harness, mode: ApprovalPolicy): ApprovalPolic
   // Recorded only, but `carbon new` inherits it — so the narrowest, or a child on
   // another harness comes out freer than an ACP parent ever ran.
   if (harness.startsWith("acp:")) return "manual";
-  return FALLBACK[harness]?.(mode) ?? "bypassPermissions";
+  const policy = controls[harness as keyof typeof controls];
+  return (policy?.fallbacks as Partial<Record<ApprovalPolicy, ApprovalPolicy>>)?.[mode] ?? "bypassPermissions";
 }
