@@ -159,6 +159,7 @@ export const APP_COMMANDS = new Set([
   "ignore_server_update",
   "check_server_update",
   "forward_port",
+  "preview_forward",
   "add_ssh_server",
   "set_server_on",
   "rename_server",

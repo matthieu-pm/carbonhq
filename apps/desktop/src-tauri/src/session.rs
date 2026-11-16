@@ -2032,11 +2032,13 @@ impl SessionManager {
             session.kill().await?;
         }
 
+        crate::preview::close_session(session_id).await;
         let existed = remove_session_worktree(&item).await?;
 
         let relocated = relocate_session_to_project(session_id)
             .await?
             .with_context(|| format!("no session {session_id}"))?;
+        crate::preview::close_session(session_id).await;
 
         Ok((relocated, existed))
     }
@@ -2067,6 +2069,7 @@ impl SessionManager {
     }
 
     pub async fn settle(&self, session_id: &str) -> Result<()> {
+        crate::preview::close_session(session_id).await;
         let running = self.take(session_id).await;
         // The tabs close whatever the kill answered: the session is already
         // out of the map, so nothing would come back to close them.
@@ -2154,7 +2157,10 @@ impl SessionManager {
             eprintln!("could not delete pi's session file for {session_id}: {e}");
         }
 
-        delete_session(session_id).await
+        let deleted = delete_session(session_id).await;
+        // A start can land after settle while deletion still awaits disk work.
+        crate::preview::close_session(session_id).await;
+        deleted
     }
 
     /// Moves a session's unread mark: `Completed` → `Idle` on a read, `Idle` →
