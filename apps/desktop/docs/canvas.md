@@ -4,7 +4,7 @@ CBN-80 supplies the file format and server API. The Canvas rail page, HTML impor
 
 ## Ownership and identity
 
-Files live under `store::config_dir()/canvases/<file-id>`. Every dev worktree uses the shared config directory, while an explicit `CARBON_HOME` still isolates a server. The project path is metadata, not the storage directory. The recorded `projectPath` stays the reader's attached folder. A separate `projectKey` combines the canonical Git common directory and the subproject's relative path, so linked worktrees share designs even with separate Git metadata. `apps/web` and `apps/desktop` retain distinct identities. Folders without Git use their canonical path as the key. File names can change without changing identity.
+Files live under `store::config_dir()/canvases/<file-id>`. Every dev worktree uses the shared config directory, while an explicit `CARBON_HOME` still isolates a server. The project path is metadata, not the storage directory. The recorded `projectPath` stays the reader's attached folder. A separate `projectKey` combines the canonical Git common directory and the subproject's relative path, so linked worktrees share designs even with separate Git metadata. `apps/web` and `apps/desktop` retain distinct identities. Folders without Git use their canonical path as the key. A folder gaining Git metadata keeps its existing canvases through an in-memory membership alias; historical snapshots stay untouched, and a later edit persists the current shared key. File names can change without changing identity.
 
 Frames and layers have canonical UUIDs. Layer IDs are separate from an element's HTML `id` attribute. Save and reopen preserve IDs. Duplicating a file or frame creates fresh frame/layer IDs, retains HTML attributes, CSS and tokens, and preserves file-local asset references. A frame duplicate is placed beyond the rightmost frame. A file duplicate copies its image bytes, so deleting the original cannot break it.
 
@@ -22,6 +22,8 @@ canvases/<file-id>/
   uploads/<asset-id>           incomplete images, not visible assets
 ```
 
+New files and duplicates are staged under `canvases/pending/<id>` and enter the visible UUID namespace only after the whole file is complete. Failed publications are removed; startup clears abandoned staging directories under the same write lock.
+
 The manifest states `formatVersion`, `minReaderVersion`, file `id`, `revision` and `commit`. Reader 1 accepts an additive newer format only when `minReaderVersion <= 1`. Known records preserve additional JSON fields on normal writes. An unsupported reader requirement refuses reads, edits, duplication, deletion and recovery. No recovery or migration runs implicitly over a future format.
 
 A frame has an ID, name, geometry (`x`, `y`, `width`, `height`) and content. Content has a node tree, a CSS stylesheet and `assetIds`. Nodes are either elements (`id`, `name`, `tag`, string-valued `attributes`, string-valued CSS `styles`, `children`) or text (`id`, `name`, `text`). CSS variables are stored as strings; shared tokens live separately on the canvas. Camera state is separate from frame content.
@@ -32,7 +34,7 @@ Limits: 8 MiB of Canvas JSON, 1,000 frames, 100,000 layers, 48 levels of layer n
 
 ## Commits and history
 
-All mutations take the process mutex and `lock_across_processes("canvas")`. Failing to acquire either lock refuses the write. Writers re-read the manifest and compare the expected revision while holding both locks. Immutable frame content and a complete snapshot land before the atomic manifest replacement. The manifest is the commit point; an orphan snapshot left by a failed save is never listed as history.
+All mutations take the process mutex and `lock_across_processes("canvas")`. Failing to acquire either lock refuses the write. Writers re-read the manifest and compare the expected revision while holding both locks. Immutable frame content and a complete snapshot land before the atomic manifest replacement. For an existing file, the manifest is the commit point; an orphan snapshot left by a failed save is never listed as history.
 
 Each committed change records its ID, before/after revisions and optional session, turn and label. Content, layout, tokens and image references are all in the snapshot. This is independent of Git. History lists the latest 100 committed revisions; older ones remain addressable. Restore publishes a new revision with historical design content/layout/assets and the current camera. Property-wise turn undo that preserves later manual edits belongs to CBN-82/86, not this full-version restore.
 

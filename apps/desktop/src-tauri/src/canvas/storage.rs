@@ -290,8 +290,8 @@ impl Store {
         let meta = snapshot.canvas;
         let canvas = Canvas {
             id: meta.id,
-            project_path: meta.project_path,
             project_key: meta.project_key,
+            project_path: meta.project_path,
             name: meta.name,
             revision: meta.revision,
             created: meta.created,
@@ -322,7 +322,9 @@ impl Store {
         if snapshot.canvas.revision != head.revision {
             return Err("Canvas manifest and snapshot revisions differ.".into());
         }
-        self.inflate(snapshot).await
+        let mut canvas = self.inflate(snapshot).await?;
+        canvas.project_key = current_project_key(&canvas.project_path, &canvas.project_key).await;
+        Ok(canvas)
     }
 
     async fn summary(&self, id: &str) -> Result<CanvasSummary, String> {
@@ -331,7 +333,10 @@ impl Store {
         if snapshot.canvas.revision != head.revision {
             return Err("Canvas manifest and snapshot revisions differ.".into());
         }
-        Ok(snapshot.summary())
+        let mut summary = snapshot.summary();
+        summary.project_key =
+            current_project_key(&summary.project_path, &summary.project_key).await;
+        Ok(summary)
     }
 
     /// Image bytes must match their immutable reference before copy, recovery or delivery.
@@ -546,6 +551,47 @@ impl Store {
         Ok(())
     }
 
+    /// Failed initial writes stay outside the visible UUID namespace; the caller holds both locks.
+    async fn publish_new(&self, canvas: &Canvas, source: Option<&str>) -> Result<(), String> {
+        let pending = Self {
+            root: self.root.join("pending"),
+            shared_lock: self.shared_lock,
+        };
+        let staged = pending.dir(&canvas.id)?;
+        let destination = self.dir(&canvas.id)?;
+        if fs::try_exists(&destination)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            return Err("Canvas already exists.".into());
+        }
+        let result: Result<(), String> = async {
+            validate(canvas)?;
+            fs::create_dir_all(staged.join("assets"))
+                .await
+                .map_err(|e| e.to_string())?;
+            if let Some(source) = source {
+                for asset in &canvas.assets {
+                    let bytes = self.asset_bytes(source, asset).await?;
+                    atomic(staged.join("assets").join(&asset.hash), bytes).await?;
+                }
+            }
+            pending.commit(canvas, None, None).await?;
+            fs::rename(&staged, destination)
+                .await
+                .map_err(|e| e.to_string())
+        }
+        .await;
+        if result.is_err() {
+            if let Err(error) = fs::remove_dir_all(&staged).await {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("[canvas staging cleanup] {error}");
+                }
+            }
+        }
+        result
+    }
+
     /// Publish the initial revision without requiring a session or Git repository.
     pub async fn create(&self, project_path: String, name: String) -> Result<Canvas, String> {
         let identity = project(&project_path).await?;
@@ -566,7 +612,7 @@ impl Store {
             change: change(0, CanvasAuthor::default(), None),
             extra: BTreeMap::new(),
         };
-        self.commit(&canvas, None, None).await?;
+        self.publish_new(&canvas, None).await?;
         Ok(canvas)
     }
 
@@ -668,6 +714,7 @@ impl Store {
         check_revision(&current, revision)?;
         let mut restored = self.history(id, Some(version)).await?.remove(0);
         restored.camera = current.camera;
+        restored.project_key = current.project_key;
         restored.revision = current.revision;
         advance(&mut restored, author, Some(version))?;
         self.commit(&restored, Some(previous), None).await?;
@@ -687,15 +734,7 @@ impl Store {
         copy.change = change(0, CanvasAuthor::default(), None);
         remap_frames(&mut copy.frames);
         validate(&copy)?;
-        let dir = self.dir(&copy.id)?;
-        fs::create_dir_all(dir.join("assets"))
-            .await
-            .map_err(|e| e.to_string())?;
-        for asset in &copy.assets {
-            let bytes = self.asset_bytes(id, asset).await?;
-            atomic(dir.join("assets").join(&asset.hash), bytes).await?;
-        }
-        self.commit(&copy, None, None).await?;
+        self.publish_new(&copy, Some(id)).await?;
         Ok(copy)
     }
 
@@ -745,16 +784,21 @@ impl Store {
         json(tombstones.join(format!("{id}.json")), &summary).await?;
         let deleted = tombstones.join(id);
         if let Err(error) = fs::rename(self.dir(id)?, &deleted).await {
-            eprintln!("[canvas deletion cleanup] {error}");
+            eprintln!("[canvas cleanup] {error}");
         } else if let Err(error) = fs::remove_dir_all(deleted).await {
-            eprintln!("[canvas deletion cleanup] {error}");
+            eprintln!("[canvas cleanup] {error}");
         }
         Ok(summary)
     }
 
-    /// Finishes file-owned asset cleanup if a process died after committing deletion.
-    pub async fn cleanup_deleted(&self) -> Result<(), String> {
+    /// The shared lock makes abandoned publication and committed deletion cleanup safe at startup.
+    pub async fn cleanup_incomplete(&self) -> Result<(), String> {
         let _guard = self.lock().await?;
+        match fs::remove_dir_all(self.root.join("pending")).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
         let mut entries = match fs::read_dir(self.root.join("deleted")).await {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -1023,6 +1067,31 @@ fn change(before: u64, author: CanvasAuthor, restored_from: Option<u64>) -> Canv
 pub(super) struct ProjectIdentity {
     pub path: String,
     pub key: String,
+}
+
+/// A folder gaining Git metadata is still the same attached project; history bytes stay untouched.
+async fn current_project_key(path: &str, saved: &str) -> String {
+    if !saved.is_empty() && !saved.starts_with("path:") {
+        return saved.to_string();
+    }
+    // Ordinary folder reads should not spawn Git unless repository metadata has appeared.
+    let mut has_git = false;
+    for ancestor in Path::new(path).ancestors() {
+        if fs::try_exists(ancestor.join(".git")).await.unwrap_or(false) {
+            has_git = true;
+            break;
+        }
+    }
+    if has_git {
+        if let Ok(identity) = project(path).await {
+            return identity.key;
+        }
+    }
+    if saved.is_empty() {
+        format!("path:{path}")
+    } else {
+        saved.to_string()
+    }
 }
 
 /// Git metadata identifies a repository without replacing the reader's attached project path.

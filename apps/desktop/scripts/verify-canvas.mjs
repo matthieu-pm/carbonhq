@@ -126,6 +126,18 @@ try {
   }
 
 
+  const newlyVersioned = join(root, 'gains-git');
+  const newLinked = join(root, 'gains-git-linked');
+  await mkdir(newlyVersioned);
+  const existing = await client.call('create_canvas', { projectPath: newlyVersioned, name: 'Before Git' });
+  await git(newlyVersioned, ['init']);
+  await git(newlyVersioned, ['-c', 'user.name=Canvas test', '-c', 'user.email=canvas@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'Initial']);
+  await git(newlyVersioned, ['worktree', 'add', '--detach', newLinked]);
+  assert.equal((await client.call('list_canvases', { projectPath: newlyVersioned })).files[0].id, existing.id);
+  assert.equal((await client.call('list_canvases', { projectPath: newLinked })).files[0].id, existing.id);
+  assert.equal((await client.call('read_canvas_version', { id: existing.id, version: 1 })).name, 'Before Git');
+  checks.push('initializing Git preserves existing project membership and history across worktrees');
+
   const contenders = await Promise.allSettled(['First', 'Second'].map(name => client.call('update_canvas', { id: canvas.id, revision: 2, edit: { name } })));
   assert.equal(contenders.filter(r => r.status === 'fulfilled').length, 1);
   assert.match(contenders.find(r => r.status === 'rejected').reason.message, /conflict/);
@@ -209,7 +221,11 @@ try {
   const altered = await readFile(imagePath);
   altered[20] ^= 1;
   await writeFile(imagePath, altered);
+  const beforeDuplicate = await client.call('list_canvases', { projectPath: project });
   await assert.rejects(client.call('duplicate_canvas', { id: damaged.id, revision: 2, name: 'Rejected copy' }), /checksum/);
+  const afterDuplicate = await client.call('list_canvases', { projectPath: project });
+  assert.deepEqual(afterDuplicate.files, beforeDuplicate.files);
+  assert.deepEqual(afterDuplicate.problems, beforeDuplicate.problems);
   await writeFile(join(damagedDir, 'canvas.json'), 'preserve this manifest');
   await assert.rejects(client.call('recover_canvas', { id: damaged.id }), /checksum/);
   assert.equal(await readFile(join(damagedDir, 'canvas.json'), 'utf8'), 'preserve this manifest');

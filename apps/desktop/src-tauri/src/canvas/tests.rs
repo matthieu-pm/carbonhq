@@ -846,7 +846,7 @@ async fn startup_finishes_a_tombstoned_deletion_without_reexposing_the_file() {
         .contains("deleted"));
     assert!(fixture.store.list(None).await.unwrap().files.is_empty());
     assert!(fixture.store.list(None).await.unwrap().problems.is_empty());
-    fixture.store.cleanup_deleted().await.unwrap();
+    fixture.store.cleanup_incomplete().await.unwrap();
     assert!(!fixture.store.dir(&canvas.id).unwrap().exists());
 }
 
@@ -1114,6 +1114,12 @@ async fn damaged_image_bytes_refuse_recovery_and_file_duplication() {
         .await
         .unwrap_err()
         .contains("checksum"));
+    let listed = fixture.store.list(None).await.unwrap();
+    assert_eq!(listed.files.len(), 1);
+    assert!(
+        listed.problems.is_empty(),
+        "A rejected duplicate must leave no visible output"
+    );
     atomic(dir.join("canvas.json"), b"damaged manifest".to_vec())
         .await
         .unwrap();
@@ -1248,4 +1254,69 @@ async fn the_documented_layer_depth_boundary_roundtrips_and_one_more_level_is_re
         .unwrap_err()
         .contains("nested"));
     assert_eq!(fixture.store.read(&canvas.id).await.unwrap().revision, 2);
+}
+
+#[tokio::test]
+async fn initializing_git_keeps_existing_canvases_and_history_in_the_project_and_worktrees() {
+    let fixture = Fixture::new();
+    let original = fixture.populated().await;
+    let owner = PathBuf::from(&original.project_path);
+    let snapshot = fixture
+        .store
+        .dir(&original.id)
+        .unwrap()
+        .join("history")
+        .join(format!("{}.json", original.change.id));
+    let bytes = fs::read(&snapshot).await.unwrap();
+    assert!(original.project_key.starts_with("path:"));
+    git_at(&owner, &["init", "-q"]).await;
+    initial_commit(&owner).await;
+    let linked = fixture.store.root.join("linked");
+    git_at(
+        &owner,
+        &["worktree", "add", "--detach", linked.to_str().unwrap()],
+    )
+    .await;
+    for directory in [&owner, &linked] {
+        let identity = project(directory.to_str().unwrap()).await.unwrap();
+        let files = fixture.store.list(Some(&identity.key)).await.unwrap().files;
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, original.id);
+    }
+    let previous = fixture
+        .store
+        .history(&original.id, Some(1))
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(previous.name, original.name);
+    assert_eq!(fs::read(snapshot).await.unwrap(), bytes);
+    assert!(fixture
+        .store
+        .read(&original.id)
+        .await
+        .unwrap()
+        .project_key
+        .starts_with("git:"));
+}
+
+#[tokio::test]
+async fn an_initial_publication_failure_cannot_leave_an_unreadable_canvas_row() {
+    let fixture = Fixture::new();
+    let owner = fixture.store.root.join("project");
+    fs::create_dir_all(&owner).await.unwrap();
+    atomic(
+        fixture.store.root.join("pending"),
+        b"blocked staging directory".to_vec(),
+    )
+    .await
+    .unwrap();
+    assert!(fixture
+        .store
+        .create(owner.to_string_lossy().into(), "Not published".into())
+        .await
+        .is_err());
+    let listed = fixture.store.list(None).await.unwrap();
+    assert!(listed.files.is_empty());
+    assert!(listed.problems.is_empty());
 }

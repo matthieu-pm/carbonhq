@@ -40,8 +40,8 @@ pub(super) async fn watch(scope: String, ids: Vec<String>) -> Result<(), String>
 pub fn start(sink: Sink) {
     tokio::spawn(async move {
         if let Ok(store) = Store::open().await {
-            if let Err(error) = store.cleanup_deleted().await {
-                eprintln!("[canvas deletion cleanup] {error}");
+            if let Err(error) = store.cleanup_incomplete().await {
+                eprintln!("[canvas cleanup] {error}");
             }
         }
         let mut observed = BTreeMap::<String, String>::new();
