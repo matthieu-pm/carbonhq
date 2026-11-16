@@ -8,11 +8,10 @@ cd "$(dirname "$0")/.."
 SRC="src-tauri/icons/src"
 OUT="src-tauri/icons"
 
-# The masters are Icon Composer's iOS export: full-bleed to the canvas edge.
-# macOS sizes dock icons off a 824/1024 grid, so an icns built from full-bleed
-# art draws visibly larger than every neighbour. Inset for the icns only — the
-# flat PNGs are the window/Linux/tray icon, where full-bleed is right.
+# macOS doesn't mask custom Dock icons, so the icns needs transparent rounded
+# corners and the 824/1024 inset. Flat PNGs keep the full-bleed master.
 INSET=824
+MARK_SIZE=80%
 
 # `tauri::generate_context!` rejects a window icon that isn't RGBA, and magick
 # happily writes a palette PNG when the resized art has few enough colours — so
@@ -24,7 +23,18 @@ make_icns() {
   tmp="$(mktemp -d)"
   iconset="$tmp/icon.iconset"
   mkdir -p "$iconset"
-  magick "$src" -resize "${INSET}x${INSET}" -background none -gravity center \
+  # The clear left edge preserves the master's gradient behind the smaller mark.
+  magick "$src" -crop 1x1024+0+0 +repage -scale '1024x1024!' "$PNG32$tmp/background.png"
+  magick -background none -density 288 ../../logos/logomark-black.svg \
+    -resize 1024x1024 "$PNG32$tmp/mark-mask.png"
+  magick "$src" "$tmp/mark-mask.png" -compose DstIn -composite -compose Over \
+    -resize "$MARK_SIZE" +repage "$PNG32$tmp/mark.png"
+  magick "$tmp/background.png" "$tmp/mark.png" -gravity center \
+    -compose Over -composite +repage "$PNG32$tmp/art.png"
+  magick -size 1024x1024 xc:none -fill white -stroke none \
+    -draw "roundrectangle 0,0,1023,1023,224,224" "$tmp/mask.png"
+  magick "$tmp/art.png" "$tmp/mask.png" -compose DstIn -composite -compose Over \
+    -resize "${INSET}x${INSET}" -background none -gravity center \
     -extent 1024x1024 "$tmp/master.png"
   for pair in "16 16x16" "32 16x16@2x" "32 32x32" "64 32x32@2x" \
               "128 128x128" "256 128x128@2x" "256 256x256" "512 256x256@2x" \

@@ -18,8 +18,8 @@ export async function SiteNav({ bare = false }: { bare?: boolean } = {}) {
 
   return (
     <nav aria-label="Main" className="flex h-10 items-start justify-between">
-      <Link href="/" aria-label="Carbon home" className={`flex h-10 w-[120px] items-center pl-4 ${bare ? "" : "bg-black light:bg-white"}`}>
-        <Wordmark className="h-6 w-auto text-white light:text-[#0A0A0A]" />
+      <Link href="/" aria-label="Carbon home" className={`flex h-10 w-[120px] shrink-0 items-center justify-center px-2 ${bare ? "" : "bg-black light:bg-white"}`}>
+        <Wordmark className="h-auto w-full text-white light:text-[#0A0A0A]" />
       </Link>
       {/* The box draws its right and bottom edges; every cell draws its own
           left, so hiding Docs on a phone, and the stars on the
