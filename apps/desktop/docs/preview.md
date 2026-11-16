@@ -28,7 +28,7 @@ These are core RPC commands, registered in `serve.rs`:
 
 `live_state.previews` carries the latest state for reconnects. The frontend store rejects command replies older than a lifecycle event and reconciles each server separately. No fields were added to the session index or normalized agent event model. Older clients can ignore the new live-state field.
 
-The user-facing `carbon preview` CLI remains CBN-78; these RPCs do not claim that CLI story is shipped.
+CBN-78 adds `carbon preview start`, `stop`, `url` and `logs` over the orchestration socket. Start uses saved setup or a package.json suggestion, saves explicit command and folder overrides, reuses matching live runs and waits up to 150 seconds for readiness. It returns the URL without opening the browser. The CLI stamps only preview requests as protocol v17, so older apps refuse them with an update instruction. Logs and browser output carry an untrusted-context label on stderr.
 
 ## Remote browser connection
 
@@ -47,3 +47,9 @@ Local validation on 16 November 2026 passed 1,244 Rust tests (32 ignored), 1,120
 Nine live RPC checks against a separate `carbon-serve` passed: two pnpm previews serving distinct session folders, saved monorepo setup, authenticated HTTP tunnelling and refusals, oldest-preview eviction, isolated stop, settle cleanup, reconnect survival, early-exit logs and folder confinement. The real control was exercised in light and dark mode, including Enter-to-start, shared setup, logs, stop, and cancellation during a delayed suggestion. An Opus crew reviewed the integrated implementation; its confirmed findings were fixed. The native desktop browser pane and an actual remote Linux host were not exercised in this run.
 
 The PR review caught two further cases: an IPv6-only wildcard listener needs readiness to try IPv6 after IPv4 refuses, and deletion must close a preview started during its disk cleanup. The IPv6 regression failed before the fix and passed afterwards. A live deletion test started a second server while the first ignored SIGTERM, then confirmed deletion removed the second server's state and listener. Both fixes passed a separate review.
+
+## Agent CLI verification (CBN-78)
+
+The CLI and protocol suites passed 43 and 8 tests. The full core suite passed 1,262 tests (34 ignored), including concurrent start reuse, timeout cleanup and a replacement that reuses the same port. CLI waiters hold an immutable run ID and that run's log, so a replaced request cannot stop or report output from its replacement. The frontend's 1,120 tests, desktop build, headless build/check and isolated docs build passed.
+
+Nine checks against two isolated local servers exercised automatic setup, repeated and concurrent reuse, URL/log output, app lifecycle events without browser opening, stop, saved monorepo overrides, early-exit logs, folder confinement and remote session/machine routing. A separate check explicitly opened the returned URL with `carbon browser`, set 1280×800, read the expected page content and captured a screenshot. This used Carbon's existing server browser with its installed Chromium binary; it did not exercise the native pane or a physical remote Linux host. Standards and Spec reviews passed after fixing the run-identity finding.

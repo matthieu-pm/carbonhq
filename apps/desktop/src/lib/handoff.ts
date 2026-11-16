@@ -1,6 +1,6 @@
 import type { WorkStatus } from "@/types/events";
 
-const RUN_SERVER_PROMPT = "start the dev server in the background";
+const RUN_SERVER_PROMPT = "start the preview with carbon preview start";
 
 /// One thing the reader can hand the session, as a button.
 ///
@@ -165,10 +165,6 @@ export function handoffActions(
 ): HandoffAction[] {
   const offered = new Set<BuiltinHandoffId>();
 
-  // Running a server needs no repository. Vague about which server — the agent
-  // reads the repo — but "in the background" is load-bearing: without it the
-  // CLI runs `pnpm dev` in a foreground Bash, which times out and takes the
-  // server down with it.
   if (hasSession) offered.add("runServer");
 
   if (status && status.branch !== null) {

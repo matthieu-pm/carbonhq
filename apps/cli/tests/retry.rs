@@ -16,7 +16,7 @@ fn run(args: &[&str], response: Option<Value>) -> Output {
         let mut line = String::new();
         BufReader::new(&stream).read_line(&mut line).unwrap();
         let request: Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(request["v"], if request["cmd"] == "create_session" { 16 } else { 17 });
+        assert_eq!(request["v"], if request["cmd"] == "create_session" { 16 } else { 18 });
         if request["cmd"] == "send_message" { assert_eq!(request["durable"], true); }
         if request["cmd"] == "send_message" || request["cmd"] == "create_session" {
             assert_eq!(request["requestId"], "stable-key");

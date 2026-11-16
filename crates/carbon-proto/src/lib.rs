@@ -47,8 +47,12 @@ use std::path::PathBuf;
 /// reader needs "update the Carbon app". v14 added managed Markdown Pages;
 /// v15 added one-use secret requests. v16 added retry keys: ignoring one would
 /// repeat work while reporting success, so only keyed requests require v16.
-/// v17 adds durable delivery acceptance and delivery status/cancellation.
-pub const PROTOCOL_VERSION: u32 = 17;
+/// v17 adds managed preview commands.
+/// v18 adds durable delivery acceptance and delivery status/cancellation.
+pub const PROTOCOL_VERSION: u32 = 18;
+
+/// A CLI readiness wait fits inside the socket and remote request deadlines.
+pub const PREVIEW_WAIT_SECS: u64 = 150;
 
 /// The oldest envelope the app still answers. Rises only when a shape is
 /// *renamed*, never for an addition: v4 renamed `LinkIssues.identifiers` to
@@ -101,8 +105,8 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
-            Request::DeliveryStatus(_) | Request::CancelDelivery(_) => 17,
-            Request::SendMessage(send) if send.durable => 17,
+            Request::DeliveryStatus(_) | Request::CancelDelivery(_) => 18,
+            Request::SendMessage(send) if send.durable => 18,
             Request::LookupReceipt(lookup) => lookup.request.version().max(16),
             Request::CreateSession(create) if create.request_id.is_some() => 16,
             Request::SendMessage(send) if send.request_id.is_some() => 16,
@@ -132,6 +136,7 @@ impl Request {
             Request::WriteIssue(_) => 13,
             Request::Pages(_) => 14,
             Request::Secret(_) => 15,
+            Request::Preview(_) => 17,
             // v12 is when the wrapper itself arrived. A newer request inside it
             // has to stamp its own version, or a v12 app parses the wrapper and
             // then says it could not parse the line instead of naming the update.
@@ -170,7 +175,29 @@ pub enum Request {
     WriteIssue(WriteIssue),
     Pages(PageRequest),
     Secret(SecretRequest),
+    Preview(PreviewRequest),
     OnMachine(OnMachine),
+}
+
+/// All preview verbs target one session on its owning server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum PreviewRequest {
+    Start { session_id: String, command: Option<String>, directory: Option<String> },
+    Stop { session_id: String },
+    Url { session_id: String },
+    Logs { session_id: String },
+}
+
+impl Request {
+    /// Extra time only for preview readiness, including a forwarded request.
+    pub fn waits_for_preview(&self) -> bool {
+        match self {
+            Self::Preview(PreviewRequest::Start { .. }) => true,
+            Self::OnMachine(on) => on.request.waits_for_preview(),
+            _ => false,
+        }
+    }
 }
 
 /// Only names and destinations cross the agent wire; values arrive from the user's card.
@@ -940,6 +967,14 @@ pub enum Response {
     Secret {
         data: serde_json::Value,
     },
+    Preview {
+        url: Option<String>,
+        logs: Option<String>,
+    },
+    PreviewFailed {
+        message: String,
+        logs: String,
+    },
     /// Every issue the session carries *after* the change, so the caller sees
     /// the result rather than a diff it has to apply to what it believed.
     Linked {
@@ -1353,6 +1388,18 @@ mod tests {
         assert_eq!(decoded.v, 15);
         assert!(matches!(decoded.request, Request::OnMachine(on)
             if matches!(*on.request, Request::Secret(SecretRequest::Status { .. }))));
+        let preview = Request::Preview(PreviewRequest::Start {
+            session_id: "s".into(), command: Some("pnpm dev --port {port}".into()), directory: Some("apps/web".into()),
+        });
+        assert_eq!(Envelope::new(preview.clone()).v, 17);
+        assert!(preview.waits_for_preview());
+        let preview_elsewhere = Request::OnMachine(OnMachine {
+            machine: "vps".into(), request: Box::new(preview.clone()),
+        });
+        assert!(preview_elsewhere.waits_for_preview());
+        let decoded: Envelope = serde_json::from_str(&encode_line(&Envelope::new(preview_elsewhere)).unwrap()).unwrap();
+        assert_eq!(decoded.v, 17);
+        assert!(!Request::Preview(PreviewRequest::Logs { session_id: "s".into() }).waits_for_preview());
         let keyed = [
             Request::CreateSession(CreateSession { request_id: Some("create-1".into()), ..Default::default() }),
             Request::SendMessage(SendMessage { request_id: Some("send-1".into()), ..Default::default() }),
@@ -1378,7 +1425,7 @@ mod tests {
             .chain([&share])
             .chain(&servers)
             .chain(&sessions)
-            .chain([&remote, &elsewhere, &write, &pages, &secret])
+            .chain([&remote, &elsewhere, &write, &pages, &secret, &preview])
             .chain(&keyed)
             .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
             .map(Request::version)
@@ -1443,7 +1490,7 @@ mod tests {
     }
 
     #[test]
-    fn durable_delivery_requests_require_v17_through_machine_forwarding() {
+    fn durable_delivery_requests_require_v18_through_machine_forwarding() {
         let reference = DeliveryRef { session_id: "recipient".into(), message_id: "delivery".into() };
         let requests = [
             Request::SendMessage(SendMessage { durable: true, request_id: Some("key".into()), ..Default::default() }),
@@ -1451,11 +1498,11 @@ mod tests {
             Request::CancelDelivery(reference),
         ];
         for request in requests {
-            assert_eq!(request.version(), 17);
+            assert_eq!(request.version(), 18);
             let forwarded = Request::OnMachine(OnMachine { machine: "remote".into(), request: Box::new(request) });
             let line = encode_line(&Envelope::new(forwarded)).unwrap();
             let decoded: Envelope = serde_json::from_str(&line).unwrap();
-            assert_eq!(decoded.v, 17);
+            assert_eq!(decoded.v, 18);
             assert_eq!(encode_line(&decoded).unwrap(), line);
         }
         let legacy = serde_json::to_value(SendMessage::default()).unwrap();

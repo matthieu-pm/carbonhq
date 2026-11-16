@@ -66,10 +66,10 @@ def stop():
     server = None
 
 def send(name, text, key, durable=True, **kwargs):
-    return unwrap(request(dict(v=17 if durable else 6, cmd='send_message', sessionId=ids[name], prompt=text, **dict(durable=True, requestId=key) if durable else {}, **kwargs)))
+    return unwrap(request(dict(v=18 if durable else 6, cmd='send_message', sessionId=ids[name], prompt=text, **dict(durable=True, requestId=key) if durable else {}, **kwargs)))
 
 def status(name, id):
-    return unwrap(request(dict(v=17, cmd='delivery_status', sessionId=ids[name], messageId=id)))['delivery']
+    return unwrap(request(dict(v=18, cmd='delivery_status', sessionId=ids[name], messageId=id)))['delivery']
 
 def inbox_path(id):
     return home / 'agent-inbox' / f'{hashlib.sha256(id.encode()).hexdigest()}.json'
@@ -116,7 +116,7 @@ try:
     assert composer['queued']['text'] == 'composer only'
     assert ws('cancel_queued', dict(sessionId=ids['recipient']))['text'] == 'composer only'
     cancel = send('recipient', 'cancel me', 'cancel')['delivery']
-    out = request(dict(v=17, cmd='cancel_delivery', sessionId=ids['recipient'], messageId=cancel['messageId']))
+    out = request(dict(v=18, cmd='cancel_delivery', sessionId=ids['recipient'], messageId=cancel['messageId']))
     assert out['delivery']['state'] == 'canceled', out
     retained = send('recipient', 'retained across stop', 'stop')['delivery']
     request(dict(v=10, cmd='stop_session', sessionId=ids['recipient']))
@@ -151,7 +151,7 @@ try:
     ws('delete_session', dict(sessionId=ids['delete']))
     assert status('delete', deleted['messageId'])['state'] == 'canceled'
     print('PASS target deletion cancels accepted mail', flush=True)
-    forward = dict(v=17, cmd='send_message', sessionId=ids['forward'], prompt='forwarded payload', durable=True, requestId='forwarded-key', fromSessionId=ids['sender'])
+    forward = dict(v=18, cmd='send_message', sessionId=ids['forward'], prompt='forwarded payload', durable=True, requestId='forwarded-key', fromSessionId=ids['sender'])
     args = dict(line=json.dumps(forward), requestSource=str(uuid.uuid4()), sender=dict(sessionId=ids['sender'], title='Original remote sender', machine='remote-origin'))
     one = unwrap(ws('orchestrate', args))['delivery']
     two = unwrap(ws('orchestrate', args))['delivery']

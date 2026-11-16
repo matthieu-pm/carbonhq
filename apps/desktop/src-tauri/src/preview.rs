@@ -193,6 +193,60 @@ pub async fn stop_all() {
     futures_util::future::join_all(ids.iter().map(|id| MANAGER.stop(None, id))).await;
 }
 
+/// Agent commands share the app's lifecycle and events without opening a browser.
+pub async fn request(request: carbon_proto::PreviewRequest, sink: &Sink) -> carbon_proto::Response {
+    use carbon_proto::{PreviewRequest as R, Response};
+    let result: Result<Response, String> = async {
+        match request {
+            R::Start { session_id, command, directory } => {
+                let item = session(&session_id).await?;
+                if item.archived || item.worktree_removed {
+                    return Err("This session is settled or its worktree was removed.".into());
+                }
+                let overrides = command.is_some() || directory.is_some();
+                let current = MANAGER.live_start(&session_id);
+                let started = match current.filter(|_| !overrides) {
+                    Some(started) => started,
+                    None => {
+                        let setup = preview_setup(session_id.clone(), directory.clone()).await?;
+                        let saved = setup.config;
+                        let config = PreviewConfig {
+                            directory: directory.or_else(|| saved.as_ref().map(|c| c.directory.clone())).unwrap_or_default(),
+                            command: command.or_else(|| saved.as_ref().map(|c| c.command.clone())).unwrap_or(setup.suggested_command),
+                        };
+                        if config.command.trim().is_empty() {
+                            return Err("No dev command was found. Use carbon preview start --command '<command>' --directory '<app folder>'.".into());
+                        }
+                        let (config, _) = prepare(Path::new(&item.cwd), config)?;
+                        save_config(&item.project_path, &config).await?;
+                        MANAGER.start_or_reuse(Some(sink.clone()), &session_id, Path::new(&item.cwd), config, true).await?
+                    }
+                };
+                match MANAGER.wait_ready(&started, Duration::from_secs(carbon_proto::PREVIEW_WAIT_SECS)).await {
+                    Ok(state) => Ok(Response::Preview { url: state.url, logs: None }),
+                    Err(message) => Ok(Response::PreviewFailed { message, logs: started.log.lock().unwrap().text() }),
+                }
+            }
+            R::Stop { session_id } => {
+                session(&session_id).await?;
+                MANAGER.stop(Some(sink.clone()), &session_id).await;
+                Ok(Response::Preview { url: None, logs: None })
+            }
+            R::Url { session_id } => {
+                session(&session_id).await?;
+                let state = MANAGER.status(&session_id).filter(|s| s.status == PreviewStatus::Running)
+                    .ok_or("The preview is not running. Use carbon preview start.")?;
+                Ok(Response::Preview { url: state.url, logs: None })
+            }
+            R::Logs { session_id } => {
+                session(&session_id).await?;
+                Ok(Response::Preview { url: None, logs: Some(MANAGER.logs(&session_id)) })
+            }
+        }
+    }.await;
+    result.unwrap_or_else(Response::error)
+}
+
 async fn session(session_id: &str) -> Result<crate::store::SessionIndexItem, String> {
     crate::store::get_session_index_item(session_id)
         .await
@@ -246,11 +300,19 @@ type Groups = Arc<Mutex<HashSet<i32>>>;
 
 struct Entry {
     gen: u64,
+    /// Waiters keep this identity after `end` invalidates lifecycle callbacks.
+    run_id: u64,
     state: PreviewState,
     started: Instant,
     /// The run's process groups, held only while they may be alive. Taken by
     /// whichever ending signals them, so they are never signalled twice.
     groups: Option<Groups>,
+    log: Arc<Mutex<Log>>,
+}
+
+struct Started {
+    state: PreviewState,
+    run_id: u64,
     log: Arc<Mutex<Log>>,
 }
 
@@ -328,10 +390,40 @@ impl Manager {
         cwd: &Path,
         config: PreviewConfig,
     ) -> Result<PreviewState, String> {
+        Ok(self
+            .start_or_reuse(sink, session_id, cwd, config, false)
+            .await?
+            .state)
+    }
+
+    async fn start_or_reuse(
+        self: &Arc<Self>,
+        sink: Option<Sink>,
+        session_id: &str,
+        cwd: &Path,
+        config: PreviewConfig,
+        reuse: bool,
+    ) -> Result<Started, String> {
         let (config, dir) = prepare(cwd, config)?;
         let log = Arc::new(Mutex::new(Log::default()));
         let (state, run, evicted) = {
             let mut p = self.inner.lock().unwrap();
+            if sink.is_some() {
+                p.sink = sink;
+            }
+            if reuse {
+                if let Some(entry) = p
+                    .entries
+                    .get(session_id)
+                    .filter(|e| e.state.status.is_live() && e.state.config == config)
+                {
+                    return Ok(Started {
+                        state: entry.state.clone(),
+                        run_id: entry.run_id,
+                        log: entry.log.clone(),
+                    });
+                }
+            }
             // First, so a failure leaves every entry and group as it was.
             let taken: HashSet<u16> = p
                 .entries
@@ -340,9 +432,6 @@ impl Manager {
                 .map(|e| e.state.port)
                 .collect();
             let port = pick_port(&taken)?;
-            if sink.is_some() {
-                p.sink = sink;
-            }
             let replaced = p.entries.get_mut(session_id).and_then(|e| e.groups.take());
 
             let mut live: Vec<(Instant, String)> = p
@@ -373,6 +462,7 @@ impl Manager {
             };
             let entry = Entry {
                 gen,
+                run_id: gen,
                 state: state.clone(),
                 started: Instant::now(),
                 groups: None,
@@ -387,7 +477,7 @@ impl Manager {
                 command: config.command.replace("{port}", &port.to_string()),
                 port,
                 replaced,
-                log,
+                log: log.clone(),
             };
             (state, run, evicted)
         };
@@ -395,8 +485,62 @@ impl Manager {
         for groups in evicted {
             tokio::spawn(end_groups(groups, self.timing.grace));
         }
+        let run_id = run.gen;
         tokio::spawn(self.clone().launch(run));
-        Ok(state)
+        Ok(Started { state, run_id, log })
+    }
+
+    fn live_start(&self, session: &str) -> Option<Started> {
+        self.inner
+            .lock()
+            .unwrap()
+            .entries
+            .get(session)
+            .filter(|e| e.state.status.is_live())
+            .map(|e| Started {
+                state: e.state.clone(),
+                run_id: e.run_id,
+                log: e.log.clone(),
+            })
+    }
+
+    async fn wait_ready(&self, started: &Started, wait: Duration) -> Result<PreviewState, String> {
+        let deadline = Instant::now() + wait;
+        loop {
+            let (state, run_id) = self
+                .inner
+                .lock()
+                .unwrap()
+                .entries
+                .get(&started.state.session_id)
+                .map(|e| (e.state.clone(), e.run_id))
+                .ok_or("The preview was closed while starting.")?;
+            if run_id != started.run_id {
+                return Err(
+                    "The preview was replaced while starting. Use carbon preview url.".into(),
+                );
+            }
+            match state.status {
+                PreviewStatus::Running => return Ok(state),
+                PreviewStatus::Failed | PreviewStatus::Stopped => {
+                    return Err(state
+                        .message
+                        .unwrap_or("The preview stopped before it was ready.".into()))
+                }
+                PreviewStatus::Starting => {}
+            }
+            if Instant::now() >= deadline {
+                self.finish(
+                    &started.state.session_id,
+                    started.run_id,
+                    PreviewStatus::Failed,
+                    Some("Timed out waiting for the preview to answer.".into()),
+                )
+                .await;
+                return Err("Timed out waiting for the preview to answer.".into());
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     async fn launch(self: Arc<Self>, run: Run) {
@@ -727,11 +871,14 @@ async fn end_groups(groups: Groups, grace: Duration) {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         let all = refresh(&groups).await;
-        if all.is_empty() || Instant::now() >= deadline {
+        if all.is_empty() {
             break;
         }
         for pgid in all {
             signal_group(pgid, libc::SIGKILL);
+        }
+        if Instant::now() >= deadline {
+            break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -1419,6 +1566,111 @@ mod tests {
         .await
         .ok()
         .flatten()
+    }
+
+    #[tokio::test]
+    async fn concurrent_agent_starts_share_one_run() {
+        let m = manager(3, quick());
+        let dir = tempdir("agent-reuse");
+        let command =
+            config("echo $$ >> pids; exec python3 -m http.server {port} --bind 127.0.0.1");
+        let (a, b) = tokio::join!(
+            m.start_or_reuse(None, "s", &dir, command.clone(), true),
+            m.start_or_reuse(None, "s", &dir, command.clone(), true)
+        );
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert_eq!(a.state.port, b.state.port);
+        assert_eq!(a.run_id, b.run_id);
+        let ready = m.wait_ready(&a, Duration::from_secs(20)).await.unwrap();
+        let again = m
+            .start_or_reuse(None, "s", &dir, command, true)
+            .await
+            .unwrap();
+        assert_eq!(again.state, ready);
+        m.stop(None, "s").await;
+        assert_eq!(
+            std::fs::read_to_string(dir.join("pids"))
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_timeout_stops_only_its_run() {
+        let m = manager(3, quick());
+        let dir = tempdir("agent-timeout");
+        let started = m
+            .start_or_reuse(
+                None,
+                "s",
+                &dir,
+                config("echo $$ > pid; exec sleep 600"),
+                true,
+            )
+            .await
+            .unwrap();
+        let pid = read_pid(&dir.join("pid")).await;
+        let err = m
+            .wait_ready(&started, Duration::from_millis(100))
+            .await
+            .unwrap_err();
+        assert!(err.contains("Timed out"));
+        assert!(gone(pid).await);
+        let newer = m
+            .start_or_reuse(None, "s", &dir, serve(""), true)
+            .await
+            .unwrap();
+        assert!(m
+            .wait_ready(&started, Duration::from_millis(100))
+            .await
+            .unwrap_err()
+            .contains("replaced"));
+        assert_eq!(
+            m.wait_ready(&newer, Duration::from_secs(20))
+                .await
+                .unwrap()
+                .status,
+            PreviewStatus::Running
+        );
+        m.stop(None, "s").await;
+    }
+
+    #[tokio::test]
+    async fn old_agent_wait_never_stops_a_run_reusing_its_port() {
+        let m = manager(3, quick());
+        let dir = tempdir("agent-port-reuse");
+        let old = m
+            .start_or_reuse(None, "s", &dir, config("exec sleep 600"), true)
+            .await
+            .unwrap();
+        old.log.lock().unwrap().push(b"original run\n");
+        m.stop(None, "s").await;
+        let newer = m
+            .start_or_reuse(None, "s", &dir, config("exec sleep 600"), true)
+            .await
+            .unwrap();
+        newer.log.lock().unwrap().push(b"replacement run\n");
+        m.inner
+            .lock()
+            .unwrap()
+            .entries
+            .get_mut("s")
+            .unwrap()
+            .state
+            .port = old.state.port;
+        let error = m
+            .wait_ready(&old, Duration::from_millis(100))
+            .await
+            .unwrap_err();
+        let current = m.live_start("s").unwrap();
+        m.stop(None, "s").await;
+        assert!(error.contains("replaced"));
+        assert_eq!(current.run_id, newer.run_id);
+        assert_eq!(current.state.status, PreviewStatus::Starting);
+        assert!(old.log.lock().unwrap().text().contains("original run"));
+        assert!(!old.log.lock().unwrap().text().contains("replacement run"));
     }
 
     #[tokio::test]
