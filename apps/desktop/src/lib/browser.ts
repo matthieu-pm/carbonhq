@@ -80,12 +80,11 @@ function start() {
     fetched.add(sessionId);
     notify();
   });
-  void listen<{ sessionId: string; tabId: number; active: boolean; count: number; add: boolean }>("browser_pick", (e) => {
-    const { sessionId, tabId, active, count, add } = e.payload;
+  void listen<{ sessionId: string; tabId: number; active: boolean; count: number }>("browser_pick", (e) => {
+    const { tabId, active, count } = e.payload;
     const before = inspections.get(tabId) ?? NO_INSPECTION;
     inspections.set(tabId, { ...before, active, count: active ? count : 0 });
     notify();
-    if (add) void addPickedElements(sessionId, tabId);
   });
   // A ⌘-chord pressed inside the page. Chromium's view has focus, so the
   // document never saw the key; re-raise it as a synthetic event, which is

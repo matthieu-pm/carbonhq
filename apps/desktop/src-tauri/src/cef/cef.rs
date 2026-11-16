@@ -1381,7 +1381,7 @@ wrap_display_handler! {
             if let (Some(app), Some(session)) = (APP.get(), session_of(self.tab)) {
                 let _ = app.emit("browser_pick", PickEvent {
                     session_id: session, tab_id: self.tab, count: message.count,
-                    active: message.action != "cancel", add: message.action == "add",
+                    active: message.action != "cancel",
                 });
             }
             1
@@ -1450,7 +1450,7 @@ fn disarm_picker(id: i32) {
     if !was { return; }
     if let (Some(app), Some(session)) = (APP.get(), session_of(id)) {
         let _ = app.emit("browser_pick", PickEvent {
-            session_id: session, tab_id: id, count: 0, active: false, add: false,
+            session_id: session, tab_id: id, count: 0, active: false,
         });
     }
 }
@@ -1462,7 +1462,6 @@ struct PickEvent {
     tab_id: i32,
     count: usize,
     active: bool,
-    add: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -2098,7 +2097,7 @@ pub fn browser_pick(session_id: String, tab_id: i32, start: bool) -> Result<(), 
         if !start {
             if let Some(app) = APP.get() {
                 let _ = app.emit("browser_pick", PickEvent {
-                    session_id, tab_id: id, count: 0, active: false, add: false,
+                    session_id, tab_id: id, count: 0, active: false,
                 });
             }
         }

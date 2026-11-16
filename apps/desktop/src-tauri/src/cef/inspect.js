@@ -5,14 +5,30 @@
   host.setAttribute('data-carbon-inspect-overlay', '');
   host.style.cssText = 'all:initial!important;position:fixed!important;inset:0!important;pointer-events:none!important;z-index:2147483647!important';
   const shadow = host.attachShadow({ mode: 'closed' });
-  shadow.innerHTML = `<style>
+  const stylesheet = new CSSStyleSheet();
+  stylesheet.replaceSync(`
     *{box-sizing:border-box} .box{position:fixed;pointer-events:none;border:2px solid #f5c400;background:#f5c40018;border-radius:3px}
     .picked{border-color:#f5c400;background:#f5c40012} .padding{border:0;background:#65bb762e} .margin{border:1px dashed #edaa64;background:#edaa6420}
     .label{position:fixed;max-width:420px;padding:7px 10px;border-radius:6px;background:#202020;color:#fff;font:12px/1.6 ui-monospace,monospace;white-space:pre-wrap;box-shadow:0 2px 8px #0004}
-  </style>`;
+  `);
+  shadow.adoptedStyleSheets = [stylesheet];
   document.documentElement.append(host);
+  // Frame input never bubbles through the app's earlier window capture listeners.
+  const shield = document.createElement('iframe');
+  shield.name = '__carbon_inspect_input_' + documentId;
+  shield.title = 'Inspect input';
+  shield.tabIndex = -1;
+  shield.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;background:transparent;pointer-events:auto;color-scheme:normal';
+  shadow.append(shield);
+  const input = shield.contentWindow;
+  const inputDocument = shield.contentDocument;
+  if (!input || !inputDocument) { host.remove(); throw new Error('Inspect could not create its input layer'); }
+  inputDocument.documentElement.style.background = 'transparent';
+  inputDocument.body.style.cssText = 'margin:0;background:transparent';
+  const paint = document.createElement('div');
+  shadow.append(paint);
   const layer = document.createElement('div');
-  shadow.append(layer);
+  paint.append(layer);
   const hover = document.createElement('div');
   hover.className = 'box';
   const label = document.createElement('div');
@@ -21,7 +37,7 @@
   margin.className = 'box margin';
   const padding = document.createElement('div');
   padding.className = 'box padding';
-  shadow.append(margin, padding, hover, label);
+  paint.append(margin, padding, hover, label);
   let selected = [];
   let drag = null;
   let pointer = null;
@@ -38,14 +54,24 @@
     node.hidden = !r || r.width <= 0 || r.height <= 0;
     if (r) Object.assign(node.style, { left: r.x + 'px', top: r.y + 'px', width: r.width + 'px', height: r.height + 'px' });
   };
+  const pointOf = event => {
+    const r = shield.getBoundingClientRect();
+    return { x: r.x + event.clientX * r.width / shield.clientWidth, y: r.y + event.clientY * r.height / shield.clientHeight };
+  };
   const elementAt = (event) => {
-    let node = document.elementFromPoint(event.clientX, event.clientY);
-    while (node?.shadowRoot?.elementFromPoint) {
-      const inner = node.shadowRoot.elementFromPoint(event.clientX, event.clientY);
-      if (!inner || inner === node) break;
-      node = inner;
+    const point = pointOf(event);
+    shield.style.pointerEvents = 'none';
+    try {
+      let node = document.elementFromPoint(point.x, point.y);
+      while (node?.shadowRoot?.elementFromPoint) {
+        observer.observe(node.shadowRoot, observeOptions);
+        const inner = node.shadowRoot.elementFromPoint(point.x, point.y);
+        if (!inner || inner === node) break;
+        node = inner;
+      }
+      return node === host ? null : node;
     }
-    return node === host ? null : node;
+    finally { shield.style.pointerEvents = 'auto'; }
   };
   const selectorOf = (el) => {
     const parts = [];
@@ -61,7 +87,9 @@
       if (siblings.length > 1) part += ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')';
       parts.unshift(part);
     }
-    return parts.join(' > ');
+    const root = el.getRootNode();
+    const local = parts.join(' > ');
+    return root.host ? selectorOf(root.host) + ' >>> ' + local : local;
   };
   const unavailable = () => ({ confidence: 'unavailable', file: null, line: null, framework: null });
   const sourceOf = (el) => {
@@ -85,7 +113,8 @@
   };
   const cssKeys = ['display','position','box-sizing','width','height','min-width','max-width','min-height','max-height','padding-top','padding-right','padding-bottom','padding-left','margin-top','margin-right','margin-bottom','margin-left','gap','row-gap','column-gap','grid-template-columns','grid-template-rows','flex-direction','flex-wrap','align-items','justify-content','font-family','font-size','font-weight','line-height','letter-spacing','color','background-color','border-radius','border-width','border-color','box-shadow','opacity','overflow'];
   const markupOf = (el) => {
-    const copy = el.cloneNode(true);
+    // An inert document has no custom-element registry that could rerun app constructors.
+    const copy = document.implementation.createHTMLDocument('').importNode(el, true);
     for (const n of [copy, ...copy.querySelectorAll('*')]) {
       if (/^(script|style|noscript)$/i.test(n.localName) || n.hasAttribute('data-carbon-inspect-overlay')) { n.remove(); continue; }
       for (const attr of [...n.attributes]) {
@@ -133,9 +162,10 @@
     if (paused) { block(event); return; }
     pointer = event;
     alt = event.altKey;
-    if (drag && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4) {
+    const point = pointOf(event);
+    if (drag && Math.hypot(point.x - drag.x, point.y - drag.y) > 4) {
       drag.moved = true;
-      box(hover, region(drag, { x: event.clientX, y: event.clientY }));
+      box(hover, region(drag, point));
       label.hidden = margin.hidden = padding.hidden = true;
     } else measure();
     block(event);
@@ -143,13 +173,16 @@
   const down = event => {
     block(event);
     if (paused || event.button !== 0) return;
-    drag = { x: event.clientX, y: event.clientY, moved: false, shift: event.shiftKey };
+    input.focus();
+    try { inputDocument.documentElement.setPointerCapture(event.pointerId); } catch {}
+    drag = { ...pointOf(event), moved: false, shift: event.shiftKey };
   };
   const up = event => {
     block(event);
     if (paused || !drag || event.button !== 0) return;
+    const point = pointOf(event);
     if (drag.moved) {
-      const r = region(drag, { x: event.clientX, y: event.clientY });
+      const r = region(drag, point);
       if (!drag.shift) selected = [];
       if (r.width > 4 && r.height > 4 && selected.length < 20) selected.push({ rect: r });
     } else {
@@ -163,9 +196,9 @@
     changed();
     measure();
   };
+  const cancel = event => { block(event); drag = null; measure(); };
   const key = event => {
     if (event.key === 'Escape') { block(event); stop(); say('cancel'); }
-    else if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'l') { block(event); if (!paused) say('add'); }
     else if (event.key === 'Alt') { alt = event.type === 'keydown'; measure(); }
     else if (!event.metaKey && !event.ctrlKey) block(event);
   };
@@ -188,11 +221,21 @@
     if (paused) revision++;
     refresh();
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
-  const listeners = [['pointermove',move],['pointerdown',down],['pointerup',up],['click',block],['dblclick',block],['contextmenu',block],['keydown',key],['keyup',key],['scroll',scroll],['resize',scroll],['popstate',refresh]];
+  const observeOptions = { childList: true, subtree: true, attributes: true, characterData: true };
+  observer.observe(document.documentElement, observeOptions);
+  const observeRoots = root => {
+    for (const element of root.querySelectorAll('*')) {
+      if (!element.shadowRoot) continue;
+      observer.observe(element.shadowRoot, observeOptions);
+      observeRoots(element.shadowRoot);
+    }
+  };
+  const listeners = [['pointermove',move],['pointerdown',down],['pointerup',up],['pointercancel',cancel],['lostpointercapture',cancel],['click',block],['dblclick',block],['contextmenu',block],['keydown',key],['keyup',key]];
+  const pageListeners = [['scroll',scroll],['resize',scroll],['popstate',refresh]];
   const stop = () => {
     observer.disconnect();
-    for (const [type, fn] of listeners) window.removeEventListener(type, fn, true);
+    for (const [type, fn] of listeners) input.removeEventListener(type, fn, true);
+    for (const [type, fn] of pageListeners) window.removeEventListener(type, fn, true);
     host.remove();
     delete window.__carbonPick;
   };
@@ -202,6 +245,8 @@
     capture() {
       refresh();
       if (paused) throw new Error('An inspection capture is already in progress');
+      observeRoots(document);
+      const capturedRevision = revision;
       const viewport = { width: innerWidth, height: innerHeight, scale: devicePixelRatio };
       const items = selected.map(item => {
         const el = item.element;
@@ -210,18 +255,20 @@
         return { kind: el ? 'element' : 'region', selector: el ? selectorOf(el) : null, pagePath: pagePath(), title: document.title.slice(0, 300), viewport, bounds: bounds(r), markup: el ? markupOf(el) : null, styles: cs ? Object.fromEntries(cssKeys.map(k => [k, cs.getPropertyValue(k)])) : {}, source: el ? sourceOf(el) : unavailable(), tabId: 0, documentId, capturedAt: new Date().toISOString() };
       });
       paused = true;
-      host.style.setProperty('visibility', 'hidden', 'important');
-      return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve({ documentId, revision, items }))));
+      paint.style.setProperty('visibility', 'hidden', 'important');
+      return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve({ documentId, revision: capturedRevision, items }))));
     },
     finish(capturedRevision, clear) {
       paused = false;
-      host.style.removeProperty('visibility');
+      paint.style.removeProperty('visibility');
       if (clear && capturedRevision === revision) { selected = []; changed(); }
       measure();
     },
     valid(capturedRevision) { refresh(); return revision === capturedRevision; },
   };
-  for (const [type, fn] of listeners) window.addEventListener(type, fn, { capture: true, passive: false });
+  for (const [type, fn] of listeners) input.addEventListener(type, fn, { capture: true, passive: false });
+  for (const [type, fn] of pageListeners) window.addEventListener(type, fn, { capture: true, passive: true });
+  input.focus();
   hover.hidden = label.hidden = margin.hidden = padding.hidden = true;
   say();
 })();

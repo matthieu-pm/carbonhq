@@ -228,6 +228,7 @@ export default function BrowserPane({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Chrome
+        active={active}
         sessionId={sessionId}
         tabs={tabs}
         current={current}
@@ -349,6 +350,7 @@ function LoadBar({ loading }: { loading: boolean }) {
 /// does: `--surface-raised` is a clear step below the card in light and
 /// all but the same colour in dark, where `--background` is the step.
 function Chrome({
+  active,
   sessionId,
   tabs,
   current,
@@ -357,6 +359,7 @@ function Chrome({
   onExpand,
   onCollapse,
 }: {
+  active: boolean;
   sessionId: string;
   tabs: BrowserTab[];
   current: BrowserTab | null;
@@ -370,7 +373,7 @@ function Chrome({
   const inspection = useInspection(sessionId);
   const picking = inspection.active;
   useHotkey("browser.inspect.add", () => void addPickedElements(sessionId), {
-    enabled: picking && !inspection.busy && inspection.count > 0,
+    enabled: active && picking && !inspection.busy && inspection.count > 0,
   });
   // The reader cannot change tabs mid-recording: the agent's next verb goes to
   // whichever tab is active, and a switch here would send it somewhere else.
