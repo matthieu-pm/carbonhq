@@ -31,6 +31,7 @@ import Spinner from "@/components/ui/spinner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useHotkey } from "@/hooks/useHotkey";
 import { useCopied } from "@/hooks/useCopied";
 import { useDragReorder } from "@/hooks/useDragReorder";
 import {
@@ -51,6 +52,7 @@ import {
   stopShare,
   trackBrowserOpen,
   pickElement,
+  addPickedElements,
   removeCustomDevice,
   saveCustomDevice,
   setPendingTab,
@@ -73,7 +75,7 @@ import {
   useCustomDevices,
   usePendingTab,
   useUrlDraft,
-  usePicking,
+  useInspection,
   useRecording,
   useViewport,
   VIEWPORT_PRESETS,
@@ -91,10 +93,6 @@ import { LOCAL, serverOfSession } from "@/lib/transport";
 import { zoomLevel } from "@/lib/zoom";
 import { cn } from "@/lib/utils";
 import type { ChromiumStatus } from "@/types/events";
-
-/// The element picker is built and parked: it works, but what it drops into
-/// the composer wants a screenshot beside it before it is worth a button.
-const PICKER = false;
 
 /// The toolbar sits on the card surface, a step off the ghost hover fill at
 /// best, so a hovered button there was invisible. A wash of the foreground
@@ -230,6 +228,7 @@ export default function BrowserPane({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Chrome
+        active={active}
         sessionId={sessionId}
         tabs={tabs}
         current={current}
@@ -351,6 +350,7 @@ function LoadBar({ loading }: { loading: boolean }) {
 /// does: `--surface-raised` is a clear step below the card in light and
 /// all but the same colour in dark, where `--background` is the step.
 function Chrome({
+  active,
   sessionId,
   tabs,
   current,
@@ -359,6 +359,7 @@ function Chrome({
   onExpand,
   onCollapse,
 }: {
+  active: boolean;
   sessionId: string;
   tabs: BrowserTab[];
   current: BrowserTab | null;
@@ -369,7 +370,11 @@ function Chrome({
 }) {
   const openError = useOpenError(sessionId);
   const inputRef = useRef<HTMLInputElement>(null);
-  const picking = usePicking(sessionId);
+  const inspection = useInspection(sessionId);
+  const picking = inspection.active;
+  useHotkey("browser.inspect.add", () => void addPickedElements(sessionId), {
+    enabled: active && picking && !inspection.busy && inspection.count > 0,
+  });
   // The reader cannot change tabs mid-recording: the agent's next verb goes to
   // whichever tab is active, and a switch here would send it somewhere else.
   // The agent's own tab verbs stay open, since a flow may cross tabs.
@@ -425,7 +430,13 @@ function Chrome({
   const swap = mode === "panel" ? onExpand : onCollapse;
 
   return (
-    <div className="shrink-0">
+    <div className="shrink-0" onKeyDown={(event) => {
+      if (event.key === "Escape" && picking && !inspection.busy) {
+        event.preventDefault();
+        event.stopPropagation();
+        void pickElement(sessionId, false);
+      }
+    }}>
       {/* The full view's tabs are the titlebar's own row (`ViewTabs`). */}
       {mode === "panel" && (tabs.length > 0 || blanks.ids.length > 0) && (
         // Scrolls, but draws no bar: a strip of tabs is read by its tabs, and
@@ -649,26 +660,24 @@ function Chrome({
             </ul>
           )}
         </form>
-        {PICKER && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={picking ? "Cancel picking" : "Pick an element for the chat"}
-                aria-pressed={picking}
-                disabled={!current}
-                className={cn(TOOL_BTN, picking && "bg-primary/15 text-primary")}
-                onClick={() => void pickElement(sessionId, !picking)}
-              >
-                <SquareDashedMousePointer className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side={TIP_SIDE}>
-              {picking ? "Click an element, or Esc" : "Pick an element for the chat"}
-            </TooltipContent>
-          </Tooltip>
-        )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={picking ? "Exit Inspect" : "Inspect"}
+              aria-pressed={picking}
+              disabled={!current || inspection.busy}
+              className={cn(TOOL_BTN, picking && "bg-primary/15 text-primary")}
+              onClick={() => void pickElement(sessionId, !picking)}
+            >
+              <SquareDashedMousePointer className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side={TIP_SIDE}>
+            {picking ? "Exit Inspect · Esc" : "Inspect"}
+          </TooltipContent>
+        </Tooltip>
         <DeviceMenu sessionId={sessionId} disabled={!current} />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -728,6 +737,26 @@ function Chrome({
       </div>
       {openError && (
         <p className={cn("px-3 pb-1.5 text-ui text-destructive", current && "bg-card")}>{openError}</p>
+      )}
+      {(picking || inspection.error) && (
+        <div className="flex min-h-9 items-center gap-2 px-3 pb-1 text-ui text-muted-foreground" role="status">
+          <span className={cn("min-w-0 flex-1", inspection.error && "text-destructive")}>
+            {inspection.error ?? "Click to pick · Shift-click to add or remove · Drag for a region · Hold ⌥ to measure"}
+          </span>
+          {picking && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="secondary" size="sm" className="shrink-0"
+                  disabled={inspection.count === 0 || inspection.busy}
+                  onClick={() => void addPickedElements(sessionId)}>
+                  {inspection.busy ? <Spinner className="size-3" /> : <Plus className="size-3" />}
+                  Add to chat{inspection.count > 0 ? ` (${inspection.count})` : ""}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side={TIP_SIDE}>Add to chat <ShortcutKeys ids={["browser.inspect.add"]} /></TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       )}
     </div>
   );

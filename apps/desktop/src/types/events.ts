@@ -475,7 +475,7 @@ isImage: boolean,
  * once and held in frontend memory only — the persisted event points at a
  * copy on disk instead, so the session log never carries image bytes.
  */
-preview: string | null, };
+preview: string | null, inspection?: InspectContext, };
 
 /**
  * A way of signing in, as an offer the reader picks between.
@@ -867,6 +867,14 @@ export type InputDevice = {
  * index silently starts naming a different device.
  */
 name: string, isDefault: boolean, };
+
+export type InspectBounds = { x: number, y: number, width: number, height: number, };
+
+export type InspectContext = { kind: string, selector: string | null, pagePath: string, title: string, viewport: InspectViewport, bounds: InspectBounds, screenshotBounds?: InspectBounds, markup: string | null, styles: { [key in string]: string }, source: InspectSource, tabId: number, documentId: string, capturedAt: string, };
+
+export type InspectSource = { confidence: SourceConfidence, file: string | null, line: number | null, framework: string | null, };
+
+export type InspectViewport = { width: number, height: number, scale: number, };
 
 /**
  * Which half of the install failed, and it is tagged because the two have
@@ -2365,6 +2373,8 @@ argumentHint: string,
  * Other names that reach the same command. Absent on most.
  */
 aliases: Array<string>, };
+
+export type SourceConfidence = "exact" | "approximate" | "unavailable";
 
 export type Stage = "connecting" | "finding" | "starting";
 

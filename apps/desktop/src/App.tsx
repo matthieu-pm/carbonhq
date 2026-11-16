@@ -47,7 +47,6 @@ import {
   activateTab,
   clearOpenError,
   closeTab,
-  describePick,
   isRecording,
   navigate,
   openInBrowser,
@@ -57,7 +56,6 @@ import {
   trackBrowserOpen,
   closeBlankTab,
   useBlankTabs,
-  setPickHandler,
   useBrowserTabs,
 } from "@/lib/browser";
 import { setLinkOpener } from "@/lib/openLink";
@@ -2119,20 +2117,6 @@ function App() {
     });
     return () => setLinkOpener(null);
   }, [selectedSessionId, navGen, setError]);
-
-  // An element picked in the page lands in that session's draft, and the
-  // composer is brought on screen to show it — off the full view and onto
-  // Chat, since the composer is hidden there.
-  useEffect(() => {
-    setPickHandler((sessionId, element) => {
-      if (!element) return;
-      appendToDraft(sessionId, describePick(element));
-      if (sessionId !== selectedSessionId) return;
-      if (viewTab === "browser") setViewTab("chat");
-      focusComposer();
-    });
-    return () => setPickHandler(null);
-  }, [selectedSessionId, viewTab, setViewTab]);
 
   // Every way of arriving at a session, so none of them can forget to leave the
   // issues page. The two sidebar buttons closed it and the chords beside them
