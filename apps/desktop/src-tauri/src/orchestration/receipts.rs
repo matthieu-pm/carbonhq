@@ -92,18 +92,21 @@ fn uncertain(receipt: OperationReceipt, message: impl Into<String>) -> Response 
     }
 }
 
-/// The reservation outlives cancellation or process loss, so unfinished work is never submitted twice.
-pub(super) async fn execute<F, Fut>(
+/// A read-only probe must share the execution lock and never reserve missing work.
+pub(super) async fn lookup(
     root: &Path,
     request_id: &str,
-    fingerprint: String,
-    target: Option<&str>,
-    action: F,
-) -> Result<Response>
-where
-    F: FnOnce(OperationReceipt) -> Fut,
-    Fut: Future<Output = Result<Response>>,
-{
+    fingerprint: &str,
+) -> Result<Option<Response>> {
+    let (path, _lock) = locked_path(root, request_id).await?;
+    read_record(&path, request_id, fingerprint).await
+}
+
+/// Scope each wait to its own request, leaving workers free to persist the owner’s reply.
+async fn locked_path(
+    root: &Path,
+    request_id: &str,
+) -> Result<(std::path::PathBuf, std::sync::Arc<std::fs::File>)> {
     if request_id.trim().is_empty()
         || request_id.len() > 256
         || request_id.chars().any(char::is_control)
@@ -146,6 +149,11 @@ where
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 
+    Ok((path, lock))
+}
+
+/// A missing record is distinct from unreadable or conflicting state, which must fail closed.
+async fn read_record(path: &Path, request_id: &str, fingerprint: &str) -> Result<Option<Response>> {
     match tokio::fs::read(&path).await {
         Ok(bytes) => {
             let record: Record =
@@ -156,7 +164,7 @@ where
             if record.fingerprint != fingerprint || record.receipt.request_id != request_id {
                 bail!("request ID {request_id:?} was already used with a different payload");
             }
-            return Ok(match record.response {
+            return Ok(Some(match record.response {
                 Some(response) => Response::Recorded {
                     receipt: record.receipt,
                     response: Box::new(response),
@@ -167,10 +175,28 @@ where
                         "The previous attempt ended before its outcome was recorded.".into()
                     }),
                 ),
-            });
+            }));
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error).context("could not read request receipt"),
+    }
+}
+
+/// The reservation outlives cancellation or process loss, so unfinished work is never submitted twice.
+pub(super) async fn execute<F, Fut>(
+    root: &Path,
+    request_id: &str,
+    fingerprint: String,
+    target: Option<&str>,
+    action: F,
+) -> Result<Response>
+where
+    F: FnOnce(OperationReceipt) -> Fut,
+    Fut: Future<Output = Result<Response>>,
+{
+    let (path, lock) = locked_path(root, request_id).await?;
+    if let Some(response) = read_record(&path, request_id, &fingerprint).await? {
+        return Ok(response);
     }
 
     let session_id = target
@@ -257,6 +283,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_lookup_miss_does_not_reserve_and_conflicts_fail_closed() {
+        let home = Home::new();
+        assert!(lookup(&home.0, "key", "payload").await.unwrap().is_none());
+        let completed = execute(&home.0, "key", "payload".into(), None, |_| async {
+            Ok(Response::Sent { queued: false })
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            wire(lookup(&home.0, "key", "payload").await.unwrap().unwrap()),
+            wire(completed)
+        );
+        assert!(lookup(&home.0, "key", "changed")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("different payload"));
+        std::fs::write(home.0.join(format!("{}.json", hash(b"key"))), b"{").unwrap();
+        assert!(lookup(&home.0, "key", "payload").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_lookup_waits_for_the_running_operation_to_record_its_reply() {
+        let home = Home::new();
+        let root = home.0.clone();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let (finish, released) = tokio::sync::oneshot::channel();
+        let running = tokio::spawn(async move {
+            execute(&root, "key", "payload".into(), None, |_| async move {
+                started.send(()).unwrap();
+                released.await.unwrap();
+                Ok(Response::Sent { queued: true })
+            })
+            .await
+            .unwrap()
+        });
+        waiting.await.unwrap();
+        let query = lookup(&home.0, "key", "payload");
+        tokio::pin!(query);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), &mut query)
+                .await
+                .is_err()
+        );
+        finish.send(()).unwrap();
+        let expected = running.await.unwrap();
+        assert_eq!(wire(query.await.unwrap().unwrap()), wire(expected));
+    }
+
+    #[tokio::test]
     async fn concurrent_retries_return_one_receipt_and_run_one_action() {
         let home = Home::new();
         let count = Arc::new(AtomicUsize::new(0));
@@ -298,12 +374,19 @@ mod tests {
             execute(&root, "held", "payload".into(), None, |_| async move {
                 started.send(()).unwrap();
                 std::future::pending::<Result<Response>>().await
-            }).await
+            })
+            .await
         });
         waiting.await.unwrap();
-        let result = tokio::time::timeout(std::time::Duration::from_secs(2), execute(&home.0, "other", "payload".into(), None, |_| async {
-            Ok(Response::Sent { queued: false })
-        })).await.unwrap().unwrap();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            execute(&home.0, "other", "payload".into(), None, |_| async {
+                Ok(Response::Sent { queued: false })
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert!(matches!(result, Response::Recorded { .. }));
         held.abort();
         let _ = held.await;

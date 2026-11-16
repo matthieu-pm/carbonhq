@@ -137,6 +137,10 @@ for line in sys.stdin:
     }
 
     async fn forward(&self, request: &Value, source: &str, fingerprint: &str) -> Value {
+        self.call("orchestrate", json!({"line":request.to_string(),"requestSource":source,"requestFingerprint":fingerprint})).await
+    }
+
+    async fn call(&self, command: &str, args: Value) -> Value {
         let port = std::fs::read_to_string(self.0.join("data/serve-port")).unwrap();
         let token = std::fs::read_to_string(self.0.join("data/serve-token")).unwrap();
         let (mut socket, _) = tokio_tungstenite::connect_async(format!(
@@ -151,9 +155,12 @@ for line in sys.stdin:
             ))
             .await
             .unwrap();
-        socket.send(tokio_tungstenite::tungstenite::Message::text(json!({"id":1,"cmd":"orchestrate","args":{
-            "line":request.to_string(),"requestSource":source,"requestFingerprint":fingerprint
-        }}).to_string())).await.unwrap();
+        socket
+            .send(tokio_tungstenite::tungstenite::Message::text(
+                json!({"id":1,"cmd":command,"args":args}).to_string(),
+            ))
+            .await
+            .unwrap();
         timeout(Duration::from_secs(20), async {
             loop {
                 let frame = socket.next().await.unwrap().unwrap();
@@ -344,12 +351,20 @@ async fn a_source_server_prepares_identity_and_replays_a_remote_create() {
         "address":format!("ws://127.0.0.1:{}",port.lines().next().unwrap()),"token":token.trim()}))
         .await;
     assert_eq!(added["status"], "server", "{added}");
+    let parent = source.ask(&source.create(None)).await;
+    assert_eq!(parent["status"], "created", "{parent}");
+    let parent_id = parent["session"]["sessionId"].as_str().unwrap();
     let mut create = destination.create(Some("forwarded-once"));
+    create["parentSessionId"] = json!(parent_id);
     create.as_object_mut().unwrap().remove("v");
     let wrapped = json!({"v":16,"cmd":"on_machine","machine":"fixture-remote","request":create});
     let first = source.ask(&wrapped).await;
     assert_eq!(first["status"], "recorded", "{first}");
     assert_eq!(first["response"]["session"]["machine"], "fixture-remote");
+    assert_eq!(source.ask(&wrapped).await, first);
+    source
+        .call("delete_session", json!({"sessionId":parent_id}))
+        .await;
     assert_eq!(source.ask(&wrapped).await, first);
     let origin = std::fs::read_to_string(source.0.join("data/orchestration-origin")).unwrap();
     assert!(uuid::Uuid::parse_str(&origin).is_ok());

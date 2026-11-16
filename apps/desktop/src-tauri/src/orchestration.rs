@@ -335,7 +335,20 @@ async fn on_machine(machine: &str, request: Request) -> Result<Response> {
         return elsewhere::list_everywhere(list).await;
     }
     let key = request_id(&request).map(str::to_owned);
-    elsewhere::forward(machine, &elsewhere::prepare(request).await?).await.map_err(|error| {
+    let result = async {
+        if key.is_some() {
+            let mut probe = elsewhere::identity(&request).await?;
+            probe.line = encode_line(&Envelope::new(Request::LookupReceipt(carbon_proto::ReceiptLookup {
+                request: Box::new(request.clone()),
+            })))?.trim_end().to_string();
+            let response = elsewhere::forward(machine, &probe).await?;
+            if !matches!(response, Response::ReceiptMissing) {
+                return Ok(response);
+            }
+        }
+        elsewhere::forward(machine, &elsewhere::prepare(request).await?).await
+    }.await;
+    result.map_err(|error: anyhow::Error| {
         match key {
             Some(key) => anyhow::anyhow!("{error:#}. No receipt was received for request {key:?}; retry only with the same --request-id and unchanged arguments. Inspect the target before using a new ID."),
             None => error,
@@ -390,8 +403,14 @@ pub async fn answer_forward(forward: Forward, app: Sink) -> Response {
         }
         let envelope: Envelope =
             serde_json::from_str(&forward.line).context("could not parse the request")?;
+        let request = match envelope.request {
+            Request::LookupReceipt(lookup) => return lookup_receipt(
+                &lookup.request, forward.request_fingerprint.as_deref(), forward.request_source.as_deref(),
+            ).await,
+            request => request,
+        };
         with_receipt(
-            envelope.request,
+            request,
             forward.request_fingerprint.clone(),
             forward.request_source.clone(),
             |mut request, receipt| async move {
@@ -527,15 +546,21 @@ mod elsewhere {
         Ok(response)
     }
 
+    /// Preserve the caller's identity before any mutable session or repository lookup.
+    pub async fn identity(request: &Request) -> Result<Forward> {
+        Ok(Forward {
+            line: encode_line(&Envelope::new(request.clone()))?.trim_end().to_string(),
+            request_fingerprint: request_id(request).map(|_| receipts::fingerprint(request)).transpose()?,
+            request_source: if request_id(request).is_some() { Some(receipts::origin(&store::get_home_app_dir().await?).await?) } else { None },
+            ..Forward::default()
+        })
+    }
+
     /// Fills in what only this machine's index knows before a request leaves:
     /// the caller and sender carried whole, a session `--base` turned into the
     /// branch it names, and the project's `origin`.
     pub async fn prepare(mut request: Request) -> Result<Forward> {
-        let mut forward = Forward {
-            request_fingerprint: request_id(&request).map(|_| receipts::fingerprint(&request)).transpose()?,
-            request_source: if request_id(&request).is_some() { Some(receipts::origin(&store::get_home_app_dir().await?).await?) } else { None },
-            ..Forward::default()
-        };
+        let mut forward = identity(&request).await?;
         let mut project = None;
         match &mut request {
             Request::CreateSession(create) => {
@@ -679,14 +704,30 @@ where
         Request::SendMessage(send) => Some(send.session_id.clone()),
         _ => None,
     };
-    let caller = match &request {
+    let root = receipt_directory(&request, source.as_deref()).await?;
+    receipts::execute(&root, &id, fingerprint, target.as_deref(), |receipt| action(request, Some(receipt))).await
+}
+
+/// A probe uses the same scope as execution, before parent or base resolution can fail.
+async fn lookup_receipt(request: &Request, fingerprint: Option<&str>, source: Option<&str>) -> Result<Response> {
+    let id = request_id(request).context("receipt lookup requires a keyed session create or send")?;
+    let fingerprint = match fingerprint {
+        Some(hash) => hash.to_string(),
+        None => receipts::fingerprint(request)?,
+    };
+    let root = receipt_directory(request, source).await?;
+    Ok(receipts::lookup(&root, id, &fingerprint).await?.unwrap_or(Response::ReceiptMissing))
+}
+
+/// Keep direct execution and forwarded probes in one request namespace.
+async fn receipt_directory(request: &Request, source: Option<&str>) -> Result<std::path::PathBuf> {
+    let caller = match request {
         Request::CreateSession(create) => create.parent_session_id.as_deref(),
         Request::SendMessage(send) => send.from_session_id.as_deref(),
         _ => None,
     };
-    let scope = receipts::fingerprint(&(source.as_deref().unwrap_or("local"), caller))?;
-    let root = store::get_home_app_dir().await?.join("orchestration-requests").join(scope);
-    receipts::execute(&root, &id, fingerprint, target.as_deref(), |receipt| action(request, Some(receipt))).await
+    let scope = receipts::fingerprint(&(source.unwrap_or("local"), caller))?;
+    Ok(store::get_home_app_dir().await?.join("orchestration-requests").join(scope))
 }
 
 async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
@@ -697,6 +738,7 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
 
 async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::OperationReceipt>, app: &Sink) -> Result<Response> {
     match request {
+        Request::LookupReceipt(lookup) => lookup_receipt(&lookup.request, None, None).await,
         Request::CreateSession(create) => create_session(create, None, receipt, app).await,
         Request::ListSessions(list) => list_sessions(list).await,
         Request::SendMessage(send) => send_message(send, None, app).await,

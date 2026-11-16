@@ -100,6 +100,7 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
+            Request::LookupReceipt(lookup) => lookup.request.version().max(16),
             Request::CreateSession(create) if create.request_id.is_some() => 16,
             Request::SendMessage(send) if send.request_id.is_some() => 16,
             Request::CreateSession(create) if create.base.is_some() => 10,
@@ -139,6 +140,7 @@ impl Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
+    LookupReceipt(ReceiptLookup),
     CreateSession(CreateSession),
     ListSessions(ListSessions),
     SendMessage(SendMessage),
@@ -825,6 +827,12 @@ pub struct ListSessions {
     pub parent_session_id: Option<String>,
 }
 
+/// A separate command fails closed on receivers that cannot answer a read-only probe.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReceiptLookup {
+    pub request: Box<Request>,
+}
+
 /// The durable identity retained even when a process dies before recording the outcome.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -842,6 +850,8 @@ pub struct OperationReceipt {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
+    /// Only an explicit miss permits a forwarding server to prepare a new operation.
+    ReceiptMissing,
     /// Only keyed callers receive this wrapper; the stored inner response never changes.
     Recorded {
         receipt: OperationReceipt,
@@ -1310,6 +1320,12 @@ mod tests {
             let decoded: Envelope = serde_json::from_str(&wire).unwrap();
             assert_eq!(decoded.v, 16);
             assert!(wire.contains("requestId"));
+            let probe = Envelope::new(Request::LookupReceipt(ReceiptLookup { request: Box::new(request.clone()) }));
+            assert_eq!(probe.v, 16);
+            let wire = encode_line(&probe).unwrap();
+            let decoded: Envelope = serde_json::from_str(&wire).unwrap();
+            assert!(matches!(decoded.request, Request::LookupReceipt(ReceiptLookup { request }) if matches!(*request, Request::CreateSession(_) | Request::SendMessage(_))));
+            assert!(wire.contains("lookup_receipt"));
         }
         let newest = old
             .iter()
