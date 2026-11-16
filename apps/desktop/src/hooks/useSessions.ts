@@ -91,8 +91,8 @@ const repairFxModel = (list: Model[], picked: ModelId): ModelId =>
 /// the picked path would resolve to nothing.
 export function imagesOf(attachments: Attachment[]): ImageRef[] {
   return attachments.flatMap((attachment) =>
-    attachment.isImage && attachment.preview
-      ? [{ path: null, url: attachment.preview, mimeType: attachment.mimeType }]
+    (attachment.isImage || attachment.inspection) && attachment.preview
+      ? [{ path: null, url: attachment.preview, mimeType: attachment.inspection ? "image/jpeg" : attachment.mimeType }]
       : [],
   );
 }

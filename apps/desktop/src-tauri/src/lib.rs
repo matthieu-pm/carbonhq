@@ -25,6 +25,7 @@ pub mod agent_updates;
 pub mod analytics;
 pub mod apps;
 pub mod attachments;
+pub mod inspection;
 pub mod auto_continue;
 pub mod binpath;
 #[cfg(all(feature = "cef", target_os = "macos"))]
@@ -1029,6 +1030,8 @@ pub fn run() {
             cef::browser_devtools,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_pick,
+            #[cfg(all(feature = "cef", target_os = "macos"))]
+            cef::browser_inspect_add,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_snapshot,
             #[cfg(all(feature = "cef", target_os = "macos"))]

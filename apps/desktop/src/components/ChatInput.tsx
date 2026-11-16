@@ -894,7 +894,7 @@ export default function ChatInput({
             style={WORDMARK_MASK}
             // `ml-1`: the card's corner is round, so a mark flush with its edge
             // reads as hanging off it.
-            className="mb-4 ml-1 h-7 w-26 bg-current text-foreground"
+            className="mb-4 ml-1 h-7 w-42 bg-current text-foreground"
           />
         )}
 
