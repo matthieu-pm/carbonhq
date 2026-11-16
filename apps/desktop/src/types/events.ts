@@ -1832,7 +1832,11 @@ issues: Array<IssueRef>,
  */
 mcpServers: Array<string>, };
 
-export type RecoveryItem = { id: string, kind: string, sessionId: string, sessionExists: boolean, title: string, reason: string, action: string, details: JsonValue, };
+export type RecoveryAction = "resume" | "retry" | "inspect";
+
+export type RecoveryItem = { id: string, kind: RecoveryKind, sessionId: string, sessionExists: boolean, title: string, reason: string, action: RecoveryAction, details: JsonValue, };
+
+export type RecoveryKind = "session" | "delivery" | "task" | "operation";
 
 /**
  * An issue another one is tied to, carried whole enough to draw its row in a
@@ -2112,7 +2116,7 @@ export type SessionSnapshot = { events: Array<AgentEvent>,
 /**
  * Where the log's unread older part ends, when `events` is only its tail.
  */
-olderBefore: number | null, tailBaseline?: TailBaseline, sessionId: string, harness: Harness,
+olderBefore: number | null, tailBaseline?: TailBaseline, sessionId: string, harness: Harness, 
 /**
  * Where the agent actually runs. Equals `project_path` for a normal
  * session; points inside `.claude/worktrees/<name>` for a worktree one.

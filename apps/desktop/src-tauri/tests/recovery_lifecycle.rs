@@ -86,5 +86,44 @@ async fn each_harness_retains_process_exit_and_stale_resolution_does_not_write()
         assert_eq!(recovered.id, interruption.id);
         assert_eq!(recovered.reason, "process_exited");
     }
+    let removed = uuid::Uuid::now_v7().to_string();
+    let item = SessionIndexItem::new(
+        &removed,
+        Harness::ClaudeCode,
+        "/fixture",
+        "/fixture",
+        None,
+        None,
+        "removed",
+        ModelId::default(),
+        None,
+        ApprovalPolicy::Auto,
+        false,
+        None,
+    );
+    store::append_session_index_item(item).await.unwrap();
+    store::delete_session(&removed).await.unwrap();
+    let status = Arc::new(Mutex::new(StatusTracker::default()));
+    status.lock().await.on_send();
+    let queued = Arc::new(Mutex::new(vec![ade_lib::session::QueuedMessage {
+        id: "stranded".into(),
+        session_id: removed.clone(),
+        text: "Do not recreate deleted work".into(),
+        attachment_paths: vec![],
+        from: None,
+        issues: vec![],
+        mcp_servers: vec![],
+    }]));
+    settle_dead_child(
+        &removed,
+        Harness::ClaudeCode,
+        &Arc::new(AtomicU64::new(0)),
+        &status,
+        &queued,
+        "removed child died",
+        &sink,
+    )
+    .await;
+    assert!(!store::get_session_path(&removed).await.unwrap().exists());
     std::fs::remove_dir_all(home).unwrap();
 }

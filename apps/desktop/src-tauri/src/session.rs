@@ -562,12 +562,12 @@ pub async fn settle_dead_child(
         return;
     }
 
+    let item = match get_session_index_item(session_id).await {
+        Ok(Some(item)) => item,
+        _ => return,
+    };
     strand_queue_on_exit(session_id, harness, queued, seq, app).await;
     if let Some(session) = guard.as_ref().and_then(|slot| slot.as_ref()) {
-        let item = match get_session_index_item(session_id).await {
-            Ok(Some(item)) => item,
-            _ => return,
-        };
         let interrupted = status.lock().await.turn_in_flight();
         if interrupted {
             match crate::store::record_process_interruption(session_id, why).await {

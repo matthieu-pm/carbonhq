@@ -1569,7 +1569,7 @@ pub async fn reset_in_progress_sessions() -> Result<()> {
                 Ok(page) => page,
                 Err(error) => {
                     eprintln!("[session recovery {}] {error:#}", item.session_id);
-                    SessionPage { events: vec![], older_before: None }
+                    SessionPage { events: vec![], older_before: None, tail_baseline: None }
                 }
             };
             let boundary = page.events.iter().rev().find(|event| event.subagent.is_none() && matches!(event.payload,
