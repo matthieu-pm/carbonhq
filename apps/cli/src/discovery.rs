@@ -39,6 +39,7 @@ pub enum ModelCommand {
     },
 }
 
+/// Query the owning server rather than inferring availability from this CLI.
 pub fn harness(command: HarnessCommand) -> Result<(), String> {
     let (request, json) = match command {
         HarnessCommand::Ls(output) => (DiscoveryRequest::Harnesses, output.json),
@@ -47,6 +48,7 @@ pub fn harness(command: HarnessCommand) -> Result<(), String> {
     run(request, json)
 }
 
+/// Keep model search and pagination on the server that will run the session.
 pub fn model(command: ModelCommand) -> Result<(), String> {
     let ModelCommand::Ls {
         harness,
@@ -131,6 +133,21 @@ fn run(request: DiscoveryRequest, json: bool) -> Result<(), String> {
                         mode["id"].as_str().unwrap_or_default(),
                         mode["name"].as_str().unwrap_or_default()
                     );
+                }
+            }
+            if let Some(inherited) = modes["inheritedModes"].as_array() {
+                let ids = inherited
+                    .iter()
+                    .filter_map(|mode| mode.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if !ids.is_empty() {
+                    println!("Inherited policies: {ids}");
+                }
+            }
+            if let Some(reasons) = modes["reasons"].as_object() {
+                for (name, reason) in reasons {
+                    println!("{name}: {}", reason.as_str().unwrap_or_default());
                 }
             }
             println!("\nOPTIONS ({options_source})");

@@ -384,3 +384,34 @@ async fn a_source_server_prepares_identity_and_replays_a_remote_create() {
     destination_server.kill().await.unwrap();
     destination_server.wait().await.unwrap();
 }
+
+#[tokio::test]
+async fn tracked_creation_receipt_survives_an_unreadable_task_registry() {
+    let fixture = Fixture::new();
+    let mut server = fixture.start().await;
+    let parent = fixture.ask(&fixture.create(None)).await;
+    let mut create = fixture.create(Some("tracked-configuration"));
+    create["v"] = json!(20);
+    create["configuration"] = json!(true);
+    create["parentSessionId"] = parent["session"]["sessionId"].clone();
+    create["task"] = json!({"awaited":false});
+    let original = fixture.ask(&create).await;
+    assert_eq!(original["status"], "recorded", "{original}");
+    let configuration = &original["response"]["task"]["configuration"];
+    assert_eq!(configuration["model"], "opus", "{original}");
+    let registry = std::fs::read_dir(fixture.0.join("data/delegated-tasks"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .unwrap();
+    let backup = registry.with_extension("backup");
+    std::fs::rename(&registry, &backup).unwrap();
+    std::fs::create_dir(&registry).unwrap();
+    let retry = fixture.ask(&create).await;
+    assert_eq!(retry["status"], "recorded", "{retry}");
+    assert_eq!(retry["response"]["task"]["configuration"], *configuration);
+    std::fs::remove_dir(&registry).unwrap();
+    std::fs::rename(&backup, &registry).unwrap();
+    server.kill().await.unwrap();
+    server.wait().await.unwrap();
+}

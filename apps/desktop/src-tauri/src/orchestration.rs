@@ -733,7 +733,12 @@ where
 async fn refresh_task(response: Response) -> Result<Response> {
     match &response {
         Response::Recorded { receipt, .. } | Response::Uncertain { receipt, .. } => {
-            if let Some(task) = tasks::by_operation(&receipt.operation_id).await? {
+            if let Ok(Some(mut task)) = tasks::by_operation(&receipt.operation_id).await {
+                if let Response::Recorded { response, .. } = &response {
+                    if let Response::Task { task: saved } = response.as_ref() {
+                        if saved.configuration.is_some() { task.configuration = saved.configuration.clone(); }
+                    }
+                }
                 return Ok(Response::Recorded { receipt: receipt.clone(), response: Box::new(Response::Task { task }) });
             }
         }
@@ -1434,9 +1439,9 @@ async fn create_session(
     // Refresh tracked rows exposed during handshake; ordinary sessions are first announced here.
     app.emit(SESSION_CREATED, &item).ok();
 
-    let configuration = discovery::configuration(&item);
-    if let Some(task) = tracked {
-        let task = tasks::set_configuration(&task.task_id, configuration).await.map_err(|error| error.context(receipts::SubmissionStarted))?;
+    let configuration = discovery::configuration(&item).await;
+    if let Some(mut task) = tracked {
+        task.configuration = Some(configuration);
         return Ok(Response::Task { task });
     }
     Ok(Response::Created {
@@ -1606,7 +1611,7 @@ async fn start_session(draft: &StoredDraft, parent: Option<&str>, app: &Sink) ->
 
     app.emit(SESSION_CREATED, &item).ok();
     Ok(Response::Created {
-        configuration: Some(discovery::configuration(&item)),
+        configuration: Some(discovery::configuration(&item).await),
         session: summarize(item),
         base_ref,
     })

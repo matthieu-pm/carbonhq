@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { honoursMode, stanceFor } from "./permission";
+import { honoursMode, stanceFor, parseModeFallbacks } from "./permission";
 
 describe("honoursMode", () => {
   it("offers every stance where a harness takes every stance", () => {
@@ -70,5 +70,13 @@ describe("stanceFor", () => {
     for (const mode of ["auto", "manual", "dontAsk"] as const) {
       expect(stanceFor("pi", mode)).not.toBe("plan");
     }
+  });
+});
+
+describe("shared mode policy validation", () => {
+  it("rejects a misspelled source or target before a stance can reach storage", () => {
+    expect(() => parseModeFallbacks({ plan: "manul" })).toThrow("Invalid approval policy");
+    expect(() => parseModeFallbacks({ plna: "manual" })).toThrow("Invalid approval policy");
+    expect(stanceFor("grok", "plan")).toBe("manual");
   });
 });

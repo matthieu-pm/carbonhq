@@ -13,7 +13,11 @@
       "dontAsk",
       "bypassPermissions"
     ],
-    "fallbacks": {}
+    "fallbacks": {},
+    "inheritedModes": [],
+    "reasons": {
+      "effort": "Claude Code has no live effort setter; changing effort needs a respawn, so it is locked during a turn."
+    }
   },
   "grok": {
     "live": {
@@ -30,6 +34,12 @@
     "fallbacks": {
       "plan": "manual",
       "dontAsk": "bypassPermissions"
+    },
+    "inheritedModes": [],
+    "reasons": {
+      "plan": "Plan falls to manual so a spawned child never becomes freer than its plan parent. Grok enters its own plan mode through agent approval, not a stance setter.",
+      "stance": "Changing stance needs a respawn, so it is locked during a turn.",
+      "dontAsk": "Grok implements dontAsk through yoloMode, the same route as bypassPermissions."
     }
   },
   "pi": {
@@ -46,6 +56,13 @@
       "auto": "bypassPermissions",
       "dontAsk": "bypassPermissions",
       "bypassPermissions": "bypassPermissions"
+    },
+    "inheritedModes": [
+      "plan"
+    ],
+    "reasons": {
+      "stance": "A stance change needs a respawn. pi has no native permission gate; ordinary picks record bypassPermissions.",
+      "plan": "The picker hides plan, but an inherited plan still passes a fixed read-only tool set at spawn."
     }
   },
   "fx": {
@@ -63,6 +80,12 @@
     "fallbacks": {
       "plan": "manual",
       "dontAsk": "auto"
+    },
+    "inheritedModes": [],
+    "reasons": {
+      "plan": "Plan falls to manual (ask), the narrowest mode fx supports, so inheritance never widens access.",
+      "dontAsk": "fx maps dontAsk to auto, not full-access.",
+      "live": "fx refuses config changes during a prompt; Carbon holds them for the queued turn."
     }
   },
   "codex": {
@@ -80,6 +103,15 @@
     "fallbacks": {
       "plan": "bypassPermissions",
       "dontAsk": "bypassPermissions"
+    },
+    "inheritedModes": [
+      "plan",
+      "dontAsk"
+    ],
+    "reasons": {
+      "live": "Codex steers a queued prompt into its running turn and ignores new settings, so all controls are locked.",
+      "plan": "The picker hides plan; inherited plan runs with on-request approval and a read-only sandbox.",
+      "dontAsk": "The picker hides dontAsk; inherited dontAsk runs with never approval and a workspace-write sandbox."
     }
   }
 }

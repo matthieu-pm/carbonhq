@@ -48,6 +48,32 @@ pub struct LiveControls {
     pub fast: ControlTiming,
 }
 
+impl LiveControls {
+    /// Preserve the same control order for validation and application.
+    pub fn entries(&self) -> [(&'static str, &ControlTiming); 4] {
+        [
+            ("model", &self.model),
+            ("effort", &self.effort),
+            ("stance", &self.stance),
+            ("fast", &self.fast),
+        ]
+    }
+
+    /// Only deferred picks need to wait for the queued turn's flush.
+    pub fn deferred(&self) -> bool {
+        self.entries()
+            .iter()
+            .any(|(_, timing)| matches!(timing, ControlTiming::NextTurn))
+    }
+}
+
+impl ControlTiming {
+    /// Idle children take ordinary setters; running children take only verified live setters.
+    pub fn applies(&self, during_turn: bool) -> bool {
+        !during_turn || matches!(self, Self::InPlace)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EffectiveConfiguration {

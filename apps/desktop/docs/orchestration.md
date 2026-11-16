@@ -227,7 +227,9 @@ reads that timing. Keep deferred fx controls distinct from in-place changes.
 
 `session new --json` sets `CreateSession.configuration`, requiring v20 before
 creation can run. The creation receipt reads configuration from the post-send
-index snapshot; task creation saves it on the task too. Omitted on legacy
+index snapshot; task creation returns it without a second registry write.
+Retry replies preserve the saved receipt configuration, recovering it from the
+acknowledged index only when the original reply was lost. Omitted on legacy
 requests, this new flag does not change existing retry fingerprints. Ordinary
 stdout stays the ID alone. No serve command or event schema changed, so the iOS
 client's existing Codable payloads are unchanged.

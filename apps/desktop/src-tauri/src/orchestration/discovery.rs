@@ -7,19 +7,26 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 /// Discovery runs on the owning server and uses the same sources as its composer.
 pub(super) async fn request(request: DiscoveryRequest, app: &Sink) -> Result<Response> {
-    let available = crate::agent_availability().await;
     let data = match request {
         DiscoveryRequest::Harnesses => DiscoveryData::Harnesses {
-            harnesses: available.into_iter().map(info).collect(),
+            harnesses: crate::agent_availability()
+                .await
+                .into_iter()
+                .map(info)
+                .collect(),
         },
         DiscoveryRequest::Harness { harness } => {
-            let (harness, availability) = target(&harness, available)?;
+            let (harness, availability) = target(&harness).await?;
             let acp = matches!(harness, Harness::Acp(_));
             let options = crate::agent_options(harness, None).await;
             let modes = if acp {
                 serde_json::to_value(crate::agent_modes(harness, None).await)?
             } else {
-                json!({"modes": harness.controls().modes.iter().map(|mode| json!({"id": mode.as_arg(), "name": mode.as_arg()})).collect::<Vec<_>>()})
+                json!({
+                    "modes": harness.controls().modes.iter().map(|mode| json!({"id": mode.as_arg(), "name": mode.as_arg()})).collect::<Vec<_>>(),
+                    "inheritedModes": harness.controls().inherited_modes,
+                    "reasons": harness.controls().reasons,
+                })
             };
             let options_source = if !acp {
                 "carbon"
@@ -30,7 +37,7 @@ pub(super) async fn request(request: DiscoveryRequest, app: &Sink) -> Result<Res
             };
             let default_model = if availability.available {
                 let model = resolve_model(None, None, harness).await?;
-                (!model.is_unset()).then(|| model.to_string())
+                model_arg(harness, &model).await
             } else {
                 None
             };
@@ -73,7 +80,7 @@ pub(super) async fn request(request: DiscoveryRequest, app: &Sink) -> Result<Res
                 query.as_ref().is_none_or(|q| q.len() <= 256),
                 "--query must be at most 256 bytes"
             );
-            let (harness, availability) = target(&harness, available)?;
+            let (harness, availability) = target(&harness).await?;
             let models = if availability.available {
                 crate::list_models(app.clone(), Some(harness)).await
             } else {
@@ -118,17 +125,35 @@ fn info(availability: crate::AgentAvailability) -> HarnessInfo {
     }
 }
 
-fn target(
-    name: &str,
-    available: Vec<crate::AgentAvailability>,
-) -> Result<(Harness, crate::AgentAvailability)> {
-    let availability = available
-        .into_iter()
-        .find(|a| a.harness.wire_name() == name)
+/// Validate the named harness before probing its models.
+async fn target(name: &str) -> Result<(Harness, crate::AgentAvailability)> {
+    let harness: Harness = serde_json::from_value(json!(name))?;
+    let availability = crate::agent_availability_for(harness)
+        .await
         .with_context(|| {
             format!("unknown or disabled harness {name:?} — run `carbon harness ls`")
         })?;
-    Ok((availability.harness, availability))
+    Ok((harness, availability))
+}
+
+/// A receipt value must work as --model, including models whose persisted IDs differ.
+async fn model_arg(harness: Harness, id: &ModelId) -> Option<String> {
+    if id.is_unset() {
+        return None;
+    }
+    let model = match harness {
+        Harness::ClaudeCode | Harness::Codex => crate::models::find_model(id),
+        Harness::Pi => crate::harness::pi::models::find(id).await,
+        Harness::Fx => crate::harness::fx::models::find(id).await,
+        Harness::Grok => crate::harness::grok::models::find(id).await,
+        Harness::Acp(_) => crate::harness::agents::find_model(harness, id),
+        Harness::Other(_) => None,
+    };
+    Some(
+        model
+            .map(|model| model.arg)
+            .unwrap_or_else(|| id.to_string()),
+    )
 }
 
 #[derive(Serialize, Deserialize)]
@@ -203,11 +228,11 @@ fn page(
 }
 
 /// Use the post-send snapshot, after defaults, acknowledgements and fast/effort clamping.
-pub(super) fn configuration(item: &SessionIndexItem) -> EffectiveConfiguration {
+pub(super) async fn configuration(item: &SessionIndexItem) -> EffectiveConfiguration {
     let acp = matches!(item.harness, Harness::Acp(_));
     EffectiveConfiguration {
         harness: item.harness.wire_name(),
-        model: (!item.model.is_unset()).then(|| item.model.to_string()),
+        model: model_arg(item.harness, &item.model).await,
         effort: if acp {
             crate::harness::agents::saved_options(item)
                 .into_iter()
@@ -219,20 +244,17 @@ pub(super) fn configuration(item: &SessionIndexItem) -> EffectiveConfiguration {
         mode: if acp {
             item.agent_mode.clone()
         } else {
-            let mode = item.permission_mode.as_arg();
-            // Legacy inherited read-only picks still reach Codex and pi at spawn.
-            let native = item.harness == Harness::Codex
-                || item.harness == Harness::Pi && item.permission_mode == ApprovalPolicy::Plan;
-            Some(if native {
-                mode.into()
+            let policy = item.harness.controls();
+            let mode = if policy.inherited_modes.contains(&item.permission_mode) {
+                item.permission_mode
             } else {
-                item.harness
-                    .controls()
+                policy
                     .fallbacks
-                    .get(mode)
-                    .cloned()
-                    .unwrap_or_else(|| mode.into())
-            })
+                    .get(&item.permission_mode)
+                    .copied()
+                    .unwrap_or(item.permission_mode)
+            };
+            Some(mode.as_arg().into())
         },
         fast: item.fast,
     }
@@ -315,11 +337,10 @@ mod tests {
             });
             assert_eq!(row.reason.is_none(), available);
         }
-        assert!(target("acp:disabled", vec![]).is_err());
     }
 
-    #[test]
-    fn a_creation_receipt_uses_recorded_settings_and_never_invents_a_default() {
+    #[tokio::test]
+    async fn a_creation_receipt_uses_recorded_settings_and_never_invents_a_default() {
         let mut item = SessionIndexItem::new(
             "fixture",
             Harness::ClaudeCode,
@@ -334,7 +355,7 @@ mod tests {
             true,
             None,
         );
-        let effective = configuration(&item);
+        let effective = configuration(&item).await;
         assert_eq!(effective.model.as_deref(), Some("opus"));
         assert_eq!(effective.effort.as_deref(), Some("high"));
         assert_eq!(effective.mode.as_deref(), Some("manual"));
@@ -343,15 +364,93 @@ mod tests {
         item.model = ModelId::default();
         item.effort = None;
         item.fast = false;
-        let effective = configuration(&item);
+        let effective = configuration(&item).await;
         assert!(effective.model.is_none() && effective.effort.is_none() && !effective.fast);
         assert_eq!(effective.mode.as_deref(), Some("bypassPermissions"));
         item.harness = Harness::Fx;
         item.permission_mode = ApprovalPolicy::Plan;
-        assert_eq!(configuration(&item).mode.as_deref(), Some("manual"));
+        assert_eq!(configuration(&item).await.mode.as_deref(), Some("manual"));
         item.harness = Harness::Acp("fixture");
         item.agent_mode = Some("accept-edits".into());
-        assert_eq!(configuration(&item).mode.as_deref(), Some("accept-edits"));
+        assert_eq!(
+            configuration(&item).await.mode.as_deref(),
+            Some("accept-edits")
+        );
+    }
+
+    #[tokio::test]
+    async fn receipt_models_are_reusable_aliases_and_legacy_modes_are_advertised() {
+        let model = crate::models::codex_models()
+            .into_iter()
+            .find(|model| model.id.as_str() != model.arg)
+            .unwrap();
+        let mut item = SessionIndexItem::new(
+            "alias",
+            Harness::Codex,
+            "/fixture",
+            "/fixture",
+            None,
+            None,
+            "brief",
+            model.id.clone(),
+            None,
+            ApprovalPolicy::Plan,
+            false,
+            None,
+        );
+        let effective = configuration(&item).await;
+        assert_eq!(effective.model.as_deref(), Some(model.arg.as_str()));
+        assert_eq!(
+            crate::models::id_for_arg(effective.model.as_deref().unwrap(), Harness::Codex),
+            Some(model.id)
+        );
+        for (harness, inherited) in [
+            (Harness::Codex, ApprovalPolicy::Plan),
+            (Harness::Codex, ApprovalPolicy::DontAsk),
+            (Harness::Pi, ApprovalPolicy::Plan),
+        ] {
+            item.harness = harness;
+            item.model = ModelId::default();
+            item.permission_mode = inherited;
+            assert!(harness.controls().inherited_modes.contains(&inherited));
+            assert_eq!(
+                configuration(&item).await.mode.as_deref(),
+                Some(inherited.as_arg())
+            );
+        }
+    }
+
+    #[test]
+    fn typed_fallbacks_reject_misspelled_sources_and_targets() {
+        let policy = serde_json::to_value(Harness::Fx.controls().live.clone()).unwrap();
+        for fallbacks in [json!({"plan":"manul"}), json!({"plna":"manual"})] {
+            let data = json!({"live":policy,"modes":[],"inheritedModes":[],"reasons":{},"fallbacks":fallbacks});
+            assert!(serde_json::from_value::<crate::harness::HarnessControls>(data).is_err());
+        }
+    }
+
+    #[test]
+    fn each_mid_turn_change_is_checked_independently() {
+        assert!(Harness::ClaudeCode
+            .check_mid_turn_controls([true, false, false, false])
+            .is_ok());
+        assert!(Harness::ClaudeCode
+            .check_mid_turn_controls([false, true, false, false])
+            .is_err());
+        assert!(Harness::Pi
+            .check_mid_turn_controls([false, false, true, false])
+            .is_err());
+        assert!(Harness::Grok
+            .check_mid_turn_controls([false, false, true, false])
+            .is_err());
+        assert!(Harness::Codex
+            .check_mid_turn_controls([true, false, false, false])
+            .is_err());
+        assert!(Harness::Codex.check_mid_turn_controls([false; 4]).is_ok());
+        assert!(Harness::Fx.check_mid_turn_controls([true; 4]).is_ok());
+        let live = &Harness::ClaudeCode.controls().live;
+        assert!(!live.effort.applies(true));
+        assert!(live.effort.applies(false));
     }
 
     #[test]
@@ -363,13 +462,13 @@ mod tests {
             assert!(policies.contains_key(&harness.wire_name()));
         }
         assert!(matches!(Harness::Fx.controls().live.model, NextTurn));
-        assert!(!Harness::Fx.applies_controls_mid_turn());
+        assert!(!Harness::Fx.controls().live.model.applies(true));
         assert!(matches!(Harness::Codex.controls().live.model, Locked));
-        assert!(!Harness::Codex.applies_controls_mid_turn());
+        assert!(!Harness::Codex.controls().live.model.applies(true));
         assert!(matches!(Harness::ClaudeCode.controls().live.effort, Locked));
         assert!(matches!(Harness::Pi.controls().live.stance, Locked));
         assert!(matches!(Harness::Grok.controls().live.model, InPlace));
-        assert!(Harness::Grok.applies_controls_mid_turn());
+        assert!(Harness::Grok.controls().live.model.applies(true));
         assert!(matches!(
             Harness::Acp("fixture").controls().live.model,
             Locked

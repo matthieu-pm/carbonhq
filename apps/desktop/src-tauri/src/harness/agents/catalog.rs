@@ -414,9 +414,9 @@ async fn resolved_registry_recipe(
     registry_recipe(agent, override_command, binary_available)
 }
 
-async fn rows(registry: &Registry, prefs: &Prefs) -> Vec<AcpAgent> {
+async fn rows(registry: &Registry, prefs: &Prefs, only: Option<&str>) -> Vec<AcpAgent> {
     let enabled = |id: &str| prefs.enabled.iter().any(|e| e == id);
-    let custom = prefs.custom.iter().map(|c| async move {
+    let custom = prefs.custom.iter().filter(|c| only.is_none_or(|id| c.id == id)).map(|c| async move {
         let ready =
             crate::binpath::resolve_acp_agent(&c.command, c.env.get("PATH").map(String::as_str))
                 .await
@@ -444,6 +444,7 @@ async fn rows(registry: &Registry, prefs: &Prefs) -> Vec<AcpAgent> {
     let listed = registry
         .agents
         .iter()
+        .filter(|a| only.is_none_or(|id| a.id == id))
         .filter(|a| !HIDDEN.contains(&a.id.as_str()))
         .filter(|a| !prefs.custom.iter().any(|c| c.id == a.id))
         .map(|a| async move {
@@ -483,7 +484,16 @@ async fn rows(registry: &Registry, prefs: &Prefs) -> Vec<AcpAgent> {
 pub async fn list() -> Vec<AcpAgent> {
     let registry = registry().await;
     let prefs = read_prefs().await.unwrap_or_default();
-    rows(&registry, &prefs).await
+    rows(&registry, &prefs, None).await
+}
+
+/// Resolve only this agent's executable; custom agents need no registry download.
+pub async fn get(id: &str) -> Option<AcpAgent> {
+    let prefs = read_prefs().await.ok()?;
+    let registry = if prefs.custom.iter().any(|agent| agent.id == id) {
+        Arc::new(Registry::default())
+    } else { registry().await };
+    rows(&registry, &prefs, Some(id)).await.into_iter().next()
 }
 
 /// The harnesses the composer offers beside the native five.
@@ -570,7 +580,7 @@ pub async fn list_acp_agents(recheck: Option<bool>) -> AcpAgentCatalog {
     let registry = REGISTRY.read().unwrap().clone().unwrap_or(registry);
     match read_prefs().await {
         Ok(prefs) => AcpAgentCatalog {
-            agents: rows(&registry, &prefs).await,
+            agents: rows(&registry, &prefs, None).await,
             error: REGISTRY_ERROR.lock().unwrap().clone(),
         },
         Err(error) => AcpAgentCatalog {
@@ -872,7 +882,7 @@ mod tests {
             "devin".into(),
             "/carbon-test-missing/Agent With Spaces".into(),
         );
-        let agent = rows(&registry, &prefs)
+        let agent = rows(&registry, &prefs, None)
             .await
             .into_iter()
             .find(|agent| agent.id == "devin")
@@ -896,10 +906,20 @@ mod tests {
                 distribution: Distribution::default(),
             }],
         };
-        let agents = rows(&registry, &Prefs::default()).await;
+        let agents = rows(&registry, &Prefs::default(), None).await;
         assert_eq!(agents.len(), 1);
         assert!(!agents[0].supported);
         assert!(!agents[0].ready);
         assert!(agents[0].executable.is_empty());
     }
+    #[tokio::test]
+    async fn a_targeted_lookup_returns_only_the_requested_agent() {
+        let registry = snapshot();
+        let prefs = Prefs::default();
+        let agents = rows(&registry, &prefs, Some("devin")).await;
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].id, "devin");
+        assert!(rows(&registry, &prefs, Some("missing-fixture")).await.is_empty());
+    }
+
 }

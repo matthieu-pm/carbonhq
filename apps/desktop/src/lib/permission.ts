@@ -26,9 +26,26 @@ import controls from "./harnessControls.json";
 ///
 /// fx exposes three modes over ACP — `auto`, `ask` and `full-access` — since
 /// 0.0.14; earlier builds had no bypass. It has no plan mode and no `dontAsk`.
-const HONOURED = Object.fromEntries(
-  Object.entries(controls).map(([harness, policy]) => [harness, policy.modes]),
-) as Partial<Record<Harness, ApprovalPolicy[]>>;
+function approvalPolicy(value: string): ApprovalPolicy {
+  switch (value) {
+    case "plan": case "manual": case "auto": case "dontAsk": case "bypassPermissions":
+      return value;
+    default:
+      throw new Error(`Invalid approval policy: ${value}`);
+  }
+}
+
+/// Reject misspelled policies before a fallback can be recorded as a stance.
+export function parseModeFallbacks(values: Record<string, string>): Partial<Record<ApprovalPolicy, ApprovalPolicy>> {
+  return Object.fromEntries(Object.entries(values).map(([from, to]) => [approvalPolicy(from), approvalPolicy(to)]));
+}
+
+const HONOURED: Record<string, ApprovalPolicy[]> = Object.fromEntries(
+  Object.entries(controls).map(([harness, policy]) => [harness, policy.modes.map(approvalPolicy)]),
+);
+const FALLBACKS: Record<string, Partial<Record<ApprovalPolicy, ApprovalPolicy>>> = Object.fromEntries(
+  Object.entries(controls).map(([harness, policy]) => [harness, parseModeFallbacks(policy.fallbacks)]),
+);
 
 /// Whether this harness honours this stance.
 export function honoursMode(harness: Harness, mode: ApprovalPolicy): boolean {
@@ -57,6 +74,5 @@ export function stanceFor(harness: Harness, mode: ApprovalPolicy): ApprovalPolic
   // Recorded only, but `carbon new` inherits it — so the narrowest, or a child on
   // another harness comes out freer than an ACP parent ever ran.
   if (harness.startsWith("acp:")) return "manual";
-  const policy = controls[harness as keyof typeof controls];
-  return (policy?.fallbacks as Partial<Record<ApprovalPolicy, ApprovalPolicy>>)?.[mode] ?? "bypassPermissions";
+  return FALLBACKS[harness]?.[mode] ?? "bypassPermissions";
 }

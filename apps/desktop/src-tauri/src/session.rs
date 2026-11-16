@@ -1111,6 +1111,11 @@ impl SessionManager {
                 app,
             )
             .await?;
+            // Persist startup refusals before a prompt or a creation receipt can observe them.
+            if let Err(error) = touch_session_index_item(session_id, ModelId::default(), session.effort, session.permission_mode, session.fast).await {
+                let _ = session.kill_tree().await;
+                return Err(error);
+            }
             // Asked where the child was spawned: a worktree the CLI makes
             // itself does not exist yet, and its checked-in config is the
             // project's anyway.
@@ -1137,7 +1142,6 @@ impl SessionManager {
             // back rather than returning empty — otherwise the frontend's first
             // render drops the user's own message.
             let events = list_session_events(session_id).await?;
-            let applied = (session.effort, session.fast);
             match task_creation.as_mut() {
                 Some(guard) => **guard = Some(session),
                 None => *self.slot(session_id).await.lock().await = Some(session),
@@ -1145,10 +1149,7 @@ impl SessionManager {
 
             // Returned so the frontend learns the resolved worktree name and
             // the backend-truncated title rather than guessing either.
-            let mut item = get_session_index_item(session_id).await?.unwrap_or(item);
-            // A nonfatal startup refusal must not leave the creation receipt naming the rejected pick.
-            item.effort = applied.0;
-            item.fast = applied.1;
+            let item = get_session_index_item(session_id).await?.unwrap_or(item);
             return Ok(SendOutcome {
                 issues: item.issues.clone(),
                 snapshot: Some(SessionSnapshot {
@@ -1318,6 +1319,15 @@ impl SessionManager {
                 s.model = ModelId::default();
             }
 
+            if turn_in_flight {
+                s.harness.check_mid_turn_controls([
+                    !model.is_unset() && s.model != model,
+                    effort.is_some() && s.effort != effort,
+                    s.permission_mode != permission_mode,
+                    s.fast != fast,
+                ])?;
+            }
+
             // Before the send, so the index reflects intent even if writing to
             // the child fails — the prompt event is persisted ahead of stdin too.
             touch_session_index_item(session_id, model.clone(), effort, permission_mode, fast).await?;
@@ -1330,10 +1340,9 @@ impl SessionManager {
             // Codex steers a queued prompt into the running turn and ignores
             // its model, so nothing can move it — the composer locks those
             // controls mid-turn instead.
-            let applied = !turn_in_flight
-                || s.harness.applies_controls_mid_turn();
+            let applied = !turn_in_flight || !s.harness.controls().live.deferred();
             if applied {
-                apply_live_controls(s, session_id, &model, model_spec.as_ref(), effort, permission_mode, fast, app)
+                apply_live_controls(s, session_id, &model, model_spec.as_ref(), effort, permission_mode, fast, turn_in_flight, app)
                     .await?;
             }
 
@@ -1408,7 +1417,7 @@ impl SessionManager {
                         if let Transport::Fx(fx) = &s.stdin {
                             fx.take_deferred();
                         }
-                        apply_live_controls(s, session_id, &model, model_spec.as_ref(), effort, permission_mode, fast, app)
+                        apply_live_controls(s, session_id, &model, model_spec.as_ref(), effort, permission_mode, fast, false, app)
                             .await?;
                     }
                 } else {
@@ -4014,14 +4023,16 @@ async fn apply_live_controls(
     effort: Option<Effort>,
     permission_mode: ApprovalPolicy,
     fast: bool,
+    during_turn: bool,
     app: &Sink,
 ) -> Result<()> {
     // The other side of `send_msg`'s respawn rule, read off the same table so
     // the two cannot disagree: a pick neither respawns for nor applies would
     // be recorded in the index and never reach the child.
     let caps = s.harness.caps();
+    let live = &s.harness.controls().live;
 
-    if caps.applies_model_in_place && s.model != *model {
+    if live.model.applies(during_turn) && caps.applies_model_in_place && s.model != *model {
         // Claude Code names a default, so the spec is there by
         // construction. fx does not — a pick falling to "let fx
         // decide" has nothing to switch to, and the session stays on
@@ -4054,7 +4065,7 @@ async fn apply_live_controls(
             None => bail!("no model to switch the session to"),
         }
     }
-    if caps.applies_effort_in_place && s.effort != effort {
+    if live.effort.applies(during_turn) && caps.applies_effort_in_place && s.effort != effort {
         // A declined effort must not take the prompt down with it. fx
         // refuses one on a model that does no reasoning, and losing the
         // message over a level is a far worse answer than running the
@@ -4087,10 +4098,10 @@ async fn apply_live_controls(
             .await?;
         }
     }
-    if caps.applies_permission_in_place && s.permission_mode != permission_mode {
+    if live.stance.applies(during_turn) && caps.applies_permission_in_place && s.permission_mode != permission_mode {
         s.set_permission_mode(permission_mode).await?;
     }
-    if caps.fast_mode == FastMode::InPlace && s.fast != fast {
+    if live.fast.applies(during_turn) && caps.fast_mode == FastMode::InPlace && s.fast != fast {
         if let Err(err) = s.set_fast(fast).await {
             // fx turns fast mode down on a model with no fast lane, and that is
             // effort's case: run the turn at ordinary speed and say so, rather

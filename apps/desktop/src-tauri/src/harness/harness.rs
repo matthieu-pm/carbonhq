@@ -1080,11 +1080,14 @@ mod login_tests {
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HarnessControls {
     pub live: carbon_proto::LiveControls,
     pub modes: Vec<crate::events::ApprovalPolicy>,
-    pub fallbacks: std::collections::HashMap<String, String>,
+    pub fallbacks: std::collections::HashMap<crate::events::ApprovalPolicy, crate::events::ApprovalPolicy>,
+    pub inherited_modes: Vec<crate::events::ApprovalPolicy>,
+    pub reasons: std::collections::HashMap<String, String>,
 }
 
 impl Harness {
@@ -1102,12 +1105,16 @@ impl Harness {
             },
             modes: vec![],
             fallbacks: Default::default(),
+            inherited_modes: vec![],
+            reasons: Default::default(),
         }))
     }
 
-    /// Deferred picks wait for the next turn; only live requests reach a running call.
-    pub fn applies_controls_mid_turn(self) -> bool {
-        let live = &self.controls().live;
-        [&live.model, &live.effort, &live.stance, &live.fast].iter().any(|timing| matches!(timing, carbon_proto::ControlTiming::InPlace))
+    /// Reject before recording picks that cannot reach the prompt sent during this turn.
+    pub fn check_mid_turn_controls(self, changes: [bool; 4]) -> anyhow::Result<()> {
+        for ((name, timing), changed) in self.controls().live.entries().into_iter().zip(changes) {
+            anyhow::ensure!(!changed || !matches!(timing, carbon_proto::ControlTiming::Locked), "{} {name} is locked during a turn", self.label());
+        }
+        Ok(())
     }
 }
