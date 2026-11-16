@@ -16,6 +16,9 @@ rows = [dict(sessionId=id, harness='claude_code', cwd=str(home / 'repo'), projec
 fake = home / 'bin/claude'
 fake.write_text(f'#!{sys.executable}\n' + (pathlib.Path(__file__).parent / 'fixtures/task-claude.py').read_text())
 fake.chmod(0o755)
+pi = home / 'bin/pi'
+pi.write_text(f'#!{sys.executable}\n' + (pathlib.Path(__file__).parent / 'fixtures/task-pi.py').read_text())
+pi.chmod(0o755)
 gh = home / 'bin/gh'
 gh.write_text(f'#!{sys.executable}\n' + (pathlib.Path(__file__).parent / 'fixtures/inbox-gh.py').read_text())
 gh.chmod(0o755)
@@ -243,6 +246,69 @@ try:
     wait_for(lambda: finished(queued['taskId']))
     assert inspect(queued['taskId'])['state'] == 'succeeded'
     print('PASS unfinished task interruption and queued tracked operation recovery', flush=True)
+
+    old = send('follower', 'historical message', 'historical-message')['delivery']
+    wait_for(lambda: status('follower', old['messageId'])['state'] == 'submitted')
+    stop()
+    old_record = json.loads(inbox_path(old['messageId']).read_text())
+    old_record['summary']['state'] = 'uncertain'
+    inbox_path(old['messageId']).write_text(json.dumps(old_record))
+    start()
+    fresh = task('follower', text='separate work after inspecting uncertainty')
+    assert wait_for(lambda: finished(fresh['taskId']))['state'] == 'succeeded'
+    assert status('follower', old['messageId'])['state'] == 'uncertain'
+    print('PASS historical uncertain delivery cannot hold a new task open', flush=True)
+
+    stopped = task('follower', text='TASK_HOLD')
+    wait_for(lambda: inspect(stopped['taskId'])['state'] == 'running')
+    request(dict(v=10, cmd='stop_session', sessionId=ids['follower']))
+    assert wait_for(lambda: finished(stopped['taskId']))['state'] == 'interrupted'
+    print('PASS ordinary Stop reports an interrupted task instead of immutable success', flush=True)
+
+    send('follower', 'TASK_HOLD', None, False)
+    wait_for(lambda: next(row for row in request(dict(v=6, cmd='list_sessions', all=True))['sessions'] if row['sessionId'] == ids['follower'])['status'] == 'in_progress')
+    log = home / 'sessions' / (ids['follower'] + '.jsonl')
+    line = json.dumps(dict(id=str(uuid.uuid4()), sessionId=ids['follower'], harness='claude_code', seq=999, ts='2026-11-16T16:00:00Z', turnId=None, subagent=None, payload=dict(type='assistant_text', text='old partial message'))) + '\n'
+    with log.open('a') as file:
+        file.write(line[:20])
+        file.flush()
+        during_append = task('follower', text='new task behind an old partial append')
+        file.write(line[20:])
+    release('follower')
+    assert wait_for(lambda: finished(during_append['taskId']))['state'] == 'succeeded'
+    corrupt = task('replay', text='TASK_HOLD')
+    wait_for(lambda: inspect(corrupt['taskId'])['state'] == 'running')
+    with (home / 'sessions' / (ids['replay'] + '.jsonl')).open('a') as file:
+        file.write('malformed event\n')
+    independent = task('child', text='independent of a broken transcript')
+    assert wait_for(lambda: finished(corrupt['taskId']))['state'] == 'interrupted'
+    assert wait_for(lambda: finished(independent['taskId']))['state'] == 'succeeded'
+    release('replay')
+    print('PASS complete-line cursors and per-task replay failure isolation', flush=True)
+
+    import concurrent.futures
+    observer_script = "const fs=require('fs');const home=process.argv[1];const port=fs.readFileSync(home+'/serve-port','utf8').trim().split(/\\s+/)[0];const token=fs.readFileSync(home+'/serve-token','utf8').trim();const ws=new WebSocket('ws://127.0.0.1:'+port);ws.onopen=()=>ws.send(JSON.stringify({v:1,token}));ws.onmessage=e=>{const v=JSON.parse(e.data);fs.appendFileSync(home+'/observed.jsonl',JSON.stringify(v)+'\\n');if(v.v===1)fs.writeFileSync(home+'/observer-ready','')};"
+    observer = subprocess.Popen(['node', '-e', observer_script, str(home)])
+    try:
+        wait_for(lambda: (home / 'observer-ready').exists())
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(request, dict(v=19, cmd='create_session', prompt='pi startup task', title='Startup question fixture', projectPath=str(home / 'repo'), parentSessionId=ids['parent'], harness='pi', task=dict(awaited=False), requestId='pi-startup', base='HEAD'))
+            def startup_row():
+                events = [json.loads(line) for line in (home / 'observed.jsonl').read_text().splitlines()]
+                return next((event['payload'] for event in events if event.get('event') == 'session_created' and event.get('payload', {}).get('harness') == 'pi'), None)
+            row = wait_for(startup_row)
+            task_id = wait_for(lambda: next((record['summary']['taskId'] for record in json.loads(next((home / 'delegated-tasks').glob('*.json')).read_text())['tasks'].values() if record['summary']['childSessionId'] == row['sessionId']), None))
+            blocked = wait_for(lambda: (lambda t: t if t['state'] == 'blocked' else None)(inspect(task_id)))
+            assert not future.done(), 'startup question did not hold the handshake open'
+            question = blocked['questions'][0]
+            choice = question['questions'][0]
+            ws('answer_questions', dict(sessionId=row['sessionId'], requestId=question['requestId'], answers={choice['question']:choice['options'][0]['label']}))
+            assert unwrap(future.result(timeout=12))['task']['taskId'] == task_id
+            assert wait_for(lambda: finished(task_id))['state'] == 'succeeded'
+        print('PASS startup question is visible and inspectable while the creation slot remains held', flush=True)
+    finally:
+        observer.terminate()
+        observer.wait(timeout=3)
 
     created = unwrap(request(dict(v=19, cmd='create_session', prompt='created task', projectPath=str(home / 'repo'), parentSessionId=ids['parent'], harness='claude_code', model='sonnet', task=dict(awaited=False), requestId='new-tracked')))
     assert created['status'] == 'task', created

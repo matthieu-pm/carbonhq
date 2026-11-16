@@ -26,8 +26,8 @@ def emit(value):
     with lock:
         print(json.dumps(value), flush=True)
 
-def result(text='done [artifact](report.md)'):
-    emit(dict(type='result', subtype='success', session_id=id, is_error=False, result=text, duration_ms=1, duration_api_ms=1, num_turns=1, total_cost_usd=0, modelUsage={}, usage=dict(input_tokens=0, output_tokens=0, cache_read_input_tokens=0, cache_creation_input_tokens=0)))
+def result(text='done [artifact](report.md)', reason=None):
+    emit(dict(type='result', subtype='success', session_id=id, is_error=False, result=text, duration_ms=1, duration_api_ms=1, stop_reason=reason, num_turns=1, total_cost_usd=0, modelUsage={}, usage=dict(input_tokens=0, output_tokens=0, cache_read_input_tokens=0, cache_creation_input_tokens=0)))
 
 def release():
     path = home / f'finish-{id}'
@@ -44,7 +44,7 @@ for line in sys.stdin:
     if data['type'] == 'control_request':
         emit(dict(type='control_response', response=dict(subtype='success', request_id=data['request_id'], response={})))
         if data['request']['subtype'] == 'interrupt':
-            result('interrupted')
+            result('interrupted', 'aborted_streaming')
         continue
     if data['type'] != 'user':
         continue

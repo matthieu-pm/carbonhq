@@ -1043,6 +1043,10 @@ impl SessionManager {
                 return Err(e);
             }
 
+            if task_creation.is_some() {
+                app.emit(crate::orchestration::SESSION_CREATED, &item).ok();
+            }
+
             // Reported here rather than at the top of this block, where the
             // harness is already known: everything between the two can still
             // fail, and a session counted before its row exists is a start that
@@ -1160,6 +1164,10 @@ impl SessionManager {
             Some(guard) => guard,
             None => slot.lock_owned().await,
         };
+
+        if crate::orchestration::tasks::cleanup_pending(session_id).await? {
+            bail!("the delegated task is being canceled; wait for cleanup before sending new work");
+        }
 
         // A child that exited on its own still sits in the slot, and writing to
         // it fails. Dropped here, so this send resumes it like any idle session.

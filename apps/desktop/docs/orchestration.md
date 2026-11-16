@@ -134,6 +134,13 @@ append under the task lock, so replay binds the exact opening prompt and each
 completion wake. Awaited results must be terminal and their wake prompts must
 have reached the parent before its next completed turn can publish a result.
 Background-task counts do not enter that rule.
+Registration cursors end at a complete newline even if a log append is in
+progress. Each task also records pre-existing inbox identities, so historical
+uncertainty cannot hold later work open. A malformed transcript interrupts that
+task; it cannot stop unrelated replay or delivery. Final responses retain every
+committed text block in the latest assistant message. Known interrupted terminal
+reasons publish an interrupted task outcome even when the session UI represents
+the stopped turn as completed.
 
 Finalization takes the child's session slot before the task lock, reads pending
 inbox work and respects the composer queue. Acceptance retains the cancellation
@@ -158,6 +165,9 @@ processes. It suppresses descendant wakes still awaiting submission and emits
 one root cancellation result after subtree cleanup. Submitted work is not
 recalled, and published results are never replaced. Ordinary Stop is unchanged.
 Question snapshots are descriptive; existing live cards own their callbacks.
+Projection does not wait for the session slot: tracked creates announce their
+indexed row before handshake, so a startup question remains visible while
+creation or preflight holds that slot.
 Wait returns on a blocking card or timeout without canceling. Startup replays
 complete boundaries before marking unfinished active work interrupted; accepted
 queued tasks survive. It never guesses that an interrupted task succeeded.

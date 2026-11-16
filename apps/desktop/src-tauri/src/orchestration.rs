@@ -1428,7 +1428,7 @@ async fn create_session(
         .context("the session was created but returned no index entry")
         .map_err(|error| error.context(receipts::SubmissionStarted))?;
 
-    // After the send, so the row the sidebar gains is one that actually started.
+    // Refresh tracked rows exposed during handshake; ordinary sessions are first announced here.
     app.emit(SESSION_CREATED, &item).ok();
 
     if let Some(task) = tracked { return Ok(Response::Task { task }); }

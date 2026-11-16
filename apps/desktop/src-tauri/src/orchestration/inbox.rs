@@ -423,11 +423,11 @@ fn native_evidence(paths: &[PathBuf], marker: &str) -> bool {
 }
 
 /// Accepted follow-ups belong to the current task until the session consumes them.
-pub(super) async fn pending_sessions() -> Result<std::collections::HashSet<String>> {
+pub(super) async fn pending_deliveries() -> Result<Vec<DeliverySummary>> {
     static FINISHED: std::sync::LazyLock<tokio::sync::Mutex<std::collections::HashSet<PathBuf>>> = std::sync::LazyLock::new(Default::default);
     let mut finished = FINISHED.lock().await;
     let root = root().await?;
-    let mut pending = std::collections::HashSet::new();
+    let mut pending = Vec::new();
     let mut entries = match tokio::fs::read_dir(root).await {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(pending),
@@ -437,7 +437,7 @@ pub(super) async fn pending_sessions() -> Result<std::collections::HashSet<Strin
         if finished.contains(&entry.path()) || entry.path().extension().is_none_or(|e| e != "json") { continue; }
         let record: Record = serde_json::from_slice(&tokio::fs::read(entry.path()).await?)?;
         if matches!(record.summary.state, DeliveryState::Accepted | DeliveryState::Submitting | DeliveryState::Uncertain) {
-            pending.insert(record.summary.session_id);
+            pending.push(record.summary);
         } else { finished.insert(entry.path()); }
     }
     Ok(pending)

@@ -13,10 +13,10 @@ use carbon_proto::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
 };
-use tokio::io::{AsyncBufReadExt, AsyncSeekExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt};
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Record {
@@ -26,6 +26,12 @@ struct Record {
     started: bool,
     offset: u64,
     text: String,
+    #[serde(default)]
+    message_id: Option<String>,
+    #[serde(default)]
+    text_blocks: BTreeMap<u32, String>,
+    #[serde(default)]
+    prior_deliveries: HashSet<String>,
     candidate: Option<TaskResult>,
     received: HashSet<String>,
     completion_event: Option<String>,
@@ -115,6 +121,9 @@ pub(crate) fn live_event(event: &str, value: &serde_json::Value) {
     ) {
         return;
     }
+    if kind == "turn_completed" && !value["subagent"].is_null() {
+        return;
+    }
     let mut questions = QUESTIONS.get_or_init(Default::default).lock().unwrap();
     let pending = questions.entry(session.into()).or_default();
     match kind {
@@ -133,6 +142,16 @@ pub(crate) fn live_event(event: &str, value: &serde_json::Value) {
     if pending.is_empty() {
         questions.remove(session);
     }
+}
+
+fn live_questions(session: &str) -> Vec<serde_json::Value> {
+    QUESTIONS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .get(session)
+        .map(|q| q.values().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// Reserve before any child can produce output, under the same durable operation identity.
@@ -216,14 +235,14 @@ pub(super) async fn register(
         Some(s) => git_head(&s.cwd).await,
         None => None,
     };
-    let ack_offset = tokio::fs::metadata(store::get_session_path(parent).await?)
-        .await
-        .map(|m| m.len())
-        .unwrap_or(0);
-    let offset = tokio::fs::metadata(store::get_session_path(&receipt.session_id).await?)
-        .await
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let ack_offset = complete_offset(parent).await?;
+    let offset = complete_offset(&receipt.session_id).await?;
+    let prior_deliveries = inbox::pending_deliveries()
+        .await?
+        .into_iter()
+        .filter(|d| d.session_id == receipt.session_id)
+        .map(|d| d.message_id)
+        .collect();
     locked.registry.tasks.insert(
         task_id.clone(),
         Record {
@@ -233,6 +252,9 @@ pub(super) async fn register(
             started: false,
             offset,
             text: String::new(),
+            message_id: None,
+            text_blocks: BTreeMap::new(),
+            prior_deliveries,
             candidate: None,
             received: HashSet::new(),
             completion_event: None,
@@ -328,6 +350,16 @@ pub(crate) async fn tracked_create(session: &str) -> Result<bool> {
         .any(|r| r.create && r.summary.child_session_id == session))
 }
 
+/// Follow-up sends may resume after cleanup; only new creates keep their permanent reservation fence.
+pub(crate) async fn cleanup_pending(session: &str) -> Result<bool> {
+    Ok(Locked::load()
+        .await?
+        .registry
+        .tasks
+        .values()
+        .any(|r| r.summary.child_session_id == session && (r.stop_pending || r.clear_pending)))
+}
+
 /// A cheap fence check also protects a create canceled before it acquired its session slot.
 pub(crate) async fn dispatch_canceled(session: &str, operation: Option<&str>) -> Result<bool> {
     Ok(canceled(
@@ -391,6 +423,8 @@ fn apply(record: &mut Record, event: &AgentEvent, completion_events: &HashMap<St
         AgentEventPayload::UserMessage { .. } | AgentEventPayload::TurnStarted(_) => {
             if matches!(event.payload, AgentEventPayload::UserMessage { .. }) {
                 record.text.clear();
+                record.message_id = None;
+                record.text_blocks.clear();
                 for (task, id) in completion_events {
                     if id == &event.id {
                         record.received.insert(task.clone());
@@ -400,12 +434,31 @@ fn apply(record: &mut Record, event: &AgentEvent, completion_events: &HashMap<St
             record.candidate = None;
             record.summary.state = TaskState::Running;
         }
-        AgentEventPayload::AssistantText { text, .. } => {
+        AgentEventPayload::AssistantText {
+            block: Some(block),
+            text,
+        } => {
+            if record.message_id.as_deref() != Some(&block.message_id) {
+                record.message_id = Some(block.message_id.clone());
+                record.text_blocks.clear();
+            }
+            record.text_blocks.insert(block.index, text.clone());
+            record.text = record
+                .text_blocks
+                .values()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("");
+        }
+        AgentEventPayload::AssistantText { block: None, text } => {
+            record.message_id = None;
+            record.text_blocks.clear();
             record.text = text.clone();
         }
         AgentEventPayload::TurnCompleted {
             status,
             final_text,
+            stop_reason,
             head,
             ..
         } => {
@@ -414,7 +467,9 @@ fn apply(record: &mut Record, event: &AgentEvent, completion_events: &HashMap<St
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or(record.text.trim())
                 .to_owned();
-            let outcome = if *status == TurnStatus::Success {
+            let outcome = if stop_reason.as_deref().is_some_and(interrupted) {
+                TaskState::Interrupted
+            } else if *status == TurnStatus::Success {
                 TaskState::Succeeded
             } else {
                 TaskState::Failed
@@ -433,6 +488,38 @@ fn apply(record: &mut Record, event: &AgentEvent, completion_events: &HashMap<St
             });
         }
         _ => {}
+    }
+}
+
+fn interrupted(reason: &str) -> bool {
+    matches!(reason, "interrupted" | "cancelled" | "canceled" | "aborted")
+        || reason.starts_with("aborted_")
+}
+
+/// Registration may race an append; a byte count alone can point into the middle of JSON.
+async fn complete_offset(session: &str) -> Result<u64> {
+    complete_offset_at(&store::get_session_path(session).await?).await
+}
+
+async fn complete_offset_at(path: &Path) -> Result<u64> {
+    match tokio::fs::File::open(path).await {
+        Ok(mut file) => {
+            let mut end = file.metadata().await?.len();
+            let mut buffer = vec![0; 8192];
+            while end > 0 {
+                let start = end.saturating_sub(buffer.len() as u64);
+                let size = (end - start) as usize;
+                file.seek(std::io::SeekFrom::Start(start)).await?;
+                file.read_exact(&mut buffer[..size]).await?;
+                if let Some(index) = buffer[..size].iter().rposition(|b| *b == b'\n') {
+                    return Ok(start + index as u64 + 1);
+                }
+                end = start;
+            }
+            Ok(0)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -626,6 +713,34 @@ pub(super) async fn start(app: Sink) -> Result<()> {
 
 /// The session slot precedes the registry lock, fencing finalization against queued follow-ups.
 async fn tick(app: &Sink, recovering: bool) -> Result<()> {
+    {
+        let mut locked = Locked::load().await?;
+        let before = serde_json::to_vec(&locked.registry)?;
+        for record in locked
+            .registry
+            .tasks
+            .values_mut()
+            .filter(|r| r.summary.result.is_none())
+        {
+            record.summary.questions = if recovering {
+                vec![]
+            } else {
+                live_questions(&record.summary.child_session_id)
+            };
+            if !record.summary.questions.is_empty() {
+                record.summary.state = TaskState::Blocked;
+            } else if record.summary.state == TaskState::Blocked {
+                record.summary.state = if record.started {
+                    TaskState::Running
+                } else {
+                    TaskState::Queued
+                };
+            }
+        }
+        if before != serde_json::to_vec(&locked.registry)? {
+            locked.save().await?;
+        }
+    }
     let records = Locked::load()
         .await?
         .registry
@@ -663,7 +778,15 @@ async fn tick(app: &Sink, recovering: bool) -> Result<()> {
             continue;
         }
         let before = serde_json::to_vec(record)?;
-        read_events(record, &completion_events).await?;
+        if let Err(error) = read_events(record, &completion_events).await {
+            finish(
+                record,
+                TaskState::Interrupted,
+                &format!("Task replay could not read its transcript: {error:#}"),
+            );
+            locked.save().await?;
+            continue;
+        }
         record.summary.questions = if recovering {
             vec![]
         } else {
@@ -675,13 +798,17 @@ async fn tick(app: &Sink, recovering: bool) -> Result<()> {
                 .map(|q| q.values().cloned().collect())
                 .unwrap_or_default()
         };
-        let pending = inbox::pending_sessions().await?;
+        let pending = inbox::pending_deliveries().await?;
         let dependencies_done = record
             .summary
             .awaited_task_ids
             .iter()
             .all(|id| done.contains(id) && record.received.contains(id));
-        let in_flight = activity.busy || pending.contains(&record.summary.child_session_id);
+        let in_flight = activity.busy
+            || pending.iter().any(|d| {
+                d.session_id == record.summary.child_session_id
+                    && !record.prior_deliveries.contains(&d.message_id)
+            });
         if !record.summary.questions.is_empty() {
             record.summary.state = TaskState::Blocked;
         } else if let Some(result) = record
@@ -728,7 +855,11 @@ async fn tick(app: &Sink, recovering: bool) -> Result<()> {
         let mut locked = Locked::load().await?;
         let before = serde_json::to_vec(&locked.registry)?;
         for record in locked.registry.tasks.values_mut() {
-            acknowledge(record).await?;
+            if let Err(error) = acknowledge(record).await {
+                record.summary.delivery_error = Some(format!(
+                    "Could not acknowledge the parent transcript: {error:#}"
+                ));
+            }
         }
         if before != serde_json::to_vec(&locked.registry)? {
             locked.save().await?;
@@ -910,5 +1041,165 @@ fn delivery_from(response: Response) -> Option<carbon_proto::DeliverySummary> {
         Response::Recorded { response, .. } => delivery_from(*response),
         Response::Delivery { delivery } => Some(delivery),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::BlockRef;
+    use crate::harness::{pi, Harness};
+    use std::sync::atomic::AtomicU64;
+
+    fn record() -> Record {
+        Record {
+            summary: TaskSummary {
+                task_id: "task".into(),
+                operation_id: "operation".into(),
+                parent_session_id: "parent".into(),
+                child_session_id: "child".into(),
+                parent_task_id: None,
+                awaited_task_ids: vec![],
+                state: TaskState::Running,
+                result: None,
+                questions: vec![],
+                completion_delivery: None,
+                delivery_error: None,
+                completion_acknowledged: false,
+            },
+            create: false,
+            opening_event: None,
+            started: true,
+            offset: 0,
+            text: String::new(),
+            message_id: None,
+            text_blocks: BTreeMap::new(),
+            prior_deliveries: HashSet::new(),
+            candidate: None,
+            received: HashSet::new(),
+            completion_event: None,
+            wake_operation: "wake".into(),
+            source_branch: None,
+            source_cwd: None,
+            source_commit: None,
+            ack_offset: 0,
+            wake_seen: false,
+            suppress_delivery: false,
+            stop_pending: false,
+            clear_pending: false,
+        }
+    }
+
+    fn event(payload: AgentEventPayload) -> AgentEvent {
+        AgentEvent::mint("child".into(), Harness::Pi, 0, None, None, payload)
+    }
+
+    #[test]
+    fn normalized_interruptions_cannot_publish_success() {
+        for reason in [
+            "interrupted",
+            "cancelled",
+            "aborted_streaming",
+            "aborted_tool",
+        ] {
+            for status in [TurnStatus::Success, TurnStatus::Error] {
+                let mut record = record();
+                apply(
+                    &mut record,
+                    &event(AgentEventPayload::TurnCompleted {
+                        status,
+                        stop_reason: Some(reason.into()),
+                        final_text: None,
+                        usage: None,
+                        duration_ms: None,
+                        head: None,
+                        auth_failed: false,
+                    }),
+                    &HashMap::new(),
+                );
+                assert_eq!(
+                    record.candidate.unwrap().outcome,
+                    TaskState::Interrupted,
+                    "{reason}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pi_final_message_keeps_all_committed_text_blocks() {
+        let mut mapper = pi::mapper::Mapper::new(
+            "child".into(),
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
+        );
+        let mut record = record();
+        for line in [
+            r#"{"type":"agent_start"}"#,
+            r#"{"type":"message_start","message":{"role":"assistant"}}"#,
+            r#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"old commentary"}],"stopReason":"toolUse"}}"#,
+            r#"{"type":"message_start","message":{"role":"assistant"}}"#,
+            r#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"First paragraph.\n\n"},{"type":"text","text":"Second paragraph."}],"stopReason":"stop"}}"#,
+            r#"{"type":"agent_settled"}"#,
+        ] {
+            for event in mapper.map(pi::parser::parse_line(line).unwrap()) {
+                apply(&mut record, &event, &HashMap::new());
+            }
+        }
+        assert_eq!(
+            record.candidate.unwrap().text,
+            "First paragraph.\n\nSecond paragraph."
+        );
+    }
+
+    #[test]
+    fn replayed_text_block_replaces_instead_of_duplicating_its_content() {
+        let mut record = record();
+        for text in ["first", "replacement"] {
+            apply(
+                &mut record,
+                &event(AgentEventPayload::AssistantText {
+                    block: Some(BlockRef {
+                        message_id: "message".into(),
+                        index: 0,
+                    }),
+                    text: text.into(),
+                }),
+                &HashMap::new(),
+            );
+        }
+        assert_eq!(record.text, "replacement");
+    }
+
+    #[test]
+    fn a_subagent_completion_does_not_retire_the_main_question() {
+        let session = uuid::Uuid::now_v7().to_string();
+        live_event(
+            "agent_event",
+            &serde_json::json!({"sessionId":session, "payload":{"type":"questions_asked", "requestId":"ask"}}),
+        );
+        live_event(
+            "agent_event",
+            &serde_json::json!({"sessionId":session, "subagent":{"id":"child"}, "payload":{"type":"turn_completed"}}),
+        );
+        assert_eq!(live_questions(&session).len(), 1);
+        live_event(
+            "agent_event",
+            &serde_json::json!({"sessionId":session, "payload":{"type":"turn_completed"}}),
+        );
+        assert!(live_questions(&session).is_empty());
+    }
+
+    #[tokio::test]
+    async fn cursor_stays_before_an_incomplete_append() {
+        let path =
+            std::env::temp_dir().join(format!("carbon-task-cursor-{}", uuid::Uuid::now_v7()));
+        tokio::fs::write(&path, b"one\ntwo\npartial").await.unwrap();
+        assert_eq!(complete_offset_at(&path).await.unwrap(), 8);
+        tokio::fs::write(&path, b"partial").await.unwrap();
+        assert_eq!(complete_offset_at(&path).await.unwrap(), 0);
+        tokio::fs::write(&path, b"whole\n").await.unwrap();
+        assert_eq!(complete_offset_at(&path).await.unwrap(), 6);
+        tokio::fs::remove_file(path).await.unwrap();
     }
 }
