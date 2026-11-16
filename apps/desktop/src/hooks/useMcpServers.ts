@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { invoke, LOCAL } from "@/lib/transport";
 import type { McpServerEntry, McpSource, McpStatusReport, McpTarget } from "@/types/events";
+import { mcpSignedIn } from "@/hooks/useMcpLogin";
 
 /// The last answers, for the life of the process, so a second visit draws rows
 /// at once while the fresh read runs. The status read is the slow one —
@@ -72,6 +73,7 @@ export function useMcpServers() {
       ++statusGeneration;
     };
   }, [refresh]);
+  useEffect(() => mcpSignedIn.subscribe(refresh), [refresh]);
 
   /// Adds or replaces a server, then re-reads. The status read follows too,
   /// since a server just added is the one the reader wants to see connect.
@@ -93,5 +95,11 @@ export function useMcpServers() {
     [load, check],
   );
 
-  return { sources, status, busy, checking, error, refresh, save, remove };
+  const logout = useCallback(async (target: McpTarget, name: string) => {
+    await invoke("logout_mcp_server", { target, name }, LOCAL);
+    await load();
+    void check();
+  }, [load, check]);
+
+  return { sources, status, busy, checking, error, refresh, save, remove, logout };
 }

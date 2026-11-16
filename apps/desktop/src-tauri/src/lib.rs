@@ -76,6 +76,8 @@ pub mod drafts;
 pub mod projects;
 pub mod mcp_servers;
 pub mod mcp_mentions;
+#[path = "mcp/mcp.rs"]
+pub mod mcp;
 #[cfg(feature = "desktop")]
 pub mod quit;
 #[cfg(feature = "desktop")]

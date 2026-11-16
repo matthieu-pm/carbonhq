@@ -5,6 +5,14 @@ const DEFAULT_PORT: u16 = carbon_proto::SERVE_PORT;
 
 #[tokio::main]
 async fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--mcp-bridge") {
+        let result = match std::env::args().nth(2) {
+            Some(url) => ade_lib::mcp::bridge::run(&url).await,
+            None => Err(anyhow::anyhow!("missing MCP endpoint")),
+        };
+        if let Err(error) = result { eprintln!("carbon MCP bridge: {error:#}"); std::process::exit(1); }
+        return;
+    }
     // What `carbon update` compares the installer's pick against, since beside
     // the Mac app the `carbon` next to this one no longer says what it is.
     if std::env::args().nth(1).as_deref() == Some("--version") {

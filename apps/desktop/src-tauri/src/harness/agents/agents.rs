@@ -107,6 +107,7 @@ pub async fn init(
     session_cwd: &str,
     is_new_session: bool,
     app: &Sink,
+    mcp: &crate::mcp::proxy::SessionProxy,
 ) -> Result<Session> {
     let id = agent_id(harness)?;
     let seq_start = if is_new_session {
@@ -187,7 +188,7 @@ pub async fn init(
         }
     }
 
-    let opened = match open_session(&client, session_id, session_cwd, is_new_session).await {
+    let opened = match open_session(&client, session_id, session_cwd, is_new_session, mcp).await {
         Ok(opened) => opened,
         Err(error) => {
             // The agent may have started MCP servers of its own by now.
@@ -293,6 +294,7 @@ pub async fn init(
         .and_then(|s| s.current.clone());
 
     Ok(Session {
+        mcp: None,
         id: session_id.to_string(),
         child,
         stdin: Transport::Acp(session),
@@ -608,6 +610,7 @@ async fn open_session(
     session_id: &str,
     session_cwd: &str,
     is_new_session: bool,
+    mcp: &crate::mcp::proxy::SessionProxy,
 ) -> Result<(String, SessionOptions)> {
     let init = client
         .request_within(
@@ -625,10 +628,11 @@ async fn open_session(
         .await?;
     validate_initialize(&init)?;
     let caps = &init["agentCapabilities"];
+    let mcp_servers = mcp.acp(caps.pointer("/mcpCapabilities/http").and_then(Value::as_bool) == Some(true))?;
     let auth_methods = init.get("authMethods").cloned().unwrap_or(json!([]));
 
     if is_new_session {
-        let params = json!({"cwd": session_cwd, "mcpServers": []});
+        let params = json!({"cwd": session_cwd, "mcpServers": mcp_servers});
         let answer = with_auth(client, &auth_methods, "session/new", params).await?;
         let id = answer
             .get("sessionId")
@@ -653,7 +657,7 @@ async fn open_session(
     } else {
         bail!("this agent cannot reopen a session it ran before");
     };
-    let params = json!({"sessionId": recorded, "cwd": session_cwd, "mcpServers": []});
+    let params = json!({"sessionId": recorded, "cwd": session_cwd, "mcpServers": mcp_servers});
     let answer = with_auth(client, &auth_methods, method, params).await?;
     Ok((recorded, SessionOptions::of(&answer)))
 }

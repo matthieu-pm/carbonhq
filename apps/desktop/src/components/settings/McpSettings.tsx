@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import AgentIcon from "@/components/AgentIcon";
+import CarbonIcon from "@/components/CarbonIcon";
 import {
   ArrowLeftOutline12,
   CircleWarningOutline12,
@@ -40,6 +41,7 @@ import { inputClassName } from "@/components/ui/input";
 import Spinner from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useMcpServers } from "@/hooks/useMcpServers";
+import { useMcpLogin } from "@/hooks/useMcpLogin";
 import { cn } from "@/lib/utils";
 import { MCP_FILE_OWNERS as FILE_OWNER, MCP_PROJECT_FILES as PER_PROJECT, mcpTargets, mcpEditTarget } from "@/lib/mcpTargets";
 import type {
@@ -58,6 +60,7 @@ import type {
 /// two project scopes differ in who sees them, which is the whole of what the
 /// reader is choosing between, so the label says that rather than the flag.
 const FILE_SCOPE: Record<McpFile, string> = {
+  carbon: "Every agent",
   claude_user: "Global",
   claude_local: "Just you",
   claude_project: "Shared",
@@ -90,7 +93,7 @@ const STATUS: Record<McpStatus, { label: string; dot: string; hint?: string }> =
   needs_auth: {
     label: "Needs sign-in",
     dot: "bg-accent-command",
-    hint: "Sign in from the agent itself, with /mcp in Claude Code or its own mcp login command.",
+    hint: "Sign in once here to use this server with every agent.",
   },
   failed: { label: "Failed to connect", dot: "bg-destructive" },
   disabled: { label: "Off", dot: "bg-muted-foreground/40" },
@@ -102,6 +105,10 @@ function statusKey(owner: Harness, project: string | null, name: string) {
 
 /// What a group is called: the agent, then where the file is.
 function describe(source: McpSource): { title: string; detail: string } {
+  if (source.file === "carbon") return {
+    title: source.project ? baseName(source.project) : "All projects",
+    detail: "Available to every agent",
+  };
   const title = AGENT_NAMES[source.owner];
   if (!source.file) return { title, detail: source.label ?? "" };
   const scope = FILE_SCOPE[source.file];
@@ -127,10 +134,11 @@ function blankServer(transport: McpTransport): McpServerEntry {
 /// written in, and a form that adds, edits and removes them.
 ///
 /// **Status is a second, slower read.** The list comes off the files and is
-/// on screen at once; Claude Code's own `mcp list` connects to every server to
-/// say which work, which takes seconds, so the dots fill in after it.
+/// on screen at once; upstream connection checks take seconds, so the dots
+/// fill in after the list.
 export default function McpSettings({ projects }: { projects: Project[] }) {
-  const { sources, status, busy, checking, error, refresh, save, remove } = useMcpServers();
+  const { sources, status, busy, checking, error, refresh, save, remove, logout } = useMcpServers();
+  const { states: logins, signIn } = useMcpLogin();
   const [editing, setEditing] = useState<{ target: McpTarget; server: McpServerEntry | null } | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
@@ -219,7 +227,7 @@ export default function McpSettings({ projects }: { projects: Project[] }) {
       ) : sources === null ? (
         <div className="flex items-center gap-2 py-4 text-ui text-muted-foreground">
           <Spinner className="size-3.5" />
-          Reading each agent's config&hellip;
+          Finding your MCP servers&hellip;
         </div>
       ) : (
         <>
@@ -231,7 +239,7 @@ export default function McpSettings({ projects }: { projects: Project[] }) {
             return (
               <section key={source.id} className="flex flex-col gap-1">
                 <GroupHeader
-                  icon={<AgentIcon harness={source.owner} className="size-4" />}
+                  icon={source.file === "carbon" ? <CarbonIcon className="size-4" /> : <AgentIcon harness={source.owner} className="size-4" />}
                   title={title}
                   detail={detail}
                   readers={source.readers.length > 1 ? source.readers : undefined}
@@ -258,7 +266,7 @@ export default function McpSettings({ projects }: { projects: Project[] }) {
                   source.servers.map((server) => {
                     const id = `${source.id}\n${server.name}`;
                     const edit = mcpEditTarget(source, server, sources);
-                    const projectKey = source.file && PER_PROJECT.includes(source.file) ? source.project : null;
+                    const projectKey = source.file === "carbon" || source.file && PER_PROJECT.includes(source.file) ? source.project : null;
                     const state = statuses.get(statusKey(source.owner, projectKey, server.name))
                       ?? (server.enabled ? undefined : "disabled");
                     return (
@@ -269,7 +277,11 @@ export default function McpSettings({ projects }: { projects: Project[] }) {
                         checking={checking && !status}
                         readOnly={readOnly}
                         confirming={confirming === id}
-                        error={rowError?.id === id ? rowError.message : null}
+                        error={logins[id]?.error ?? (rowError?.id === id ? rowError.message : null)}
+                        signingIn={logins[id]?.pending ?? false}
+                        onSignIn={() => target && void signIn(id, target, server.name)}
+                        onSignOut={() => target && void logout(target, server.name).catch((err) => setRowError({ id, message: String(err) }))}
+                        onToggle={() => target && void save(target, server.name, { ...server, enabled: !server.enabled }).catch((err) => setRowError({ id, message: String(err) }))}
                         editable={edit !== null}
                         onEdit={() => edit && setEditing(edit)}
                         onAskRemove={() => {
@@ -312,6 +324,10 @@ function ServerRow({
   onAskRemove,
   onCancelRemove,
   onRemove,
+  signingIn,
+  onSignIn,
+  onSignOut,
+  onToggle,
 }: {
   server: McpServerEntry;
   status: McpStatus | undefined;
@@ -324,6 +340,10 @@ function ServerRow({
   onAskRemove: () => void;
   onCancelRemove: () => void;
   onRemove: () => void;
+  signingIn: boolean;
+  onSignIn: () => void;
+  onSignOut: () => void;
+  onToggle: () => void;
 }) {
   const target =
     server.transport === "stdio" ? [server.command, ...server.args].filter(Boolean).join(" ") : server.url ?? "";
@@ -340,7 +360,9 @@ function ServerRow({
             <span className={cn("truncate text-foreground", !server.enabled && "text-muted-foreground")}>
               {server.name}
             </span>
-            {shown ? (
+            {signingIn ? (
+              <span role="status" className="flex items-center gap-1.5 text-muted-foreground"><Spinner className="size-3" />Waiting for sign-in…</span>
+            ) : shown ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
@@ -360,6 +382,9 @@ function ServerRow({
           </p>
         </div>
 
+        {server.transport !== "stdio" && !readOnly && !confirming && status === "needs_auth" && (
+          <Button variant="secondary" size="sm" disabled={signingIn} onClick={onSignIn}>Sign in</Button>
+        )}
         {confirming ? (
           <CancelOrConfirm verb="Remove" onConfirm={onRemove} onCancel={onCancelRemove} autoFocus className="gap-1">
             <span className="text-ui text-muted-foreground">Remove {server.name}?</span>
@@ -373,6 +398,11 @@ function ServerRow({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-36">
+                {server.transport !== "stdio" && <>
+                  <DropdownMenuItem onSelect={onSignIn} disabled={signingIn}>Sign in</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={onSignOut} disabled={signingIn}>{server.url === "https://mcp.figma.com/mcp" ? "Sign out here and in Codex" : "Sign out"}</DropdownMenuItem>
+                </>}
+                <DropdownMenuItem onSelect={onToggle} disabled={signingIn}>{server.enabled ? "Turn off" : "Turn on"}</DropdownMenuItem>
                 <DropdownMenuItem onSelect={onEdit} disabled={!editable}>
                   <PenOutline12 className="size-3" />
                   {server.inherited ? "Edit global definition" : "Edit"}
@@ -431,9 +461,9 @@ function ServerForm({
     path ? (projects.find((p) => p.path === path)?.name ?? baseName(path)) : null;
   const items = targets.map((t) => ({
     id: targetKey(t),
-    label: AGENT_NAMES[FILE_OWNER[t.file]],
+    label: t.file === "carbon" ? projectName(t.project) ?? "Every project" : AGENT_NAMES[FILE_OWNER[t.file]],
     detail: [projectName(t.project), FILE_SCOPE[t.file]].filter(Boolean).join(" · "),
-    icon: <AgentIcon harness={FILE_OWNER[t.file]} className="size-3.5 text-muted-foreground" />,
+    icon: t.file === "carbon" ? undefined : <AgentIcon harness={FILE_OWNER[t.file]} className="size-3.5 text-muted-foreground" />,
   }));
 
   return (
@@ -462,7 +492,7 @@ function ServerForm({
       <span className="text-ui font-medium">{server ? `Edit ${server.name}` : "Add an MCP server"}</span>
 
       <Picker
-        label="Agent"
+        label={target.file === "carbon" ? "Available in" : "Agent"}
         value={targetKey(target)}
         items={items}
         disabled={server !== null}
@@ -583,6 +613,8 @@ function ServerForm({
 /// The sentence under the agent picker: which file, and who else reads it.
 function whereItGoes(target: McpTarget): string {
   switch (target.file) {
+    case "carbon":
+      return "Sign in once for every agent. Each chat gets its own connection.";
     case "claude_user":
       return "Written to ~/.claude.json, for every project. Grok Build loads it too.";
     case "claude_local":

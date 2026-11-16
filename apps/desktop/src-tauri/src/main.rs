@@ -3,6 +3,14 @@
 
 #[tokio::main]
 async fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--mcp-bridge") {
+        let result = match std::env::args().nth(2) {
+            Some(url) => ade_lib::mcp::bridge::run(&url).await,
+            None => Err(anyhow::anyhow!("missing MCP endpoint")),
+        };
+        if let Err(error) = result { eprintln!("carbon MCP bridge: {error:#}"); std::process::exit(1); }
+        return;
+    }
     // The Mac's background server: this same binary, run by launchd with no
     // window. Read before Tauri is touched, so no `NSApplication` exists and
     // macOS never counts it as the app running. See MAC-SERVER-PLAN.md.
