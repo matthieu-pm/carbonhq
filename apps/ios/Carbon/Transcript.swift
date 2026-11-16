@@ -10,6 +10,31 @@ struct Transcript {
         ids.insert(e.id)
         events.append(e)
     }
+
+    /// A reset changes the cursor, making an older in-flight page unsafe to prepend.
+    func prepending(_ page: Snapshot, before: Int) -> Transcript? {
+        guard olderBefore == before else { return nil }
+        var next = self
+        let older = page.events.filter { !ids.contains($0.id) }
+        next.events.insert(contentsOf: older, at: 0)
+        next.ids.formUnion(older.map(\.id))
+        next.olderBefore = page.olderBefore
+        return next
+    }
+
+    /// Places the log read before newer live output, replacing a gap on reset.
+    func recovering(_ recovery: SessionRecovery, held: Set<String>) -> Transcript {
+        let read = Set(recovery.events.map(\.id))
+        let lastHeld = events.lastIndex { held.contains($0.id) }
+        let boundary = lastHeld.map { $0 + 1 } ?? 0
+        var next = Transcript(olderBefore: recovery.reset ? recovery.olderBefore : olderBefore)
+        if !recovery.reset {
+            for e in events[..<boundary] where !read.contains(e.id) { next.append(e) }
+        }
+        for e in recovery.events { next.append(e) }
+        for e in events[boundary...] where !read.contains(e.id) { next.append(e) }
+        return next
+    }
 }
 
 enum ToolState { case pending, done, failed }

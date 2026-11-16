@@ -1,5 +1,35 @@
-import type { AgentEvent, QueueChangedEvent } from "@/types/events";
+import type { AgentEvent, QueueChangedEvent, SessionPage } from "@/types/events";
 import { retireOldestProvisional } from "@/lib/provisional";
+import { isAsk } from "@/lib/earlyEvents";
+
+export type SessionRecovery = SessionPage & { reset: boolean };
+
+/// Retires only queue entries present before the read, avoiding rows already retired by live delivery.
+export function replayedQueueIds(held: AgentEvent[], fresh: AgentEvent[], queuedIds: string[]): Set<string> {
+  const known = new Set(held.map((e) => e.id));
+  const delivered = fresh.filter((e) => !known.has(e.id) && e.payload.type === "user_message" && e.payload.queued).length;
+  return new Set(queuedIds.slice(0, delivered));
+}
+
+/// A reset discards the gap, keeping answerable cards and output received during the read.
+export function resetToTail(current: AgentEvent[], held: AgentEvent[], tail: AgentEvent[]): AgentEvent[] {
+  const heldIds = new Set(held.map((e) => e.id));
+  const tailIds = new Set(tail.map((e) => e.id));
+  let lastHeld = -1;
+  current.forEach((e, i) => { if (heldIds.has(e.id)) lastHeld = i; });
+  const arrived = current.filter((e, i) => i > lastHeld && !tailIds.has(e.id) && !isAsk(e));
+  const open = new Map<string, AgentEvent>();
+  for (const event of current) {
+    const payload = event.payload;
+    if (payload.type === "permission_requested" || payload.type === "questions_asked") {
+      open.set(payload.requestId, event);
+    } else if (payload.type === "permission_decided") {
+      open.delete(payload.requestId);
+    }
+  }
+  const asks = [...open.values()];
+  return [...tail, ...arrived, ...asks];
+}
 
 /// What a `carbon-serve` sends on every connect: what lives in its memory and in
 /// no log. A request is only ever answerable by the child that asked, so this

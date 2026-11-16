@@ -1666,8 +1666,8 @@ function App() {
     models.find((m) => m.id === modelId)?.acceptsImages ?? true;
 
   const { baseline, head, previous } = useMemo(
-    () => changeRange(selectedSession?.events ?? []),
-    [selectedSession?.events],
+    () => changeRange(selectedSession?.events ?? [], selectedSession?.tailBaseline),
+    [selectedSession?.events, selectedSession?.tailBaseline],
   );
 
   // A pull request appears because something happened, and the thing that

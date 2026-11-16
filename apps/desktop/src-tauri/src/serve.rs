@@ -41,11 +41,11 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{broadcast, mpsc},
+    sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore},
 };
 use tokio_tungstenite::tungstenite::{
     handshake::server::{ErrorResponse, Request, Response},
@@ -104,10 +104,80 @@ pub fn frame_in(message: Message) -> Option<String> {
     }
 }
 
-/// How far one client may fall behind the event stream before it is dropped.
-/// A dropped client reconnects and re-reads; a silently skipped `agent_event`
-/// would leave a transcript wrong with nothing to say so.
-const EVENT_BACKLOG: usize = 4096;
+const CLIENT_FRAMES: usize = 4096;
+const CLIENT_BYTES: usize = 128 * 1024 * 1024;
+const PREVIEW_BYTES: usize = 16 * 1024 * 1024;
+const CLIENT_CALLS: usize = 32;
+
+/// Allows a slow but useful link 32 KiB/s, plus time for scheduling and latency.
+fn write_timeout(bytes: usize) -> std::time::Duration {
+    std::time::Duration::from_secs(20 + bytes.div_ceil(32 * 1024) as u64)
+}
+
+struct RetainedFrame {
+    text: Arc<str>,
+    _bytes: OwnedSemaphorePermit,
+    _item: OwnedSemaphorePermit,
+}
+
+/// Events and replies share a budget, held until the socket finishes writing.
+struct ClientFrames {
+    sender: mpsc::Sender<RetainedFrame>,
+    bytes: Arc<Semaphore>,
+    items: Arc<Semaphore>,
+    closed: watch::Sender<bool>,
+}
+
+impl ClientFrames {
+    fn new() -> (Arc<Self>, mpsc::Receiver<RetainedFrame>) {
+        let (sender, receiver) = mpsc::channel(CLIENT_FRAMES);
+        let (closed, _) = watch::channel(false);
+        (Arc::new(Self {
+            sender, bytes: Arc::new(Semaphore::new(CLIENT_BYTES)),
+            items: Arc::new(Semaphore::new(CLIENT_FRAMES)), closed,
+        }), receiver)
+    }
+
+    fn close(&self) {
+        self.closed.send_replace(true);
+    }
+
+    fn try_send(&self, text: Arc<str>) -> Option<()> {
+        if *self.closed.borrow() { return None; }
+        let bytes = u32::try_from(text.len()).ok()
+            .and_then(|len| self.bytes.clone().try_acquire_many_owned(len).ok());
+        let item = self.items.clone().try_acquire_owned().ok();
+        if let (Some(bytes), Some(item)) = (bytes, item) {
+            if self.sender.try_send(RetainedFrame { text, _bytes: bytes, _item: item }).is_ok() {
+                return Some(());
+            }
+        }
+        None
+    }
+
+    /// Overflow ends the connection; a committed event is recovered from its log.
+    fn send(&self, text: Arc<str>) -> Option<()> {
+        let sent = self.try_send(text);
+        if sent.is_none() { self.close(); }
+        sent
+    }
+
+    /// Preview loss is repaired by the committed event; preserve room for replies and state.
+    fn preview(&self, text: Arc<str>) {
+        if self.items.available_permits() > 128
+            && self.bytes.available_permits() >= CLIENT_BYTES - PREVIEW_BYTES + text.len()
+        {
+            self.try_send(text);
+        }
+    }
+
+    /// A reply that cannot fit fails its call explicitly instead of creating a reconnect loop.
+    fn reply(&self, id: Value, reply: Value) {
+        let text: Arc<str> = reply.to_string().into();
+        if text.len() <= INFLATED_CAP as usize && self.try_send(text).is_some() { return; }
+        self.send(json!({ "id": id, "err": "Reply exceeds the available stream budget. The command may have completed; inspect its state before retrying. Use transcript paging for large reads." }).to_string().into());
+    }
+}
 
 /// How long a connection may take to prove itself — the `/file` head, or the
 /// handshake plus hello — before it is dropped. Everything before the token is
@@ -448,17 +518,18 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
 /// as its webview, so the app can serve the same stream.
 #[derive(Clone)]
 pub struct Hub {
-    events: broadcast::Sender<Arc<str>>,
+    clients: Arc<Mutex<Vec<Weak<ClientFrames>>>>,
     live: Arc<Mutex<Live>>,
 }
 
 impl Default for Hub {
     fn default() -> Self {
-        Self { events: broadcast::channel(EVENT_BACKLOG).0, live: Default::default() }
+        Self { clients: Default::default(), live: Default::default() }
     }
 }
 
 impl Hub {
+    /// Records state before publishing under the same lock a subscriber takes.
     pub fn publish(&self, event: &str, payload: &Value) {
         // Noted and sent under one lock, which is what lets a connecting
         // client take a snapshot and subscribe with nothing falling between
@@ -467,9 +538,24 @@ impl Hub {
         live.note(event, payload);
         // No receivers is ordinary — nobody connected, or the app not
         // serving — and the frame would be built for nobody.
-        if self.events.receiver_count() > 0 {
-            let _ = self.events.send(json!({ "event": event, "payload": payload }).to_string().into());
-        }
+        let mut clients = self.clients.lock().unwrap_or_else(|e| e.into_inner());
+        clients.retain(|client| client.strong_count() > 0);
+        if clients.is_empty() { return; }
+        let frame: Arc<str> = json!({ "event": event, "payload": payload }).to_string().into();
+        let preview = event == "agent_event" && payload["payload"]["type"] == "delta";
+        clients.retain(|client| client.upgrade().is_some_and(|client| {
+            if preview { client.preview(frame.clone()); !*client.closed.borrow() }
+            else { client.send(frame.clone()).is_some() }
+        }));
+    }
+
+    /// Snapshot and registration meet atomically with publication, including unlogged asks.
+    fn subscribe(&self) -> (Arc<ClientFrames>, mpsc::Receiver<RetainedFrame>) {
+        let live = self.live.lock().unwrap_or_else(|e| e.into_inner());
+        let (client, outgoing) = ClientFrames::new();
+        client.send(live.snapshot().into());
+        self.clients.lock().unwrap_or_else(|e| e.into_inner()).push(Arc::downgrade(&client));
+        (client, outgoing)
     }
 }
 
@@ -622,7 +708,7 @@ struct HostOffer {
 struct Host {
     connection: u64,
     browser: bool,
-    frames: mpsc::UnboundedSender<String>,
+    frames: Arc<ClientFrames>,
     waiting: HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, Value>>>,
 }
 
@@ -646,8 +732,8 @@ pub async fn host_call(cmd: &str, args: Value) -> Option<Result<Value, Value>> {
         let host = host.as_mut()?;
         let call = NEXT_CALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (tx, rx) = tokio::sync::oneshot::channel();
+        host.frames.send(json!({ "call": call, "cmd": cmd, "args": args }).to_string().into())?;
         host.waiting.insert(call, tx);
-        host.frames.send(json!({ "call": call, "cmd": cmd, "args": args }).to_string()).ok()?;
         rx
     };
     Some(answer.await.unwrap_or_else(|_| Err(json!("The Carbon app closed before it answered."))))
@@ -1054,10 +1140,7 @@ async fn connection(
     // Subscribed only once admitted, so nothing reaches a client the token
     // has not let in — and under the lock the sink notes events with, so the
     // snapshot and the stream meet exactly.
-    let (mut events, snapshot) = {
-        let live = hub.live.lock().unwrap_or_else(|e| e.into_inner());
-        (hub.events.subscribe(), live.snapshot())
-    };
+    let (replies, mut outgoing) = hub.subscribe();
     // `release` is the CLI release this binary shipped in, which is what the
     // app compares with the newest one out. Set by release-cli.yml alone, so a
     // local build says none and is never offered an update. `dictation` is
@@ -1075,32 +1158,33 @@ async fn connection(
     // knows whether this server understood `deflate` at all.
     let hello = serde_json::from_str::<Hello>(&hello).ok();
     let deflate = hello.as_ref().is_some_and(|h| h.deflate);
-    write.send(Message::text(welcome.to_string())).await?;
-    write.send(frame_out(snapshot, deflate)).await?;
+    tokio::time::timeout(write_timeout(welcome.to_string().len()), write.send(Message::text(welcome.to_string()))).await??;
 
     // Replies come back from concurrent tasks, so one writer owns the socket.
-    let (replies, mut outgoing) = mpsc::unbounded_channel::<String>();
+    let writer_client = replies.clone();
+    let mut writer_closed = replies.closed.subscribe();
     let writer = tokio::spawn(async move {
         loop {
-            let frame: String = tokio::select! {
+            if *writer_closed.borrow() { break; }
+            let frame = tokio::select! {
+                biased;
+                _ = writer_closed.changed() => break,
                 reply = outgoing.recv() => match reply {
                     Some(reply) => reply,
                     None => break,
                 },
-                event = events.recv() => match event {
-                    Ok(event) => event.to_string(),
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        eprintln!("[serve] client fell {n} events behind; dropping it");
-                        break;
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                },
             };
-            if write.send(frame_out(frame, deflate)).await.is_err() {
+            let sent = tokio::select! {
+                biased;
+                _ = writer_closed.changed() => break,
+                sent = tokio::time::timeout(write_timeout(frame.text.len()), write.send(frame_out(frame.text.to_string(), deflate))) => sent,
+            };
+            if !matches!(sent, Ok(Ok(()))) {
                 break;
             }
         }
-        write.close().await.ok();
+        writer_client.close();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), write.close()).await;
     });
 
     let connection = NEXT_CALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1121,7 +1205,15 @@ async fn connection(
     // Not `?`: a reset must still reach the cleanup below, or a call
     // waiting on this host waits forever.
     let mut failed = None;
-    while let Some(frame) = read.next().await {
+    let mut closed = replies.closed.subscribe();
+    let calls = Arc::new(Semaphore::new(CLIENT_CALLS));
+    loop {
+        if *closed.borrow() { break; }
+        let frame = tokio::select! {
+            biased;
+            _ = closed.changed() => break,
+            frame = read.next() => match frame { Some(frame) => frame, None => break },
+        };
         let text = match frame {
             Ok(Message::Text(text)) => text,
             Ok(Message::Close(_)) => break,
@@ -1143,10 +1235,16 @@ async fn connection(
                 continue;
             }
         };
+        let permit = tokio::select! {
+            biased;
+            _ = closed.changed() => break,
+            permit = calls.clone().acquire_owned() => match permit { Ok(permit) => permit, Err(_) => break },
+        };
         // Concurrently, as Tauri runs async commands: a send that spawns a
         // child must not hold a permission reply behind it.
         let (sink, replies) = (sink.clone(), replies.clone());
         tokio::spawn(crate::analytics::CLIENT_COUNTS.scope(counts, async move {
+            let _permit = permit;
             let args = tag_dictation(&call.cmd, call.args, island);
             let reply = match dispatch(&call.cmd, args, sink).await {
                 Ok(ok) => {
@@ -1157,18 +1255,22 @@ async fn connection(
                 }
                 Err(err) => json!({ "id": call.id, "err": err }),
             };
-            let _ = replies.send(reply.to_string());
+            if !*replies.closed.borrow() {
+                replies.reply(call.id, reply);
+            }
         }));
     }
 
     // Dropping its waiters answers every call still out on it.
-    let mut host = host();
-    if host.as_ref().is_some_and(|h| h.connection == connection) {
-        *host = None;
+    {
+        let mut host = host();
+        if host.as_ref().is_some_and(|h| h.connection == connection) {
+            *host = None;
+        }
     }
-    drop(host);
+    replies.close();
     drop(replies);
-    writer.abort();
+    let _ = writer.await;
     failed.map_or(Ok(()), |e| Err(e.into()))
 }
 
@@ -1379,6 +1481,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         get_session_by_id(session_id: String, turns: Option<u32>) => store::get_session_by_id(&session_id, turns).await;
         get_session_page(session_id: String, before: u64, turns: u32) => store::get_session_page(&session_id, before, turns).await;
         get_session_since(session_id: String, after: Vec<String>) => store::get_session_since(&session_id, after).await;
+        get_session_recovery(session_id: String, after: Vec<String>) => store::get_session_recovery(&session_id, after).await;
 
         // Agents and models.
         agent_availability() => ok(crate::agent_availability().await);
@@ -1541,6 +1644,133 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_deadlines_allow_large_frames_on_slow_links() {
+        assert!(write_timeout(2 * 1024 * 1024) > std::time::Duration::from_secs(32));
+        assert!(write_timeout(32 * 1024 * 1024) > write_timeout(2 * 1024 * 1024));
+    }
+
+    #[tokio::test]
+    async fn recovery_replies_and_token_bursts_leave_the_connection_open() {
+        let hub = Hub::default();
+        let (client, mut outgoing) = hub.subscribe();
+        let reply: Arc<str> = "r".repeat(2 * 1024 * 1024).into();
+        for _ in 0..CLIENT_CALLS { client.send(reply.clone()).unwrap(); }
+        let delta = json!({ "payload": { "type": "delta", "delta": "text_delta", "text": "x".repeat(512) } });
+        for _ in 0..10_000 { hub.publish("agent_event", &delta); }
+        hub.publish("committed", &json!("complete"));
+        assert!(!*client.closed.borrow());
+        let mut committed = false;
+        while let Ok(frame) = outgoing.try_recv() {
+            if frame.text.starts_with('{') {
+                let value: Value = serde_json::from_str(&frame.text).unwrap();
+                committed |= value["event"] == "committed";
+                assert_ne!(value["payload"]["payload"]["type"], "delta", "previews give their memory to recovery replies");
+            }
+        }
+        assert!(committed);
+    }
+
+    #[tokio::test]
+    async fn an_oversized_reply_fails_its_call_without_disconnecting() {
+        let (client, mut outgoing) = ClientFrames::new();
+        client.reply(json!(7), json!({ "id": 7, "ok": "x".repeat(INFLATED_CAP as usize) }));
+        let reply: Value = serde_json::from_str(&outgoing.recv().await.unwrap().text).unwrap();
+        assert_eq!(reply["id"], 7);
+        assert!(reply["err"].as_str().unwrap().contains("stream budget"));
+        assert!(!*client.closed.borrow());
+        client.send("next frame".into()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn stream_budget_counts_the_frame_in_flight_and_releases_on_drop() {
+        let (client, mut outgoing) = ClientFrames::new();
+        let frame: Arc<str> = "x".repeat(1024 * 1024).into();
+        client.send(frame.clone()).unwrap();
+        let sending = outgoing.recv().await.unwrap();
+        assert_eq!(client.bytes.available_permits(), CLIENT_BYTES - frame.len());
+        drop(sending);
+        assert_eq!(client.bytes.available_permits(), CLIENT_BYTES);
+        for _ in 0..CLIENT_BYTES / frame.len() { client.send(frame.clone()).unwrap(); }
+        assert!(client.send("x".into()).is_none());
+        assert!(*client.closed.borrow());
+        assert_eq!(client.bytes.available_permits(), 0);
+        drop(outgoing);
+        assert_eq!(client.bytes.available_permits(), CLIENT_BYTES);
+    }
+
+    #[tokio::test]
+    async fn a_stalled_subscriber_never_blocks_a_fast_one_and_reconnect_restores_live_state() {
+        let hub = Hub::default();
+        let (slow, _stalled) = hub.subscribe();
+        let (fast, mut outgoing) = hub.subscribe();
+        outgoing.recv().await.unwrap();
+        hub.publish("session_status", &json!({ "sessionId": "s", "status": "in_progress" }));
+        outgoing.recv().await.unwrap();
+        hub.publish("agent_event", &ask("s", "pending"));
+        outgoing.recv().await.unwrap();
+        hub.publish("agent_event", &json!({ "sessionId": "s", "payload": { "type": "background_tasks_changed", "tasks": [{ "id": "task" }] } }));
+        outgoing.recv().await.unwrap();
+        hub.publish("queue_changed", &json!({ "sessionId": "s", "queued": [{ "id": "q" }] }));
+        outgoing.recv().await.unwrap();
+        hub.publish("secret_requests_changed", &json!({ "sessionId": "s", "requests": [] }));
+        outgoing.recv().await.unwrap();
+        for id in 0..CLIENT_FRAMES * 2 {
+            hub.publish("output", &json!(id));
+            let received = outgoing.recv().await.unwrap();
+            assert_eq!(serde_json::from_str::<Value>(&received.text).unwrap()["payload"], id);
+        }
+        assert!(*slow.closed.borrow());
+        assert!(!*fast.closed.borrow());
+        assert!(slow.items.available_permits() == 0);
+        let (_reconnected, mut recovered) = hub.subscribe();
+        hub.publish("output", &json!("after snapshot"));
+        let snapshot: Value = serde_json::from_str(&recovered.recv().await.unwrap().text).unwrap();
+        assert_eq!(snapshot["event"], "live_state");
+        assert_eq!(snapshot["payload"]["asks"][0]["payload"]["requestId"], "pending");
+        assert_eq!(snapshot["payload"]["tasks"][0]["payload"]["tasks"][0]["id"], "task");
+        assert_eq!(snapshot["payload"]["queued"][0]["queued"][0]["id"], "q");
+        let next: Value = serde_json::from_str(&recovered.recv().await.unwrap().text).unwrap();
+        assert_eq!(next["payload"], "after snapshot");
+    }
+
+    #[tokio::test]
+    async fn a_disconnected_reply_reader_closes_without_retaining_more_replies() {
+        let (client, outgoing) = ClientFrames::new();
+        drop(outgoing);
+        assert!(client.send("reply".into()).is_none());
+        assert!(*client.closed.borrow());
+        assert_eq!(client.bytes.available_permits(), CLIENT_BYTES);
+    }
+
+    #[tokio::test]
+    async fn a_stalled_socket_is_closed_even_while_the_writer_is_blocked() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let hub = Hub::default();
+        let served = hub.clone();
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            connection(tcp, Sink::new(|_, _| {}), served, "tok", Path::new("/nonexistent"), false).await
+        });
+        let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        ws.send(Message::text(json!({ "v": PROTOCOL, "token": "tok" }).to_string())).await.unwrap();
+        ws.next().await.unwrap().unwrap();
+        ws.next().await.unwrap().unwrap();
+        let (_fast, mut fast) = hub.subscribe();
+        fast.recv().await.unwrap();
+        let payload = json!("x".repeat(1024 * 1024));
+        for _ in 0..256 {
+            if server.is_finished() { break; }
+            hub.publish("output", &payload);
+            fast.recv().await.unwrap();
+            tokio::task::yield_now().await;
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(3), server).await
+            .expect("overflow must wake both the blocked writer and the reader").unwrap().unwrap();
+        drop(ws);
+    }
 
     #[test]
     fn a_second_start_keeps_the_token() {
@@ -1802,7 +2032,7 @@ mod tests {
             assert!(matches!(ws.next().await, Some(Ok(Message::Text(_)))), "a small snapshot");
 
             let big = json!({ "event": "agent_event", "payload": "x".repeat(DEFLATE_FLOOR * 2) }).to_string();
-            hub.events.send(big.as_str().into()).unwrap();
+            hub.publish("agent_event", &json!("x".repeat(DEFLATE_FLOOR * 2)));
             let frame = ws.next().await.unwrap().unwrap();
             assert_eq!(matches!(frame, Message::Binary(_)), deflate);
             assert_eq!(frame_in(frame).as_deref(), Some(big.as_str()));

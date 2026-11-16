@@ -200,6 +200,19 @@ struct PrMark: Decodable, Hashable {
 struct Snapshot: Decodable {
     let events: [AgentEvent]
     let olderBefore: Int?
+    var tailBaseline: TailBaseline? = nil
+}
+
+struct TailBaseline: Decodable {
+    let promptId: String
+    let baseline: String?
+}
+
+struct SessionRecovery: Decodable {
+    let events: [AgentEvent]
+    let olderBefore: Int?
+    let reset: Bool
+    var tailBaseline: TailBaseline? = nil
 }
 
 struct LiveState: Decodable {

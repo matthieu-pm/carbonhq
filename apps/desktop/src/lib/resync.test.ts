@@ -1,8 +1,39 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "@/types/events";
-import { mergeMissed, missedEvents } from "./resync";
+import { mergeMissed, missedEvents, replayedQueueIds, resetToTail } from "./resync";
 
 const ev = (id: string, seq: number) => ({ id, seq, payload: { type: "x" } }) as unknown as AgentEvent;
+
+describe("replayedQueueIds", () => {
+  it("retires delivered prompts from a reset tail without retiring old or newly queued rows", () => {
+    const queued = (id: string) => ({ ...ev(id, 0), payload: { type: "user_message", queued: true } }) as AgentEvent;
+    const held = [queued("already-delivered")];
+    const retired = replayedQueueIds(held, [...held, queued("missed-delivery")], ["q1", "q2"]);
+    expect(["q1", "q2", "new-during-read"].filter((id) => !retired.has(id))).toEqual(["q2", "new-during-read"]);
+  });
+});
+
+describe("resetToTail", () => {
+  it("leaves the gap for paging and joins the tail to live output by id", () => {
+    const held = [ev("old", 50)];
+    const tail = [ev("sub", 0), ev("main", 100)];
+    const current = [...held, tail[1], ev("live", 101)];
+    expect(resetToTail(current, held, tail).map((e) => e.id)).toEqual(["sub", "main", "live"]);
+  });
+
+  it("preserves an answerable question but never resurrects one already decided", () => {
+    const ask = (id: string) => ({ ...ev(id, 0), payload: { type: "questions_asked", requestId: id } }) as AgentEvent;
+    const decided = { ...ev("decision", 1), payload: { type: "permission_decided", requestId: "answered" } } as AgentEvent;
+    const held = [ev("old", 50), ask("open"), ask("answered")];
+    expect(resetToTail([...held, decided], held, [ev("tail", 0)]).map((e) => e.id))
+      .toEqual(["tail", "decision", "open"]);
+  });
+
+  it("discards an older page read across a reset so paging keeps a contiguous tail", () => {
+    const held = [ev("old", 1)];
+    expect(resetToTail([ev("older", 0), ...held], held, [ev("tail", 3)]).map((e) => e.id)).toEqual(["tail"]);
+  });
+});
 
 describe("mergeMissed", () => {
   it("puts what the read returned ahead of what arrived live during it", () => {

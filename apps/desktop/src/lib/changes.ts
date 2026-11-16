@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@/types/events";
+import type { AgentEvent, TailBaseline } from "@/types/events";
 
 type Range = {
   /// The prompt's snapshot — the "before" side. Null when there is nothing to
@@ -47,14 +47,15 @@ type ChangeRange = Range & {
 /// — or the user in their editor — changed in the same repo since that prompt
 /// gets attributed to this one. A turn is short enough for that overlap to be
 /// unlikely; a session is not.
-export function changeRange(events: AgentEvent[]): ChangeRange {
+export function changeRange(events: AgentEvent[], tailBaseline?: TailBaseline | null): ChangeRange {
   let head: string | null = null;
   // The newest turn whatever it did, for when none changed anything: the panel
   // then says so, rather than claiming there is no snapshot at all.
   let newest: Range | null = null;
   let shown: Range | null = null;
-  for (let i = events.length - 1; i >= 0; i--) {
-    const payload = events[i].payload;
+  const missingPrompt = tailBaseline && !events.some((e) => e.id === tailBaseline.promptId);
+  for (let i = events.length - 1; i >= (missingPrompt ? -1 : 0); i--) {
+    const payload = i < 0 ? { type: "user_message" as const, baseline: tailBaseline!.baseline } : events[i].payload;
     // The newest head seen walking back to a prompt is that turn's end, which
     // also covers a background subagent's report-back turn: its closing
     // snapshot is fresher than the prompt's own turn's and supersedes it.

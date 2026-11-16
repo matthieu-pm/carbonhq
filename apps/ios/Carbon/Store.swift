@@ -347,19 +347,20 @@ final class Store {
         let before = transcripts[key]?.ids ?? []
         let drop = drops
         do {
-            let snap: Snapshot? = try await c.call("get_session_by_id", ["sessionId": .string(key.id), "turns": 8])
-            // Dropped while the read was out: writing it back would hold it, growing, until the next drop.
-            guard let snap, drop == drops || key == kept else { return }
-            let read = Set(snap.events.map(\.id))
-            let held = transcripts[key]?.events ?? []
-            let live = held.filter { !before.contains($0.id) && !read.contains($0.id) }
-            var t = Transcript(olderBefore: snap.olderBefore)
-            if let first = snap.events.first, let i = held.firstIndex(where: { $0.id == first.id }) {
-                for e in held[..<i] { t.append(e) }
-                t.olderBefore = transcripts[key]?.olderBefore
+            let recovered: SessionRecovery?
+            do {
+                recovered = try await c.call("get_session_recovery", [
+                    "sessionId": .string(key.id),
+                    "after": .array((transcripts[key]?.events.suffix(64) ?? []).map { .string($0.id) }),
+                ])
+            } catch {
+                guard error.localizedDescription.contains("unknown command get_session_recovery") else { throw error }
+                let snap: Snapshot? = try await c.call("get_session_by_id", ["sessionId": .string(key.id), "turns": 8])
+                recovered = snap.map { SessionRecovery(events: $0.events, olderBefore: $0.olderBefore, reset: true) }
             }
-            for e in snap.events + live { t.append(e) }
-            transcripts[key] = t
+            // Dropped while the read was out: writing it back would hold it, growing, until the next drop.
+            guard let recovered, drop == drops || key == kept else { return }
+            transcripts[key] = (transcripts[key] ?? Transcript()).recovering(recovered, held: before)
             transcriptErrors[key] = nil
         } catch {
             transcriptErrors[key] = error.localizedDescription
@@ -371,14 +372,10 @@ final class Store {
         olderErrors[key] = nil
         do {
             let page: Snapshot = try await c.call("get_session_page", ["sessionId": .string(key.id), "before": JSON(before), "turns": 16])
-            guard var t = transcripts[key] else { return }
-            let older = page.events.filter { !t.ids.contains($0.id) }
-            t.events.insert(contentsOf: older, at: 0)
-            t.ids.formUnion(older.map(\.id))
-            t.olderBefore = page.olderBefore
-            transcripts[key] = t
+            guard let t = transcripts[key], let merged = t.prepending(page, before: before) else { return }
+            transcripts[key] = merged
         } catch {
-            olderErrors[key] = error.localizedDescription
+            if transcripts[key]?.olderBefore == before { olderErrors[key] = error.localizedDescription }
         }
     }
 
