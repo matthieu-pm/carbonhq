@@ -275,6 +275,7 @@ pub async fn init(
         .arg("app-server")
         .current_dir(cwd)
         .env("CARBON_SESSION_ID", session_id)
+        .env(crate::mcp::proxy::CODEX_PROXY_BEARER_ENV, "carbon-proxy")
         .env("PATH", crate::harness::agent_path(&bin))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

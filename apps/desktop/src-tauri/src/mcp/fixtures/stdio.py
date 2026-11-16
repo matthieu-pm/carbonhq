@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 
 value = None
 for line in sys.stdin:
@@ -15,7 +16,7 @@ for line in sys.stdin:
             "_meta": {"fixture": True},
         }
     elif method == "tools/list":
-        result = {"tools": [{"name": "state", "description": "Read or write this session's value.", "inputSchema": {"type": "object", "properties": {"value": {"type": "string"}}}}]}
+        result = {"tools": [{"name": name, "description": "Read or write this session's value.", "inputSchema": {"type": "object", "properties": {"value": {"type": "string"}}}} for name in ("state", "blocked")]}
     elif method == "tools/call":
         arguments = message["params"].get("arguments", {})
         value = arguments.get("value", value)
@@ -26,6 +27,12 @@ for line in sys.stdin:
         result = {"resources": [], "resourceTemplates": [], "prompts": []}
     elif method == "fixture/notify":
         print(json.dumps({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}), flush=True)
+        result = {}
+    elif method == "fixture/environment":
+        result = {"path": os.environ.get("PATH"), "vars": dict(os.environ)}
+    elif method == "fixture/wait":
+        print(json.dumps({"jsonrpc": "2.0", "method": "notifications/fixture/waiting"}), flush=True)
+        time.sleep(60)
         result = {}
     elif method and method.startswith("notifications/"):
         continue

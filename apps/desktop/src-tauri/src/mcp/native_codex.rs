@@ -84,6 +84,14 @@ pub struct Route {
 impl Route {
     /// Reuses a chat's connection, replacing it after cancellation or a dead worker.
     pub async fn connection(&self, definition: &Definition, cwd: &str) -> Result<Arc<Connection>> {
+        self.get_or_open(Connection::open(definition, cwd)).await
+    }
+
+    /// Client capabilities outlive a cancelled upstream worker within the same chat route.
+    async fn get_or_open(
+        &self,
+        open: impl std::future::Future<Output = Result<Arc<Connection>>>,
+    ) -> Result<Arc<Connection>> {
         let mut slot = self.connection.lock().await;
         if self.stopped.load(SeqCst) {
             bail!("this MCP session has closed");
@@ -91,7 +99,13 @@ impl Route {
         if let Some(connection) = slot.as_ref().filter(|c| !c.closed.load(SeqCst)) {
             return Ok(connection.clone());
         }
-        let connection = Connection::open(definition, cwd).await?;
+        let elicitation = slot
+            .as_ref()
+            .map(|previous| previous.elicitation.lock().unwrap().clone());
+        let connection = open.await?;
+        if let Some(elicitation) = elicitation {
+            *connection.elicitation.lock().unwrap() = elicitation;
+        }
         let mut workers = self.workers.lock().unwrap();
         workers.retain(|w| w.strong_count() > 0);
         workers.push(Arc::downgrade(&connection));
@@ -865,13 +879,19 @@ mod tests {
 
     #[tokio::test]
     async fn elicitation_waits_for_the_calling_agent_and_keeps_its_denial() {
-        let (connection, root) = fixture().await;
+        let (previous, previous_root) = fixture().await;
+        let route = Route::default();
+        let previous = route.get_or_open(async { Ok(previous) }).await.unwrap();
         request(
-            &connection,
+            &previous,
             "initialize",
             json!({"capabilities":{"elicitation":{}}}),
         )
         .await;
+        previous.stop();
+        previous.stopped().await;
+        let (connection, root) = fixture().await;
+        let connection = route.get_or_open(async { Ok(connection) }).await.unwrap();
         let response = connection
             .handle(
                 Method::POST,
@@ -920,6 +940,7 @@ mod tests {
         assert!(connection.asks.lock().unwrap().is_empty());
         connection.stop();
         connection.stopped().await;
+        tokio::fs::remove_dir_all(previous_root).await.unwrap();
         tokio::fs::remove_dir_all(root).await.unwrap();
     }
 

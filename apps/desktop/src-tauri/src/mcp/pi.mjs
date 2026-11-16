@@ -4,6 +4,38 @@ export default async function (pi) {
   const connections = [];
   let nextId = 0;
 
+  async function readAnswer(response, id) {
+    if (!response.headers.get("content-type")?.startsWith("text/event-stream")) return response.json();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let data = [];
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        let end;
+        while ((end = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, end).replace(/\r$/, "");
+          buffer = buffer.slice(end + 1);
+          if (!line) {
+            if (data.length) {
+              const message = JSON.parse(data.join("\n"));
+              data = [];
+              if (message.id === id && ("result" in message || "error" in message)) return message;
+            }
+          } else if (line.startsWith("data:")) {
+            data.push(line.slice(5).replace(/^ /, ""));
+          }
+        }
+        if (done) return;
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+
   async function request(connection, method, params, signal) {
     const id = ++nextId;
     const response = await fetch(connection.url, {
@@ -19,16 +51,9 @@ export default async function (pi) {
     });
     if (!response.ok) throw new Error(`MCP server ${connection.name} is unavailable. Check Settings → MCP.`);
     connection.session = response.headers.get("mcp-session-id") ?? connection.session;
-    const text = await response.text();
-    const messages = response.headers.get("content-type")?.startsWith("text/event-stream")
-      ? text.split(/\r?\n\r?\n/).flatMap((event) => {
-          const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
-          return data ? [JSON.parse(data)] : [];
-        })
-      : [JSON.parse(text)];
-    const answer = messages.find((message) => message.id === id);
+    const answer = await readAnswer(response, id);
     if (answer?.error) throw new Error(answer.error.message);
-    if (!answer) throw new Error(`MCP server ${connection.name} returned no response.`);
+    if (!answer || answer.id !== id) throw new Error(`MCP server ${connection.name} returned no response.`);
     return answer.result;
   }
 
@@ -52,6 +77,8 @@ export default async function (pi) {
         },
         body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
       });
+      connections.push(connection);
+      if (!initialized.capabilities?.tools) continue;
       let cursor;
       do {
         const page = await request(connection, "tools/list", cursor ? { cursor } : {});
@@ -70,7 +97,6 @@ export default async function (pi) {
         }
         cursor = page.nextCursor;
       } while (cursor);
-      connections.push(connection);
     } catch (error) {
       pi.on("session_start", (_event, context) => context.ui.notify(String(error.message), "error"));
     }

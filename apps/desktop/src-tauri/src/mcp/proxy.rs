@@ -37,6 +37,8 @@ use crate::sink::Sink;
 
 const LIMIT: usize = 16 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+// Codex's thread config cannot delete an inherited bearer environment setting.
+pub const CODEX_PROXY_BEARER_ENV: &str = "CARBON_MCP_PROXY_BEARER";
 type Pending = Arc<StdMutex<HashMap<String, oneshot::Sender<Value>>>>;
 type Routes = Arc<StdMutex<HashMap<String, Arc<Entry>>>>;
 
@@ -171,11 +173,20 @@ struct Entry {
     peer: OnceCell<Result<Arc<Peer>, String>>,
     notices: mpsc::UnboundedSender<String>,
     failed: AtomicBool,
+    stopped: AtomicBool,
     native: super::native_codex::Route,
     use_native: AtomicBool,
 }
 
 impl Entry {
+    fn stop(&self) {
+        self.stopped.store(true, Relaxed);
+        self.native.stop();
+        if let Some(Ok(peer)) = self.peer.get() {
+            peer.stop();
+        }
+    }
+
     fn report(&self, message: &str) {
         if !self.failed.swap(true, Relaxed) {
             let _ = self.notices.send(format!(
@@ -186,7 +197,8 @@ impl Entry {
     }
 
     async fn peer(&self) -> Result<Arc<Peer>> {
-        self.peer
+        let peer = self
+            .peer
             .get_or_init(|| async {
                 Peer::open(&self.definition, &self.cwd, self.notices.clone())
                     .await
@@ -197,7 +209,12 @@ impl Entry {
             })
             .await
             .clone()
-            .map_err(|message| anyhow!(message))
+            .map_err(|message| anyhow!(message))?;
+        if self.stopped.load(Relaxed) {
+            peer.stop();
+            bail!("this MCP session has closed");
+        }
+        Ok(peer)
     }
 }
 
@@ -246,6 +263,7 @@ impl SessionProxy {
                     oauth: None,
                     cwd: None,
                     bearer_token_file: None,
+                    inherit_env: Vec::new(),
                 },
                 cwd,
             )?;
@@ -312,6 +330,7 @@ impl SessionProxy {
                     peer: OnceCell::new(),
                     notices: notices_tx.clone(),
                     failed: AtomicBool::new(false),
+                    stopped: AtomicBool::new(false),
                     native: Default::default(),
                     use_native: AtomicBool::new(false),
                 }),
@@ -342,6 +361,7 @@ impl SessionProxy {
                 peer: OnceCell::new(),
                 notices,
                 failed: AtomicBool::new(false),
+                stopped: AtomicBool::new(false),
                 native: Default::default(),
                 use_native: AtomicBool::new(false),
             }),
@@ -400,7 +420,10 @@ impl SessionProxy {
                     json!({"command":executable,"args":["--mcp-bridge",url],"enabled":true}),
                 );
             } else {
-                overrides.insert(name.clone(), json!({"url":url,"enabled":true}));
+                overrides.insert(
+                    name.clone(),
+                    json!({"url":url,"enabled":true,"bearer_token_env_var":CODEX_PROXY_BEARER_ENV}),
+                );
             }
         }
         Ok(json!({"mcp_servers":overrides}))
@@ -450,7 +473,7 @@ impl Drop for SessionProxy {
         let mut routes = self.routes.lock().unwrap();
         for key in &self.keys {
             if let Some(entry) = routes.remove(key) {
-                entry.native.stop();
+                entry.stop();
             }
         }
         if let Some(reporter) = self.reporter.take() {
@@ -635,6 +658,7 @@ async fn forward_peer(entry: &Arc<Entry>, method: Method, body: Bytes) -> Result
 struct Peer {
     writer: mpsc::Sender<Value>,
     pending: Pending,
+    closed: Arc<AtomicBool>,
     events: broadcast::Sender<Value>,
     task: JoinHandle<()>,
 }
@@ -646,6 +670,8 @@ impl Peer {
         notices: mpsc::UnboundedSender<String>,
     ) -> Result<Self> {
         let pending: Pending = Default::default();
+        let closed = Arc::new(AtomicBool::new(false));
+        let terminated = closed.clone();
         let (events, _) = broadcast::channel(256);
         let (writer, mut outgoing) = mpsc::channel::<Value>(64);
         let incoming = pending.clone();
@@ -662,6 +688,10 @@ impl Peer {
             .await?;
             let mut command = tokio::process::Command::new(expand_home(&program));
             command.env_clear();
+            command.env(
+                "PATH",
+                crate::harness::agent_path(std::path::Path::new(&program)),
+            );
             for key in [
                 "HOME",
                 "LOGNAME",
@@ -682,6 +712,11 @@ impl Peer {
             for arg in &definition.server.args {
                 command.arg(config::expand(arg).await?);
             }
+            for name in &definition.inherit_env {
+                if let Ok(value) = config::env(name).await {
+                    command.env(name, value);
+                }
+            }
             for pair in &definition.server.env {
                 command.env(&pair.name, config::expand(&pair.value).await?);
             }
@@ -696,10 +731,6 @@ impl Peer {
                 std::path::Path::new(cwd).join(working_dir)
             };
             command
-                .env(
-                    "PATH",
-                    crate::harness::agent_path(std::path::Path::new(&program)),
-                )
                 .current_dir(working_dir)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -737,6 +768,7 @@ impl Peer {
                     Ok::<_, anyhow::Error>(())
                 };
                 tokio::select! { _ = read => {}, _ = write => {}, _ = child.wait() => {} }
+                terminated.store(true, Relaxed);
                 incoming.lock().unwrap().clear();
                 let _ = notices.send(format!(
                     "MCP server ‘{name}’ stopped. Start a new session to reconnect."
@@ -791,6 +823,7 @@ impl Peer {
                     Ok::<_, anyhow::Error>(())
                 };
                 tokio::select! { _ = read => {}, _ = write => {} }
+                terminated.store(true, Relaxed);
                 on_close.lock().unwrap().clear();
                 let _ = notices.send(format!(
                     "MCP server ‘{name}’ disconnected. Start a new session to reconnect."
@@ -800,19 +833,32 @@ impl Peer {
         Ok(Self {
             writer,
             pending,
+            closed,
             events,
             task,
         })
     }
 
+    fn stop(&self) {
+        self.closed.store(true, Relaxed);
+        self.task.abort();
+        self.pending.lock().unwrap().clear();
+    }
+
     async fn send(&self, value: Value) -> Result<Option<Value>> {
         let request = value.get("id").filter(|_| value.get("method").is_some());
-        let waiting = request.map(|id| {
-            let key = id.to_string();
-            let (tx, rx) = oneshot::channel();
-            self.pending.lock().unwrap().insert(key.clone(), tx);
-            (key, rx)
-        });
+        let waiting = {
+            let mut pending = self.pending.lock().unwrap();
+            if self.closed.load(Relaxed) {
+                bail!("MCP connection is closed");
+            }
+            request.map(|id| {
+                let key = id.to_string();
+                let (tx, rx) = oneshot::channel();
+                pending.insert(key.clone(), tx);
+                (key, rx)
+            })
+        };
         let _cleanup = waiting.as_ref().map(|(key, _)| PendingRequest {
             pending: self.pending.clone(),
             key: key.clone(),
@@ -846,7 +892,7 @@ impl Drop for PendingRequest {
 
 impl Drop for Peer {
     fn drop(&mut self) {
-        self.task.abort();
+        self.stop();
     }
 }
 
@@ -971,6 +1017,88 @@ mod tests {
             assert_eq!(post(b,call.clone()).await["result"]["counter"],1);
             assert_eq!(post(a,call).await["result"]["counter"],2);
             server.abort();
+        });
+    }
+
+    #[test]
+    fn stdio_preserves_an_explicit_path() {
+        runtime().block_on(async {
+            let mut definition = stdio();
+            let path = format!("/carbon-mcp-custom-bin:{}", std::env::var("PATH").unwrap());
+            definition.server.env.push(crate::mcp_servers::KeyValue {
+                name: "PATH".into(),
+                value: path.clone(),
+            });
+            let proxy = SessionProxy::from_definitions(vec![definition], "/tmp")
+                .await
+                .unwrap();
+            let response = post(
+                &proxy.servers["fixture"],
+                json!({"jsonrpc":"2.0","id":1,"method":"fixture/environment"}),
+            )
+            .await;
+            assert_eq!(response["result"]["path"], path);
+        });
+    }
+
+    #[test]
+    fn stdio_inherits_only_configured_environment_variables() {
+        runtime().block_on(async {
+            let name = "CARGO_MANIFEST_DIR";
+            let expected = std::env::var(name).unwrap();
+            let mut definition = stdio();
+            definition.inherit_env = vec![name.into()];
+            let proxy = SessionProxy::from_definitions(vec![definition], "/tmp")
+                .await
+                .unwrap();
+            let response = post(
+                &proxy.servers["fixture"],
+                json!({"jsonrpc":"2.0","id":1,"method":"fixture/environment"}),
+            )
+            .await;
+            assert_eq!(response["result"]["vars"][name], expected);
+            assert!(response["result"]["vars"].get("CARGO_PKG_NAME").is_none());
+        });
+    }
+
+    #[test]
+    fn dropping_a_chat_stops_its_upstream_during_a_pending_call() {
+        runtime().block_on(async {
+            let proxy = SessionProxy::from_definitions(vec![stdio()], "/tmp")
+                .await
+                .unwrap();
+            let url = proxy.servers["fixture"].clone();
+            post(&url, initialize()).await;
+            let pid = state(&url, None).await["pid"].as_i64().unwrap() as i32;
+            let entry = proxy.routes.lock().unwrap()[&proxy.keys[0]].clone();
+            let mut events = entry.peer().await.unwrap().events.subscribe();
+            drop(entry);
+            let pending = tokio::spawn(async move {
+                crate::http()
+                    .post(url)
+                    .json(&json!({"jsonrpc":"2.0","id":3,"method":"fixture/wait"}))
+                    .send()
+                    .await
+                    .unwrap()
+            });
+            let notification = tokio::time::timeout(Duration::from_secs(2), events.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(notification["method"], "notifications/fixture/waiting");
+            drop(proxy);
+            let response = tokio::time::timeout(Duration::from_secs(2), pending)
+                .await
+                .expect("closing the chat must fail its pending request immediately")
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+            for _ in 0..40 {
+                if unsafe { libc::kill(pid, 0) } != 0 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            assert_ne!(unsafe { libc::kill(pid, 0) }, 0);
         });
     }
 
@@ -1147,6 +1275,59 @@ mod tests {
         assert!(!proxy.claude().contains("upstream-secret"));
         assert!(!serde_json::to_string(&proxy.acp(true).unwrap()).unwrap().contains("upstream-secret"));
         server.abort();
+        });
+    }
+
+    #[test]
+    #[ignore = "requires installed Codex; uses only a local MCP fixture and no model turn"]
+    fn installed_codex_proxy_shadows_native_bearer_env_and_keeps_tool_policy() {
+        runtime().block_on(async {
+            use crate::harness::codex::rpc::RpcClient;
+            let home = std::env::temp_dir().join(format!("carbon-proxy-codex-{}", uuid::Uuid::new_v4()));
+            tokio::fs::create_dir_all(&home).await.unwrap();
+            tokio::fs::write(home.join("config.toml"), "[mcp_servers.fixture]\nurl='http://127.0.0.1:1/native'\nbearer_token_env_var='CARBON_REVIEW_UNSET_BEARER'\nenabled_tools=['state','blocked']\ndisabled_tools=['blocked']\n").await.unwrap();
+            let proxy = SessionProxy::from_definitions(vec![stdio()], "/tmp").await.unwrap();
+            let mut config = proxy.codex_config("/tmp").await.unwrap();
+            config["mcp_servers"].as_object_mut().unwrap().retain(|name, _| name == "fixture");
+            let bin = crate::binpath::codex().await;
+            let mut child = tokio::process::Command::new(&bin)
+                .arg("app-server")
+                .env("CODEX_HOME", &home)
+                .env(CODEX_PROXY_BEARER_ENV, "carbon-proxy")
+                .env_remove("CARBON_REVIEW_UNSET_BEARER")
+                .env("PATH", crate::harness::agent_path(&bin))
+                .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
+                .kill_on_drop(true).spawn().unwrap();
+            let client = RpcClient::new(child.stdin.take().unwrap());
+            let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+            let read_client = client.clone();
+            let reader = tokio::spawn(async move {
+                while let Ok(Some(line)) = lines.next_line().await {
+                    read_client.accept(&line).await;
+                }
+            });
+            client.request("initialize", json!({"clientInfo":{"name":"carbon-proxy-test","version":"1"},"capabilities":{}})).await.unwrap();
+            client.notify("initialized", json!({})).unwrap();
+            let thread = client.request("thread/start", json!({"cwd":"/tmp","ephemeral":true,"config":config})).await.unwrap()["thread"]["id"].clone();
+            let row = tokio::time::timeout(Duration::from_secs(20), async {
+                loop {
+                    let status = client.request("mcpServerStatus/list", json!({"threadId":thread,"serverName":"fixture","detail":"full"})).await.unwrap();
+                    if let Some(row) = status["data"].as_array().and_then(|rows| rows.iter().find(|row| row["name"] == "fixture")) {
+                        if row["runtimeStatus"] == "failed" { panic!("fixture connection failed: {row}"); }
+                        if row["runtimeStatus"] == "connected" { break row.clone(); }
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            }).await.unwrap();
+            assert!(row["tools"].get("state").is_some());
+            assert!(row["tools"].get("blocked").is_none());
+            let allowed = client.request("mcpServer/tool/call", json!({"threadId":thread,"server":"fixture","tool":"state","arguments":{"value":"through-carbon"}})).await.unwrap();
+            assert!(allowed["content"][0]["text"].as_str().unwrap().contains("through-carbon"));
+            let denied = client.request("mcpServer/tool/call", json!({"threadId":thread,"server":"fixture","tool":"blocked","arguments":{}})).await.unwrap_err();
+            assert!(denied.to_string().contains("disabled"));
+            child.kill().await.unwrap();
+            reader.abort();
+            tokio::fs::remove_dir_all(home).await.unwrap();
         });
     }
 

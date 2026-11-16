@@ -26,6 +26,8 @@ pub struct Definition {
     pub cwd: Option<String>,
     #[serde(default)]
     pub bearer_token_file: Option<String>,
+    #[serde(default)]
+    pub inherit_env: Vec<String>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -84,9 +86,17 @@ async fn discover_at(catalog: &mut Catalog, home: &Path, projects: &[PathBuf]) -
                 continue;
             };
             let loaded = async {
-                let entries = crate::mcp_servers::read_servers(file, &path, project)
+                let mut entries = crate::mcp_servers::read_servers(file, &path, project)
                     .await?
                     .unwrap_or_default();
+                if file == McpFile::ClaudeProject {
+                    let denied = claude_rejections(home, project.unwrap()).await?;
+                    for server in &mut entries {
+                        if denied.contains(&claude_name(&server.name)) {
+                            server.enabled = false;
+                        }
+                    }
+                }
                 let raw = raw_table(file, &path, project).await?;
                 Ok::<_, anyhow::Error>((entries, raw))
             }
@@ -161,6 +171,17 @@ async fn discover_at(catalog: &mut Catalog, home: &Path, projects: &[PathBuf]) -
                         .get("bearer_token_file")
                         .and_then(Value::as_str)
                         .map(str::to_string),
+                    inherit_env: entry
+                        .get("env_vars")
+                        .and_then(Value::as_array)
+                        .map(|names| {
+                            names
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_string)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
                     cwd: entry.get("cwd").and_then(Value::as_str).map(str::to_string),
                     oauth: entry.get("oauth").cloned(),
                     server,
@@ -169,6 +190,68 @@ async fn discover_at(catalog: &mut Catalog, home: &Path, projects: &[PathBuf]) -
                 resolve_codex_helper(file, home, &mut definition).await;
                 catalog.servers.push(definition);
             }
+        }
+    }
+    match import_claude_toggles(catalog, home, projects).await {
+        Ok(imported) => changed |= imported,
+        Err(error) => catalog.errors.push((
+            home.join(".claude.json").to_string_lossy().into_owned(),
+            format!("{error:#}"),
+        )),
+    }
+    Ok(changed)
+}
+
+/// Claude's per-project toggles must shadow global definitions without disabling other projects.
+async fn import_claude_toggles(
+    catalog: &mut Catalog,
+    home: &Path,
+    projects: &[PathBuf],
+) -> Result<bool> {
+    let text = match tokio::fs::read(home.join(".claude.json")).await {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let root: Value = serde_json::from_slice(&text)?;
+    let mut changed = false;
+    for project in projects {
+        let project = project.to_string_lossy();
+        let Some(names) = root
+            .get("projects")
+            .and_then(|p| p.get(project.as_ref()))
+            .and_then(|p| p.get("disabledMcpServers"))
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+        for name in names.iter().filter_map(Value::as_str) {
+            let source = format!(
+                "{}\n{project}\ndisabledMcpServers\n{name}",
+                home.join(".claude.json").display()
+            );
+            if catalog.imported.contains(&source) {
+                continue;
+            }
+            let Some(mut definition) = select(catalog.servers.clone(), &project)
+                .into_iter()
+                .find(|d| d.server.name == name)
+            else {
+                continue;
+            };
+            definition.project = Some(project.to_string());
+            definition.server.enabled = false;
+            if let Some(existing) = catalog
+                .servers
+                .iter_mut()
+                .find(|d| d.project == definition.project && d.server.name == name)
+            {
+                existing.server.enabled = false;
+            } else {
+                catalog.servers.push(definition);
+            }
+            catalog.imported.insert(source);
+            changed = true;
         }
     }
     Ok(changed)
@@ -225,6 +308,7 @@ async fn raw_table(
                         "cwd",
                         "header_env",
                         "env_http_headers",
+                        "env_vars",
                     ] {
                         if let Some(value) = entry.get(key) {
                             if let Some(s) = value.as_str() {
@@ -238,6 +322,19 @@ async fn raw_table(
                                             .filter_map(|(k, v)| {
                                                 v.as_str()
                                                     .map(|s| (k.into(), Value::String(s.into())))
+                                            })
+                                            .collect(),
+                                    ),
+                                );
+                            }
+                            if let Some(names) = value.as_array() {
+                                fields.insert(
+                                    key.into(),
+                                    Value::Array(
+                                        names
+                                            .iter()
+                                            .filter_map(|name| {
+                                                name.as_str().map(|name| Value::String(name.into()))
                                             })
                                             .collect(),
                                     ),
@@ -279,6 +376,50 @@ fn string_map(value: Option<&Value>) -> BTreeMap<String, String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn claude_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Project trust never overrides a recorded refusal of an individual MCP server.
+async fn claude_rejections(home: &Path, project: &Path) -> Result<BTreeSet<String>> {
+    let mut denied = BTreeSet::new();
+    for path in [
+        home.join(".claude.json"),
+        home.join(".claude/settings.json"),
+        project.join(".claude/settings.json"),
+        project.join(".claude/settings.local.json"),
+    ] {
+        let text = match tokio::fs::read(&path).await {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let root: Value = serde_json::from_slice(&text)
+            .with_context(|| format!("couldn't read {}", path.display()))?;
+        let settings = if path == home.join(".claude.json") {
+            root.get("projects")
+                .and_then(|p| p.get(project.to_string_lossy().as_ref()))
+        } else {
+            Some(&root)
+        };
+        if let Some(names) = settings
+            .and_then(|s| s.get("disabledMcpjsonServers"))
+            .and_then(Value::as_array)
+        {
+            denied.extend(names.iter().filter_map(Value::as_str).map(claude_name));
+        }
+    }
+    Ok(denied)
 }
 
 /// A repository cannot gain permission to execute commands merely by being discovered.
@@ -534,6 +675,7 @@ pub async fn save(
             oauth: None,
             cwd: None,
             bearer_token_file: None,
+            inherit_env: Vec::new(),
         });
     }
     write(&path, &catalog)
@@ -736,7 +878,7 @@ mod tests {
         tokio::fs::write(root.join(".claude.json"), original)
             .await
             .unwrap();
-        tokio::fs::write(root.join(".codex/config.toml"), "[mcp_servers.docs]\nurl='https://second.example/mcp'\n[mcp_servers.other]\nurl='https://other.example/mcp'\nbearer_token_env_var='MCP_TOKEN'\n").await.unwrap();
+        tokio::fs::write(root.join(".codex/config.toml"), "[mcp_servers.docs]\nurl='https://second.example/mcp'\n[mcp_servers.other]\nurl='https://other.example/mcp'\nbearer_token_env_var='MCP_TOKEN'\nenv_vars=['LOGNAME']\n").await.unwrap();
         tokio::fs::write(root.join(".grok/config.toml"), "invalid TOML = [")
             .await
             .unwrap();
@@ -752,6 +894,7 @@ mod tests {
             Some("MCP_TOKEN")
         );
         assert_eq!(catalog.errors.len(), 1);
+        assert_eq!(catalog.servers[1].inherit_env, vec!["LOGNAME"]);
         catalog.servers.retain(|d| d.server.name != "docs");
         assert!(!discover_at(&mut catalog, &root, &[]).await.unwrap());
         assert_eq!(catalog.servers.len(), 1);
@@ -828,6 +971,90 @@ mod tests {
             catalog.servers[0].project.as_deref(),
             Some(project.to_str().unwrap())
         );
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn automatic_import_preserves_recorded_claude_rejections() {
+        let root = root().await;
+        let project = root.join("project");
+        tokio::fs::create_dir_all(project.join(".claude"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(root.join(".claude"))
+            .await
+            .unwrap();
+        tokio::fs::write(
+            project.join(".mcp.json"),
+            r#"{"mcpServers":{"legacy":{"command":"legacy"},"user":{"command":"user"},"shared":{"command":"shared"},"local.name":{"command":"local"},"new":{"command":"new"}}}"#,
+        ).await.unwrap();
+        tokio::fs::write(root.join(".claude.json"), serde_json::to_vec(&serde_json::json!({"projects":{project.to_string_lossy().as_ref():{"hasTrustDialogAccepted":true,"disabledMcpjsonServers":["legacy"]}}})).unwrap()).await.unwrap();
+        tokio::fs::write(
+            root.join(".claude/settings.json"),
+            r#"{"disabledMcpjsonServers":["user"]}"#,
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"disabledMcpjsonServers":["shared"]}"#,
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(project.join(".claude/settings.local.json"), r#"{"enableAllProjectMcpServers":true,"enabledMcpjsonServers":["local.name"],"disabledMcpjsonServers":["local_name"]}"#).await.unwrap();
+        let mut catalog = Catalog::default();
+        discover_at(&mut catalog, &root, &[project]).await.unwrap();
+        assert_eq!(catalog.servers.len(), 5);
+        for definition in catalog.servers {
+            assert_eq!(definition.server.enabled, definition.server.name == "new");
+        }
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn claude_toggles_import_as_project_shadows_once() {
+        let root = root().await;
+        let first = root.join("first");
+        let second = root.join("second");
+        tokio::fs::write(
+            root.join(".claude.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "mcpServers":{"local":{"command":"run-local"}},
+                "projects":{first.to_string_lossy().as_ref():{"disabledMcpServers":["local"]}}
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut catalog = Catalog::default();
+        discover_at(&mut catalog, &root, &[first.clone(), second.clone()])
+            .await
+            .unwrap();
+        assert_eq!(catalog.servers.len(), 2);
+        assert!(
+            catalog
+                .servers
+                .iter()
+                .find(|d| d.project.is_none())
+                .unwrap()
+                .server
+                .enabled
+        );
+        assert!(
+            !select(catalog.servers.clone(), first.to_str().unwrap())[0]
+                .server
+                .enabled
+        );
+        assert!(
+            select(catalog.servers.clone(), second.to_str().unwrap())[0]
+                .server
+                .enabled
+        );
+        catalog.servers.retain(|d| d.project.is_none());
+        assert!(!discover_at(&mut catalog, &root, &[first, second])
+            .await
+            .unwrap());
+        assert_eq!(catalog.servers.len(), 1);
         tokio::fs::remove_dir_all(root).await.unwrap();
     }
 

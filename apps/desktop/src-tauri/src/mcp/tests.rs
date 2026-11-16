@@ -25,6 +25,7 @@ pub(super) fn stdio() -> Definition {
         oauth: None,
         cwd: None,
         bearer_token_file: None,
+        inherit_env: Vec::new(),
     }
 }
 
