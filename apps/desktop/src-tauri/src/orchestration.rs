@@ -298,6 +298,10 @@ fn session_named(request: &Request) -> Option<&str> {
         Request::SetAside(r) => Some(&r.session_id),
         Request::Share(r) => Some(&r.session_id),
         Request::Browser(r) => Some(&r.session_id),
+        Request::Preview(carbon_proto::PreviewRequest::Start { session_id, .. }
+            | carbon_proto::PreviewRequest::Stop { session_id }
+            | carbon_proto::PreviewRequest::Url { session_id }
+            | carbon_proto::PreviewRequest::Logs { session_id }) => Some(session_id),
         Request::Secret(carbon_proto::SecretRequest::Create { session_id, .. }
             | carbon_proto::SecretRequest::Status { session_id, .. }
             | carbon_proto::SecretRequest::Cancel { session_id, .. }) => Some(session_id),
@@ -631,6 +635,7 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
         Request::SendMessage(send) => send_message(send, None, app).await,
         Request::LinkIssues(link) => link_issues(link, app).await,
         Request::WriteIssue(write) => write_issue(write, app).await,
+        Request::Preview(request) => Ok(crate::preview::request(request, app).await),
         Request::Secret(request) => Ok(Response::Secret {
             data: crate::secrets::request(request, app).await.map_err(anyhow::Error::msg)?,
         }),
