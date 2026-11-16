@@ -18,7 +18,7 @@
 
 **The protocol version is checked before the request is even looked at**, and the refusal **names which half is behind** — `envelope.v < OLDEST_SPOKEN` means the CLI is behind, say `carbon update`; `>` means the app is behind, say update the app. Naming the wrong half is worse than naming neither, since only one cure is runnable from an agent. **The envelope must still parse at a version the app no longer speaks** — the check is a layer *above* parse, or a v1 line answers "could not parse the request" where it should answer "run `carbon update`". Both pinned by test.
 
-**Bump rule: bump when the default the old side falls back to is undetectable.** An old app ignoring `model` runs on its own default, which the caller can see and judge; an old app ignoring `from` starts the worktree at `origin/<default>` and answers *identically to success*, so a session spawned to review unpushed work reviews none of it and reports everything fine. Wrong work that looks like right work is what earns a bump. Currently **v18**: v2 = `from`, v3 = `issues` and `LinkIssues`, v4 = `LinkIssues.identifiers` → `issues` (renamed, not extended, so two shapes cannot be confused), v5 = `Browser`, v6 = `fast` — an old app ignores it and runs at ordinary speed, which answers identically to success since nothing in the transcript says which tier served the turn, v7 = the `carbon draft` requests, which an older app reads as a broken CLI rather than as an app to update, v8 = `carbon share`, for the same reason, v9 = the server list (now `carbon machine`), v10 = the session verbs, `share ls` across sessions, and `from` renamed `base` — a create or draft naming a base goes out as v10 and nothing else does, since an older app ignores `base` and starts at `origin/<default>`, v11 = `set_remote_access`, v12 = `on_machine`, since an app that ignored the machine would run the request on the Mac, v13 = `write_issue` — `carbon issue comment` and `carbon issue status`, which an older app cannot parse, so the refusal names the app rather than saying the request could not be parsed, v14 = the `carbon pages` requests, for the same reason; v15 = one-use secret requests; v16 = keyed session create/send, since ignoring the key would repeat work silently; v17 = managed preview commands; v18 = durable agent messages and delivery status/cancellation. See [secrets.md](secrets.md) for the value-submission boundary. `OnMachine` stamps v12, or the inner request's version when that is newer, so a write sent with `--machine` is refused the same way. **The app answers every version from `OLDEST_SPOKEN` up to its own, and the CLI stamps each request with the oldest version that carries it whole** (`Request::version`), so a bump breaks only the requests that need it — a v7 CLI runs everything but `carbon draft` against a v6 app, and that one is refused naming the app. `OLDEST_SPOKEN` moves only for a rename, never for an addition.
+**Bump rule: bump when the default the old side falls back to is undetectable.** An old app ignoring `model` runs on its own default, which the caller can see and judge; an old app ignoring `from` starts the worktree at `origin/<default>` and answers *identically to success*, so a session spawned to review unpushed work reviews none of it and reports everything fine. Wrong work that looks like right work is what earns a bump. Currently **v19**: v2 = `from`, v3 = `issues` and `LinkIssues`, v4 = `LinkIssues.identifiers` → `issues` (renamed, not extended, so two shapes cannot be confused), v5 = `Browser`, v6 = `fast` — an old app ignores it and runs at ordinary speed, which answers identically to success since nothing in the transcript says which tier served the turn, v7 = the `carbon draft` requests, which an older app reads as a broken CLI rather than as an app to update, v8 = `carbon share`, for the same reason, v9 = the server list (now `carbon machine`), v10 = the session verbs, `share ls` across sessions, and `from` renamed `base` — a create or draft naming a base goes out as v10 and nothing else does, since an older app ignores `base` and starts at `origin/<default>`, v11 = `set_remote_access`, v12 = `on_machine`, since an app that ignored the machine would run the request on the Mac, v13 = `write_issue` — `carbon issue comment` and `carbon issue status`, which an older app cannot parse, so the refusal names the app rather than saying the request could not be parsed, v14 = the `carbon pages` requests, for the same reason; v15 = one-use secret requests; v16 = keyed session create/send, since ignoring the key would repeat work silently; v17 = managed preview commands; v18 = durable agent messages and delivery status/cancellation; v19 = opt-in delegated tasks and immutable results. See [secrets.md](secrets.md) for the value-submission boundary. `OnMachine` stamps v12, or the inner request's version when that is newer, so a write sent with `--machine` is refused the same way. **The app answers every version from `OLDEST_SPOKEN` up to its own, and the CLI stamps each request with the oldest version that carries it whole** (`Request::version`), so a bump breaks only the requests that need it — a v7 CLI runs everything but `carbon draft` against a v6 app, and that one is refused naming the app. `OLDEST_SPOKEN` moves only for a rename, never for an addition.
 
 
 ## The socket
@@ -113,6 +113,61 @@ delivery records are saved. It needs Python 3, Node with WebSocket support and `
 Forwarding carries the original fingerprint and source UUID before paths or base refs change. A keyed forward first sends a typed `LookupReceipt` query, before reading the source parent or resolving its base. Only an explicit missing receipt permits preparation; saved outcomes replay even after the source parent is deleted. The separate command fails closed on older receivers rather than risking an ignored flag that executes a create. Receipt replay happens before remote localization, and remote machine decoration descends through the recorded reply. The serve-only `orchestrate` arguments gained two optional fields; iOS does not call this agent orchestration command. No normalized event or composer command shape changed.
 
 A legacy `Sent { queued: true }` means accepted into the current memory-only queue. Current CLI sends receive `Delivery` through the durable inbox instead.
+
+## Delegated tasks
+
+Protocol v19 adds `task` options to create/send and the `Task` request group.
+Defaulted options are omitted, preserving old receipt fingerprints and legacy
+reporting behavior. `--task` returns a separate task UUID; `--await` links it to
+the caller's unfinished task. A new task may reuse a child only after its previous
+result is published. Worktrees, session ancestry and Crew remain unchanged.
+
+[`tasks.rs`](../src-tauri/src/orchestration/tasks.rs) stores a private, versioned
+registry under `<home>/delegated-tasks/`. Atomic writes sync both file and directory
+under a retained flock. An operation's reservation precedes child submission;
+receipt replay recovers the task even if the original reply was lost. A task is
+not the session's unread status or the harness's checklist.
+
+The worker tails normalized JSONL from durable byte cursors, skips subagent
+frames and freezes the closing result. Inbox prompt event IDs are recorded before
+append under the task lock, so replay binds the exact opening prompt and each
+completion wake. Awaited results must be terminal and their wake prompts must
+have reached the parent before its next completed turn can publish a result.
+Background-task counts do not enter that rule.
+
+Finalization takes the child's session slot before the task lock, reads pending
+inbox work and respects the composer queue. Acceptance retains the cancellation
+fence through its inbox write. Submission retains it through durable submission
+intent and prompt append. No task lock waits for a session slot or harness RPC.
+Cancellation and completion effects have independent workers, so a slow parent
+or child does not stop replay for another task.
+
+Completion uses one reserved inbox identity per task, independent of wake waves.
+The task result is immutable; delivery and acknowledgment are separate mutable
+metadata. `completionAcknowledged` means the local parent's log contains the
+wake followed by a main-thread completion, not proof the model understood it.
+Remote completion uses a stable keyed relay where a reverse connection exists;
+remote parent consumption is not mirrored back, and cross-server awaited edges
+are refused rather than silently ignored. Task reads use their owning server,
+with `--machine` when needed. No app/serve command, normalized event, or iOS
+Codable shape changed; this is an additive CLI protocol change.
+
+Task cancellation durably fences the selected task and awaited descendants,
+clears their pending mail and composer follow-ups, and kills their active child
+processes. It suppresses descendant wakes still awaiting submission and emits
+one root cancellation result after subtree cleanup. Submitted work is not
+recalled, and published results are never replaced. Ordinary Stop is unchanged.
+Question snapshots are descriptive; existing live cards own their callbacks.
+Wait returns on a blocking card or timeout without canceling. Startup replays
+complete boundaries before marking unfinished active work interrupted; accepted
+queued tasks survive. It never guesses that an interrupted task succeeded.
+
+Build the serve binary, then run `python3 scripts/test-delegated-tasks.py` from
+`apps/desktop`. The scratch-home replay goes through production parsing, mapping,
+logging, task persistence and inbox delivery. It checks multiple waves, busy/idle
+parents, explicit awaiting, questions, cancellation, follow-ups, worktrees and
+process crashes. Run `scripts/test-agent-inbox.py` as the existing delivery
+regression as well.
 
 ## Skills
 

@@ -651,6 +651,12 @@ impl Drop for Sending {
     }
 }
 
+pub(crate) struct TaskActivity {
+    _guard: tokio::sync::OwnedMutexGuard<Option<Session>>,
+    pub(crate) busy: bool,
+    pub(crate) alive: bool,
+}
+
 impl SessionManager {
     /// This session's slot, made on first use. Slots are never removed: one is
     /// a few words, and removing it under a send still holding it would strand
@@ -902,6 +908,11 @@ impl SessionManager {
         let linked_issues = &expanded.linked;
 
         if is_new_session {
+            let mut task_creation = if crate::orchestration::tasks::tracked_create(session_id).await? {
+                let guard = self.slot(session_id).await.lock_owned().await;
+                if crate::orchestration::tasks::dispatch_canceled(session_id, None).await? { bail!("the delegated task was canceled"); }
+                Some(guard)
+            } else { None };
             // Refused before anything is written, and that ordering is the
             // whole of it. The index entry lands before spawn on purpose, so a
             // session failing for a reason we could not predict is still
@@ -1122,7 +1133,10 @@ impl SessionManager {
             // back rather than returning empty — otherwise the frontend's first
             // render drops the user's own message.
             let events = list_session_events(session_id).await?;
-            *self.slot(session_id).await.lock().await = Some(session);
+            match task_creation.as_mut() {
+                Some(guard) => **guard = Some(session),
+                None => *self.slot(session_id).await.lock().await = Some(session),
+            }
 
             // Returned so the frontend learns the resolved worktree name and
             // the backend-truncated title rather than guessing either.
@@ -1536,6 +1550,7 @@ impl SessionManager {
         let slot = self.slot(&receipt.session_id).await;
         let _guard = slot.lock().await;
         get_session_index_item(&receipt.session_id).await?.context("the recipient no longer exists")?;
+        let _fence = crate::orchestration::tasks::acceptance(&receipt.session_id, &receipt.operation_id).await?;
         crate::orchestration::inbox::accept(receipt, prompt, sender).await
     }
 
@@ -1548,6 +1563,10 @@ impl SessionManager {
         let id = dispatch.session_id().to_owned();
         let slot = self.slot(&id).await;
         let mut locked = slot.lock_owned().await;
+        if crate::orchestration::tasks::dispatch_canceled(&id, Some(dispatch.message_id())).await? {
+            dispatch.cancel("The delegated task was canceled.").await?;
+            return Ok(true);
+        }
         if dispatch.target_deleted().await? {
             dispatch.cancel("The recipient was deleted.").await?;
             return Ok(true);
@@ -1573,6 +1592,30 @@ impl SessionManager {
             false, None, false, None, from, None, app, Some(locked), Some(dispatch),
         ).await?;
         Ok(true)
+    }
+
+    /// Task publication ignores background servers but waits out turns and queued prompts.
+    pub(crate) async fn task_activity(&self, id: &str) -> Option<TaskActivity> {
+        let slot = self.slot(id).await;
+        let mut guard = slot.try_lock_owned().ok()?;
+        let (busy, alive) = if let Some(session) = guard.as_mut() {
+            let alive = !matches!(session.child.try_wait(), Ok(Some(_)));
+            let busy = session.status.lock().await.turn_in_flight() || !session.queued.lock().await.is_empty();
+            (busy, alive)
+        } else { (false, false) };
+        Some(TaskActivity { _guard: guard, busy, alive })
+    }
+
+    /// Explicit task cancellation removes follow-ups and ends its child without redefining Stop.
+    pub(crate) async fn cancel_task_work(&self, id: &str, app: &Sink) -> Result<()> {
+        let Some(slot) = self.existing(id).await else { return Ok(()); };
+        let mut guard = slot.lock().await;
+        if let Some(session) = guard.take() {
+            session.queued.lock().await.clear();
+            publish_queue(id, &session.queued, app).await;
+            session.kill_tree().await?;
+        }
+        Ok(())
     }
 
     /// Copies a session onto a new id, to be continued separately from the one

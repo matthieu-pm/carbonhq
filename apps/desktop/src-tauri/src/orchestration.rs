@@ -17,6 +17,8 @@
 mod receipts;
 #[path = "orchestration/inbox.rs"]
 pub(crate) mod inbox;
+#[path = "orchestration/tasks.rs"]
+pub(crate) mod tasks;
 
 use crate::{
     drafts::{self, StoredDraft, DRAFTS_CHANGED},
@@ -168,6 +170,8 @@ pub async fn serve(app: Sink) -> Result<()> {
 
     restrict(&path)?;
 
+    inbox::recover_startup().await?;
+    tasks::start(app.clone()).await?;
     inbox::start(app.clone()).await?;
 
     loop {
@@ -714,10 +718,24 @@ where
         _ => None,
     };
     let root = receipt_directory(&request, source.as_deref()).await?;
+    let tracked = matches!(&request, Request::CreateSession(c) if c.task.is_some()) || matches!(&request, Request::SendMessage(s) if s.task.is_some());
     let durable = matches!(&request, Request::SendMessage(send) if send.durable);
     let response = receipts::execute(&root, &id, fingerprint, target.as_deref(), |receipt| action(request, Some(receipt))).await?;
+    if tracked { return refresh_task(response).await; }
     if durable {
         return refresh_delivery(response).await;
+    }
+    Ok(response)
+}
+
+async fn refresh_task(response: Response) -> Result<Response> {
+    match &response {
+        Response::Recorded { receipt, .. } | Response::Uncertain { receipt, .. } => {
+            if let Some(task) = tasks::by_operation(&receipt.operation_id).await? {
+                return Ok(Response::Recorded { receipt: receipt.clone(), response: Box::new(Response::Task { task }) });
+            }
+        }
+        _ => {}
     }
     Ok(response)
 }
@@ -746,6 +764,7 @@ async fn lookup_receipt(request: &Request, fingerprint: Option<&str>, source: Op
     };
     let root = receipt_directory(request, source).await?;
     let response = receipts::lookup(&root, id, &fingerprint).await?.unwrap_or(Response::ReceiptMissing);
+    if matches!(request, Request::CreateSession(c) if c.task.is_some()) || matches!(request, Request::SendMessage(s) if s.task.is_some()) { return refresh_task(response).await; }
     if matches!(request, Request::SendMessage(send) if send.durable) {
         return refresh_delivery(response).await;
     }
@@ -771,6 +790,7 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
 
 async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::OperationReceipt>, app: &Sink) -> Result<Response> {
     match request {
+        Request::Task(request) => tasks::request(request).await,
         Request::DeliveryStatus(reference) => inbox::status(reference, false).await,
         Request::CancelDelivery(reference) => inbox::status(reference, true).await,
         Request::LookupReceipt(lookup) => lookup_receipt(&lookup.request, None, None).await,
@@ -1356,6 +1376,11 @@ async fn create_session(
     let session_id = receipt.map(|r| r.session_id.clone()).unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
     let manager = manager();
 
+    let tracked = if let Some(options) = &create.task {
+        let parent = parent.as_ref().context("--task needs a calling session to receive the result")?;
+        Some(tasks::register(receipt.context("tracked tasks require a request ID")?, &parent.session_id, options, true).await?)
+    } else { None };
+
     let outcome = manager
         .send_msg(
             &session_id,
@@ -1388,7 +1413,14 @@ async fn create_session(
             None,
             app,
         )
-        .await.map_err(|error| error.context(receipts::SubmissionStarted))?;
+        .await;
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            if let Some(task) = &tracked { tasks::failed(&task.operation_id, &format!("{error:#}")).await?; }
+            return Err(error.context(receipts::SubmissionStarted));
+        }
+    };
 
     let item = outcome
         .snapshot
@@ -1399,6 +1431,7 @@ async fn create_session(
     // After the send, so the row the sidebar gains is one that actually started.
     app.emit(SESSION_CREATED, &item).ok();
 
+    if let Some(task) = tracked { return Ok(Response::Task { task }); }
     Ok(Response::Created {
         session: summarize(item),
         base_ref,
@@ -1813,11 +1846,20 @@ async fn send_message(
     };
     let prompt = attribute(&send.prompt, from.as_ref());
 
+    if let Some(options) = &send.task {
+        if !send.durable { bail!("tracked sends require durable delivery"); }
+        let parent = send.from_session_id.as_deref().context("--task needs a calling session to receive the result")?;
+        let receipt = receipt.context("tracked tasks require a request ID")?;
+        let task = tasks::register(receipt, parent, options, false).await?;
+        if let Err(error) = manager().accept_inbox(receipt, &prompt, from).await {
+            tasks::failed(&task.operation_id, &format!("{error:#}")).await?;
+            return Err(error);
+        }
+        return Ok(Response::Task { task });
+    }
     if send.durable {
         let receipt = receipt.context("durable messages require a request ID")?;
-        return Ok(Response::Delivery {
-            delivery: manager().accept_inbox(receipt, &prompt, from).await?,
-        });
+        return Ok(Response::Delivery { delivery: manager().accept_inbox(receipt, &prompt, from).await? });
     }
 
     let manager = manager();

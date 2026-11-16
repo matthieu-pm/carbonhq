@@ -18,7 +18,9 @@ impl Sink {
     /// Fails only where the payload will not serialize, which Tauri's own
     /// `emit` reported the same way.
     pub fn emit<S: serde::Serialize>(&self, event: &str, payload: S) -> anyhow::Result<()> {
-        (self.0)(event, serde_json::to_value(payload)?);
+        let value = serde_json::to_value(payload)?;
+        crate::orchestration::tasks::live_event(event, &value);
+        (self.0)(event, value);
         Ok(())
     }
 }

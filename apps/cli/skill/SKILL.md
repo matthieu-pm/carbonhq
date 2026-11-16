@@ -240,9 +240,9 @@ This is what makes review possible. Spawn a session with a different model or a
 different harness, point it at yours with `--base`, and it gets its own checkout
 of the same commits — so it collides with nobody while it reads.
 
-A session spawned to review this one's work must be told to send its findings
+An ordinary review session must be told to send its findings
 back to this session — the user asked *you* for the review, so that is where it
-has to land. No other kind of session reports back unless the user says so.
+has to land. To opt into automatic reporting instead, use `--task` as described below. Ordinary crew sessions keep manual reporting.
 
 Three things to know:
 
@@ -361,8 +361,61 @@ carbon session ls --all        # every project
 Each row carries the session id, title, status (`idle`, `in_progress`,
 `completed`), and branch. A session created by another one also says which —
 `spawned by <id>` in the table, `parentSessionId` in the JSON. This is how you
-check on sessions you started — nothing reports back on its own, so poll
+check on ordinary sessions you started. Opt-in delegated tasks report automatically;
+for ordinary sessions, poll
 `carbon session ls` if you need to know when one finishes.
+
+## Delegated tasks
+
+Use `--task` when a delegation needs a durable result sent back automatically.
+The child remains an ordinary session with its own worktree and Crew row.
+
+```bash
+carbon session new --task --request-id review-1 --hidden --base <session-id> "Review the changes"
+carbon session send <child-session-id> --task --request-id follow-up-1 "Review the fixes"
+carbon session new --task --await --request-id tests-1 "Run the integration checks"
+carbon task status <task-id>
+carbon task result <task-id>
+carbon task wait <task-id> --timeout 30
+carbon task cancel <task-id>
+```
+
+With `--task`, stdout is the **task ID**. The child session ID is on stderr and
+in `task status`. Create and send generate a retry key if omitted; retain the
+printed key and unchanged arguments if a response is lost. Only one unfinished
+task may own a child session. Send ordinary context into an active task; start a
+new `--task` after its published result for separate follow-up work.
+
+Carbon captures the final response after the turn and queued follow-ups finish.
+The result freezes the source session, checkout path, branch, commit, tree and Markdown link
+references. Later turns cannot change it. Delivery uses the durable inbox.
+`completionDelivery` distinguishes acceptance, submission and uncertain delivery;
+`completionAcknowledged` means the parent logged that wake and a following turn
+completion, rather than merely receiving a provider submission acknowledgment.
+
+`--await` also makes the caller's active task wait for that child result and the
+caller's following turn. Awaiting must be explicit. Other crew sessions, harness
+background jobs and dev servers do not hold the task open. `--await` requires an
+active caller task on the same server. Remote tasks can report where their
+server has a connection back to the parent; use `--machine <owner>` for task
+reads and cancellation. A remote parent's turn acknowledgment is not inferred
+from submission and is not currently mirrored back to the task owner.
+
+`wait` returns at a result, a blocking question or its timeout (0–120 seconds).
+A timeout never cancels work. Questions and permissions stay in the existing
+child-session cards, with their descriptive snapshot in task status. Task wait
+cannot answer those cards. A restart clears dead questions. A completed boundary
+is recovered from the normalized log; unfinished active work becomes
+`interrupted`, and pending accepted work remains queued for delivery. Inspect
+interrupted work before starting another task; it is never blindly resubmitted.
+
+`task cancel` cancels the task and its explicitly awaited descendants. It removes
+their pending agent messages and composer follow-ups and ends their active child
+processes. Unawaited delegations continue. Already submitted prompts cannot be
+recalled. One cancellation result goes to the cancel target's parent after
+cleanup; descendant wakes still pending are suppressed. Cancellation cleanup and
+its completion wake recover after restart. Ordinary `session stop` keeps its
+existing turn-only behavior. Canceling a published task leaves its result intact.
 
 ## Messaging a session
 
