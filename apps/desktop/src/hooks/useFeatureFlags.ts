@@ -5,7 +5,7 @@ import type { FeatureFlags } from "@/types/events";
 
 /// The local server reports feature availability; older servers can still withhold Spaces.
 export function useFeatureFlags(): FeatureFlags {
-  const [flags, setFlags] = useState<FeatureFlags>({ pagesEnabled: false });
+  const [flags, setFlags] = useState<FeatureFlags>({ pagesEnabled: false, canvasEnabled: false });
   useEffect(() => {
     let stopped = false;
     let sequence = 0;
@@ -13,8 +13,8 @@ export function useFeatureFlags(): FeatureFlags {
       const seq = ++sequence;
       try {
         const next = await invoke<FeatureFlags>("get_feature_flags", {}, LOCAL);
-        if (!stopped && seq === sequence) setFlags({ pagesEnabled: next.pagesEnabled === true });
-      } catch { if (!stopped && seq === sequence) setFlags({ pagesEnabled: false }); }
+        if (!stopped && seq === sequence) setFlags({ pagesEnabled: next.pagesEnabled === true, canvasEnabled: next.canvasEnabled === true });
+      } catch { if (!stopped && seq === sequence) setFlags({ pagesEnabled: false, canvasEnabled: false }); }
     };
     const off = listen("live_state", ({ server }) => { if (server === LOCAL) void refresh(); });
     void refresh();

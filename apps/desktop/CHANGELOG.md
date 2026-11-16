@@ -22,6 +22,33 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.30.0-beta.7 · 2026-11-16 · notify
+
+### New
+
+- **Managed previews.** Start and stop a task's development server from Carbon,
+  then open its preview in the built-in browser.
+- **Browser Inspect.** Select elements in the browser and add them to the
+  conversation as context for an agent.
+
+### Improved
+
+- **Agent connections.** Coding agents share Carbon's MCP connections and login
+  state. The CLI reports available harnesses, models and controls.
+- **Carbon identity.** Updated logo and macOS app icon.
+
+### Fixed
+
+- Sending or creating a task can safely retry without duplicating it.
+- Agent messages survive a restart, and delegated work returns its completion
+  result to the parent task.
+- Interrupted turns keep their outcome after restart. Reconnecting large
+  conversations uses bounded replay and memory.
+
+### Release scope
+
+- Carbon Canvas remains disabled. Spaces stays available.
+
 ## 0.30.0-beta.6 · 2026-11-15 · notify
 
 ### New

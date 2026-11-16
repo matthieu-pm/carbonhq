@@ -752,7 +752,7 @@ export type ExternalAppKind = "editor" | "terminal" | "files";
 
 export type Failure = { message: string, fix: Fix | null, };
 
-export type FeatureFlags = { pagesEnabled: boolean, };
+export type FeatureFlags = { pagesEnabled: boolean, canvasEnabled: boolean, };
 
 /**
  * What the viewer draws, or the sentence saying why it draws nothing.

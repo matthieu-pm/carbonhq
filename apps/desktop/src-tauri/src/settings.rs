@@ -71,13 +71,15 @@ pub struct AppSettings {
 #[ts(export, export_to = "events.ts")]
 pub struct FeatureFlags {
     pub pages_enabled: bool,
+    pub canvas_enabled: bool,
 }
 
-/// Keeps older clients informed that Spaces has shipped, regardless of the retired setting.
+/// Reports shipped features independently of settings left by older or development builds.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_feature_flags() -> FeatureFlags {
     FeatureFlags {
         pages_enabled: true,
+        canvas_enabled: false,
     }
 }
 
@@ -361,7 +363,7 @@ mod tests {
             assert_eq!(settings.analytics_enabled, AppSettings::default().analytics_enabled);
             assert_eq!(
                 serde_json::to_value(get_feature_flags().await).unwrap(),
-                serde_json::json!({ "pagesEnabled": true })
+                serde_json::json!({ "pagesEnabled": true, "canvasEnabled": false })
             );
         }
         std::fs::remove_dir_all(dir).unwrap();
