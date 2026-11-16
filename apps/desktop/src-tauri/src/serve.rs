@@ -1350,9 +1350,9 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         // `carbon --machine` from an agent on the Mac that added this machine.
         orchestrate(
             line: String, origin: Option<String>, caller: Option<crate::orchestration::Caller>,
-            sender: Option<crate::events::MessageSender>,
+            sender: Option<crate::events::MessageSender>, request_fingerprint: Option<String>, request_source: Option<String>,
         ) => ok(crate::orchestration::answer_forward(
-            crate::orchestration::Forward { line, origin, caller, sender }, sink,
+            crate::orchestration::Forward { line, origin, caller, sender, request_fingerprint, request_source }, sink,
         ).await);
         worktree_disposition(session_id: String) => crate::worktree_disposition(&session_id).await;
         remove_session_worktree(session_id: String) => crate::remove_session_worktree(&session_id).await;

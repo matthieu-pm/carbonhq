@@ -13,6 +13,9 @@
 //! access control is the containing directory's `0700` — see
 //! [`serve`](serve) for why the socket's own mode cannot be the boundary.
 
+#[path = "orchestration/receipts.rs"]
+mod receipts;
+
 use crate::{
     drafts::{self, StoredDraft, DRAFTS_CHANGED},
     events::{ApprovalPolicy, MessageSender},
@@ -331,7 +334,26 @@ async fn on_machine(machine: &str, request: Request) -> Result<Response> {
         };
         return elsewhere::list_everywhere(list).await;
     }
-    elsewhere::forward(machine, &elsewhere::prepare(request).await?).await
+    let key = request_id(&request).map(str::to_owned);
+    let result = async {
+        if key.is_some() {
+            let mut probe = elsewhere::identity(&request).await?;
+            probe.line = encode_line(&Envelope::new(Request::LookupReceipt(carbon_proto::ReceiptLookup {
+                request: Box::new(request.clone()),
+            })))?.trim_end().to_string();
+            let response = elsewhere::forward(machine, &probe).await?;
+            if !matches!(response, Response::ReceiptMissing) {
+                return Ok(response);
+            }
+        }
+        elsewhere::forward(machine, &elsewhere::prepare(request).await?).await
+    }.await;
+    result.map_err(|error: anyhow::Error| {
+        match key {
+            Some(key) => anyhow::anyhow!("{error:#}. No receipt was received for request {key:?}; retry only with the same --request-id and unchanged arguments. Inspect the target before using a new ID."),
+            None => error,
+        }
+    })
 }
 
 /// A build with no serve wire has no client half to reach one with.
@@ -355,6 +377,12 @@ pub struct Forward {
     pub caller: Option<Caller>,
     #[serde(default)]
     pub sender: Option<MessageSender>,
+    /// Original caller payload, before paths and base refs are localized.
+    #[serde(default)]
+    pub request_fingerprint: Option<String>,
+    /// Stable home identity of the original forwarding server.
+    #[serde(default)]
+    pub request_source: Option<String>,
 }
 
 /// The calling session's row, carried whole with its depth, since the
@@ -375,37 +403,49 @@ pub async fn answer_forward(forward: Forward, app: Sink) -> Response {
         }
         let envelope: Envelope =
             serde_json::from_str(&forward.line).context("could not parse the request")?;
-        let mut request = envelope.request;
-        if this_machine_only(&request) {
-            bail!("that acts on the machine it runs on, so run it there");
-        }
-        localize(&mut request, forward.origin.as_deref()).await?;
-        // A session `--base` from the Mac arrives as its branch, which this
-        // checkout may hold only as the copy pushed to `origin`. A session id
-        // this index holds is left for `resolve_base`.
-        match &mut request {
-            Request::CreateSession(CreateSession {
-                base: Some(base),
-                project_path: Some(project),
-                ..
-            })
-            | Request::CreateDraft(CreateDraft {
-                base: Some(base),
-                project_path: Some(project),
-                ..
-            }) if store::get_session_index_item(base).await?.is_none() => {
-                *base = crate::git::pushed_branch(project, base).await?;
-            }
-            _ => {}
-        }
-        let caller = forward.caller.as_ref();
-        match request {
-            Request::CreateSession(create) => create_session(create, caller, &app).await,
-            Request::CreateDraft(create) => create_draft(create, caller, &app).await,
-            Request::StartDraft(start) => start_draft(start, caller, &app).await,
-            Request::SendMessage(send) => send_message(send, forward.sender, &app).await,
-            other => dispatch(other, &app).await,
-        }
+        let request = match envelope.request {
+            Request::LookupReceipt(lookup) => return lookup_receipt(
+                &lookup.request, forward.request_fingerprint.as_deref(), forward.request_source.as_deref(),
+            ).await,
+            request => request,
+        };
+        with_receipt(
+            request,
+            forward.request_fingerprint.clone(),
+            forward.request_source.clone(),
+            |mut request, receipt| async move {
+                if this_machine_only(&request) {
+                    bail!("that acts on the machine it runs on, so run it there");
+                }
+                localize(&mut request, forward.origin.as_deref()).await?;
+                // A session `--base` from the Mac arrives as its branch, which this
+                // checkout may hold only as the copy pushed to `origin`. A session id
+                // this index holds is left for `resolve_base`.
+                match &mut request {
+                    Request::CreateSession(CreateSession {
+                        base: Some(base),
+                        project_path: Some(project),
+                        ..
+                    })
+                    | Request::CreateDraft(CreateDraft {
+                        base: Some(base),
+                        project_path: Some(project),
+                        ..
+                    }) if store::get_session_index_item(base).await?.is_none() => {
+                        *base = crate::git::pushed_branch(project, base).await?;
+                    }
+                    _ => {}
+                }
+                let caller = forward.caller.as_ref();
+                match request {
+                    Request::CreateSession(create) => create_session(create, caller, receipt.as_ref(), &app).await,
+                    Request::CreateDraft(create) => create_draft(create, caller, &app).await,
+                    Request::StartDraft(start) => start_draft(start, caller, &app).await,
+                    Request::SendMessage(send) => send_message(send, forward.sender, &app).await,
+                    other => dispatch_inner(other, None, &app).await,
+                }
+            },
+        ).await
     };
     answered
         .await
@@ -502,22 +542,25 @@ mod elsewhere {
                 false => anyhow!(e),
             })?;
         let mut response: Response = serde_json::from_value(answer)?;
-        let rows: Vec<&mut SessionSummary> = match &mut response {
-            Response::Created { session, .. } | Response::Session { session } => vec![session],
-            Response::Listed { sessions } => sessions.iter_mut().collect(),
-            _ => vec![],
-        };
-        for row in rows {
-            row.machine = Some(saved.name.clone());
-        }
+        mark_machine(&mut response, &saved.name);
         Ok(response)
+    }
+
+    /// Preserve the caller's identity before any mutable session or repository lookup.
+    pub async fn identity(request: &Request) -> Result<Forward> {
+        Ok(Forward {
+            line: encode_line(&Envelope::new(request.clone()))?.trim_end().to_string(),
+            request_fingerprint: request_id(request).map(|_| receipts::fingerprint(request)).transpose()?,
+            request_source: if request_id(request).is_some() { Some(receipts::origin(&store::get_home_app_dir().await?).await?) } else { None },
+            ..Forward::default()
+        })
     }
 
     /// Fills in what only this machine's index knows before a request leaves:
     /// the caller and sender carried whole, a session `--base` turned into the
     /// branch it names, and the project's `origin`.
     pub async fn prepare(mut request: Request) -> Result<Forward> {
-        let mut forward = Forward::default();
+        let mut forward = identity(&request).await?;
         let mut project = None;
         match &mut request {
             Request::CreateSession(create) => {
@@ -624,9 +667,79 @@ mod elsewhere {
     }
 }
 
-async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
+/// Receipt wrapping must not hide the remote machine from a created session's display.
+fn mark_machine(response: &mut Response, machine: &str) {
+    match response {
+        Response::Recorded { response, .. } => mark_machine(response, machine),
+        Response::Created { session, .. } | Response::Session { session } => session.machine = Some(machine.to_string()),
+        Response::Listed { sessions } => {
+            for session in sessions { session.machine = Some(machine.to_string()); }
+        }
+        _ => {}
+    }
+}
+
+fn request_id(request: &Request) -> Option<&str> {
     match request {
-        Request::CreateSession(create) => create_session(create, None, app).await,
+        Request::CreateSession(create) => create.request_id.as_deref(),
+        Request::SendMessage(send) => send.request_id.as_deref(),
+        _ => None,
+    }
+}
+
+/// Both socket dispatch and forwarded dispatch reserve before resolving mutable session state.
+async fn with_receipt<F, Fut>(request: Request, fingerprint: Option<String>, source: Option<String>, action: F) -> Result<Response>
+where
+    F: FnOnce(Request, Option<carbon_proto::OperationReceipt>) -> Fut,
+    Fut: std::future::Future<Output = Result<Response>>,
+{
+    let Some(id) = request_id(&request).map(str::to_owned) else {
+        return action(request, None).await;
+    };
+    let fingerprint = match fingerprint {
+        Some(hash) => hash,
+        None => receipts::fingerprint(&request)?,
+    };
+    let target = match &request {
+        Request::SendMessage(send) => Some(send.session_id.clone()),
+        _ => None,
+    };
+    let root = receipt_directory(&request, source.as_deref()).await?;
+    receipts::execute(&root, &id, fingerprint, target.as_deref(), |receipt| action(request, Some(receipt))).await
+}
+
+/// A probe uses the same scope as execution, before parent or base resolution can fail.
+async fn lookup_receipt(request: &Request, fingerprint: Option<&str>, source: Option<&str>) -> Result<Response> {
+    let id = request_id(request).context("receipt lookup requires a keyed session create or send")?;
+    let fingerprint = match fingerprint {
+        Some(hash) => hash.to_string(),
+        None => receipts::fingerprint(request)?,
+    };
+    let root = receipt_directory(request, source).await?;
+    Ok(receipts::lookup(&root, id, &fingerprint).await?.unwrap_or(Response::ReceiptMissing))
+}
+
+/// Keep direct execution and forwarded probes in one request namespace.
+async fn receipt_directory(request: &Request, source: Option<&str>) -> Result<std::path::PathBuf> {
+    let caller = match request {
+        Request::CreateSession(create) => create.parent_session_id.as_deref(),
+        Request::SendMessage(send) => send.from_session_id.as_deref(),
+        _ => None,
+    };
+    let scope = receipts::fingerprint(&(source.unwrap_or("local"), caller))?;
+    Ok(store::get_home_app_dir().await?.join("orchestration-requests").join(scope))
+}
+
+async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
+    with_receipt(request, None, None, |request, receipt| async move {
+        dispatch_inner(request, receipt.as_ref(), app).await
+    }).await
+}
+
+async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::OperationReceipt>, app: &Sink) -> Result<Response> {
+    match request {
+        Request::LookupReceipt(lookup) => lookup_receipt(&lookup.request, None, None).await,
+        Request::CreateSession(create) => create_session(create, None, receipt, app).await,
         Request::ListSessions(list) => list_sessions(list).await,
         Request::SendMessage(send) => send_message(send, None, app).await,
         Request::LinkIssues(link) => link_issues(link, app).await,
@@ -1162,6 +1275,7 @@ async fn apply_issue(link: &LinkIssues, input: &IssueInput) -> Result<Vec<IssueR
 async fn create_session(
     create: CreateSession,
     caller: Option<&Caller>,
+    receipt: Option<&carbon_proto::OperationReceipt>,
     app: &Sink,
 ) -> Result<Response> {
     if create.prompt.trim().is_empty() {
@@ -1203,7 +1317,7 @@ async fn create_session(
         None => None,
     };
 
-    let session_id = uuid::Uuid::now_v7().to_string();
+    let session_id = receipt.map(|r| r.session_id.clone()).unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
     let manager = manager();
 
     let outcome = manager
@@ -1223,10 +1337,9 @@ async fn create_session(
             // time, and several agents writing to one checkout overwrite each
             // other — the changes panel cannot even tell them apart.
             true,
-            // Never named by the caller: an agent has no basis for choosing
-            // one, and a name that collides is a create that fails for a field
-            // nobody wanted. `None` lets the app generate a readable one.
-            None,
+            // A keyed create reserves its tree name too, so a crash before the
+            // index write still leaves an identifiable checkout to inspect.
+            receipt.and_then(|r| r.worktree_name.as_deref()),
             base_ref.as_deref(),
             true,
             create.parent_session_id.as_deref(),
@@ -1239,12 +1352,13 @@ async fn create_session(
             None,
             app,
         )
-        .await?;
+        .await.map_err(|error| error.context(receipts::SubmissionStarted))?;
 
     let item = outcome
         .snapshot
         .map(|s| s.index_item)
-        .context("the session was created but returned no index entry")?;
+        .context("the session was created but returned no index entry")
+        .map_err(|error| error.context(receipts::SubmissionStarted))?;
 
     // After the send, so the row the sidebar gains is one that actually started.
     app.emit(SESSION_CREATED, &item).ok();
@@ -1691,7 +1805,7 @@ async fn send_message(
             None,
             app,
         )
-        .await?;
+        .await.map_err(|error| error.context(receipts::SubmissionStarted))?;
 
     Ok(Response::Sent {
         queued: outcome.queued.is_some(),
