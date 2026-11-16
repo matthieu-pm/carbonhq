@@ -5,8 +5,9 @@ import { readLocalStorage } from "@/hooks/useLocalStorage";
 import { channel } from "@/lib/channel";
 import { pushClosedTab } from "@/lib/tabOrder";
 import type { BrowserVisit } from "@/lib/history";
-import type { ChromiumStatus } from "@/types/events";
+import type { Attachment, ChromiumStatus } from "@/types/events";
 import { zoomLevel } from "@/lib/zoom";
+import { restoreAttachments } from "@/hooks/useAttachments";
 
 /// The in-app browser's frontend half: tabs per session as the backend
 /// reports them, and the one rule about who presents the native view.
@@ -72,14 +73,19 @@ function start() {
       openErrors.delete(sessionId);
       opening.delete(sessionId);
     }
+    for (const old of tabsBySession.get(sessionId) ?? []) {
+      if (!tabs.some(tab => tab.id === old.id)) inspections.delete(old.id);
+    }
     tabsBySession.set(sessionId, tabs);
     fetched.add(sessionId);
     notify();
   });
-  void listen<{ sessionId: string; element: PickedElement | null }>("browser_pick", (e) => {
-    picking.delete(e.payload.sessionId);
+  void listen<{ sessionId: string; tabId: number; active: boolean; count: number; add: boolean }>("browser_pick", (e) => {
+    const { sessionId, tabId, active, count, add } = e.payload;
+    const before = inspections.get(tabId) ?? NO_INSPECTION;
+    inspections.set(tabId, { ...before, active, count: active ? count : 0 });
     notify();
-    pickHandler?.(e.payload.sessionId, e.payload.element);
+    if (add) void addPickedElements(sessionId, tabId);
   });
   // A ⌘-chord pressed inside the page. Chromium's view has focus, so the
   // document never saw the key; re-raise it as a synthetic event, which is
@@ -338,24 +344,41 @@ export function openDevTools(sessionId: string) {
 
 // --- Picking an element ------------------------------------------------------
 
-type PickedElement = {
-  url: string;
-  title: string;
-  selector: string;
-  tag: string;
-  text: string;
-  attrs: Record<string, string>;
-  rect: { x: number; y: number; width: number; height: number };
-  styles: { color: string; background: string; font: string };
-};
+type InspectionState = { active: boolean; count: number; busy: boolean; error: string | null };
+const NO_INSPECTION: InspectionState = { active: false, count: 0, busy: false, error: null };
+const inspections = new Map<number, InspectionState>();
 
-const picking = new Set<string>();
-let pickHandler: ((sessionId: string, element: PickedElement | null) => void) | null = null;
+function inspectionTab(sessionId: string): number | undefined {
+  if (blanks.get(sessionId)?.active != null) return undefined;
+  return tabsBySession.get(sessionId)?.find(tab => tab.active)?.id;
+}
 
-/// `App` installs the one handler, since what a pick *does* — land in the
-/// composer — needs the composer.
-export function setPickHandler(fn: typeof pickHandler) {
-  pickHandler = fn;
+export function useInspection(sessionId: string): InspectionState {
+  return useSyncExternalStore(subscribe, () => {
+    const tab = inspectionTab(sessionId);
+    return tab === undefined ? NO_INSPECTION : inspections.get(tab) ?? NO_INSPECTION;
+  });
+}
+
+/// A capture stays attached to its original session even if the reader switches tabs while it saves.
+export async function addPickedElements(sessionId: string, givenTab?: number) {
+  const tabId = givenTab ?? inspectionTab(sessionId);
+  if (tabId === undefined) return;
+  const state = inspections.get(tabId);
+  if (!state?.active || !state.count || state.busy) return;
+  inspections.set(tabId, { ...state, busy: true, error: null });
+  notify();
+  try {
+    const attachments = await invoke<Attachment[]>("browser_inspect_add", { sessionId, tabId });
+    restoreAttachments(sessionId, attachments);
+  } catch (error) {
+    const now = inspections.get(tabId) ?? state;
+    inspections.set(tabId, { ...now, error: String(error) });
+  } finally {
+    const now = inspections.get(tabId) ?? state;
+    inspections.set(tabId, { ...now, busy: false });
+    notify();
+  }
 }
 
 /// Sessions `carbon browser record` is recording, as `browser_recording` says.
@@ -427,29 +450,19 @@ export function isRecording(sessionId: string): boolean {
   return recording.has(sessionId);
 }
 
-export function usePicking(sessionId: string): boolean {
-  return useSyncExternalStore(subscribe, () => picking.has(sessionId));
-}
-
-export function pickElement(sessionId: string, on: boolean) {
-  if (on) picking.add(sessionId);
-  else picking.delete(sessionId);
+export async function pickElement(sessionId: string, on: boolean) {
+  const tabId = inspectionTab(sessionId);
+  if (tabId === undefined) return;
+  const old = inspections.get(tabId) ?? NO_INSPECTION;
+  if (old.busy) return;
+  inspections.set(tabId, { active: on, count: 0, busy: false, error: null });
   notify();
-  return invoke("browser_pick", { sessionId, start: on });
-}
-
-/// The block a pick appends to the draft: enough for the agent to find the
-/// element in the source without a screenshot.
-export function describePick(el: PickedElement): string {
-  const attrs = Object.entries(el.attrs)
-    .filter(([k]) => k !== "class" || el.attrs.class.length < 80)
-    .map(([k, v]) => `${k}="${v}"`)
-    .join(" ");
-  const text = el.text ? ` "${el.text}"` : "";
-  return [
-    `Browser element: \`${el.selector}\` on ${el.url}`,
-    `<${el.tag}${attrs ? " " + attrs : ""}>${text} · ${el.rect.width}×${el.rect.height} at (${el.rect.x}, ${el.rect.y}) · ${el.styles.font} · ${el.styles.color} on ${el.styles.background}`,
-  ].join("\n");
+  try {
+    await invoke("browser_pick", { sessionId, tabId, start: on });
+  } catch (error) {
+    inspections.set(tabId, { ...old, error: String(error) });
+    notify();
+  }
 }
 
 // --- The pending new tab -----------------------------------------------------

@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 
+import InspectionChip from "@/components/composer/InspectionChip";
 import FileIcon from "@/components/FileIcon";
 import { LOCAL, type ServerId } from "@/lib/transport";
 import { useUpload } from "@/lib/uploads";
@@ -81,7 +82,9 @@ function Tile({
       // tooltip is a system popup reporting back what they just did.
       className="group relative"
     >
-      {attachment.preview ? (
+      {attachment.inspection ? (
+        <InspectionChip attachment={attachment} onRemove={onRemove} />
+      ) : attachment.preview ? (
         <img
           src={attachment.preview}
           alt={attachment.name}

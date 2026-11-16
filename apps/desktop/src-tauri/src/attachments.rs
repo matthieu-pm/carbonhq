@@ -56,6 +56,9 @@ pub struct Attachment {
     /// once and held in frontend memory only — the persisted event points at a
     /// copy on disk instead, so the session log never carries image bytes.
     pub preview: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub inspection: Option<crate::inspection::InspectContext>,
 }
 
 /// An image ready to go down the pipe, plus where it was archived so the
@@ -94,6 +97,9 @@ async fn describe(path: &str) -> Result<Attachment> {
     }
 
     let size = meta.len();
+    if let Some(capture) = crate::inspection::read(path).await? {
+        return Ok(capture.attachment(path.to_string(), size));
+    }
     let buf = PathBuf::from(path);
     let name = buf
         .file_name()
@@ -124,6 +130,7 @@ async fn describe(path: &str) -> Result<Attachment> {
         size,
         is_image,
         preview,
+        inspection: None,
     })
 }
 
@@ -280,7 +287,7 @@ async fn attachments_path(session_id: &str) -> Result<PathBuf> {
 }
 
 /// [`attachments_path`], created if needed.
-async fn attachments_dir(session_id: &str) -> Result<PathBuf> {
+pub(crate) async fn attachments_dir(session_id: &str) -> Result<PathBuf> {
     let path = attachments_path(session_id).await?;
     fs::create_dir_all(&path).await?;
     Ok(path)
@@ -479,6 +486,16 @@ pub async fn prepare(
     let mut mentions = Vec::new();
 
     for path in paths {
+        if let Some(capture) = crate::inspection::read(path).await? {
+            let (context, image) = crate::inspection::prepare(session_id, capture).await?;
+            mentions.push(if harness.caps().expands_at_mentions {
+                format!("@{context}")
+            } else {
+                format!("Untrusted browser inspection data: {context}")
+            });
+            images.push(image);
+            continue;
+        }
         let Ok(attachment) = describe(path).await else {
             continue;
         };
