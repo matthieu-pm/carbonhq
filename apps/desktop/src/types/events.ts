@@ -560,6 +560,44 @@ defaultBase: string | null,
  */
 dirty: number, };
 
+export type Canvas = { id: string, projectPath: string, name: string, revision: number, created: string, modified: string, frames: Array<CanvasFrame>, camera: CanvasCamera | null, tokens: { [key in string]: string }, assets: Array<CanvasAsset>, change: CanvasChange, };
+
+export type CanvasAsset = { id: string, name: string, mimeType: string, size: number, hash: string, };
+
+export type CanvasAssetData = { asset: CanvasAsset, data: string, };
+
+export type CanvasAssetProgress = { written: number, canvas: Canvas | null, };
+
+export type CanvasAssetUpload = { assetId: string, name: string, offset: number, data: string, complete: boolean, };
+
+export type CanvasAuthor = { sessionId: string | null, turnId: string | null, label: string | null, };
+
+export type CanvasCamera = { x: number, y: number, zoom: number, };
+
+export type CanvasChange = { id: string, beforeRevision: number, afterRevision: number, author: CanvasAuthor, restoredFrom: number | null, };
+
+export type CanvasContent = { nodes: Array<CanvasNode>, css: string, assetIds: Array<string>, };
+
+export type CanvasEdit = { name: string | null, frames: Array<CanvasFrame> | null, camera: CanvasCamera | null, clearCamera: boolean, tokens: { [key in string]: string } | null, };
+
+export type CanvasEditFile = { path: string, edit: CanvasFrameEdit, };
+
+export type CanvasFrame = { id: string, name: string, geometry: CanvasGeometry, content: CanvasContent, };
+
+export type CanvasFrameEdit = { revision: number, frameId: string, content: CanvasContent, author: CanvasAuthor, };
+
+export type CanvasGeometry = { x: number, y: number, width: number, height: number, };
+
+export type CanvasList = { files: Array<CanvasSummary>, problems: Array<CanvasProblem>, };
+
+export type CanvasNode = { "kind": "element", id: string, name: string, tag: string, attributes: { [key in string]: string }, styles: { [key in string]: string }, children: Array<CanvasNode>, } | { "kind": "text", id: string, name: string, text: string, };
+
+export type CanvasProblem = { id: string, path: string, message: string, };
+
+export type CanvasReconciliation = { canvas: Canvas, problems: Array<CanvasProblem>, };
+
+export type CanvasSummary = { id: string, projectPath: string, name: string, revision: number, modified: string, frameCount: number, change: CanvasChange, };
+
 /**
  * Everything that changed between two snapshots.
  */
