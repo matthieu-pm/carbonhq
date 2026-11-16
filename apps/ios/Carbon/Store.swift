@@ -372,14 +372,10 @@ final class Store {
         olderErrors[key] = nil
         do {
             let page: Snapshot = try await c.call("get_session_page", ["sessionId": .string(key.id), "before": JSON(before), "turns": 16])
-            guard var t = transcripts[key] else { return }
-            let older = page.events.filter { !t.ids.contains($0.id) }
-            t.events.insert(contentsOf: older, at: 0)
-            t.ids.formUnion(older.map(\.id))
-            t.olderBefore = page.olderBefore
-            transcripts[key] = t
+            guard let t = transcripts[key], let merged = t.prepending(page, before: before) else { return }
+            transcripts[key] = merged
         } catch {
-            olderErrors[key] = error.localizedDescription
+            if transcripts[key]?.olderBefore == before { olderErrors[key] = error.localizedDescription }
         }
     }
 

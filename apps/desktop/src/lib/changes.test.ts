@@ -55,6 +55,19 @@ function noise(): AgentEvent {
 }
 
 describe("changeRange", () => {
+  it("keeps a long turn's baseline when its prompt is outside the bounded tail", () => {
+    expect(changeRange([noise(), turnEnd("finished")], { promptId: "outside", baseline: "before" }))
+      .toEqual({ baseline: "before", head: "finished", previous: null });
+    expect(changeRange([noise()], { promptId: "outside", baseline: "before" }).baseline).toBe("before");
+  });
+
+  it("uses a newer live prompt and ignores context once the original prompt is paged in", () => {
+    const old = prompt("before");
+    const context = { promptId: old.id, baseline: "before" };
+    expect(changeRange([noise(), turnEnd("finished"), prompt("live")], context))
+      .toEqual({ baseline: "live", head: null, previous: { baseline: "before", head: "finished" } });
+    expect(changeRange([old, noise(), turnEnd("finished")], context)).toEqual(changeRange([old, noise(), turnEnd("finished")]));
+  });
   it("takes the newest snapshot, so the range is the last turn", () => {
     const events = [prompt("aaa"), noise(), prompt("bbb"), noise(), prompt("ccc")];
 

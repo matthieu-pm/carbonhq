@@ -2097,7 +2097,7 @@ export type SessionInfo = { cwd: string | null, model: string | null, harnessVer
  * stretch starts at — `None` once it reaches the top. An offset stays valid
  * for the life of the file, since the log is only ever appended to.
  */
-export type SessionPage = { events: Array<AgentEvent>, olderBefore: number | null, };
+export type SessionPage = { events: Array<AgentEvent>, olderBefore: number | null, tailBaseline?: TailBaseline, };
 
 /**
  * What crosses the IPC boundary for one session: its index entry plus the
@@ -2108,7 +2108,7 @@ export type SessionSnapshot = { events: Array<AgentEvent>,
 /**
  * Where the log's unread older part ends, when `events` is only its tail.
  */
-olderBefore: number | null, sessionId: string, harness: Harness, 
+olderBefore: number | null, tailBaseline?: TailBaseline, sessionId: string, harness: Harness,
 /**
  * Where the agent actually runs. Equals `project_path` for a normal
  * session; points inside `.claude/worktrees/<name>` for a worktree one.
@@ -2444,6 +2444,8 @@ distinctId: string,
  * work.
  */
 personProperties: Record<string, string | number | boolean>, };
+
+export type TailBaseline = { promptId: string, baseline: string | null, };
 
 /**
  * A tool `carbon setup --install` takes, as a server has it.

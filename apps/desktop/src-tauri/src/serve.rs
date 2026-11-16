@@ -104,10 +104,15 @@ pub fn frame_in(message: Message) -> Option<String> {
     }
 }
 
-const CLIENT_FRAMES: usize = 256;
-const CLIENT_BYTES: usize = 64 * 1024 * 1024;
+const CLIENT_FRAMES: usize = 4096;
+const CLIENT_BYTES: usize = 128 * 1024 * 1024;
+const PREVIEW_BYTES: usize = 16 * 1024 * 1024;
 const CLIENT_CALLS: usize = 32;
-const WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Allows a slow but useful link 32 KiB/s, plus time for scheduling and latency.
+fn write_timeout(bytes: usize) -> std::time::Duration {
+    std::time::Duration::from_secs(20 + bytes.div_ceil(32 * 1024) as u64)
+}
 
 struct RetainedFrame {
     text: Arc<str>,
@@ -137,8 +142,7 @@ impl ClientFrames {
         self.closed.send_replace(true);
     }
 
-    /// Overflow ends the connection; a committed event is recovered from its log.
-    fn send(&self, text: Arc<str>) -> Option<()> {
+    fn try_send(&self, text: Arc<str>) -> Option<()> {
         if *self.closed.borrow() { return None; }
         let bytes = u32::try_from(text.len()).ok()
             .and_then(|len| self.bytes.clone().try_acquire_many_owned(len).ok());
@@ -148,8 +152,30 @@ impl ClientFrames {
                 return Some(());
             }
         }
-        self.close();
         None
+    }
+
+    /// Overflow ends the connection; a committed event is recovered from its log.
+    fn send(&self, text: Arc<str>) -> Option<()> {
+        let sent = self.try_send(text);
+        if sent.is_none() { self.close(); }
+        sent
+    }
+
+    /// Preview loss is repaired by the committed event; preserve room for replies and state.
+    fn preview(&self, text: Arc<str>) {
+        if self.items.available_permits() > 128
+            && self.bytes.available_permits() >= CLIENT_BYTES - PREVIEW_BYTES + text.len()
+        {
+            self.try_send(text);
+        }
+    }
+
+    /// A reply that cannot fit fails its call explicitly instead of creating a reconnect loop.
+    fn reply(&self, id: Value, reply: Value) {
+        let text: Arc<str> = reply.to_string().into();
+        if text.len() <= INFLATED_CAP as usize && self.try_send(text).is_some() { return; }
+        self.send(json!({ "id": id, "err": "Reply exceeds the available stream budget. The command may have completed; inspect its state before retrying. Use transcript paging for large reads." }).to_string().into());
     }
 }
 
@@ -516,7 +542,11 @@ impl Hub {
         clients.retain(|client| client.strong_count() > 0);
         if clients.is_empty() { return; }
         let frame: Arc<str> = json!({ "event": event, "payload": payload }).to_string().into();
-        clients.retain(|client| client.upgrade().is_some_and(|client| client.send(frame.clone()).is_some()));
+        let preview = event == "agent_event" && payload["payload"]["type"] == "delta";
+        clients.retain(|client| client.upgrade().is_some_and(|client| {
+            if preview { client.preview(frame.clone()); !*client.closed.borrow() }
+            else { client.send(frame.clone()).is_some() }
+        }));
     }
 
     /// Snapshot and registration meet atomically with publication, including unlogged asks.
@@ -1128,7 +1158,7 @@ async fn connection(
     // knows whether this server understood `deflate` at all.
     let hello = serde_json::from_str::<Hello>(&hello).ok();
     let deflate = hello.as_ref().is_some_and(|h| h.deflate);
-    tokio::time::timeout(WRITE_TIMEOUT, write.send(Message::text(welcome.to_string()))).await??;
+    tokio::time::timeout(write_timeout(welcome.to_string().len()), write.send(Message::text(welcome.to_string()))).await??;
 
     // Replies come back from concurrent tasks, so one writer owns the socket.
     let writer_client = replies.clone();
@@ -1147,7 +1177,7 @@ async fn connection(
             let sent = tokio::select! {
                 biased;
                 _ = writer_closed.changed() => break,
-                sent = tokio::time::timeout(WRITE_TIMEOUT, write.send(frame_out(frame.text.to_string(), deflate))) => sent,
+                sent = tokio::time::timeout(write_timeout(frame.text.len()), write.send(frame_out(frame.text.to_string(), deflate))) => sent,
             };
             if !matches!(sent, Ok(Ok(()))) {
                 break;
@@ -1205,9 +1235,10 @@ async fn connection(
                 continue;
             }
         };
-        let Ok(permit) = calls.clone().try_acquire_owned() else {
-            replies.close();
-            break;
+        let permit = tokio::select! {
+            biased;
+            _ = closed.changed() => break,
+            permit = calls.clone().acquire_owned() => match permit { Ok(permit) => permit, Err(_) => break },
         };
         // Concurrently, as Tauri runs async commands: a send that spawns a
         // child must not hold a permission reply behind it.
@@ -1225,7 +1256,7 @@ async fn connection(
                 Err(err) => json!({ "id": call.id, "err": err }),
             };
             if !*replies.closed.borrow() {
-                let _ = replies.send(reply.to_string().into());
+                replies.reply(call.id, reply);
             }
         }));
     }
@@ -1614,6 +1645,44 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn write_deadlines_allow_large_frames_on_slow_links() {
+        assert!(write_timeout(2 * 1024 * 1024) > std::time::Duration::from_secs(32));
+        assert!(write_timeout(32 * 1024 * 1024) > write_timeout(2 * 1024 * 1024));
+    }
+
+    #[tokio::test]
+    async fn recovery_replies_and_token_bursts_leave_the_connection_open() {
+        let hub = Hub::default();
+        let (client, mut outgoing) = hub.subscribe();
+        let reply: Arc<str> = "r".repeat(2 * 1024 * 1024).into();
+        for _ in 0..CLIENT_CALLS { client.send(reply.clone()).unwrap(); }
+        let delta = json!({ "payload": { "type": "delta", "delta": "text_delta", "text": "x".repeat(512) } });
+        for _ in 0..10_000 { hub.publish("agent_event", &delta); }
+        hub.publish("committed", &json!("complete"));
+        assert!(!*client.closed.borrow());
+        let mut committed = false;
+        while let Ok(frame) = outgoing.try_recv() {
+            if frame.text.starts_with('{') {
+                let value: Value = serde_json::from_str(&frame.text).unwrap();
+                committed |= value["event"] == "committed";
+                assert_ne!(value["payload"]["payload"]["type"], "delta", "previews give their memory to recovery replies");
+            }
+        }
+        assert!(committed);
+    }
+
+    #[tokio::test]
+    async fn an_oversized_reply_fails_its_call_without_disconnecting() {
+        let (client, mut outgoing) = ClientFrames::new();
+        client.reply(json!(7), json!({ "id": 7, "ok": "x".repeat(INFLATED_CAP as usize) }));
+        let reply: Value = serde_json::from_str(&outgoing.recv().await.unwrap().text).unwrap();
+        assert_eq!(reply["id"], 7);
+        assert!(reply["err"].as_str().unwrap().contains("stream budget"));
+        assert!(!*client.closed.borrow());
+        client.send("next frame".into()).unwrap();
+    }
+
     #[tokio::test]
     async fn stream_budget_counts_the_frame_in_flight_and_releases_on_drop() {
         let (client, mut outgoing) = ClientFrames::new();
@@ -1623,7 +1692,7 @@ mod tests {
         assert_eq!(client.bytes.available_permits(), CLIENT_BYTES - frame.len());
         drop(sending);
         assert_eq!(client.bytes.available_permits(), CLIENT_BYTES);
-        for _ in 0..64 { client.send(frame.clone()).unwrap(); }
+        for _ in 0..CLIENT_BYTES / frame.len() { client.send(frame.clone()).unwrap(); }
         assert!(client.send("x".into()).is_none());
         assert!(*client.closed.borrow());
         assert_eq!(client.bytes.available_permits(), 0);
@@ -1692,7 +1761,7 @@ mod tests {
         let (_fast, mut fast) = hub.subscribe();
         fast.recv().await.unwrap();
         let payload = json!("x".repeat(1024 * 1024));
-        for _ in 0..128 {
+        for _ in 0..256 {
             if server.is_finished() { break; }
             hub.publish("output", &payload);
             fast.recv().await.unwrap();

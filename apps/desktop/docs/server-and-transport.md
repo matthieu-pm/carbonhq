@@ -100,23 +100,39 @@ replace the transcript with that tail, keep current answerable cards and
 newer live output, and use `olderBefore` to page history on scroll. Never
 append a disconnected tail to an old prefix: that would hide the gap.
 
-Recovery reads at most 512 events and 2 MiB of log data. A replay must also
-fit 2 MiB encoded. Tail pages from `get_session_by_id` with `turns` and
+Recovery reads at most 512 events and 2 MiB of log data, independently of the
+number of turns. A replay must also fit 2 MiB encoded, counted without a
+second JSON buffer. Raw legacy lines can be smaller than their current
+encoding. Tail pages from `get_session_by_id` with `turns` and
 `get_session_page` obey the same limits, so a page can start inside a turn.
-A single larger event is returned whole, within the existing 64 MiB wire
-limit; it forces tail recovery and retains an older-page cursor. A log event
-beyond that wire limit returns an error and stays on disk. History is never
+A single larger event is returned whole up to a 63 MiB page limit, leaving
+space for its envelope within the 64 MiB wire limit. It forces tail recovery
+and retains an older-page cursor. A larger log event returns an explicit
+command error, keeps the socket open and stays on disk. History is never
 deleted by recovery. `get_session_since` keeps its old array-or-null shape,
 returning null when the bounded window cannot resume. New clients connected
 to an older server read one tail rather than automatically paging the gap;
 older servers do not provide the new server-side byte guarantees.
 
-Live events, replies and host calls share each connection's queue: 256 frames
-and 64 MiB of encoded JSON, including the frame being written. Shared event
-strings are charged in full to each reader. There are at most 32 admitted
-commands per connection. Overflow or a write taking over 20 seconds closes
-that connection and releases its queue; publishers never wait for a reader.
-Pending client calls fail, and admitted commands finish without replaying
+When a bounded tail starts inside a turn, `tailBaseline: {promptId, baseline}`
+carries that turn's prompt context separately. The changes panel uses it until
+the actual prompt is paged in. It adds no synthetic transcript rows or gaps.
+Reads start at 16 KiB and grow backwards without rereading earlier chunks.
+
+Live events, replies and host calls share each connection's queue: 4,096 frames
+and 128 MiB of encoded JSON, including the frame being written. Shared event
+strings are charged in full to each reader. Preview deltas are disposable:
+they may consume at most the first 16 MiB and leave 128 frame slots free for
+replies and committed state. They are dropped under pressure; committed
+events supersede them. There are at most 32 admitted commands per connection;
+later calls wait for a slot instead of closing the connection.
+
+Committed-event overflow closes the connection; publishers never wait for a
+reader. A reply exceeding the frame or available queue budget fails its call
+explicitly instead of forcing the same oversized read to reconnect forever.
+Write deadlines scale with JSON size: 20 seconds plus one second per 32 KiB,
+allowing a 2 MiB frame 84 seconds. On disconnect, pending client calls fail
+and admitted commands finish without replaying
 their side effects. Clients reconnect, take the atomic `live_state` snapshot
 and recover logs by ID. A lost command response is an uncertain outcome,
 not permission to retry a mutation automatically. These are retained-frame

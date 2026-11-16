@@ -16,11 +16,26 @@ const index = Array.from({ length: count }, (_, i) => ({
   sessionId: `measure-${i}`, harness: "claude_code", cwd: home, projectPath: home,
   title: `Reconnect ${i}`, created: now, modified: now, archived: false, pinned: false, tokens: 0,
 }));
-await writeFile(join(sessions, "index.json"), JSON.stringify(index));
+const shortId = "short-turns";
+const giantId = "oversized-event";
+await writeFile(join(sessions, "index.json"), JSON.stringify([...index,
+  { ...index[0], sessionId: shortId }, { ...index[0], sessionId: giantId },
+]));
+const event = (sessionId, seq, payload) => ({
+  id: `e${seq}`, sessionId, harness: "claude_code", seq, ts: now, turnId: null, subagent: null, payload,
+});
+await writeFile(join(sessions, `${shortId}.jsonl`), Array.from({ length: 20 }, (_, seq) => JSON.stringify(event(shortId, seq,
+  { type: "user_message", text: "short turn", baseline: "before", queued: false },
+)) + "\n").join(""));
+await writeFile(join(sessions, `${giantId}.jsonl`), JSON.stringify(event(giantId, 0,
+  { type: "assistant_text", text: "x".repeat(64 * 1024 * 1024) },
+)) + "\n");
 for (const item of index) {
   const log = Array.from({ length: 1024 }, (_, seq) => JSON.stringify({
     id: `e${seq}`, sessionId: item.sessionId, harness: "claude_code", seq, ts: now,
-    turnId: null, subagent: null, payload: { type: "assistant_text", text: "x".repeat(16 * 1024) },
+    turnId: null, subagent: null, payload: seq === 0
+      ? { type: "user_message", text: "long turn", baseline: "before", queued: false }
+      : { type: "assistant_text", text: "x".repeat(16 * 1024) },
   }) + "\n").join("");
   await writeFile(join(sessions, `${item.sessionId}.jsonl`), log);
 }
@@ -83,6 +98,7 @@ try {
   } finally { clearInterval(timer); }
   const elapsedMs = performance.now() - start;
   assert.ok(recovered.every((r) => r.reset && r.events.length <= 512 && r.olderBefore != null));
+  assert.ok(recovered.every((r) => r.tailBaseline?.baseline === "before" && r.tailBaseline?.promptId === "e0"));
   const reconnectBytes = payloadBytes;
   const events = [...recovered[0].events];
   let before = recovered[0].olderBefore;
@@ -96,7 +112,13 @@ try {
   const resumed = await call("get_session_recovery", { sessionId: index[0].sessionId, after: ["e1020", "unlogged"] });
   assert.equal(resumed.reset, false);
   assert.deepEqual(resumed.events.map((e) => e.id), ["e1021", "e1022", "e1023"]);
-  console.log(JSON.stringify({ sessions: count, reconnectBytes, elapsedMs, startRss, peakRss, historyEvents: events.length }));
+  const short = await call("get_session_recovery", { sessionId: shortId, after: ["e0"] });
+  assert.equal(short.reset, false);
+  assert.equal(short.events.length, 19);
+  await assert.rejects(call("get_session_recovery", { sessionId: giantId, after: [] }), /63 MiB page limit/);
+  const burst = await Promise.all(Array.from({ length: 128 }, () => call("get_session_recovery", { sessionId: shortId, after: ["e19"] })));
+  assert.ok(burst.every((r) => !r.reset && r.events.length === 0));
+  console.log(JSON.stringify({ sessions: count, reconnectBytes, elapsedMs, startRss, peakRss, historyEvents: events.length, shortTurnEvents: short.events.length, burstCalls: burst.length, oversizedRead: "explicit error, socket stays open" }));
 } finally {
   ws?.close();
   if (child.exitCode == null && child.signalCode == null) {

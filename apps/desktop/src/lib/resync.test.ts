@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "@/types/events";
-import { mergeMissed, missedEvents, resetToTail } from "./resync";
+import { mergeMissed, missedEvents, replayedQueueIds, resetToTail } from "./resync";
 
 const ev = (id: string, seq: number) => ({ id, seq, payload: { type: "x" } }) as unknown as AgentEvent;
+
+describe("replayedQueueIds", () => {
+  it("retires delivered prompts from a reset tail without retiring old or newly queued rows", () => {
+    const queued = (id: string) => ({ ...ev(id, 0), payload: { type: "user_message", queued: true } }) as AgentEvent;
+    const held = [queued("already-delivered")];
+    const retired = replayedQueueIds(held, [...held, queued("missed-delivery")], ["q1", "q2"]);
+    expect(["q1", "q2", "new-during-read"].filter((id) => !retired.has(id))).toEqual(["q2", "new-during-read"]);
+  });
+});
 
 describe("resetToTail", () => {
   it("leaves the gap for paging and joins the tail to live output by id", () => {

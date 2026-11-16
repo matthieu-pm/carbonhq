@@ -4,6 +4,13 @@ import { isAsk } from "@/lib/earlyEvents";
 
 export type SessionRecovery = SessionPage & { reset: boolean };
 
+/// Retires only queue entries present before the read, avoiding rows already retired by live delivery.
+export function replayedQueueIds(held: AgentEvent[], fresh: AgentEvent[], queuedIds: string[]): Set<string> {
+  const known = new Set(held.map((e) => e.id));
+  const delivered = fresh.filter((e) => !known.has(e.id) && e.payload.type === "user_message" && e.payload.queued).length;
+  return new Set(queuedIds.slice(0, delivered));
+}
+
 /// A reset discards the gap, keeping answerable cards and output received during the read.
 export function resetToTail(current: AgentEvent[], held: AgentEvent[], tail: AgentEvent[]): AgentEvent[] {
   const heldIds = new Set(held.map((e) => e.id));

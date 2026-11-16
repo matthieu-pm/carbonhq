@@ -22,8 +22,11 @@ are encoded JSON bytes; bounded results include the recovery envelope.
 the small replay and cuts the larger examples before parsing their entire
 missed stretch. A single event larger than 2 MiB is read intact in a tail
 page, not replayed past the byte limit. Earlier events remain pageable.
-The raw read buffer normally holds at most 2 MiB plus one byte. It grows
-only to finish a large final event, with a 64 MiB guard matching the wire.
+The raw read buffer starts at 16 KiB and normally holds at most 2 MiB plus
+one byte. Growth reads only the preceding bytes. It grows beyond that only
+to finish a large final event, with a 63 MiB guard leaving envelope headroom
+under the wire limit. Long turns also recover compact prompt/baseline context
+without parsing all of the missing events.
 
 Run from `apps/desktop/src-tauri`:
 
@@ -37,18 +40,26 @@ timings vary with concurrent builds and are not a latency guarantee.
 ## Concurrent recovery over WebSocket
 
 `scripts/measure-reconnect.mjs` starts the built headless server with a scratch
-home and seeds 32 independent sessions. Each log contains 1,024 events with
-16 KiB of text. It requests all 32 recoveries concurrently on one connection,
+home and seeds 32 independent sessions, plus short-turn and oversized-event
+fixtures. Each long log contains a prompt and 1,023 text events of 16 KiB.
+It requests all 32 recoveries concurrently on one connection,
 then pages one session back to its beginning and checks a short event-ID
 resume. No agent process runs.
 
 | Measurement | Result |
 | --- | ---: |
-| Encoded reconnect replies, 32 sessions | 66,844,779 bytes |
-| Recovery time on loopback, debug build | 441 ms |
-| Server RSS before recovery | 32,276,480 bytes |
-| Peak sampled server RSS during recovery | 225,361,920 bytes |
+| Encoded reconnect replies, 32 sessions | 66,846,475 bytes |
+| Recovery time on loopback, debug build | 1,521 ms |
+| Server RSS before recovery | 32,440,320 bytes |
+| Peak sampled server RSS during recovery | 234,225,664 bytes |
 | Complete history checked by paging | 1,024 events, in order, unique |
+| Short-turn replay past eight turns | 19 events, no reset |
+| Concurrent command burst on the same socket | 128 calls, all completed |
+| 64 MiB log event | Explicit command error, socket remained open |
+
+The revised fixture starts each long turn with a prompt and includes the
+cost of recovering its baseline outside the bounded tail. The earlier
+441 ms run had no prompts and did not time this context lookup.
 
 RSS was sampled every 50 ms and may miss shorter peaks. The server's total
 RSS includes active command results and serialization buffers, not just its
@@ -65,12 +76,21 @@ cd .. && node scripts/measure-reconnect.mjs
 
 ## Slow or disconnected readers
 
-Each client shares a 256-frame / 64 MiB budget across live events, replies
-and host calls. Accounting includes the frame currently writing. 64 MiB
-allows the 32 concurrently admitted normal-size recovery responses and
-individual larger events; 256 frames also caps small-message overhead.
-Overflow closes the connection instead of waiting on it or silently dropping
-committed output. A 20-second write deadline also ends an idle stalled writer.
+Review exposed a mixed-workload hole in the original 256-frame / 64 MiB
+queue: recovery responses competed with token bursts. The revised queue
+keeps the previous 4,096-event allowance and caps retained JSON at 128 MiB,
+including the frame being written. That leaves room for 32 responses near
+2 MiB each plus live state. Previews can consume at most 16 MiB and leave
+128 frame slots reserved; they are dropped under pressure, preserving wire
+order for the committed events that replace them. A regression holds 32
+2 MiB replies while publishing 10,000 token deltas, then verifies committed
+output still arrives without closing the connection.
+
+Committed-event overflow still disconnects instead of silently dropping
+history. An oversized reply fails its call explicitly and keeps the socket
+open. The 33rd command waits for admission. Write deadlines scale at 20
+seconds plus a second per 32 KiB of JSON, so a 2 MiB frame has 84 seconds
+and can finish over a 500 kbps link.
 
 The Rust suite verifies byte and item accounting, release on dequeue/drop,
 closed readers, a stalled socket while its writer is blocked, and a fast

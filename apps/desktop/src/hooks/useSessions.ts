@@ -36,7 +36,7 @@ import { stanceFor } from "@/lib/permission";
 import { isProvisional, nextMainSeq, provisionalId, retireOldestProvisional } from "@/lib/provisional";
 import { questionDrafts } from "@/lib/questionDrafts";
 import { usePendingSecretSessions, type SecretHandoff } from "@/lib/secrets";
-import { mergeMissed, missedEvents, resetToTail, type LiveState, type SessionRecovery } from "@/lib/resync";
+import { mergeMissed, missedEvents, replayedQueueIds, resetToTail, type LiveState, type SessionRecovery } from "@/lib/resync";
 import { forgetTranscript, keepTranscript, takeTranscript } from "@/lib/keptTranscripts";
 import { playNotification } from "@/lib/sound";
 import { activeSpace, allowedInSpace, moveSpace, orderProjects, PROJECT_ORDER_KEY, SPACE_KEY, SPACE_LIST_KEY } from "@/lib/space";
@@ -2403,6 +2403,8 @@ const catchUp = async (
   queueKnown = false,
 ) => {
   const ticket = Symbol();
+  const queuedIds = (queuedRef.current[sessionId] ?? []).map((q) => q.message.id);
+  const queueRevision = queueReadRef.current[sessionId];
   catchUpReads.current.set(sessionId, ticket);
   let recovered: SessionRecovery | null;
   try {
@@ -2422,14 +2424,16 @@ const catchUp = async (
       if (s.sessionId !== sessionId) return s;
       const events = recovered.reset ? resetToTail(s.events, held, fresh) : mergeMissed(s.events, held, fresh);
       return events === s.events ? s : {
-        ...s, events, ...(recovered.reset ? { olderBefore: recovered.olderBefore } : {}),
+        ...s, events,
+        tailBaseline: recovered.reset ? recovered.tailBaseline : recovered.tailBaseline ?? s.tailBaseline,
+        ...(recovered.reset ? { olderBefore: recovered.olderBefore } : {}),
       };
     }),
   );
-  const flushed = fresh.filter((e) => e.payload.type === "user_message" && e.payload.queued).length;
-  if (flushed && !queueKnown && !recovered.reset) {
+  const retired = replayedQueueIds(held, fresh, queuedIds);
+  if (retired.size && !queueKnown && queueReadRef.current[sessionId] === queueRevision) {
     setQueuedBySession((prev) =>
-      prev[sessionId]?.length ? { ...prev, [sessionId]: prev[sessionId].slice(flushed) } : prev,
+      prev[sessionId]?.length ? { ...prev, [sessionId]: prev[sessionId].filter((q) => !retired.has(q.message.id)) } : prev,
     );
   }
   return true;
@@ -2448,7 +2452,7 @@ const readRecovery = async (sessionId: string, held: AgentEvent[]): Promise<Sess
   const tail = await invoke<SessionSnapshot | null>("get_session_by_id", { sessionId, turns: FIRST_MOUNT });
   if (!tail) return null;
   const missed = missedEvents(held, tail.events);
-  return { events: missed ?? tail.events, olderBefore: tail.olderBefore, reset: missed === null };
+  return { events: missed ?? tail.events, olderBefore: tail.olderBefore, tailBaseline: tail.tailBaseline, reset: missed === null };
 };
 
 /// A `carbon-serve` sends this on every connect, the first included, and it

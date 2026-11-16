@@ -233,6 +233,9 @@ pub struct SessionSnapshot {
     pub events: Vec<AgentEvent>,
     /// Where the log's unread older part ends, when `events` is only its tail.
     pub older_before: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub tail_baseline: Option<TailBaseline>,
 }
 
 static INDEX_LOCK: Mutex<()> = Mutex::const_new(());
@@ -1856,6 +1859,7 @@ pub async fn get_session_by_id(
         None => SessionPage {
             events: list_session_events(session_id).await?,
             older_before: None,
+            tail_baseline: None,
         },
     };
 
@@ -1863,6 +1867,7 @@ pub async fn get_session_by_id(
         index_item,
         events: page.events,
         older_before: page.older_before,
+        tail_baseline: page.tail_baseline,
     }))
 }
 
@@ -1886,11 +1891,22 @@ pub async fn get_session_page(
 pub struct SessionPage {
     pub events: Vec<AgentEvent>,
     pub older_before: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub tail_baseline: Option<TailBaseline>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "events.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct TailBaseline {
+    pub prompt_id: String,
+    pub baseline: Option<String>,
 }
 
 pub(crate) const REPLAY_EVENTS: usize = 512;
 pub(crate) const REPLAY_BYTES: usize = 2 * 1024 * 1024;
-const LOG_WINDOW_CAP: usize = 64 * 1024 * 1024;
+const LOG_WINDOW_CAP: usize = 63 * 1024 * 1024;
 
 /// A reset replaces the held transcript with a paged tail; live state is recovered separately.
 #[derive(Debug, Serialize, Deserialize)]
@@ -1899,6 +1915,8 @@ pub struct SessionRecovery {
     pub events: Vec<AgentEvent>,
     pub older_before: Option<u64>,
     pub reset: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tail_baseline: Option<TailBaseline>,
 }
 
 /// Reads a bounded tail once instead of rebuilding an arbitrarily long missed stretch.
@@ -1907,19 +1925,33 @@ pub async fn get_session_recovery(session_id: &str, after: Vec<String>) -> Resul
     if get_session_index_item(session_id).await?.is_none() {
         return Ok(None);
     }
-    let page = read_session_page(session_id, None, 8).await?;
+    let page = read_session_page(session_id, None, u32::MAX).await?;
     Ok(Some(recovery(page, &after.into_iter().collect())))
 }
 
 /// Only a cursor inside the bounded page can connect the held prefix without a gap.
 fn recovery(page: SessionPage, held: &HashSet<String>) -> SessionRecovery {
     if let Some(at) = page.events.iter().rposition(|e| held.contains(&e.id)) {
-        if serde_json::to_vec(&page.events[at + 1..]).is_ok_and(|bytes| bytes.len() <= REPLAY_BYTES) {
+        if encoded_within(&page.events[at + 1..], REPLAY_BYTES) {
             let events = page.events.into_iter().skip(at + 1).collect();
-            return SessionRecovery { events, older_before: None, reset: false };
+            return SessionRecovery { events, older_before: None, reset: false, tail_baseline: page.tail_baseline };
         }
     }
-    SessionRecovery { events: page.events, older_before: page.older_before, reset: true }
+    SessionRecovery { events: page.events, older_before: page.older_before, reset: true, tail_baseline: page.tail_baseline }
+}
+
+/// Legacy log lines can encode smaller than their current event shape; count without retaining a second buffer.
+fn encoded_within(value: &(impl Serialize + ?Sized), limit: usize) -> bool {
+    struct Budget(usize);
+    impl std::io::Write for Budget {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if bytes.len() > self.0 { return Err(std::io::Error::other("encoded budget exceeded")); }
+            self.0 -= bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+    serde_json::to_writer(Budget(limit), value).is_ok()
 }
 
 /// Pages may split a turn at the event/byte budget; one oversized event stays whole.
@@ -1928,13 +1960,17 @@ async fn read_session_page(session_id: &str, end: Option<u64>, turns: u32) -> Re
     let mut file = match fs::File::open(&path).await {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(SessionPage { events: Vec::new(), older_before: None })
+            return Ok(SessionPage { events: Vec::new(), older_before: None, tail_baseline: None })
         }
         Err(e) => return Err(e).context("could not open session file"),
     };
     let len = file.metadata().await?.len();
 
-    read_page(&mut file, end.map_or(len, |end| end.min(len)), turns).await
+    let mut page = read_page(&mut file, end.map_or(len, |end| end.min(len)), turns).await?;
+    if end.is_none() && !page.events.iter().any(|e| e.subagent.is_none() && matches!(e.payload, AgentEventPayload::UserMessage { queued: false, .. })) {
+        page.tail_baseline = read_tail_baseline(&mut file, page.older_before.unwrap_or(0)).await?;
+    }
+    Ok(page)
 }
 
 /// Stops at whole event boundaries so every earlier byte remains reachable by paging.
@@ -1946,36 +1982,76 @@ async fn read_page(
     use std::io::SeekFrom;
     use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-    let mut size = end.min(REPLAY_BYTES as u64 + 1) as usize;
-    let (buf, from, complete) = loop {
-        let from = end - size as u64;
+    let mut start = end;
+    let mut chunk = 16 * 1024usize;
+    let mut buf = Vec::new();
+    let cut = loop {
+        if let Some(cut) = page_cut(&buf, start == 0, turns) { break cut; }
+        anyhow::ensure!(buf.len() < LOG_WINDOW_CAP, "Transcript event exceeds the 63 MiB page limit; the raw log is retained on the server.");
+        let remaining = if buf.len() < REPLAY_BYTES + 1 { REPLAY_BYTES + 1 - buf.len() } else { LOG_WINDOW_CAP - buf.len() };
+        let take = chunk.min(remaining).min(start as usize);
+        let from = start - take as u64;
+        let mut head = vec![0; take];
         file.seek(SeekFrom::Start(from)).await?;
-        let mut buf = vec![0; size];
-        file.read_exact(&mut buf).await?;
-        let complete = if from == 0 { Some(0) } else { buf.iter().position(|&b| b == b'\n').map(|at| at + 1) };
-        if let Some(complete) = complete.filter(|&at| at < buf.len() || from == 0) {
-            break (buf, from, complete);
-        }
-        anyhow::ensure!(size < LOG_WINDOW_CAP, "Transcript event exceeds the 64 MiB wire limit; the log is retained on the server.");
-        size = (size * 2).min(LOG_WINDOW_CAP).min(end as usize);
+        file.read_exact(&mut head).await?;
+        head.extend_from_slice(&buf);
+        buf = head;
+        start = from;
+        chunk = chunk.saturating_mul(2);
     };
+    let events = std::str::from_utf8(&buf[cut..])?.lines()
+        .map(serde_json::from_str::<AgentEvent>).collect::<Result<Vec<_>, _>>()?;
+    let begins = start + cut as u64;
+    Ok(SessionPage { events, older_before: (begins > 0).then_some(begins), tail_baseline: None })
+}
+
+/// A partial first line is left for the next chunk; a whole oversized last event gets its own page.
+fn page_cut(buf: &[u8], at_top: bool, turns: u32) -> Option<usize> {
+    let complete = if at_top { 0 } else { buf.iter().position(|&b| b == b'\n')? + 1 };
     let mut cut = buf.len();
     let mut count = 0;
     let mut turn_count = 0;
-    while cut > complete && count < REPLAY_EVENTS && turn_count < turns.max(1) {
+    while cut > complete {
         let body_end = if buf[cut - 1] == b'\n' { cut - 1 } else { cut };
-        let start = buf[complete..body_end].iter().rposition(|&b| b == b'\n').map_or(complete, |at| complete + at + 1);
-        if count > 0 && buf.len() - start > REPLAY_BYTES {
-            break;
-        }
-        turn_count += opens_turn(&buf[start..body_end]) as u32;
+        let line_start = buf[complete..body_end].iter().rposition(|&b| b == b'\n').map_or(complete, |at| complete + at + 1);
+        if count > 0 && buf.len() - line_start > REPLAY_BYTES { return Some(cut); }
+        turn_count += opens_turn(&buf[line_start..body_end]) as u32;
         count += 1;
-        cut = start;
+        cut = line_start;
+        if count == REPLAY_EVENTS || turn_count == turns.max(1) { return Some(cut); }
     }
-    let events = std::str::from_utf8(&buf[cut..])?.lines()
-        .map(serde_json::from_str::<AgentEvent>).collect::<Result<Vec<_>, _>>()?;
-    let begins = from + cut as u64;
-    Ok(SessionPage { events, older_before: (begins > 0).then_some(begins) })
+    (at_top || (count > 0 && buf.len() > REPLAY_BYTES)).then_some(cut)
+}
+
+/// Finds the prompt before a truncated turn without constructing that turn's missing events.
+async fn read_tail_baseline(
+    file: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncSeek + Unpin),
+    mut end: u64,
+) -> Result<Option<TailBaseline>> {
+    use std::io::SeekFrom;
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    let mut partial = Vec::new();
+    while end > 0 {
+        let chunk = (64 * 1024).max(partial.len());
+        let from = end.saturating_sub(chunk as u64);
+        let mut head = vec![0; (end - from) as usize];
+        file.seek(SeekFrom::Start(from)).await?;
+        file.read_exact(&mut head).await?;
+        head.extend_from_slice(&partial);
+        if let Some((start, finish)) = newest_line(&head, from == 0, opens_turn) {
+            #[derive(Deserialize)]
+            struct Prompt { id: String, payload: Baseline }
+            #[derive(Deserialize)]
+            struct Baseline { baseline: Option<String> }
+            let prompt: Prompt = serde_json::from_slice(&head[start..finish])?;
+            return Ok(Some(TailBaseline { prompt_id: prompt.id, baseline: prompt.payload.baseline }));
+        }
+        let keep = head.iter().position(|&b| b == b'\n').map_or(head.len(), |at| at + 1);
+        partial = head[..keep].to_vec();
+        anyhow::ensure!(partial.len() <= LOG_WINDOW_CAP, "Transcript event exceeds the 63 MiB page limit; the raw log is retained on the server.");
+        end = from;
+    }
+    Ok(None)
 }
 
 /// Reads backwards from byte `end` in doubling chunks until `cut` names where
@@ -2023,7 +2099,6 @@ async fn read_back(
 /// The newest whole line in `buf` that `matches`, as its start and its end
 /// past the newline, walking from the end. The first line is only known whole
 /// where `at_top` says `buf` starts the file.
-#[cfg(test)]
 fn newest_line(buf: &[u8], at_top: bool, mut matches: impl FnMut(&[u8]) -> bool) -> Option<(usize, usize)> {
     let mut end = buf.len();
     while end > 0 {
@@ -3466,6 +3541,7 @@ mod tests {
             index_item: item,
             events: vec![],
             older_before: None,
+            tail_baseline: None,
         })
         .unwrap();
 
@@ -3515,6 +3591,110 @@ mod tests {
 #[cfg(test)]
 mod page_tests {
     use super::*;
+
+    struct CountedFile {
+        inner: std::io::Cursor<Vec<u8>>,
+        read: usize,
+        ranges: Vec<(u64, u64)>,
+    }
+
+    impl tokio::io::AsyncRead for CountedFile {
+        fn poll_read(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> std::task::Poll<std::io::Result<()>> {
+            let before = buf.filled().len();
+            let start = self.inner.position();
+            let result = std::pin::Pin::new(&mut self.inner).poll_read(cx, buf);
+            self.read += buf.filled().len() - before;
+            let end = self.inner.position();
+            if end > start { self.ranges.push((start, end)); }
+            result
+        }
+    }
+
+    impl tokio::io::AsyncSeek for CountedFile {
+        fn start_seek(mut self: std::pin::Pin<&mut Self>, position: std::io::SeekFrom) -> std::io::Result<()> {
+            std::pin::Pin::new(&mut self.inner).start_seek(position)
+        }
+        fn poll_complete(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<u64>> {
+            std::pin::Pin::new(&mut self.inner).poll_complete(cx)
+        }
+    }
+
+    #[tokio::test]
+    async fn small_tail_starts_small_and_growth_never_rereads_bytes() {
+        let log: String = (0..1000).flat_map(|seq| [prompt(seq * 2, false), text(seq * 2 + 1, false)]).collect();
+        let len = log.len() as u64;
+        let mut file = CountedFile { inner: std::io::Cursor::new(log.into_bytes()), read: 0, ranges: Vec::new() };
+        let page = read_page(&mut file, len, 2).await.unwrap();
+        assert_eq!(page.events.len(), 4);
+        assert_eq!(file.read, 16 * 1024);
+        file.read = 0;
+        file.ranges.clear();
+        let page = read_page(&mut file, len, u32::MAX).await.unwrap();
+        assert_eq!(page.events.len(), REPLAY_EVENTS);
+        assert!(file.ranges.windows(2).all(|pair| pair[1].1 <= pair[0].0));
+        assert!(file.read < REPLAY_BYTES);
+    }
+
+    #[tokio::test]
+    async fn short_turn_replay_uses_the_event_budget_not_the_eight_turn_tail() {
+        let log: String = (0..20).map(|seq| prompt(seq, false)).collect();
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let result = recovery(read_page(&mut file, log.len() as u64, u32::MAX).await.unwrap(), &HashSet::from(["e0".into()]));
+        assert!(!result.reset);
+        assert_eq!(result.events.len(), 19);
+    }
+
+    #[tokio::test]
+    async fn a_truncated_long_turn_keeps_its_prompt_baseline_as_context() {
+        let prompt = prompt(0, false).replace("\"baseline\":null", "\"baseline\":\"before\"");
+        let log = prompt + &(1..2000).map(|seq| text(seq, false)).collect::<String>();
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let page = read_page(&mut file, log.len() as u64, 8).await.unwrap();
+        assert_eq!(page.events.len(), REPLAY_EVENTS);
+        assert!(page.events.iter().all(|e| !matches!(e.payload, AgentEventPayload::UserMessage { .. })));
+        let context = read_tail_baseline(&mut file, page.older_before.unwrap()).await.unwrap().unwrap();
+        assert_eq!(context.prompt_id, "e0");
+        assert_eq!(context.baseline.as_deref(), Some("before"));
+    }
+
+    #[tokio::test]
+    async fn short_turns_replay_past_eight_and_truncated_turn_keeps_its_baseline() {
+        let log: String = (0..20).map(|seq| prompt(seq, false)).collect();
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let read = read_page(&mut file, log.len() as u64, u32::MAX).await.unwrap();
+        let recovered = recovery(read, &HashSet::from(["e0".into()]));
+        assert!(!recovered.reset);
+        assert_eq!(recovered.events.len(), 19);
+
+        let mut prompt: Value = serde_json::from_str(&prompt(0, false)).unwrap();
+        prompt["payload"]["baseline"] = serde_json::json!("baseline-tree");
+        let log = format!("{prompt}\n") + &(1..1400).map(|seq| text(seq, false)).collect::<String>();
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let page = read_page(&mut file, log.len() as u64, u32::MAX).await.unwrap();
+        assert_eq!(page.events.len(), REPLAY_EVENTS);
+        let baseline = read_tail_baseline(&mut file, page.older_before.unwrap()).await.unwrap().unwrap();
+        assert_eq!(baseline.prompt_id, "e0");
+        assert_eq!(baseline.baseline.as_deref(), Some("baseline-tree"));
+    }
+
+    #[tokio::test]
+    async fn an_oversized_log_event_returns_an_error_before_it_becomes_an_outgoing_frame() {
+        let log = line(0, false, serde_json::json!({ "type": "assistant_text", "text": "x".repeat(LOG_WINDOW_CAP + 1024) }));
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let error = read_page(&mut file, log.len() as u64, u32::MAX).await.unwrap_err();
+        assert!(error.to_string().contains("63 MiB page limit"));
+    }
+
+    #[test]
+    fn encoded_accounting_does_not_assume_legacy_log_bytes_match_the_current_shape() {
+        let raw = line(0, false, serde_json::json!({ "type": "assistant_text", "text": "x" }));
+        let event: AgentEvent = serde_json::from_str(&raw).unwrap();
+        let events = vec![event];
+        let encoded = serde_json::to_vec(&events).unwrap();
+        assert!(encoded_within(&events, encoded.len()));
+        assert!(!encoded_within(&events, encoded.len() - 1));
+        assert!(encoded.len() > raw.len(), "defaults missing from legacy log lines enlarge the current encoding");
+    }
 
     #[tokio::test]
     #[ignore = "reconnect measurement; run with --ignored --nocapture"]
