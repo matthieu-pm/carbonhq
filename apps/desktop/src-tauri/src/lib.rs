@@ -54,6 +54,8 @@ pub mod preview;
 pub mod preview_tunnel;
 pub mod docs;
 pub mod pages;
+#[path = "canvas/canvas.rs"]
+pub mod canvas;
 pub mod pages_linear;
 pub mod pages_sync;
 pub mod download;

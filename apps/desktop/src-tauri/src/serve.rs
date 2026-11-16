@@ -491,6 +491,7 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
     }
     sweep_browser_profiles().await;
     crate::auto_continue::rearm(&sink).await;
+    crate::canvas::start(sink.clone());
     let page_sync_sink = sink.clone();
     tokio::spawn(async move {
         loop {
@@ -1585,6 +1586,22 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         };
         delete_draft(id: String) => crate::drafts::delete_draft(id).await;
         read_doc(path: String) => crate::docs::read_doc(path).await;
+        list_canvases(project_path: Option<String>) => crate::canvas::list_canvases(project_path).await;
+        read_canvas(id: String) => crate::canvas::read_canvas(id).await;
+        create_canvas(project_path: String, name: String) => crate::canvas::create_canvas(sink.clone(), project_path, name).await;
+        update_canvas(id: String, revision: u64, edit: crate::canvas::CanvasEdit, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::update_canvas(sink.clone(), id, revision, edit, author).await;
+        duplicate_canvas(id: String, revision: u64, name: String) => crate::canvas::duplicate_canvas(sink.clone(), id, revision, name).await;
+        duplicate_canvas_frame(id: String, revision: u64, frame_id: String, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::duplicate_canvas_frame(sink.clone(), id, revision, frame_id, author).await;
+        delete_canvas(id: String, revision: u64) => crate::canvas::delete_canvas(sink.clone(), id, revision).await;
+        canvas_history(id: String) => crate::canvas::canvas_history(id).await;
+        read_canvas_version(id: String, version: u64) => crate::canvas::read_canvas_version(id, version).await;
+        restore_canvas_version(id: String, revision: u64, version: u64, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::restore_canvas_version(sink.clone(), id, revision, version, author).await;
+        recover_canvas(id: String) => crate::canvas::recover_canvas(sink.clone(), id).await;
+        prepare_canvas_frame_edit(id: String, revision: u64, frame_id: String) => crate::canvas::prepare_canvas_frame_edit(id, revision, frame_id).await;
+        reconcile_canvas(id: String) => crate::canvas::reconcile_canvas(sink.clone(), id).await;
+        write_canvas_asset(id: String, revision: u64, upload: crate::canvas::CanvasAssetUpload, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::write_canvas_asset(sink.clone(), id, revision, upload, author).await;
+        read_canvas_asset(id: String, asset_id: String, version: Option<u64>) => crate::canvas::read_canvas_asset(id, asset_id, version).await;
+        watch_canvases(scope: String, ids: Vec<String>) => crate::canvas::watch_canvases(scope, ids).await;
         list_pages(query: Option<String>, project_path: Option<String>, trashed: Option<bool>) => crate::pages::list_pages(query, project_path, trashed).await;
         read_page(id: String) => crate::pages::read_page(id).await;
         list_linear_documents(query: Option<String>, after: Option<String>) => crate::pages_sync::list_linear_documents(query, after).await;

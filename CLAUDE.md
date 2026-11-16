@@ -332,6 +332,7 @@ Detail per subsystem lives in [apps/desktop/docs/](apps/desktop/docs/). **Read t
 - [repo-and-files-views.md](apps/desktop/docs/repo-and-files-views.md) — Diff view tab and Files view: tree, viewer, tabs, open-in.
 - [spaces.md](apps/desktop/docs/spaces.md) — Profiles (formerly Spaces): project tags, switching, notifications per profile.
 - [pages.md](apps/desktop/docs/pages.md) — Spaces and Markdown Pages: storage, editor, agent commands, history, attachments and Linear sync.
+- [canvas.md](apps/desktop/docs/canvas.md) — Canvas file format, shared storage, revisions, recovery, images and content-file reconciliation.
 - [issues.md](apps/desktop/docs/issues.md) — Linear + GitHub issues: credentials, tags and links, caching, uploads, issues page.
 - [file-opening.md](apps/desktop/docs/file-opening.md) — Open-in button, app detection, file links in the transcript.
 - [transcription.md](apps/desktop/docs/transcription.md) — Local dictation: engine, models, capture, streaming decode, mute, UI.
