@@ -18,12 +18,17 @@ for directory in ['bin', 'sessions', 'repo', 'claude/projects/fixture']:
     (home / directory).mkdir(parents=True, exist_ok=True)
 for args in [['init', '-q'], ['config', 'user.name', 'Fixture'], ['config', 'user.email', 'fixture@example.test'], ['commit', '--allow-empty', '-qm', 'fixture']]:
     subprocess.run(['git', '-C', str(home / 'repo'), *args], check=True)
-ids = {name: str(uuid.uuid4()) for name in ['active', 'approval', 'parent', 'child', 'unread', 'queued', 'uncertain', 'retry']}
+ids = {name: str(uuid.uuid4()) for name in ['active', 'approval', 'parent', 'child', 'unread', 'queued', 'uncertain', 'retry', 'fx']}
 rows = [dict(sessionId=id, harness='claude_code', cwd=str(home / 'repo'), projectPath=str(home / 'repo'), branch='main', worktreeName=None, title=name, titleLocked=True, model='sonnet', effort='high', permissionMode='plan', fast=False, status='completed' if name == 'unread' else 'idle', created='2026-11-16T12:00:00Z', modified='2026-11-16T12:00:00Z', archived=False, pinned=False) for name, id in ids.items()]
+for item in rows:
+    if item['sessionId'] == ids['fx']:
+        item.update(harness='fx', model='', effort=None, threadId=ids['fx'])
 (home / 'sessions/index.json').write_text(json.dumps(rows))
 fixture = pathlib.Path(__file__).parent / 'fixtures/task-claude.py'
 (home / 'bin/claude').write_text(f'#!{sys.executable}\n' + fixture.read_text())
 (home / 'bin/claude').chmod(0o755)
+(home / 'bin/fx').write_text(f'#!{sys.executable}\n' + (pathlib.Path(__file__).parent / 'fixtures/recovery-fx.py').read_text())
+(home / 'bin/fx').chmod(0o755)
 env = {**os.environ, 'CARBON_HOME': str(home), 'CARBON_NO_ANALYTICS': '1', 'CLAUDE_CONFIG_DIR': str(home / 'claude'), 'PATH': str(home / 'bin') + ':' + os.environ['PATH']}
 server = None
 preview = '--preview' in sys.argv
@@ -93,7 +98,7 @@ def send(name, text, key=None, task=False):
 
 
 def recovery(name=None):
-    result = request(v=20, cmd='recovery', action='list', sessionId=ids[name] if name else None)
+    result = request(v=21, cmd='recovery', action='list', sessionId=ids[name] if name else None)
     assert result['status'] == 'recovery', result
     return result['value']
 
@@ -128,10 +133,10 @@ if damage in ['inbox', 'receipt']:
     directory.mkdir(parents=True)
     (directory / 'broken.json').write_text('{')
     (directory / 'future.json').write_text(json.dumps(dict(version=999)))
-if damage in ['registry', 'registry-record']:
+if damage in ['registry', 'registry-record', 'registry-version']:
     directory = home / 'delegated-tasks'
     directory.mkdir()
-    (directory / (hashlib.sha256(b'registry').hexdigest() + '.json')).write_text('{' if damage == 'registry' else json.dumps(dict(version=1, tasks=dict(opaque=dict(future='keep me')))))
+    (directory / (hashlib.sha256(b'registry').hexdigest() + '.json')).write_text('{' if damage == 'registry' else json.dumps(dict(version=999, tasks={}) if damage == 'registry-version' else dict(version=1, tasks=dict(opaque=dict(future='keep me')))))
 
 try:
     start()
@@ -180,7 +185,7 @@ try:
     assert task_status(active_task)['result']['text'].startswith('done')
     operation = next(item for item in recovery() if item['id'] == receipt['operationId'])
     assert operation['action'] == 'inspect' and operation['kind'] == 'operation' and operation['sessionExists']
-    assert request(v=20, cmd='recovery', action='dismiss', sessionId=ids['active'], id=operation['id'])['value'] is True
+    assert request(v=21, cmd='recovery', action='dismiss', sessionId=ids['active'], id=operation['id'])['value'] is True
     assert not any(item['id'] == operation['id'] for item in recovery())
     assert request(v=16, **reserved_request)['status'] == 'uncertain'
     reserved_response = request(v=16, **reserved_request)
@@ -194,7 +199,7 @@ try:
     assert len([r for r in received() if queued['messageId'] in r['text']]) == 1
     assert len([r for r in received() if follow['messageId'] in r['text']]) == 1
     assert task_status(active_task)['state'] == 'succeeded'
-    args = dict(v=20, cmd='recovery', action='resume', sessionId=ids['active'], id=active['id'])
+    args = dict(v=21, cmd='recovery', action='resume', sessionId=ids['active'], id=active['id'])
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         results = list(pool.map(lambda _: request(**args), range(6)))
     assert all(result['status'] == 'recovery' for result in results), results
@@ -225,13 +230,13 @@ try:
     assert next(item for item in uncertain_items if item['kind'] == 'delivery')['action'] == 'inspect'
     uncertain_session = next(item for item in uncertain_items if item['kind'] == 'session')
     assert uncertain_session['action'] == 'inspect'
-    assert request(v=20, cmd='recovery', action='resume', sessionId=ids['uncertain'], id=uncertain_session['id'])['status'] == 'error'
-    assert request(v=20, cmd='recovery', action='retry', sessionId=ids['uncertain'], id=ambiguous['messageId'])['status'] == 'error'
-    assert request(v=20, cmd='recovery', action='dismiss', sessionId=ids['uncertain'], id=ambiguous['messageId'])['value'] is True
+    assert request(v=21, cmd='recovery', action='resume', sessionId=ids['uncertain'], id=uncertain_session['id'])['status'] == 'error'
+    assert request(v=21, cmd='recovery', action='retry', sessionId=ids['uncertain'], id=ambiguous['messageId'])['status'] == 'error'
+    assert request(v=21, cmd='recovery', action='dismiss', sessionId=ids['uncertain'], id=ambiguous['messageId'])['value'] is True
     assert next(item for item in recovery('uncertain') if item['kind'] == 'session')['action'] == 'resume'
     assert not any(ambiguous['messageId'] in record['text'] for record in received())
     assert next(item for item in recovery('retry') if item['kind'] == 'delivery')['action'] == 'retry'
-    assert request(v=20, cmd='recovery', action='retry', sessionId=ids['retry'], id=retry['messageId'])['value']['state'] == 'accepted'
+    assert request(v=21, cmd='recovery', action='retry', sessionId=ids['retry'], id=retry['messageId'])['value']['state'] == 'accepted'
     wait_for(lambda: delivery_state('retry', retry['messageId']) == 'submitted')
     assert len([record for record in received() if retry['messageId'] in record['text']]) == 1
     stop()
@@ -239,7 +244,7 @@ try:
     assert delivery_state('uncertain', ambiguous['messageId']) == 'uncertain'
     assert len([record for record in received() if retry['messageId'] in record['text']]) == 1
     assert not any(item['id'] == ambiguous['messageId'] for item in recovery('uncertain'))
-    assert request(v=20, cmd='recovery', action='resume', sessionId=ids['active'], id='stale')['status'] == 'error'
+    assert request(v=21, cmd='recovery', action='resume', sessionId=ids['active'], id='stale')['status'] == 'error'
     print('PASS uncertain side effects stay fenced, known pre-submission failures retry safely, stale recovery refused', flush=True)
 
     send('active', 'completed before status persisted')
@@ -257,6 +262,26 @@ try:
     assert 'err' not in ws('set_session_flags', dict(sessionId=ids['approval'], archived=True))
     assert next(item for item in recovery('approval') if item['kind'] == 'session')['action'] == 'inspect'
     assert 'err' not in ws('set_session_flags', dict(sessionId=ids['approval'], archived=False))
+    def fx_send(text):
+        result = ws('send_msg', dict(sessionId=ids['fx'], prompt=text, attachmentPaths=[], harness='fx', model='', effort=None, permissionMode='plan', fast=False, cwd=str(home / 'repo'), useWorktree=False, isNewSession=False))
+        assert 'err' not in result, result
+        return result['ok']
+    fx_send('FX_HOLD')
+    wait_for(lambda: row('fx')['status'] == 'in_progress')
+    rows = json.loads((home / 'sessions/index.json').read_text())
+    for item in rows:
+        if item['sessionId'] == ids['fx']:
+            item['interruption'] = dict(id='fx-pending', reason='server_restart', message='Pending recovery', at='2026-11-16T12:00:00Z', resumedAt=None)
+    (home / 'sessions/index.json').write_text(json.dumps(rows))
+    assert fx_send('fx queued follow-up')['queued']
+    (home / 'finish-fx').touch()
+    wait_for(lambda: row('fx')['interruption']['resumedAt'])
+    wait_for(lambda: row('fx')['status'] != 'in_progress')
+    fx_send('FX_DIE')
+    wait_for(lambda: row('fx').get('interruption', {}).get('reason') == 'process_exited')
+    assert row('fx')['interruption']['resumedAt'] is None
+    wait_for(lambda: any(event['payload'].get('stopReason') == 'process_exited' and event['payload'].get('head') for event in [json.loads(line) for line in (home / 'sessions' / (ids['fx'] + '.jsonl')).read_text().splitlines()]))
+    print('PASS fx queued submission retires recovery and dead-child reason persists', flush=True)
     (home / 'result.json').write_text(json.dumps(dict(passed=True, home=str(home), pid=server.pid, sessions=ids), indent=2))
     print('ALL RECOVERY REPLAYS PASSED', home, flush=True)
 finally:

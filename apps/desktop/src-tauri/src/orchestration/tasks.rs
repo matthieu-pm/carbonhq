@@ -517,7 +517,7 @@ fn apply(record: &mut Record, event: &AgentEvent, completion_events: &HashMap<St
 }
 
 fn interrupted(reason: &str) -> bool {
-    matches!(reason, "interrupted" | "cancelled" | "canceled" | "aborted")
+    matches!(reason, "interrupted" | "cancelled" | "canceled" | "aborted" | "process_exited")
         || reason.starts_with("aborted_")
 }
 
@@ -1135,6 +1135,7 @@ mod tests {
     #[test]
     fn normalized_interruptions_cannot_publish_success() {
         for reason in [
+            "process_exited",
             "interrupted",
             "cancelled",
             "aborted_streaming",

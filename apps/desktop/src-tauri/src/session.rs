@@ -538,8 +538,8 @@ async fn close_unanswered_stop(
 /// reach here after that — where it would write `completed` over the
 /// replacement's running turn.
 ///
-/// Emitted, never logged: a delete may have removed the file, where an append
-/// would quietly recreate it.
+/// An attached child closes through ingestion so its final diff snapshot is frozen.
+/// Startup failures without an attached child retain the emitted-only fallback.
 pub async fn settle_dead_child(
     session_id: &str,
     harness: Harness,
@@ -563,6 +563,32 @@ pub async fn settle_dead_child(
     }
 
     strand_queue_on_exit(session_id, harness, queued, seq, app).await;
+    if let Some(session) = guard.as_ref().and_then(|slot| slot.as_ref()) {
+        let item = match get_session_index_item(session_id).await {
+            Ok(Some(item)) => item,
+            _ => return,
+        };
+        let interrupted = status.lock().await.turn_in_flight();
+        if interrupted {
+            match crate::store::record_process_interruption(session_id, why).await {
+                Ok(Some(item)) => { app.emit(crate::orchestration::SESSION_CHANGED, &item).ok(); }
+                Ok(None) => {},
+                Err(error) => eprintln!("[process interruption err] {error:#}"),
+            }
+        }
+        let ctx = Ingest { session_id, harness, session_cwd: &item.cwd, status, queued,
+            flush_seq: seq, flush_transport: &session.stdin };
+        let backgrounds = !status.lock().await.background_task_ids().is_empty();
+        if backgrounds {
+            ingest(&ctx, AgentEvent::mint(session_id.into(), harness, seq.fetch_add(1, Relaxed), None, None,
+                AgentEventPayload::BackgroundTasksChanged { tasks: vec![] }), app).await;
+        }
+        if interrupted {
+            ingest(&ctx, AgentEvent::mint(session_id.into(), harness, seq.fetch_add(1, Relaxed), None, None,
+                closing_turn("process_exited", Some(why))), app).await;
+        }
+        return;
+    }
     let mint = |payload| {
         AgentEvent::mint(session_id.to_string(), harness, seq.fetch_add(1, Relaxed), None, None, payload)
     };
@@ -2728,7 +2754,7 @@ impl Session {
         mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
         app: &Sink,
     ) -> Result<()> {
-        let (_, runs) = deliver_prompt(
+        let (_, runs, interruption_id) = deliver_prompt(
             &self.id,
             self.harness,
             prompt,
@@ -2789,6 +2815,7 @@ impl Session {
         if let Some(dispatch) = dispatch {
             dispatch.submitted().await?;
         }
+        retire_interruption(&self.id, interruption_id.as_deref(), app).await;
 
         Ok(())
     }
@@ -2917,6 +2944,10 @@ impl Session {
         )
         .await;
         match sent {
+            Ok((_, _, interruption_id)) => {
+                retire_interruption(&self.id, interruption_id.as_deref(), app).await;
+                Ok(())
+            }
             // Drawn beside the bubble, for `deliver_batch`'s reason: returned to
             // the composer, it leaves a message nothing answers, and a retry
             // draws it twice.
@@ -3591,7 +3622,7 @@ async fn deliver_prompt(
     transport: &Transport,
     mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
     app: &Sink,
-) -> Result<(String, bool)> {
+) -> Result<(String, bool, Option<String>)> {
     let seq = seq.fetch_add(1, Relaxed);
 
     // Ahead of the event, because it is what decides the event's own text:
@@ -3673,7 +3704,7 @@ async fn deliver_prompt(
 
     // Logged, not sent: the caller holds the text and opens the turn itself.
     if !send {
-        return Ok((sent, true));
+        return Ok((sent, true, interruption_id));
     }
 
     let submitted: Result<bool> = async {
@@ -3738,8 +3769,7 @@ async fn deliver_prompt(
         Ok(true)
     }.await;
     let runs = submitted?;
-    retire_interruption(session_id, interruption_id.as_deref(), app).await;
-    Ok((sent, runs))
+    Ok((sent, runs, interruption_id))
 }
 
 /// Retire only the recovery generation observed before a successful harness submission.
@@ -4264,8 +4294,9 @@ pub async fn flush_queued(
     }
 
     let mut delivered = 0;
+    let mut interruptions = vec![];
     deliver_batch(
-        batch, session_id, harness, seq, transport, app, &mut delivered,
+        batch, session_id, harness, seq, transport, app, &mut delivered, &mut interruptions,
     )
     .await;
     // After delivery, so the pending row goes as its bubble lands.
@@ -4286,6 +4317,8 @@ pub async fn flush_queued(
     if let Some(next) = status.lock().await.on_send() {
         publish_status(session_id, next, app).await;
     }
+    for id in interruptions { retire_interruption(session_id, Some(&id), app).await; }
+
 }
 
 /// The fx flush: the **whole** queue as one turn, and the release symmetric to
@@ -4384,7 +4417,7 @@ async fn flush_one_per_turn(
             )
             .await
             {
-                Ok((text, _)) => texts.push(text),
+                Ok((text, _, _)) => texts.push(text),
                 Err(err) => {
                     eprintln!("[queued flush err] {err}");
                     report_send_failure(session_id, harness, &err.to_string(), seq, app)
@@ -4430,6 +4463,7 @@ async fn deliver_batch(
     transport: &Transport,
     app: &Sink,
     delivered: &mut usize,
+    interruptions: &mut Vec<String>,
 ) {
     for message in batch {
         // No baseline, and this is the load-bearing half of the queued case:
@@ -4457,7 +4491,10 @@ async fn deliver_batch(
         )
         .await
         {
-            Ok(_) => *delivered += 1,
+            Ok((_, _, interruption_id)) => {
+                *delivered += 1;
+                if let Some(id) = interruption_id { interruptions.push(id); }
+            },
             Err(err) => {
                 eprintln!("[queued flush err] {err}");
                 // Drawn, not only logged. The prompt is already on screen and in

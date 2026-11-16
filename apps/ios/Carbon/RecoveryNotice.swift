@@ -63,7 +63,7 @@ struct RecoveryNotice: View {
                 Button("Refresh recovery") { Task { await load() } }
             }
         }
-        .task(id: "\(key.id)|\(busy)|\(connected)|\(store.items[key]?.modified ?? "")") {
+        .task(id: "\(key.id)|\(busy)|\(connected)|\(store.items[key]?.modified ?? "")|\(store.recoveryRevision[key] ?? 0)") {
             if connected { await load() }
         }
     }

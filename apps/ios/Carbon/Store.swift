@@ -43,6 +43,7 @@ final class Store {
     private(set) var olderErrors: [SessionKey: String] = [:]
     private(set) var tasks: [SessionKey: Int] = [:]
     private(set) var agentOptionsRevision: [UUID: Int] = [:]
+    private(set) var recoveryRevision: [SessionKey: Int] = [:]
 
     /// For a client that reacts beside drawing: the Island opens itself on a card.
     @ObservationIgnored var asksChanged: () -> Void = {}
@@ -508,6 +509,9 @@ final class Store {
         case "clone_progress":
             guard let p = try? decoder.decode(EventFrame<CloneProgress>.self, from: data).payload else { return }
             cloneProgress[server, default: [:]][p.slug] = p.line
+        case "recovery_changed":
+            guard let changed = try? decoder.decode(EventFrame<RecoveryChanged>.self, from: data).payload else { return }
+            recoveryRevision[SessionKey(server: server, id: changed.sessionId), default: 0] += 1
         case "session_created", "session_changed":
             guard let item = try? decoder.decode(EventFrame<SessionItem>.self, from: data).payload else { return }
             items[SessionKey(server: server, id: item.sessionId)] = item
