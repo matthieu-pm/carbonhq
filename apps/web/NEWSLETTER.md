@@ -20,6 +20,8 @@ The dark and light designs from `/preview/newsletter` also live in Resend Templa
 
 `pnpm newsletter:templates` generates responsive table-based HTML in `emails/generated`. Add `--upload` to create or update the corresponding Resend drafts. The command verifies the saved HTML and refuses to replace a published template.
 
+Logo URLs live in `scripts/email-assets.mjs`. Keep their version updated when the branding changes so saved previews reload the new artwork.
+
 These copies preserve the mockup’s sample release copy and marked placeholders. Replace the image boxes, quote, community links, and sender details before using them. `VIEW_ONLINE_URL` is a required template variable; the unsubscribe link uses Resend’s reserved `RESEND_UNSUBSCRIBE_URL` token.
 
 Resend’s Templates API serves transactional templates. To send a newsletter Broadcast, use the same generated HTML as its content and target the Carbon newsletter segment. Importing these templates does not create or send a Broadcast.
