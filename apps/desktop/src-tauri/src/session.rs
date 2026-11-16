@@ -2288,6 +2288,7 @@ impl Transport {
 
 #[derive(Debug)]
 pub struct Session {
+    pub mcp: Option<crate::mcp::proxy::SessionProxy>,
     pub id: String,
     pub child: Child,
     /// Shared with the stdout task, which has to write back on its own: an
@@ -2337,7 +2338,11 @@ impl Session {
         fork_from: Option<&str>,
         app: &Sink,
     ) -> Result<Session> {
-        match harness {
+        let mut mcp = crate::mcp::proxy::SessionProxy::new(session_cwd, harness).await?;
+        let pi_extension = if harness == Harness::Pi && permission_mode != ApprovalPolicy::Plan {
+            Some(mcp.pi_extension().await?)
+        } else { None };
+        let mut session = match harness {
             Harness::ClaudeCode => {
                 claude_code::init(
                     session_id,
@@ -2351,6 +2356,7 @@ impl Session {
                     is_new_session,
                     fork_from,
                     app,
+                    &mcp,
                 )
                 .await
             }
@@ -2376,6 +2382,7 @@ impl Session {
                     is_new_session,
                     fork_from,
                     app,
+                    &mcp,
                 )
                 .await
             }
@@ -2411,6 +2418,7 @@ impl Session {
                     session_cwd,
                     is_new_session,
                     app,
+                    pi_extension.as_deref(),
                 )
                 .await
             }
@@ -2435,6 +2443,7 @@ impl Session {
                     session_cwd,
                     is_new_session,
                     app,
+                    &mcp,
                 )
                 .await
             }
@@ -2463,6 +2472,7 @@ impl Session {
                     is_new_session,
                     fork_from,
                     app,
+                    &mcp,
                 )
                 .await
             }
@@ -2484,6 +2494,7 @@ impl Session {
                     session_cwd,
                     is_new_session,
                     app,
+                    &mcp,
                 )
                 .await
             }
@@ -2495,7 +2506,10 @@ impl Session {
             Harness::Other(name) => {
                 bail!("this session runs on {name}, which this version of Carbon can't drive — update Carbon")
             }
-        }
+        }?;
+        mcp.attach(session_id, harness, session.seq.clone(), app.clone());
+        session.mcp = Some(mcp);
+        Ok(session)
     }
 
     /// Builds and saves the user's own prompt event, then writes it to the

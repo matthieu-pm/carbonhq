@@ -13,16 +13,11 @@
 //! The names that matched ride the prompt event, which is how the transcript
 //! knows what to draw as a chip without asking again.
 
-use std::collections::BTreeSet;
-use std::path::Path;
-use std::sync::LazyLock;
-use std::time::Duration;
 
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::harness::{Harness, ProbeCache};
-use crate::mcp_servers::{McpFile, McpServerEntry};
+use crate::harness::Harness;
 use crate::Fail;
 
 /// One row of the `$` picker.
@@ -36,11 +31,6 @@ pub struct McpMention {
     pub scope: String,
 }
 
-/// Claude Code's list costs a ~1.5s child, so it is kept a while. Short enough
-/// that a server added in Settings → MCP shows up without a restart.
-static CACHE: LazyLock<ProbeCache<Vec<McpMention>>> =
-    LazyLock::new(|| ProbeCache::new(Duration::from_secs(60)));
-
 /// The MCP servers `harness` loads in `cwd`, for the composer's `$` picker.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_mcp_mentions(harness: Harness, cwd: String) -> Result<Vec<McpMention>, Fail> {
@@ -48,60 +38,11 @@ pub async fn list_mcp_mentions(harness: Harness, cwd: String) -> Result<Vec<McpM
 }
 
 async fn servers(harness: Harness, cwd: &str) -> anyhow::Result<Vec<McpMention>> {
-    let key = format!("{}\0{cwd}", harness.wire_name());
-    CACHE
-        .get_or_probe(&key, || async {
-            if harness == Harness::ClaudeCode {
-                let listed = crate::harness::claude_code::commands::list_mcp_servers(cwd).await?;
-                return Ok(listed
-                    .into_iter()
-                    .map(|(name, scope)| McpMention { name, scope })
-                    .collect());
-            }
-            Ok(from_files(harness, Path::new(cwd)).await)
-        })
-        .await
-}
-
-/// Project definitions override user definitions, including disabled entries.
-///
-/// Per-project files are read from `cwd` itself rather than the project root:
-/// a worktree carries its own checked-in copy, and that copy is what the agent
-/// running there loads.
-async fn from_files(harness: Harness, cwd: &Path) -> Vec<McpMention> {
-    let Some(home) = std::env::home_dir() else {
-        return Vec::new();
-    };
-    from_files_at(harness, cwd, &home).await
-}
-
-/// Keeps file discovery testable without changing the process's home directory.
-async fn from_files_at(harness: Harness, cwd: &Path, home: &Path) -> Vec<McpMention> {
-    let mut seen = BTreeSet::new();
-    let mut out = Vec::new();
-    for file in McpFile::ALL.into_iter().rev() {
-        if !file.readers().contains(&harness) {
-            continue;
-        }
-        let project = file.per_project().then_some(cwd);
-        let Some(path) = file.path(home, project) else {
-            continue;
-        };
-        let Ok(Some(entries)) = crate::mcp_servers::read_servers(file, &path, project).await
-        else {
-            continue;
-        };
-        let scope = if file.per_project() { "project" } else { "user" };
-        for McpServerEntry { name, enabled, .. } in entries {
-            if seen.insert(name.clone()) && enabled {
-                out.push(McpMention {
-                    name,
-                    scope: scope.to_string(),
-                });
-            }
-        }
-    }
-    out
+    let _ = harness;
+    Ok(crate::mcp::config::effective(cwd).await?.into_iter().map(|d| McpMention {
+        name: d.server.name,
+        scope: if d.project.is_some() { "project" } else { "Carbon" }.into(),
+    }).collect())
 }
 
 /// The servers `prompt` mentions, in the order first mentioned, out of those
@@ -166,62 +107,6 @@ pub fn with_hint(text: &str, servers: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn project_overrides_decide_whether_a_server_is_available() {
-        let root = std::env::temp_dir().join(format!("carbon-mentions-{}", uuid::Uuid::now_v7()));
-        let home = root.join("home");
-        let cwd = root.join("project");
-        for (harness, user, project, enabled, disabled) in [
-            (
-                Harness::Codex,
-                ".codex/config.toml",
-                ".codex/config.toml",
-                "[mcp_servers.docs]\ncommand = 'docs'\nenabled = true\n",
-                "[mcp_servers.docs]\ncommand = 'docs'\nenabled = false\n",
-            ),
-            (
-                Harness::Grok,
-                ".grok/config.toml",
-                ".grok/config.toml",
-                "[mcp_servers.docs]\ncommand = 'docs'\nenabled = true\n",
-                "[mcp_servers.docs]\ncommand = 'docs'\nenabled = false\n",
-            ),
-            (
-                Harness::Pi,
-                ".pi/agent/mcp.json",
-                ".pi/mcp.json",
-                r#"{"mcpServers":{"docs":{"command":"docs","enabled":true}}}"#,
-                r#"{"mcpServers":{"docs":{"enabled":false}}}"#,
-            ),
-        ] {
-            let user_path = home.join(user);
-            let project_path = cwd.join(project);
-            tokio::fs::create_dir_all(user_path.parent().unwrap())
-                .await
-                .unwrap();
-            tokio::fs::create_dir_all(project_path.parent().unwrap())
-                .await
-                .unwrap();
-            tokio::fs::write(&user_path, enabled).await.unwrap();
-            tokio::fs::write(&project_path, disabled).await.unwrap();
-            assert!(
-                from_files_at(harness, &cwd, &home).await.is_empty(),
-                "{harness:?}"
-            );
-            tokio::fs::write(&user_path, disabled).await.unwrap();
-            tokio::fs::write(&project_path, enabled).await.unwrap();
-            assert_eq!(
-                from_files_at(harness, &cwd, &home).await,
-                vec![McpMention {
-                    name: "docs".into(),
-                    scope: "project".into(),
-                }],
-                "{harness:?}"
-            );
-        }
-        tokio::fs::remove_dir_all(root).await.unwrap();
-    }
 
     #[test]
     fn reads_tokens_that_open_a_word() {

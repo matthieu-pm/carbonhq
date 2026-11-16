@@ -28,7 +28,7 @@ These are core RPC commands, registered in `serve.rs`:
 
 `live_state.previews` carries the latest state for reconnects. The frontend store rejects command replies older than a lifecycle event and reconciles each server separately. No fields were added to the session index or normalized agent event model. Older clients can ignore the new live-state field.
 
-CBN-78 adds `carbon preview start`, `stop`, `url` and `logs` over the orchestration socket. Start uses saved setup or a package.json suggestion, saves explicit command and folder overrides, reuses matching live runs and waits up to 150 seconds for readiness. It returns the URL without opening the browser. The CLI stamps only preview requests as protocol v16, so older apps refuse them with an update instruction. Logs and browser output carry an untrusted-context label on stderr.
+CBN-78 adds `carbon preview start`, `stop`, `url` and `logs` over the orchestration socket. Start uses saved setup or a package.json suggestion, saves explicit command and folder overrides, reuses matching live runs and waits up to 150 seconds for readiness. It returns the URL without opening the browser. The CLI stamps only preview requests as protocol v17, so older apps refuse them with an update instruction. Logs and browser output carry an untrusted-context label on stderr.
 
 ## Remote browser connection
 

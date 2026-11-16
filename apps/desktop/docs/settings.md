@@ -59,9 +59,9 @@ The cost, stated: a `.command` handed to `open` is run by **Terminal.app alone**
 
 ## MCP and Skills
 
-**Both tabs read the agents' own files on every visit.** MCP groups servers by config file and project; Skills groups them by folder. Each group names the agents that load it. Changes go back to those files, so new sessions use them without a Carbon copy. Read failures stay on the affected group.
+**MCP uses one Carbon-owned list for every agent.** Existing user definitions are discovered automatically. Original files stay intact for terminal agents; project imports respect existing trust. New definitions, edits and removal go to Carbon's private catalog. The reader signs in once in Settings, and each chat gets a separate upstream connection. See [mcp-proxy.md](mcp-proxy.md) for discovery, credentials and launch adapters.
 
-**MCP status is a separate read**, so connecting to a slow server never holds up the config list. Status comes from the agents where they report it; an absent dot makes no claim. Sign-in stays with the agent. Env values and headers are masked in the editor until Show is pressed. Local arguments take one per line. Codex project config lives in `.codex/config.toml`; Pi uses `~/.pi/agent/mcp.json` and project `.pi/mcp.json`. Both agents require project trust before loading their project config. These tabs manage This Mac's files, so remote projects are excluded from their destination picker.
+**MCP status is a separate read**, so a slow connection never holds up the list. The proxy probes the real upstreams. Sign-in remains visible while its browser callback is pending, even across settings tabs. Env values and headers stay masked until Show is pressed. Local arguments take one per line. This Mac owns these settings, so remote projects stay out of the destination picker. Skills continues to read and edit the agents' own folders.
 
 **Skills can be created, imported as a folder, edited, renamed and removed.** Imports keep support files and leave `.git` behind; circular links fail without leaving a partial copy. Rename collisions leave both originals intact. Removing a linked skill takes the link alone. Carbon-managed and built-in skills open read-only. Plugin skills are not listed. A normal skill removal moves it to Trash on macOS and removes it on other systems, after an in-row confirmation. Pi's own resource listing supplies nested skills, configured files and package provenance. Body-only edits preserve frontmatter and keep a folder whose name differs from the skill's declared name.
 
@@ -75,7 +75,7 @@ The cost, stated: a `.command` handed to `open` is run by **Terminal.app alone**
 
 **Skill folders load before pi discovery.** `list_skills` reads folders without starting a CLI; `discoverPi: true` adds pi's resource listing afterward. The hook shows the first answer while that probe runs, and saves finish after the folder read. In the demo, `?slowPi` delays discovery by fifteen seconds to check that rows and editing stay available.
 
-[The agent settings demo](../demo/agent-settings.html) mounts both real tabs with a stateful fake bridge. It covers editable and read-only rows, a project source, an unreadable config, masked headers, and a change made outside the tab. Production commands have filesystem regression tests in `mcp_servers.rs` and `skills.rs`.
+[The agent settings demo](../demo/agent-settings.html) mounts both real tabs with a stateful fake bridge. It covers the shared MCP list, project scope, masked values, disabled servers and sign-in pending/completion (`?slowAuth` keeps it pending longer). Production MCP tests live under `mcp/`; Skills has filesystem regressions in `skills.rs`.
 
 ## Closing with ⌘W
 

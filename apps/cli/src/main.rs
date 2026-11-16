@@ -165,6 +165,10 @@ struct Settle {
 
 #[derive(Args)]
 struct New {
+    /// Reuse this ID and the same arguments to retry without creating another session.
+    #[arg(long)]
+    request_id: Option<String>,
+
     /// What the session should work on. Write it for someone who has not read
     /// your conversation — the new session inherits no context.
     prompt: String,
@@ -229,6 +233,10 @@ struct Update {
 
 #[derive(Args)]
 struct Send {
+    /// Reuse this ID and the same arguments to retry without submitting another message.
+    #[arg(long)]
+    request_id: Option<String>,
+
     /// The session to send to, as printed by `carbon session ls`.
     session_id: String,
 
@@ -550,6 +558,7 @@ fn session(command: SessionCommand) -> Result<(), String> {
 
 fn new(args: New) -> Result<(), String> {
     let request = Request::CreateSession(CreateSession {
+        request_id: args.request_id,
         prompt: args.prompt,
         project_path: resolve_project(args.project),
         model: args.model,
@@ -688,6 +697,7 @@ fn write_issue(request: Request) -> Result<(), String> {
 
 fn send_message(args: Send) -> Result<(), String> {
     let request = Request::SendMessage(SendMessage {
+        request_id: args.request_id,
         session_id: args.session_id,
         prompt: args.prompt,
         from_session_id: parent_session_id(),
@@ -1342,6 +1352,11 @@ fn on_machine(session: &SessionSummary) -> String {
 fn send(request: Request) -> Result<Response, String> {
     let endpoint =
         carbon_proto::endpoint().ok_or("could not work out where Carbon is listening")?;
+    let retry_key = match &request {
+        Request::CreateSession(create) => create.request_id.clone(),
+        Request::SendMessage(send) => send.request_id.clone(),
+        _ => None,
+    };
     let request = match MACHINE.get() {
         Some(machine) => Request::OnMachine(OnMachine {
             machine: machine.clone(),
@@ -1349,7 +1364,34 @@ fn send(request: Request) -> Result<Response, String> {
         }),
         None => request,
     };
-    send_to(&endpoint, request)
+    let response = send_to(&endpoint, request).map_err(|error| retry_guidance(error, retry_key.as_deref()))?;
+    recorded_reply(response)
+}
+
+/// A missing receipt is not permission to issue a new key after a transport failure.
+fn retry_guidance(message: String, key: Option<&str>) -> String {
+    match key {
+        Some(key) => format!("{message} Retry only with the same --request-id {key:?} and unchanged arguments; inspect the target before using a new ID."),
+        None => message,
+    }
+}
+
+/// Receipt IDs remain on stderr so a create still prints only its session ID on stdout.
+fn recorded_reply(response: Response) -> Result<Response, String> {
+    match response {
+        Response::Recorded { receipt, response } => {
+            if let Response::Error { message } = response.as_ref() {
+                return Err(format!("{message} Nothing was submitted. Fix the cause and use a new --request-id; request {:?} retains this refusal.", receipt.request_id));
+            }
+            eprintln!("Request {}: operation {}, session {}", receipt.request_id, receipt.operation_id, receipt.session_id);
+            Ok(*response)
+        }
+        Response::Uncertain { receipt, message } => Err(format!(
+            "Delivery uncertain for request {} (operation {}, session {}, worktree {}). {} Not resubmitted. Inspect the session before issuing a new request ID.",
+            receipt.request_id, receipt.operation_id, receipt.session_id, receipt.worktree_name.as_deref().unwrap_or("unchanged"), message
+        )),
+        other => Ok(other),
+    }
 }
 
 /// [`send`] to a socket the caller names.
@@ -1841,6 +1883,25 @@ mod tests {
             let cli = Cli::try_parse_from(argv).unwrap();
             assert_eq!(cli.machine.as_deref(), Some("vps"), "{argv:?}");
         }
+    }
+
+    #[test]
+    fn retry_keys_are_opt_in_on_create_and_send() {
+        let cli = Cli::try_parse_from(["carbon", "session", "new", "brief", "--request-id", "create-1"]).unwrap();
+        assert!(matches!(cli.command, Command::Session(SessionCommand::New(New { request_id: Some(id), .. })) if id == "create-1"));
+        let cli = Cli::try_parse_from(["carbon", "session", "send", "target", "brief", "--request-id", "send-1"]).unwrap();
+        assert!(matches!(cli.command, Command::Session(SessionCommand::Send(Send { request_id: Some(id), .. })) if id == "send-1"));
+        let cli = Cli::try_parse_from(["carbon", "session", "send", "target", "brief"]).unwrap();
+        assert!(matches!(cli.command, Command::Session(SessionCommand::Send(Send { request_id: None, .. }))));
+    }
+
+    #[test]
+    fn an_uncertain_receipt_names_the_operation_without_resending() {
+        let message = recorded_reply(Response::Uncertain {
+            receipt: carbon_proto::OperationReceipt { request_id: "key".into(), operation_id: "operation".into(), session_id: "target".into(), worktree_name: None },
+            message: "The previous attempt ended.".into(),
+        }).unwrap_err();
+        assert!(message.contains("key") && message.contains("operation") && message.contains("target") && message.contains("Not resubmitted"));
     }
 
     #[test]

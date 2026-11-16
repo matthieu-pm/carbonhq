@@ -53,6 +53,35 @@ Options:
 | `--issue <ID>` | The issue this work is against, like `DRA-53`. Repeat for several. |
 | `--fast` | Run at the agent's faster tier, which spends more usage. Inherits this session's when the harness is the same — see *Fast mode*. |
 | `--hidden` | Keep the session out of the sidebar — see *Hidden sessions*. |
+| `--request-id <id>` | Keep one logical create safe to retry; see *Retrying a create or message*. |
+
+### Retrying a create or message
+
+Use `--request-id` on `carbon session new` and `carbon session send` when a lost
+reply might need a retry. Choose one ID for each logical operation, keep it, and
+repeat the same arguments on the same machine to retry:
+
+```bash
+carbon session new --request-id review-round-1 --title "Review" "Review the changes"
+carbon session send <session-id> --request-id review-result-1 "Review findings"
+```
+
+The key is scoped to the calling session and server. Calls from a terminal share
+that server's terminal scope. Forwarding retains the original server identity.
+A completed retry returns the saved reply without creating another worker or
+submitting another message. A key reused with different arguments is refused.
+
+If no receipt arrives, retry only with the same ID and arguments. **Delivery
+uncertain** means the server could not prove the outcome: Carbon returns the
+reserved operation and session IDs (and a planned worktree name for creates),
+and does not submit the request again. Inspect that session or worktree before
+starting another operation. A definite refusal says nothing was submitted;
+fix the cause and use a new ID, since the old ID retains that refusal.
+
+Without the flag, commands keep their previous behavior. A successful queued
+send acknowledges acceptance; preserving queued messages through a server crash
+is separate from retry protection. If the server is too old to honor the key,
+update the half named by the error; do not remove the flag to force it through.
 
 ### Fast mode
 

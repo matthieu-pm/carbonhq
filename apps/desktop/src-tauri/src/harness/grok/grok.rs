@@ -101,7 +101,9 @@ pub async fn init(
     // this child makes it before resuming — see `fork_conversation`.
     fork_from: Option<&str>,
     app: &Sink,
+    mcp: &crate::mcp::proxy::SessionProxy,
 ) -> Result<Session> {
+    let mcp_servers = mcp.acp_merged()?;
     // Ahead of the spawn: everything between the spawn and the kill-wrapped
     // `open_session` below has to be infallible, or a `?` returns leaving a
     // child nothing can reach.
@@ -223,6 +225,7 @@ pub async fn init(
         permission_mode,
         is_new_session,
         fork_from,
+        mcp_servers,
     )
     .await
     {
@@ -256,6 +259,7 @@ pub async fn init(
     let _ = ready_tx.send(session.clone());
 
     Ok(Session {
+        mcp: None,
         id: session_id.to_string(),
         child,
         stdin: Transport::Grok(session),
@@ -307,6 +311,7 @@ async fn open_session(
     mode: ApprovalPolicy,
     is_new_session: bool,
     fork_from: Option<&str>,
+    mcp_servers: Vec<Value>,
 ) -> Result<Value> {
     client
         .request("initialize", probe::handshake_params())
@@ -338,7 +343,7 @@ async fn open_session(
                 json!({
                     "sessionId": session_id,
                     "cwd": session_cwd,
-                    "mcpServers": [],
+                    "mcpServers": mcp_servers,
                     "_meta": meta,
                 }),
             )
@@ -353,7 +358,7 @@ async fn open_session(
     let answer = client
         .request(
             "session/new",
-            json!({"cwd": session_cwd, "mcpServers": [], "_meta": meta}),
+            json!({"cwd": session_cwd, "mcpServers": mcp_servers, "_meta": meta}),
         )
         .await?;
 

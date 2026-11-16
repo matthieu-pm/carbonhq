@@ -1,62 +1,61 @@
 ---
 title: MCP servers
-description: Add, edit and remove MCP servers in each agent's own configuration, check their status, and choose global or project scope.
+description: Set up and sign in to MCP servers once for every agent in Carbon.
 sidebar:
   order: 3
 ---
 
-MCP servers give agents tools and access to services. Settings → **MCP** lists the servers configured on **This Mac**, grouped by agent and configuration file. It shows which agents read each file, so you can see when a change affects more than one.
+MCP servers give agents tools and access to services. Settings → **MCP** manages one list for every agent launched by Carbon.
+
+Carbon finds existing servers in your agents' configuration automatically. You do not need to import or review them. Their original files stay intact for agents you run in a terminal. Existing project trust still applies to project configuration.
 
 Open Settings with `⌘,`. You can change that shortcut in Settings → Shortcuts.
 
 ## Add a server
 
 1. Click **Add server**.
-2. Under **Agent**, pick the agent and scope. The sentence below names the file Carbon will change.
+2. Under **Available in**, choose **Every project** or an attached project.
 3. Enter a **Name** and choose a **Type**.
-4. For **Local command**, enter the executable under **Command**, one argument per line under **Arguments**, and any **Environment** variables. For **HTTP** or **SSE**, enter the **URL** and any **Headers**. Only supported types appear.
-5. Click **Add server**, then start a new session to use it.
+4. For **Local command**, enter the executable, one argument per line, and any environment variables. For **HTTP** or **SSE**, enter the URL and any headers.
+5. Click **Add server**.
 
 Environment values and headers are masked. Use the eye button to check a value.
 
-Carbon writes the agent's own configuration. The change also applies when you run that agent in a terminal.
+## Sign in once
 
-## Pick the scope
+If a server needs authentication, click **Sign in** beside it. Complete sign-in in your browser. Carbon keeps the waiting state visible until sign-in finishes.
 
-| Agent | Available scopes |
-|---|---|
-| Claude Code | **Global** for all projects; **Just you** for your private configuration in one project; **Shared** for the project's `.mcp.json`. Grok Build also reads the Global and Shared files. |
-| Codex | **Global**, or **Project** in `.codex/config.toml`. Codex loads project configuration when the project is trusted. |
-| Grok Build | **Global**, or **Project** in `.grok/config.toml`. |
-| fx | **Global** in `~/.fx/mcp.json`. |
-| pi | **Global** in `~/.pi/agent/mcp.json`, or **Project** in `.pi/mcp.json`. Project configuration requires trust in pi. |
+That sign-in covers every agent in Carbon. You do not need to sign in separately through each agent. API keys and other static credentials can be supplied through the server's headers or environment variables.
 
-Project choices come from the projects attached to Carbon. A shared project file can be committed with your repository; check what you put in it before sharing it.
+Some services only accept approved MCP clients. If a service refuses Carbon before the browser opens, Carbon needs approval from that service before sign-in can work.
+
+Figma has an automatic fallback through the installed Codex CLI. Carbon reuses your existing Codex MCP login, so signing out of Figma in either Carbon or Codex affects both. This connection needs Codex 0.169.0 or later and runs no model turn. You can keep using any agent in Carbon.
+
+The Figma fallback supports tools and resource reads. Upstream server instructions and MCP prompts are unavailable through this connection. Your agent's normal tool permissions still apply. Cancelling a call closes that chat's connection; Figma may continue work it has already started.
+
+Carbon's issue-tracker connection is separate. See [Issues](/settings/issues).
+
+## Each chat stays separate
+
+Each chat gets its own connection to each server. A browser or working directory used in one chat stays separate from another chat. Repeated calls in the same running chat reuse that connection.
+
+Server and tool names stay the same. You can mention a server with `$` in the composer, and existing agent permission rules can still name it.
 
 ## Read the status
 
-The list appears first, then status checks fill in. Click **Refresh** to read the files and check again.
+The list appears first, then connection checks fill in. Click **Refresh** to check again.
 
 | Status | Meaning |
 |---|---|
-| **Connected** | The agent reports the server as connected. |
-| **Needs sign-in** | Sign in through the agent itself, such as `/mcp` in Claude Code or the agent's MCP login command. |
-| **Failed to connect** | Check the command, URL and the agent's own error. |
-| **Off** | The server is disabled in its configuration. |
+| **Connected** | Carbon reached the server. |
+| **Needs sign-in** | Click **Sign in** to connect it for every agent. |
+| **Failed to connect** | Check the server's command, URL or credentials. |
+| **Off** | The server is disabled. Use its menu to turn it on. |
 
-Some agents report configuration or authentication state without making a live connection. A missing status does not prove a server is unavailable. If Carbon cannot ask an agent, it shows the error below that group.
+A connection that fails during a session also produces a notice in that chat.
 
-## Edit or remove a server
+## Edit, disconnect or remove
 
-Open the server's **⋯** menu and choose **Edit** or **Remove**. Removal asks you to confirm and changes only that file and scope. New sessions pick up the change.
+Open a server's **⋯** menu to edit it, turn it on or off, sign out, or remove it. New sessions pick up the change. Removing an automatically discovered server does not import it again.
 
-A pi project row marked **Uses global definition** offers **Edit global definition**. This changes the shared definition rather than making a project copy.
-
-A lock marks servers reported by an agent that Carbon cannot edit, such as plugin-provided servers. Change those where they come from.
-
-## Limits
-
-- This page manages This Mac's configuration, even when you have a remote session selected.
-- OAuth sign-in happens in the agent, not in this Settings tab.
-- MCP configuration is per agent. Adding a server for one does not make it available to every agent; the group names its readers.
-- Carbon's issue-tracker connection is separate. See [Issues](/settings/issues).
+This page manages the servers on **This Mac**. Servers supplied by an agent's own plugins remain managed by that agent.

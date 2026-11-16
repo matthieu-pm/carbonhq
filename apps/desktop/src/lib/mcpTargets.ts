@@ -2,6 +2,7 @@ import { LOCAL, serverOfPath } from "@/lib/transport";
 import type { Harness, McpFile, McpServerEntry, McpSource, McpTarget, Project } from "@/types/events";
 
 export const MCP_FILE_OWNERS: Record<McpFile, Harness> = {
+  carbon: "claude_code",
   claude_user: "claude_code", claude_local: "claude_code", claude_project: "claude_code",
   codex: "codex", codex_project: "codex", grok_user: "grok", grok_project: "grok", fx: "fx",
   pi_user: "pi", pi_project: "pi",
@@ -10,6 +11,9 @@ export const MCP_PROJECT_FILES: McpFile[] = ["claude_local", "claude_project", "
 
 /// These settings write on This Mac; merged remote projects are not local destinations.
 export function mcpTargets(sources: McpSource[], projects: Project[]): McpTarget[] {
+  if (!sources.length || sources.some((source) => source.file === "carbon")) {
+    return [{ file: "carbon", project: null }, ...projects.filter((p) => serverOfPath(p.path) === LOCAL).map((p) => ({ file: "carbon" as const, project: p.path }))];
+  }
   const owners = new Set(sources.map((source) => source.owner));
   const targets: McpTarget[] = sources.flatMap((source) => source.file && !MCP_PROJECT_FILES.includes(source.file)
     ? [{ file: source.file, project: null }] : []);

@@ -68,6 +68,21 @@ Any session can message any other. A child reports back to its parent, or a pare
 
 Each message costs the receiver a whole turn, so agents should send one when the other session needs it, not to say "done".
 
+## Retry a create or message
+
+Add `--request-id` to a create or send when you may need to retry a lost reply:
+
+```bash
+carbon session new --request-id review-round-1 "Review the changes"
+carbon session send <session-id> --request-id review-result-1 "Review findings"
+```
+
+Keep the same ID, arguments and destination for each retry. Carbon returns the saved reply without starting another worker or submitting another message. Different arguments under the same ID are refused.
+
+**Delivery uncertain** means Carbon could not prove whether the request ran. It returns the operation and session IDs, plus the planned worktree name for a create, and does not resend. Inspect the session or worktree before starting another operation. A definite refusal says nothing was submitted; fix the cause and use a new ID.
+
+Without the flag, commands keep their previous behavior. Both the receiving server and the CLI must support request IDs; an older server names which half to update. Retry protection does not make queued messages survive a server crash.
+
 ## Check on sessions
 
 ```bash

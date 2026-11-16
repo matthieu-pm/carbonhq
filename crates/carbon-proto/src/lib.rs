@@ -45,8 +45,10 @@ use std::path::PathBuf;
 /// gone where it was sent. v13 added `write_issue`: an older app cannot parse
 /// it, and a failed parse answers "could not parse the request" where the
 /// reader needs "update the Carbon app". v14 added managed Markdown Pages;
-/// v15 added one-use secret requests; v16 adds managed preview commands.
-pub const PROTOCOL_VERSION: u32 = 16;
+/// v15 added one-use secret requests. v16 added retry keys: ignoring one would
+/// repeat work while reporting success, so only keyed requests require v16.
+/// v17 adds managed preview commands.
+pub const PROTOCOL_VERSION: u32 = 17;
 
 /// A CLI readiness wait fits inside the socket and remote request deadlines.
 pub const PREVIEW_WAIT_SECS: u64 = 150;
@@ -102,6 +104,9 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
+            Request::LookupReceipt(lookup) => lookup.request.version().max(16),
+            Request::CreateSession(create) if create.request_id.is_some() => 16,
+            Request::SendMessage(send) if send.request_id.is_some() => 16,
             Request::CreateSession(create) if create.base.is_some() => 10,
             Request::CreateDraft(draft) if draft.base.is_some() => 10,
             Request::CreateSession(_)
@@ -128,7 +133,7 @@ impl Request {
             Request::WriteIssue(_) => 13,
             Request::Pages(_) => 14,
             Request::Secret(_) => 15,
-            Request::Preview(_) => 16,
+            Request::Preview(_) => 17,
             // v12 is when the wrapper itself arrived. A newer request inside it
             // has to stamp its own version, or a v12 app parses the wrapper and
             // then says it could not parse the line instead of naming the update.
@@ -140,6 +145,7 @@ impl Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
+    LookupReceipt(ReceiptLookup),
     CreateSession(CreateSession),
     ListSessions(ListSessions),
     SendMessage(SendMessage),
@@ -678,6 +684,11 @@ pub enum BrowserAction {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSession {
+    // New defaulted fields must omit their default on serialization, or a
+    // compatible update changes fingerprints of requests already on disk.
+    /// Stable across retries of this exact payload; absent keeps legacy behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub prompt: String,
     /// The repo the session runs in — the main worktree, which the CLI fills
     /// from `git worktree list` when `--project` is absent, so a call from a
@@ -819,6 +830,10 @@ pub struct IssueInput {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessage {
+    // New defaulted fields must omit their default to preserve retry fingerprints.
+    /// Stable across retries of this exact payload; absent keeps legacy behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub session_id: String,
     pub prompt: String,
     /// Who is sending, for the line the receiving agent actually reads. Absent
@@ -839,12 +854,41 @@ pub struct ListSessions {
     pub parent_session_id: Option<String>,
 }
 
+/// A separate command fails closed on receivers that cannot answer a read-only probe.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReceiptLookup {
+    pub request: Box<Request>,
+}
+
+/// The durable identity retained even when a process dies before recording the outcome.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationReceipt {
+    pub request_id: String,
+    pub operation_id: String,
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_name: Option<String>,
+}
+
 /// Tagged rather than an `ok` boolean beside a bag of optional payloads: the
 /// three answers carry disjoint fields, and a struct that can hold all of them
 /// at once can also hold none of them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
+    /// Only an explicit miss permits a forwarding server to prepare a new operation.
+    ReceiptMissing,
+    /// Only keyed callers receive this wrapper; the stored inner response never changes.
+    Recorded {
+        receipt: OperationReceipt,
+        response: Box<Response>,
+    },
+    /// The operation may have reached a harness and must not be resubmitted automatically.
+    Uncertain {
+        receipt: OperationReceipt,
+        message: String,
+    },
     Created {
         session: SessionSummary,
         /// What `from` resolved to, echoed back because the caller asked with a
@@ -1302,15 +1346,34 @@ mod tests {
         let preview = Request::Preview(PreviewRequest::Start {
             session_id: "s".into(), command: Some("pnpm dev --port {port}".into()), directory: Some("apps/web".into()),
         });
-        assert_eq!(Envelope::new(preview.clone()).v, 16);
+        assert_eq!(Envelope::new(preview.clone()).v, 17);
         assert!(preview.waits_for_preview());
         let preview_elsewhere = Request::OnMachine(OnMachine {
             machine: "vps".into(), request: Box::new(preview.clone()),
         });
         assert!(preview_elsewhere.waits_for_preview());
         let decoded: Envelope = serde_json::from_str(&encode_line(&Envelope::new(preview_elsewhere)).unwrap()).unwrap();
-        assert_eq!(decoded.v, 16);
+        assert_eq!(decoded.v, 17);
         assert!(!Request::Preview(PreviewRequest::Logs { session_id: "s".into() }).waits_for_preview());
+        let keyed = [
+            Request::CreateSession(CreateSession { request_id: Some("create-1".into()), ..Default::default() }),
+            Request::SendMessage(SendMessage { request_id: Some("send-1".into()), ..Default::default() }),
+        ];
+        for request in &keyed {
+            assert_eq!(request.version(), 16);
+            let forwarded = Request::OnMachine(OnMachine { machine: "vps".into(), request: Box::new(request.clone()) });
+            assert_eq!(forwarded.version(), 16);
+            let wire = encode_line(&Envelope::new(forwarded)).unwrap();
+            let decoded: Envelope = serde_json::from_str(&wire).unwrap();
+            assert_eq!(decoded.v, 16);
+            assert!(wire.contains("requestId"));
+            let probe = Envelope::new(Request::LookupReceipt(ReceiptLookup { request: Box::new(request.clone()) }));
+            assert_eq!(probe.v, 16);
+            let wire = encode_line(&probe).unwrap();
+            let decoded: Envelope = serde_json::from_str(&wire).unwrap();
+            assert!(matches!(decoded.request, Request::LookupReceipt(ReceiptLookup { request }) if matches!(*request, Request::CreateSession(_) | Request::SendMessage(_))));
+            assert!(wire.contains("lookup_receipt"));
+        }
         let newest = old
             .iter()
             .chain(&drafts)
@@ -1318,6 +1381,7 @@ mod tests {
             .chain(&servers)
             .chain(&sessions)
             .chain([&remote, &elsewhere, &write, &pages, &secret, &preview])
+            .chain(&keyed)
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));
@@ -1363,6 +1427,7 @@ mod tests {
             session_id: "s".into(),
             prompt: "hi".into(),
             from_session_id: None,
+            request_id: None,
         });
         let line = encode_line(&Envelope::new(Request::OnMachine(OnMachine {
             machine: "vps".into(),

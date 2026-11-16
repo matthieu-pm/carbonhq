@@ -1367,9 +1367,9 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         // `carbon --machine` from an agent on the Mac that added this machine.
         orchestrate(
             line: String, origin: Option<String>, caller: Option<crate::orchestration::Caller>,
-            sender: Option<crate::events::MessageSender>,
+            sender: Option<crate::events::MessageSender>, request_fingerprint: Option<String>, request_source: Option<String>,
         ) => ok(crate::orchestration::answer_forward(
-            crate::orchestration::Forward { line, origin, caller, sender }, sink,
+            crate::orchestration::Forward { line, origin, caller, sender, request_fingerprint, request_source }, sink,
         ).await);
         worktree_disposition(session_id: String) => crate::worktree_disposition(&session_id).await;
         remove_session_worktree(session_id: String) => crate::remove_session_worktree(&session_id).await;
@@ -1411,6 +1411,9 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         list_mcp_servers() => crate::mcp_servers::list_mcp_servers().await;
         list_mcp_mentions(harness: Harness, cwd: String) => crate::mcp_mentions::list_mcp_mentions(harness, cwd).await;
         mcp_server_status() => ok(crate::mcp_servers::mcp_server_status().await);
+        start_mcp_login(target: crate::mcp_servers::McpTarget, name: String) => crate::mcp::auth::start_mcp_login(target, name).await;
+        mcp_login_status(id: String) => crate::mcp::auth::mcp_login_status(id).await;
+        logout_mcp_server(target: crate::mcp_servers::McpTarget, name: String) => crate::mcp::auth::logout_mcp_server(target, name).await;
         save_mcp_server(target: crate::mcp_servers::McpTarget, original: Option<String>, server: crate::mcp_servers::McpServerEntry) =>
             crate::mcp_servers::save_mcp_server(target, original, server).await;
         remove_mcp_server(target: crate::mcp_servers::McpTarget, name: String) =>

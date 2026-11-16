@@ -52,7 +52,7 @@ fn start_sends_saved_overrides_and_returns_only_the_url() {
         String::from_utf8(out.stdout).unwrap(),
         "http://127.0.0.1:5173\n"
     );
-    assert_eq!(request["v"], 16);
+    assert_eq!(request["v"], 17);
     assert_eq!(request["sessionId"], "calling-session");
     assert_eq!(request["directory"], "apps/web");
     assert_eq!(request["command"], "pnpm dev --port {port}");
@@ -96,7 +96,7 @@ fn remote_preview_keeps_version_and_explicit_session() {
         serde_json::json!({"status":"preview","url":"http://[::1]:5173","logs":null}),
     );
     assert!(out.status.success());
-    assert_eq!(request["v"], 16);
+    assert_eq!(request["v"], 17);
     assert_eq!(request["cmd"], "on_machine");
     assert_eq!(request["request"]["sessionId"], "remote-session");
 }
@@ -105,7 +105,7 @@ fn remote_preview_keeps_version_and_explicit_session() {
 fn older_app_refusal_is_actionable() {
     let (out, _) = cli(
         &["preview", "start"],
-        serde_json::json!({"status":"error","message":"this carbon CLI speaks protocol v16, the app speaks v15 — update the Carbon app"}),
+        serde_json::json!({"status":"error","message":"this carbon CLI speaks protocol v17, the app speaks v16 — update the Carbon app"}),
     );
     assert!(!out.status.success());
     assert!(String::from_utf8(out.stderr)
