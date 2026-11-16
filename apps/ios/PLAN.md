@@ -179,8 +179,10 @@ The orb is the package's own, mapped in `Orb.swift`: the working state while a
 turn runs, gyro for a subagent, spiral for background tasks.
 
 Opens on the newest turns (`turns: 8`), pages older ones in on scroll to top.
-A reconnect re-reads the open session's tail and appends what it does not hold,
-matched on event id, never `seq`.
+A reconnect calls `get_session_recovery`, merging missed events by ID or
+replacing a gap with a bounded tail. `olderBefore` keeps the full history
+accessible on scroll. The protocol and overflow behavior are documented in
+[server and transport](../desktop/docs/server-and-transport.md#reconnect-state-and-protocol-changes).
 
 ## Pairing
 

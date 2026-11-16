@@ -1888,9 +1888,41 @@ pub struct SessionPage {
     pub older_before: Option<u64>,
 }
 
-/// Reads the newest `turns` turns ending at byte `end` (the file's end where
-/// `None`), backwards in doubling chunks, so only the lines returned are ever
-/// parsed as events.
+pub(crate) const REPLAY_EVENTS: usize = 512;
+pub(crate) const REPLAY_BYTES: usize = 2 * 1024 * 1024;
+const LOG_WINDOW_CAP: usize = 64 * 1024 * 1024;
+
+/// A reset replaces the held transcript with a paged tail; live state is recovered separately.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRecovery {
+    pub events: Vec<AgentEvent>,
+    pub older_before: Option<u64>,
+    pub reset: bool,
+}
+
+/// Reads a bounded tail once instead of rebuilding an arbitrarily long missed stretch.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn get_session_recovery(session_id: &str, after: Vec<String>) -> Result<Option<SessionRecovery>, Fail> {
+    if get_session_index_item(session_id).await?.is_none() {
+        return Ok(None);
+    }
+    let page = read_session_page(session_id, None, 8).await?;
+    Ok(Some(recovery(page, &after.into_iter().collect())))
+}
+
+/// Only a cursor inside the bounded page can connect the held prefix without a gap.
+fn recovery(page: SessionPage, held: &HashSet<String>) -> SessionRecovery {
+    if let Some(at) = page.events.iter().rposition(|e| held.contains(&e.id)) {
+        if serde_json::to_vec(&page.events[at + 1..]).is_ok_and(|bytes| bytes.len() <= REPLAY_BYTES) {
+            let events = page.events.into_iter().skip(at + 1).collect();
+            return SessionRecovery { events, older_before: None, reset: false };
+        }
+    }
+    SessionRecovery { events: page.events, older_before: page.older_before, reset: true }
+}
+
+/// Pages may split a turn at the event/byte budget; one oversized event stays whole.
 async fn read_session_page(session_id: &str, end: Option<u64>, turns: u32) -> Result<SessionPage> {
     let path = get_session_path(session_id).await?;
     let mut file = match fs::File::open(&path).await {
@@ -1902,24 +1934,54 @@ async fn read_session_page(session_id: &str, end: Option<u64>, turns: u32) -> Re
     };
     let len = file.metadata().await?.len();
 
-    read_page(&mut file, end.map_or(len, |end| end.min(len)), turns, 256 * 1024).await
+    read_page(&mut file, end.map_or(len, |end| end.min(len)), turns).await
 }
 
+/// Stops at whole event boundaries so every earlier byte remains reachable by paging.
 async fn read_page(
     file: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncSeek + Unpin),
     end: u64,
     turns: u32,
-    chunk: u64,
 ) -> Result<SessionPage> {
-    let cut = |buf: &[u8], at_top: bool| turn_cut(buf, at_top, turns.max(1)).or(at_top.then_some(0));
-    let (events, begins) = read_back(file, end, chunk, cut).await?.unwrap_or_default();
+    use std::io::SeekFrom;
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
+    let mut size = end.min(REPLAY_BYTES as u64 + 1) as usize;
+    let (buf, from, complete) = loop {
+        let from = end - size as u64;
+        file.seek(SeekFrom::Start(from)).await?;
+        let mut buf = vec![0; size];
+        file.read_exact(&mut buf).await?;
+        let complete = if from == 0 { Some(0) } else { buf.iter().position(|&b| b == b'\n').map(|at| at + 1) };
+        if let Some(complete) = complete.filter(|&at| at < buf.len() || from == 0) {
+            break (buf, from, complete);
+        }
+        anyhow::ensure!(size < LOG_WINDOW_CAP, "Transcript event exceeds the 64 MiB wire limit; the log is retained on the server.");
+        size = (size * 2).min(LOG_WINDOW_CAP).min(end as usize);
+    };
+    let mut cut = buf.len();
+    let mut count = 0;
+    let mut turn_count = 0;
+    while cut > complete && count < REPLAY_EVENTS && turn_count < turns.max(1) {
+        let body_end = if buf[cut - 1] == b'\n' { cut - 1 } else { cut };
+        let start = buf[complete..body_end].iter().rposition(|&b| b == b'\n').map_or(complete, |at| complete + at + 1);
+        if count > 0 && buf.len() - start > REPLAY_BYTES {
+            break;
+        }
+        turn_count += opens_turn(&buf[start..body_end]) as u32;
+        count += 1;
+        cut = start;
+    }
+    let events = std::str::from_utf8(&buf[cut..])?.lines()
+        .map(serde_json::from_str::<AgentEvent>).collect::<Result<Vec<_>, _>>()?;
+    let begins = from + cut as u64;
     Ok(SessionPage { events, older_before: (begins > 0).then_some(begins) })
 }
 
 /// Reads backwards from byte `end` in doubling chunks until `cut` names where
 /// in what is in hand to start, and parses only from there. `None` where `cut`
 /// finds nothing all the way to the top.
+#[cfg(test)]
 async fn read_back(
     file: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncSeek + Unpin),
     end: u64,
@@ -1961,6 +2023,7 @@ async fn read_back(
 /// The newest whole line in `buf` that `matches`, as its start and its end
 /// past the newline, walking from the end. The first line is only known whole
 /// where `at_top` says `buf` starts the file.
+#[cfg(test)]
 fn newest_line(buf: &[u8], at_top: bool, mut matches: impl FnMut(&[u8]) -> bool) -> Option<(usize, usize)> {
     let mut end = buf.len();
     while end > 0 {
@@ -1980,6 +2043,7 @@ fn newest_line(buf: &[u8], at_top: bool, mut matches: impl FnMut(&[u8]) -> bool)
 
 /// Where in `buf` the `turns`-th newest turn opens, walking lines from the end.
 /// `None` until that many are in hand.
+#[cfg(test)]
 fn turn_cut(buf: &[u8], at_top: bool, turns: u32) -> Option<usize> {
     let mut found = 0;
     newest_line(buf, at_top, |line| {
@@ -1990,6 +2054,7 @@ fn turn_cut(buf: &[u8], at_top: bool, turns: u32) -> Option<usize> {
 }
 
 /// Just past the newest line whose event id is in `held`.
+#[cfg(test)]
 fn after_held(buf: &[u8], at_top: bool, held: &HashSet<String>) -> Option<usize> {
     #[derive(Deserialize)]
     struct Line {
@@ -2016,16 +2081,8 @@ pub async fn get_session_since(session_id: &str, after: Vec<String>) -> Result<O
 }
 
 async fn read_since(session_id: &str, held: HashSet<String>) -> Result<Option<Vec<AgentEvent>>> {
-    let path = get_session_path(session_id).await?;
-    let mut file = match fs::File::open(&path).await {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e).context("could not open session file"),
-    };
-    let len = file.metadata().await?.len();
-    let found = read_back(&mut file, len, 64 * 1024, |buf, at_top| after_held(buf, at_top, &held)).await?;
-
-    Ok(found.map(|(events, _)| events))
+    let recovered = recovery(read_session_page(session_id, None, u32::MAX).await?, &held);
+    Ok((!recovered.reset).then_some(recovered.events))
 }
 
 /// A main-thread prompt that is not queued — the cut `buildTranscript` makes,
@@ -3459,6 +3516,91 @@ mod tests {
 mod page_tests {
     use super::*;
 
+    #[tokio::test]
+    #[ignore = "reconnect measurement; run with --ignored --nocapture"]
+    async fn measure_reconnect_baseline() {
+        for (count, size) in [(256, 1024), (4096, 1024), (1024, 16 * 1024), (8, 2 * 1024 * 1024)] {
+            let log: String = (0..count).map(|seq| line(seq, false, serde_json::json!({
+                "type": "assistant_text", "text": "x".repeat(size),
+            }))).collect();
+            let held = HashSet::from(["e0".to_string()]);
+            let mut file = std::io::Cursor::new(log.as_bytes());
+            let start = std::time::Instant::now();
+            let (events, _) = read_back(&mut file, log.len() as u64, 64 * 1024, |buf, top| after_held(buf, top, &held))
+                .await.unwrap().unwrap();
+            let bytes = serde_json::to_vec(&events).unwrap().len();
+            eprintln!("baseline: events={} payload_bytes={bytes} elapsed_ms={:.2} crew32_bytes={}", events.len(), start.elapsed().as_secs_f64() * 1000., bytes * 32);
+            let start = std::time::Instant::now();
+            let page = read_page(&mut file, log.len() as u64, 8).await.unwrap();
+            let recovered = recovery(page, &held);
+            let bytes = serde_json::to_vec(&recovered).unwrap().len();
+            eprintln!("bounded: events={} reset={} payload_bytes={bytes} elapsed_ms={:.2} crew32_bytes={}", recovered.events.len(), recovered.reset, start.elapsed().as_secs_f64() * 1000., bytes * 32);
+        }
+    }
+
+    #[tokio::test]
+    async fn recovery_resets_at_event_budget_and_pages_the_entire_gap() {
+        let log: String = (0..1400).map(|seq| text(seq, false)).collect();
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let mut end = log.len() as u64;
+        let tail = read_page(&mut file, end, 8).await.unwrap();
+        assert_eq!(tail.events.len(), REPLAY_EVENTS);
+        let recovered = recovery(tail, &HashSet::from(["e0".into()]));
+        assert!(recovered.reset);
+        assert!(serde_json::to_vec(&recovered.events).unwrap().len() <= REPLAY_BYTES);
+        let mut all: Vec<_> = recovered.events.iter().map(|e| e.seq).collect();
+        let mut before = recovered.older_before;
+        while let Some(at) = before {
+            assert!(at < end);
+            end = at;
+            let page = read_page(&mut file, end, 16).await.unwrap();
+            let mut earlier: Vec<_> = page.events.iter().map(|e| e.seq).collect();
+            earlier.extend(all);
+            all = earlier;
+            before = page.older_before;
+        }
+        assert_eq!(all, (0..1400).collect::<Vec<_>>());
+    }
+
+    #[tokio::test]
+    async fn recovery_uses_bytes_and_keeps_a_large_single_event_pageable() {
+        let log: String = (0..40).map(|seq| line(seq, false, serde_json::json!({
+            "type": "assistant_text", "text": "é\n".repeat(64 * 1024),
+        }))).collect();
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let tail = read_page(&mut file, log.len() as u64, 8).await.unwrap();
+        assert!(tail.events.len() < 40);
+        assert!(serde_json::to_vec(&tail.events).unwrap().len() <= REPLAY_BYTES);
+        assert!(recovery(tail, &HashSet::from(["e0".into()])).reset);
+
+        let log = prompt(0, false) + &line(1, false, serde_json::json!({
+            "type": "assistant_text", "text": "x".repeat(REPLAY_BYTES * 2),
+        }));
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let tail = read_page(&mut file, log.len() as u64, 8).await.unwrap();
+        assert_eq!(tail.events.len(), 1);
+        assert_eq!(tail.events[0].seq, 1);
+        assert_eq!(tail.older_before, Some(prompt(0, false).len() as u64));
+        let older = read_page(&mut file, tail.older_before.unwrap(), 8).await.unwrap();
+        assert_eq!(older.events[0].seq, 0);
+        assert_eq!(older.older_before, None);
+    }
+
+    #[tokio::test]
+    async fn recovery_joins_on_ids_even_when_a_subagent_restarts_seq() {
+        let subagent = text(0, true).replace("\"id\":\"e0\"", "\"id\":\"sub0\"");
+        let log = prompt(0, false) + &text(1, false) + &subagent + &text(2, false);
+        let mut file = std::io::Cursor::new(log.as_bytes());
+        let tail = read_page(&mut file, log.len() as u64, 8).await.unwrap();
+        let recovered = recovery(tail, &HashSet::from(["sub0".into(), "unlogged".into()]));
+        assert!(!recovered.reset);
+        assert_eq!(recovered.events.iter().map(|e| e.seq).collect::<Vec<_>>(), [2]);
+        let tail = read_page(&mut file, log.len() as u64, 8).await.unwrap();
+        let recovered = recovery(tail, &HashSet::from(["e2".into()]));
+        assert!(!recovered.reset);
+        assert!(recovered.events.is_empty());
+    }
+
     fn line(seq: u64, subagent: bool, payload: Value) -> String {
         let mut event = serde_json::json!({
             "id": format!("e{seq}"), "sessionId": "s", "harness": "claude_code",
@@ -3514,7 +3656,7 @@ mod page_tests {
         let mut end = log.len() as u64;
         let mut pages = 0;
         loop {
-            let page = read_page(&mut file, end, 2, 7).await.unwrap();
+            let page = read_page(&mut file, end, 2).await.unwrap();
             pages += 1;
             let mut these: Vec<u64> = page.events.iter().map(|e| e.seq).collect();
             these.extend(seqs);
@@ -3541,10 +3683,8 @@ mod page_tests {
             let held: HashSet<String> = held.iter().cloned().collect();
             let len = log.len() as u64;
             async move {
-                read_back(&mut file, len, 7, |buf, top| after_held(buf, top, &held))
-                    .await
-                    .unwrap()
-                    .map(|(events, _)| events.iter().map(|e| e.seq).collect::<Vec<_>>())
+                let recovered = recovery(read_page(&mut file, len, 8).await.unwrap(), &held);
+                (!recovered.reset).then(|| recovered.events.iter().map(|e| e.seq).collect::<Vec<_>>())
             }
         };
 

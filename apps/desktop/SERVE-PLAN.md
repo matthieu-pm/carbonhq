@@ -116,12 +116,13 @@ and no agent is left blocked on a card nobody can see.** Three kinds of state,
 three routes back:
 
 - **Logged events** come back from the log. On every connect the client re-reads
-  each open session's tail (`get_session_by_id`, then `get_session_page` until
-  the pages meet an event it holds) and appends what follows its newest held
-  event, in log order ([resync.ts](src/lib/resync.ts)). Matched on event **id**,
+  each open session with `get_session_recovery`, merging what follows its
+  newest held event or replacing a gap with a bounded tail. Older history
+  stays available by scrolling ([resync.ts](src/lib/resync.ts)). Matched on event **id**,
   never `seq`: a Claude Code subagent numbers its own events from 0 inside the
   same log, so no seq is a cursor. A replayed queued prompt retires its queue
-  row, and a provisional prompt gives way as it does live.
+  row, and a provisional prompt gives way as it does live. Budgets and the
+  wire contract are in [server and transport](docs/server-and-transport.md#reconnect-state-and-protocol-changes).
 - **Unlogged state** comes from the server's memory. Every connect opens with
   one `live_state` frame — open permission and question requests, and each
   session's background tasks — kept by the server's sink under the same lock it

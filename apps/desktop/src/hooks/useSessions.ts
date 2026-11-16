@@ -36,7 +36,7 @@ import { stanceFor } from "@/lib/permission";
 import { isProvisional, nextMainSeq, provisionalId, retireOldestProvisional } from "@/lib/provisional";
 import { questionDrafts } from "@/lib/questionDrafts";
 import { usePendingSecretSessions, type SecretHandoff } from "@/lib/secrets";
-import { mergeMissed, missedEvents, type LiveState } from "@/lib/resync";
+import { mergeMissed, missedEvents, resetToTail, type LiveState, type SessionRecovery } from "@/lib/resync";
 import { forgetTranscript, keepTranscript, takeTranscript } from "@/lib/keptTranscripts";
 import { playNotification } from "@/lib/sound";
 import { activeSpace, allowedInSpace, moveSpace, orderProjects, PROJECT_ORDER_KEY, SPACE_KEY, SPACE_LIST_KEY } from "@/lib/space";
@@ -2389,6 +2389,7 @@ const sessionsRef = useRef(sessions);
 sessionsRef.current = sessions;
 const asksBySessionRef = useRef(asksBySession);
 asksBySessionRef.current = asksBySession;
+const catchUpReads = useRef(new Map<string, symbol>());
 
 /// Appends what a session's log gained since `held` — what the socket to a
 /// `carbon-serve` missed while down, or what a kept transcript missed while
@@ -2401,19 +2402,32 @@ const catchUp = async (
   // not retire a row by position: that row is one still waiting.
   queueKnown = false,
 ) => {
-  const fresh = (await newSince(sessionId, held)) ?? (await missedFromTail(sessionId, held));
-  if (!fresh) return false;
-  if (!fresh.length) return true;
+  const ticket = Symbol();
+  catchUpReads.current.set(sessionId, ticket);
+  let recovered: SessionRecovery | null;
+  try {
+    recovered = await readRecovery(sessionId, held);
+  } catch (error) {
+    if (catchUpReads.current.get(sessionId) === ticket) catchUpReads.current.delete(sessionId);
+    throw error;
+  }
+  if (catchUpReads.current.get(sessionId) !== ticket) return true;
+  catchUpReads.current.delete(sessionId);
+  if (!recovered) return false;
+  const fresh = recovered.events;
+  if (!recovered.reset && !fresh.length) return true;
 
   setSessions((prev) =>
     prev.map((s) => {
       if (s.sessionId !== sessionId) return s;
-      const events = mergeMissed(s.events, held, fresh);
-      return events === s.events ? s : { ...s, events };
+      const events = recovered.reset ? resetToTail(s.events, held, fresh) : mergeMissed(s.events, held, fresh);
+      return events === s.events ? s : {
+        ...s, events, ...(recovered.reset ? { olderBefore: recovered.olderBefore } : {}),
+      };
     }),
   );
   const flushed = fresh.filter((e) => e.payload.type === "user_message" && e.payload.queued).length;
-  if (flushed && !queueKnown) {
+  if (flushed && !queueKnown && !recovered.reset) {
     setQueuedBySession((prev) =>
       prev[sessionId]?.length ? { ...prev, [sessionId]: prev[sessionId].slice(flushed) } : prev,
     );
@@ -2421,36 +2435,20 @@ const catchUp = async (
   return true;
 };
 
-/// The events logged after the newest one `held` names, asked of the server
-/// directly. The ids sent are the newest few, since the last held events may
-/// be unlogged ones — a card, a provisional prompt. `null` where none of them
-/// were logged, or the server predates the command, and `missedFromTail`
-/// answers instead.
-const newSince = (sessionId: string, held: AgentEvent[]): Promise<AgentEvent[] | null> =>
-  held.length
-    ? invoke<AgentEvent[] | null>("get_session_since", {
-        sessionId,
-        after: held.slice(-64).map((e) => e.id),
-      }).catch(() => null)
-    : Promise.resolve(null);
-
-/// The same answer from the tail, paged back until the log meets an event
-/// already held: what an older server is asked.
-const missedFromTail = async (sessionId: string, held: AgentEvent[]) => {
+/// A bounded replay or replacement tail, with recent ids covering unlogged cards and prompts.
+const readRecovery = async (sessionId: string, held: AgentEvent[]): Promise<SessionRecovery | null> => {
+  try {
+    return await invoke<SessionRecovery | null>("get_session_recovery", {
+      sessionId, after: held.slice(-64).map((e) => e.id),
+    });
+  } catch (error) {
+    if (!String(error).includes("unknown command get_session_recovery")) throw error;
+  }
+  // Older servers still get one tail read, never an automatic walk through the gap.
   const tail = await invoke<SessionSnapshot | null>("get_session_by_id", { sessionId, turns: FIRST_MOUNT });
   if (!tail) return null;
-  let fetched = tail.events;
-  let before = tail.olderBefore;
-  let missed = missedEvents(held, fetched);
-  while (missed === null && before != null) {
-    const older = await invoke<SessionPage>("get_session_page", { sessionId, before, turns: 16 });
-    fetched = [...older.events, ...fetched];
-    before = older.olderBefore;
-    missed = missedEvents(held, fetched);
-  }
-  // Nothing held was ever logged — a session whose only event is the
-  // provisional prompt — so the whole log is news.
-  return missed ?? fetched;
+  const missed = missedEvents(held, tail.events);
+  return { events: missed ?? tail.events, olderBefore: tail.olderBefore, reset: missed === null };
 };
 
 /// A `carbon-serve` sends this on every connect, the first included, and it

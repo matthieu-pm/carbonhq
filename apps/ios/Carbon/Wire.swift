@@ -202,6 +202,12 @@ struct Snapshot: Decodable {
     let olderBefore: Int?
 }
 
+struct SessionRecovery: Decodable {
+    let events: [AgentEvent]
+    let olderBefore: Int?
+    let reset: Bool
+}
+
 struct LiveState: Decodable {
     let asks: [AgentEvent]
     let tasks: [AgentEvent]

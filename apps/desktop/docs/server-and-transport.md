@@ -92,6 +92,39 @@ Reconnect recovery has two parts:
 restart loses unpersisted requests; reconnect to the same running server
 must retain answerable cards. Check both cases when changing this path.
 
+Desktop, browser and iOS clients call `get_session_recovery` with `sessionId`
+and up to 64 recent event IDs in `after`. The answer is `null` for a missing
+session, or `{events, olderBefore, reset}`. With `reset: false`, merge the
+events by ID ahead of output received during the read. With `reset: true`,
+replace the transcript with that tail, keep current answerable cards and
+newer live output, and use `olderBefore` to page history on scroll. Never
+append a disconnected tail to an old prefix: that would hide the gap.
+
+Recovery reads at most 512 events and 2 MiB of log data. A replay must also
+fit 2 MiB encoded. Tail pages from `get_session_by_id` with `turns` and
+`get_session_page` obey the same limits, so a page can start inside a turn.
+A single larger event is returned whole, within the existing 64 MiB wire
+limit; it forces tail recovery and retains an older-page cursor. A log event
+beyond that wire limit returns an error and stays on disk. History is never
+deleted by recovery. `get_session_since` keeps its old array-or-null shape,
+returning null when the bounded window cannot resume. New clients connected
+to an older server read one tail rather than automatically paging the gap;
+older servers do not provide the new server-side byte guarantees.
+
+Live events, replies and host calls share each connection's queue: 256 frames
+and 64 MiB of encoded JSON, including the frame being written. Shared event
+strings are charged in full to each reader. There are at most 32 admitted
+commands per connection. Overflow or a write taking over 20 seconds closes
+that connection and releases its queue; publishers never wait for a reader.
+Pending client calls fail, and admitted commands finish without replaying
+their side effects. Clients reconnect, take the atomic `live_state` snapshot
+and recover logs by ID. A lost command response is an uncertain outcome,
+not permission to retry a mutation automatically. These are retained-frame
+limits, not an RSS cap: command execution, serialization, compression and OS
+socket buffers use additional memory.
+
+See [reconnect measurements](reconnect-budgets.md) for the workloads and budget rationale.
+
 Wire/event changes also need the hand-written Swift types in
 [`apps/ios`](../../ios/README.md). They decode leniently, so a renamed field
 can disappear from the phone without producing a decode error.
