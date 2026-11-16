@@ -2157,7 +2157,10 @@ impl SessionManager {
             eprintln!("could not delete pi's session file for {session_id}: {e}");
         }
 
-        delete_session(session_id).await
+        let deleted = delete_session(session_id).await;
+        // A start can land after settle while deletion still awaits disk work.
+        crate::preview::close_session(session_id).await;
+        deleted
     }
 
     /// Moves a session's unread mark: `Completed` → `Idle` on a read, `Idle` →

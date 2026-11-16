@@ -502,10 +502,12 @@ impl Manager {
                         .await;
                     return;
                 }
-                Verdict::Ready(addr) => {
-                    if answers_http(addr, self.timing.answer_within).await {
-                        self.ready(&run.session, run.gen, format!("http://{addr}"));
-                        return;
+                Verdict::Ready(addresses) => {
+                    for addr in addresses {
+                        if answers_http(addr, self.timing.answer_within).await {
+                            self.ready(&run.session, run.gen, format!("http://{addr}"));
+                            return;
+                        }
                     }
                 }
             }
@@ -1108,8 +1110,8 @@ struct Listener {
 enum Verdict {
     /// Nothing of ours listens yet; carries whatever else holds the port.
     Wait(Option<String>),
-    /// Ours listens on this loopback and nothing else does there.
-    Ready(SocketAddr),
+    /// These families have no foreign listener; wildcard IPv6 may be v6-only.
+    Ready(Vec<SocketAddr>),
     Conflict(String),
 }
 
@@ -1128,15 +1130,20 @@ fn judge(found: &[Listener], owned: &HashSet<i32>, port: u16) -> Verdict {
     let free = |family: fn(&Listener) -> bool| {
         owned.iter().any(|l| family(l)) && !foreign.iter().any(|l| family(l))
     };
+    let mut addresses = Vec::new();
     if free(|l| l.v4) {
-        Verdict::Ready(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
-    } else if free(|l| l.v6) {
-        Verdict::Ready(SocketAddr::from((Ipv6Addr::LOCALHOST, port)))
-    } else {
+        addresses.push(SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
+    }
+    if free(|l| l.v6) {
+        addresses.push(SocketAddr::from((Ipv6Addr::LOCALHOST, port)));
+    }
+    if addresses.is_empty() {
         Verdict::Conflict(format!(
             "Port {port} is also held by {}, so Carbon cannot tell which one would answer.",
             holder(foreign[0])
         ))
+    } else {
+        Verdict::Ready(addresses)
     }
 }
 
@@ -1583,6 +1590,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ipv6_only_wildcard_reaches_ready() {
+        let m = manager(
+            3,
+            Timing {
+                ready_within: Duration::from_secs(3),
+                ..quick()
+            },
+        );
+        let dir = tempdir("v6-only");
+        std::fs::write(
+            dir.join("server.py"),
+            r#"import http.server, os, socket
+class Server(http.server.HTTPServer):
+    address_family = socket.AF_INET6
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        super().server_bind()
+Server(('::', int(os.environ['PORT'])), http.server.SimpleHTTPRequestHandler).serve_forever()
+"#,
+        )
+        .unwrap();
+        m.start(None, "s", &dir, config("exec python3 server.py"))
+            .await
+            .unwrap();
+        let state = settle(&m, "s", 6).await;
+        m.stop(None, "s").await;
+        assert_eq!(
+            state.status,
+            PreviewStatus::Running,
+            "{state:?}\n{}",
+            m.logs("s")
+        );
+        assert_eq!(state.url, Some(format!("http://[::1]:{}", state.port)));
+    }
+
+    #[tokio::test]
     async fn stop_start_race_leaves_only_the_latest() {
         let m = manager(3, quick());
         let (sink, seen) = recorder();
@@ -2020,7 +2063,10 @@ mod tests {
         );
         assert_eq!(
             judge(&[l(5, true, true)], &HashSet::from([5]), 80),
-            Verdict::Ready("127.0.0.1:80".parse().unwrap())
+            Verdict::Ready(vec![
+                "127.0.0.1:80".parse().unwrap(),
+                "[::1]:80".parse().unwrap()
+            ])
         );
         assert_eq!(
             judge(
@@ -2028,7 +2074,7 @@ mod tests {
                 &HashSet::from([5]),
                 80
             ),
-            Verdict::Ready("[::1]:80".parse().unwrap())
+            Verdict::Ready(vec!["[::1]:80".parse().unwrap()])
         );
         assert!(matches!(
             judge(
