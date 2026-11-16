@@ -16,8 +16,14 @@ fn run(args: &[&str], response: Option<Value>) -> Output {
         let mut line = String::new();
         BufReader::new(&stream).read_line(&mut line).unwrap();
         let request: Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(request["v"], 16);
-        assert_eq!(request["requestId"], "stable-key");
+        assert_eq!(request["v"], if request["cmd"] == "create_session" { 16 } else { 17 });
+        if request["cmd"] == "send_message" { assert_eq!(request["durable"], true); }
+        if request["cmd"] == "send_message" || request["cmd"] == "create_session" {
+            assert_eq!(request["requestId"], "stable-key");
+        } else {
+            assert_eq!(request["messageId"], "operation-1");
+            assert_eq!(request["sessionId"], "session-1");
+        }
         if let Some(response) = response {
             writeln!(stream, "{response}").unwrap();
         }
@@ -118,4 +124,34 @@ fn a_definite_refusal_does_not_claim_a_session_exists() {
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(error.contains("Nothing was submitted") && error.contains("new --request-id"));
     assert!(!error.contains("session-1") && !error.contains("Retry only"));
+}
+
+fn delivery(state: &str) -> Value {
+    json!({"status":"delivery","delivery":{
+        "messageId":"operation-1","requestId":"stable-key","sessionId":"session-1",
+        "fromSessionId":null,"state":state,"acceptedAt":"2026-11-16T12:00:00Z","detail":null
+    }})
+}
+
+#[test]
+fn persisted_acceptance_prints_a_message_id_and_its_state() {
+    let output = run(
+        &["session", "send", "session-1", "brief", "--request-id", "stable-key"],
+        Some(json!({"status":"recorded","receipt":receipt(),"response":delivery("accepted")})),
+    );
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "operation-1\n");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("state accepted") && stderr.contains("session delivery session-1 operation-1"));
+}
+
+#[test]
+fn delivery_inspection_and_cancellation_expose_json_states() {
+    for (verb, state) in [("delivery", "submitted"), ("cancel-delivery", "canceled")] {
+        let output = run(&["session", verb, "session-1", "operation-1"], Some(delivery(state)));
+        assert!(output.status.success());
+        let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(summary["state"], state);
+        assert_eq!(summary["messageId"], "operation-1");
+    }
 }

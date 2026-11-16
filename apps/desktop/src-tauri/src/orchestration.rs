@@ -15,6 +15,8 @@
 
 #[path = "orchestration/receipts.rs"]
 mod receipts;
+#[path = "orchestration/inbox.rs"]
+pub(crate) mod inbox;
 
 use crate::{
     drafts::{self, StoredDraft, DRAFTS_CHANGED},
@@ -166,6 +168,8 @@ pub async fn serve(app: Sink) -> Result<()> {
 
     restrict(&path)?;
 
+    inbox::start(app.clone()).await?;
+
     loop {
         let (stream, _) = match listener.accept().await {
             Ok(accepted) => accepted,
@@ -293,6 +297,7 @@ async fn route(request: Request, app: &Sink) -> Result<Response> {
 #[cfg(any(feature = "serve", feature = "desktop"))]
 fn session_named(request: &Request) -> Option<&str> {
     match request {
+        Request::DeliveryStatus(r) | Request::CancelDelivery(r) => Some(&r.session_id),
         Request::SendMessage(r) => Some(&r.session_id),
         Request::LinkIssues(r) => Some(&r.session_id),
         Request::RenameSession(r) => Some(&r.session_id),
@@ -441,7 +446,7 @@ pub async fn answer_forward(forward: Forward, app: Sink) -> Response {
                     Request::CreateSession(create) => create_session(create, caller, receipt.as_ref(), &app).await,
                     Request::CreateDraft(create) => create_draft(create, caller, &app).await,
                     Request::StartDraft(start) => start_draft(start, caller, &app).await,
-                    Request::SendMessage(send) => send_message(send, forward.sender, &app).await,
+                    Request::SendMessage(send) => send_message(send, forward.sender, receipt.as_ref(), &app).await,
                     other => dispatch_inner(other, None, &app).await,
                 }
             },
@@ -705,7 +710,27 @@ where
         _ => None,
     };
     let root = receipt_directory(&request, source.as_deref()).await?;
-    receipts::execute(&root, &id, fingerprint, target.as_deref(), |receipt| action(request, Some(receipt))).await
+    let durable = matches!(&request, Request::SendMessage(send) if send.durable);
+    let response = receipts::execute(&root, &id, fingerprint, target.as_deref(), |receipt| action(request, Some(receipt))).await?;
+    if durable {
+        return refresh_delivery(response).await;
+    }
+    Ok(response)
+}
+
+/// The inbox can prove acceptance even if the process died before saving the request's reply.
+async fn refresh_delivery(response: Response) -> Result<Response> {
+    let receipt = match &response {
+        Response::Recorded { receipt, .. } | Response::Uncertain { receipt, .. } => receipt,
+        _ => return Ok(response),
+    };
+    match inbox::find(&receipt.operation_id).await? {
+        Some(delivery) => Ok(Response::Recorded {
+            receipt: receipt.clone(),
+            response: Box::new(Response::Delivery { delivery }),
+        }),
+        None => Ok(response),
+    }
 }
 
 /// A probe uses the same scope as execution, before parent or base resolution can fail.
@@ -716,7 +741,11 @@ async fn lookup_receipt(request: &Request, fingerprint: Option<&str>, source: Op
         None => receipts::fingerprint(request)?,
     };
     let root = receipt_directory(request, source).await?;
-    Ok(receipts::lookup(&root, id, &fingerprint).await?.unwrap_or(Response::ReceiptMissing))
+    let response = receipts::lookup(&root, id, &fingerprint).await?.unwrap_or(Response::ReceiptMissing);
+    if matches!(request, Request::SendMessage(send) if send.durable) {
+        return refresh_delivery(response).await;
+    }
+    Ok(response)
 }
 
 /// Keep direct execution and forwarded probes in one request namespace.
@@ -738,10 +767,12 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
 
 async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::OperationReceipt>, app: &Sink) -> Result<Response> {
     match request {
+        Request::DeliveryStatus(reference) => inbox::status(reference, false).await,
+        Request::CancelDelivery(reference) => inbox::status(reference, true).await,
         Request::LookupReceipt(lookup) => lookup_receipt(&lookup.request, None, None).await,
         Request::CreateSession(create) => create_session(create, None, receipt, app).await,
         Request::ListSessions(list) => list_sessions(list).await,
-        Request::SendMessage(send) => send_message(send, None, app).await,
+        Request::SendMessage(send) => send_message(send, None, receipt, app).await,
         Request::LinkIssues(link) => link_issues(link, app).await,
         Request::WriteIssue(write) => write_issue(write, app).await,
         Request::Secret(request) => Ok(Response::Secret {
@@ -1756,6 +1787,7 @@ fn resolve_fast(
 async fn send_message(
     send: SendMessage,
     carried: Option<MessageSender>,
+    receipt: Option<&carbon_proto::OperationReceipt>,
     app: &Sink,
 ) -> Result<Response> {
     if send.prompt.trim().is_empty() {
@@ -1775,6 +1807,13 @@ async fn send_message(
         None => sender(&send).await,
     };
     let prompt = attribute(&send.prompt, from.as_ref());
+
+    if send.durable {
+        let receipt = receipt.context("durable messages require a request ID")?;
+        return Ok(Response::Delivery {
+            delivery: manager().accept_inbox(receipt, &prompt, from).await?,
+        });
+    }
 
     let manager = manager();
     let outcome = manager
