@@ -13,6 +13,8 @@
 //! access control is the containing directory's `0700` — see
 //! [`serve`](serve) for why the socket's own mode cannot be the boundary.
 
+#[path = "orchestration/discovery.rs"]
+mod discovery;
 #[path = "orchestration/receipts.rs"]
 mod receipts;
 #[path = "orchestration/inbox.rs"]
@@ -731,7 +733,12 @@ where
 async fn refresh_task(response: Response) -> Result<Response> {
     match &response {
         Response::Recorded { receipt, .. } | Response::Uncertain { receipt, .. } => {
-            if let Some(task) = tasks::by_operation(&receipt.operation_id).await? {
+            if let Ok(Some(mut task)) = tasks::by_operation(&receipt.operation_id).await {
+                if let Response::Recorded { response, .. } = &response {
+                    if let Response::Task { task: saved } = response.as_ref() {
+                        if saved.configuration.is_some() { task.configuration = saved.configuration.clone(); }
+                    }
+                }
                 return Ok(Response::Recorded { receipt: receipt.clone(), response: Box::new(Response::Task { task }) });
             }
         }
@@ -790,6 +797,7 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
 
 async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::OperationReceipt>, app: &Sink) -> Result<Response> {
     match request {
+        Request::Discover(request) => discovery::request(request, app).await,
         Request::Task(request) => tasks::request(request).await,
         Request::DeliveryStatus(reference) => inbox::status(reference, false).await,
         Request::CancelDelivery(reference) => inbox::status(reference, true).await,
@@ -1431,8 +1439,13 @@ async fn create_session(
     // Refresh tracked rows exposed during handshake; ordinary sessions are first announced here.
     app.emit(SESSION_CREATED, &item).ok();
 
-    if let Some(task) = tracked { return Ok(Response::Task { task }); }
+    let configuration = discovery::configuration(&item).await;
+    if let Some(mut task) = tracked {
+        task.configuration = Some(configuration);
+        return Ok(Response::Task { task });
+    }
     Ok(Response::Created {
+        configuration: Some(configuration),
         session: summarize(item),
         base_ref,
     })
@@ -1598,6 +1611,7 @@ async fn start_session(draft: &StoredDraft, parent: Option<&str>, app: &Sink) ->
 
     app.emit(SESSION_CREATED, &item).ok();
     Ok(Response::Created {
+        configuration: Some(discovery::configuration(&item).await),
         session: summarize(item),
         base_ref,
     })

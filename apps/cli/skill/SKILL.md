@@ -26,6 +26,29 @@ The other reason is **a web page**: checking the dev server you just changed,
 reading a docs site, filling a form, taking a screenshot. `carbon browser` is the
 browser this session already has open in the app — see *Driving the browser*.
 
+## Discovering harnesses and models
+
+Read the owning server's supported settings before choosing a harness or model:
+
+```bash
+carbon harness ls --json
+carbon harness inspect codex --json
+carbon model ls --harness codex --query sol --limit 20 --json
+carbon --machine vps model ls --harness pi --query anthropic --json
+carbon session new "Review the parser" --harness codex --json
+```
+
+Model pages default to 50 rows, capped at 100. Continue with `--cursor` using
+`nextCursor` and the same harness and query. Use a model's `arg` for `--model`.
+`liveControls` distinguishes `in_place`, `next_turn` and `locked` controls while
+a turn runs. ACP options are last reported hints; `not_yet_reported` means no
+session has published them. Discovery opens no ACP session. Availability does
+not prove provider login. An old server refuses these requests explicitly.
+
+`session new --json` reports the effective harness, model, effort, mode and fast
+setting in `configuration`, including for `--task`. Without `--json`, stdout
+continues to contain only the ID. A null model or effort names no Carbon override.
+
 ## Creating a session
 
 ```bash

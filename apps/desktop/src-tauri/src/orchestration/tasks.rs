@@ -207,6 +207,7 @@ pub(super) async fn register(
     }
     let task_id = uuid::Uuid::now_v7().to_string();
     let summary = TaskSummary {
+        configuration: None,
         task_id: task_id.clone(),
         operation_id: receipt.operation_id.clone(),
         parent_session_id: parent.into(),
@@ -273,15 +274,20 @@ pub(super) async fn register(
     Ok(summary)
 }
 
-/// Retrying the originating request can recover the task even when its receipt reply was lost.
+/// Recover a missing creation reply from its durable task and the acknowledged session index.
 pub(super) async fn by_operation(operation: &str) -> Result<Option<TaskSummary>> {
-    Ok(Locked::load()
-        .await?
-        .registry
-        .tasks
-        .values()
-        .find(|r| r.summary.operation_id == operation)
-        .map(|r| r.summary.clone()))
+    let found = {
+        let locked = Locked::load().await?;
+        locked.registry.tasks.values().find(|r| r.summary.operation_id == operation)
+            .map(|r| (r.summary.clone(), r.create))
+    };
+    let Some((mut summary, create)) = found else { return Ok(None); };
+    if create && summary.configuration.is_none() {
+        if let Ok(Some(item)) = store::get_session_index_item(&summary.child_session_id).await {
+            summary.configuration = Some(super::discovery::configuration(&item).await);
+        }
+    }
+    Ok(Some(summary))
 }
 
 pub(crate) struct SubmissionGuard {
@@ -1054,6 +1060,7 @@ mod tests {
     fn record() -> Record {
         Record {
             summary: TaskSummary {
+                configuration: None,
                 task_id: "task".into(),
                 operation_id: "operation".into(),
                 parent_session_id: "parent".into(),

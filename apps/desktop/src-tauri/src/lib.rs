@@ -306,35 +306,45 @@ async fn send_msg(
 #[cfg_attr(feature = "desktop", tauri::command)]
 async fn agent_availability() -> Vec<AgentAvailability> {
     let mut out = Vec::new();
-    for harness in harness::Harness::ALL {
-        let (reason, curable) = unavailable_reason(harness).await;
-
-        out.push(AgentAvailability {
-            harness,
-            available: binpath::agent_available(harness).await,
-            label: harness.label().to_string(),
-            reason,
-            install_command: curable.then(|| harness.install_command().to_string()),
-            docs_url: curable.then(|| harness.docs_url().to_string()),
-            login_command: harness.login_command().to_string(),
-            login_hint: harness.login_hint().map(str::to_string),
-        });
-    }
-    // The ACP agents the reader switched on. The registry names no installer,
-    // so the agent's own page is the cure.
-    for agent in harness::agents::catalog::list().await.into_iter().filter(|a| a.enabled && a.supported) {
-        out.push(AgentAvailability {
-            harness: agent.harness,
-            available: agent.ready,
-            label: agent.name.clone(),
-            reason: if agent.ready { String::new() } else { format!("{} could not start: {} is not available on this server.", agent.name, agent.executable) },
-            install_command: None,
-            docs_url: agent.website,
-            login_command: String::new(),
-            login_hint: None,
-        });
-    }
+    for harness in harness::Harness::ALL { out.push(native_agent_availability(harness).await); }
+    out.extend(harness::agents::catalog::list().await.into_iter()
+        .filter(|a| a.enabled && a.supported).map(acp_agent_availability));
     out
+}
+
+/// A model page must not probe unrelated executables or the whole ACP registry.
+async fn agent_availability_for(harness: Harness) -> Option<AgentAvailability> {
+    if Harness::ALL.contains(&harness) { return Some(native_agent_availability(harness).await); }
+    let Harness::Acp(id) = harness else { return None; };
+    harness::agents::catalog::get(id).await
+        .filter(|agent| agent.enabled && agent.supported).map(acp_agent_availability)
+}
+
+async fn native_agent_availability(harness: Harness) -> AgentAvailability {
+    let (reason, curable) = unavailable_reason(harness).await;
+    AgentAvailability {
+        harness,
+        available: binpath::agent_available(harness).await,
+        label: harness.label().to_string(),
+        reason,
+        install_command: curable.then(|| harness.install_command().to_string()),
+        docs_url: curable.then(|| harness.docs_url().to_string()),
+        login_command: harness.login_command().to_string(),
+        login_hint: harness.login_hint().map(str::to_string),
+    }
+}
+
+fn acp_agent_availability(agent: harness::agents::catalog::AcpAgent) -> AgentAvailability {
+    AgentAvailability {
+        harness: agent.harness,
+        available: agent.ready,
+        label: agent.name.clone(),
+        reason: if agent.ready { String::new() } else { format!("{} could not start: {} is not available on this server.", agent.name, agent.executable) },
+        install_command: None,
+        docs_url: agent.website,
+        login_command: String::new(),
+        login_hint: None,
+    }
 }
 
 /// What to say about an agent that cannot run, and whether the install command

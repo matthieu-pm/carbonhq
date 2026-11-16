@@ -1,0 +1,71 @@
+---
+title: Harnesses and models
+description: Discover harness availability, model settings and live controls through the CLI.
+sidebar:
+  order: 11
+---
+
+Read the owning server's capabilities before choosing settings for a new session.
+
+```bash
+carbon harness ls
+carbon harness inspect codex
+carbon model ls --harness codex
+```
+
+Add `--json` to any of these commands for structured output. Discovery needs a server with protocol v20 or later. An older server refuses the request and names the update needed.
+
+## Harness availability
+
+`harness ls` includes Carbon's native integrations and enabled, supported ACP agents. Each row reports availability, a known reason it cannot start, and installation or login guidance where the existing integration supplies it. Availability checks whether Carbon can launch the harness. It does not guarantee a provider account can complete a turn.
+
+`harness inspect <name>` adds capabilities, the default model where Carbon chooses one, modes and agent options. These come from the same sources as the app's composer.
+
+ACP options and modes are the agent's last reported values. `optionsSource` is `not_yet_reported` before Carbon has opened a session for that agent, and `last_reported` afterwards. Discovery does not open an ACP session. Model option choices are read through `model ls` so inspection does not dump a large model catalog.
+
+Native mode IDs are Carbon's permission policies. `inheritedModes` lists additional policies supported at spawn but hidden by the composer; `reasons` explains those mappings and live-control restrictions. Codex preserves inherited `plan` as a read-only sandbox and `dontAsk` as workspace-write without approval. pi preserves inherited `plan` as a read-only tool set. ACP mode and option IDs belong to the agent. Discovery reports them; it does not add new session creation flags for arbitrary ACP selections.
+
+## Search and page models
+
+```bash
+carbon model ls --harness pi --query anthropic --limit 20 --json
+carbon model ls --harness pi --query anthropic --limit 20 --cursor '<nextCursor>' --json
+```
+
+Search matches IDs, aliases, labels and providers, ignoring case. A page defaults to 50 models and accepts a limit from 1 to 100. JSON includes `total`, `nextCursor` and `catalogReason`. `total` counts models matching the query. A cursor belongs to its harness, query and catalog; if that catalog changes, restart without the cursor.
+
+Each model retains the app's fields, including `id`, the creation alias `arg`, `efforts`, `defaultEffort`, `acceptsImages` and `supportsFast`. Use `arg` with `session new --model`. Lists can use the integrations' existing fallback tables when a probe fails. An empty list is accompanied by a reason where one is known.
+
+## Controls during a turn
+
+`harness inspect --json` includes `liveControls` for `model`, `effort`, `stance` and `fast`:
+
+| Value | Meaning |
+| --- | --- |
+| `in_place` | Carbon can apply the control while a turn runs. |
+| `next_turn` | Carbon holds the pick for the queued prompt's next turn. |
+| `locked` | The composer locks this control while a turn runs. |
+
+The values describe Carbon's behavior. Model-level support still applies: a harness with fast mode can have models without it.
+
+## Creation receipts
+
+```bash
+carbon session new 'Review the parser' --harness codex --json
+```
+
+The JSON receipt includes `session` and `configuration`. Configuration reports the effective `harness`, `model`, `effort`, `mode` and `fast` after inheritance, defaults and Carbon's supported-value clamping. Model values are reusable creation aliases (`arg`); `null` means Carbon has no named value, including when the harness chooses its own default. `mode` is Carbon's effective permission policy for native integrations, or the acknowledged agent mode for ACP.
+
+This describes the configuration applied by Carbon. A provider can still refuse a paid fast tier or another request during the turn. With `--task`, the task receipt includes the same `configuration`.
+
+Without `--json`, creation continues to print only the session or task ID to stdout.
+
+## Another machine
+
+```bash
+carbon --machine vps harness ls --json
+carbon --machine vps harness inspect codex --json
+carbon --machine vps model ls --harness pi --query anthropic --json
+```
+
+The selected machine reads its own executables, enabled agents and model catalogs. Both the forwarding server and the target must understand protocol v20.

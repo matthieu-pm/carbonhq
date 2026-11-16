@@ -651,7 +651,8 @@ impl Harness {
 /// One enum rather than a pair of bools, because the answers are not two
 /// independent questions: "offered" and "changeable" would let a harness claim
 /// a combination no CLI has.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FastMode {
     /// No route to it on this CLI's wire. pi plumbs `serviceTier` through its
     /// provider layer and populates it from nowhere: no flag, no settings key,
@@ -687,7 +688,8 @@ impl FastMode {
 /// because nothing here drives that connection yet. A `false` is safe in a way
 /// a `true` is not: replacing a child always applies the change, where applying
 /// it in place is only correct if the wire really carries it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Capabilities {
     /// Whether the CLI creates a worktree itself, given a name.
     ///
@@ -1075,5 +1077,44 @@ mod login_tests {
         let unknown = Harness::Other("opencode");
         assert!(unknown.login_command().is_empty());
         assert!(unknown.login_hint().is_none());
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessControls {
+    pub live: carbon_proto::LiveControls,
+    pub modes: Vec<crate::events::ApprovalPolicy>,
+    pub fallbacks: std::collections::HashMap<crate::events::ApprovalPolicy, crate::events::ApprovalPolicy>,
+    pub inherited_modes: Vec<crate::events::ApprovalPolicy>,
+    pub reasons: std::collections::HashMap<String, String>,
+}
+
+impl Harness {
+    /// The composer and discovery read one policy for controls and native modes.
+    pub fn controls(self) -> &'static HarnessControls {
+        static POLICIES: std::sync::OnceLock<std::collections::HashMap<String, HarnessControls>> = std::sync::OnceLock::new();
+        static ACP: std::sync::OnceLock<HarnessControls> = std::sync::OnceLock::new();
+        let policies = POLICIES.get_or_init(|| serde_json::from_str(include_str!("../../../src/lib/harnessControls.json")).expect("valid harness control policy"));
+        policies.get(&self.wire_name()).unwrap_or_else(|| ACP.get_or_init(|| HarnessControls {
+            live: carbon_proto::LiveControls {
+                model: carbon_proto::ControlTiming::Locked,
+                effort: carbon_proto::ControlTiming::Locked,
+                stance: carbon_proto::ControlTiming::Locked,
+                fast: carbon_proto::ControlTiming::Locked,
+            },
+            modes: vec![],
+            fallbacks: Default::default(),
+            inherited_modes: vec![],
+            reasons: Default::default(),
+        }))
+    }
+
+    /// Reject before recording picks that cannot reach the prompt sent during this turn.
+    pub fn check_mid_turn_controls(self, changes: [bool; 4]) -> anyhow::Result<()> {
+        for ((name, timing), changed) in self.controls().live.entries().into_iter().zip(changes) {
+            anyhow::ensure!(!changed || !matches!(timing, carbon_proto::ControlTiming::Locked), "{} {name} is locked during a turn", self.label());
+        }
+        Ok(())
     }
 }

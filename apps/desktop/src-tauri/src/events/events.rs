@@ -840,7 +840,7 @@ pub struct Settings {
 /// Permission stance a session *runs under*, in roughly increasing order of
 /// autonomy. Every variant is settable, so this is what the app stores and
 /// sends — see [`PermissionMode`] for the wider set the CLI reports.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "events.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum ApprovalPolicy {
