@@ -1187,6 +1187,12 @@ impl SessionManager {
                 None => (false, false, false, false),
             };
 
+        // A notification can open a turn during preparation.
+        // Durable mail must never lose its dispatch in the composer queue.
+        if dispatch.is_some() && turn_in_flight {
+            return Ok(SendOutcome::default());
+        }
+
         // Effort is fixed at spawn — the CLI has no `set_effort` control request
         // — so changing it means replacing the child. Resuming by id keeps the
         // conversation, and the log continues from the persisted seq.
@@ -2119,11 +2125,13 @@ impl SessionManager {
             session.kill().await?;
         }
 
+        crate::preview::close_session(session_id).await;
         let existed = remove_session_worktree(&item).await?;
 
         let relocated = relocate_session_to_project(session_id)
             .await?
             .with_context(|| format!("no session {session_id}"))?;
+        crate::preview::close_session(session_id).await;
 
         Ok((relocated, existed))
     }
@@ -2154,6 +2162,7 @@ impl SessionManager {
     }
 
     pub async fn settle(&self, session_id: &str) -> Result<()> {
+        crate::preview::close_session(session_id).await;
         let running = self.take(session_id).await;
         // The tabs close whatever the kill answered: the session is already
         // out of the map, so nothing would come back to close them.
@@ -2246,7 +2255,10 @@ impl SessionManager {
             eprintln!("could not delete pi's session file for {session_id}: {e}");
         }
 
-        delete_session(session_id).await
+        let deleted = delete_session(session_id).await;
+        // A start can land after settle while deletion still awaits disk work.
+        crate::preview::close_session(session_id).await;
+        deleted
     }
 
     /// Moves a session's unread mark: `Completed` → `Idle` on a read, `Idle` →
@@ -2613,7 +2625,7 @@ impl Session {
         mcp_servers: &[String],
         baseline: Option<String>,
         from: Option<MessageSender>,
-        dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
+        mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
         app: &Sink,
     ) -> Result<()> {
         let (_, runs) = deliver_prompt(
@@ -2630,7 +2642,7 @@ impl Session {
             from,
             &self.seq,
             &self.stdin,
-            dispatch,
+            dispatch.as_deref_mut(),
             app,
         )
         .await?;
@@ -2671,6 +2683,11 @@ impl Session {
 
         if let Some(next) = next {
             publish_status(&self.id, next, app).await;
+        }
+
+        // Saving the payload can outlast a fast result; finish turn bookkeeping before that await.
+        if let Some(dispatch) = dispatch {
+            dispatch.submitted().await?;
         }
 
         Ok(())
@@ -3540,18 +3557,22 @@ async fn deliver_prompt(
         }
     }
 
-    app.emit("agent_event", &agent_event)?;
-
-    append_session_event(session_id, agent_event).await?;
+    if let Some(dispatch) = dispatch.as_deref_mut() {
+        let thread_id = match transport {
+            Transport::Rpc(thread) => Some(thread.id.as_str()),
+            _ => None,
+        };
+        dispatch.publish_prompt(agent_event, thread_id, app).await?;
+    } else {
+        app.emit("agent_event", &agent_event)?;
+        append_session_event(session_id, agent_event).await?;
+    }
 
     // Logged, not sent: the caller holds the text and opens the turn itself.
     if !send {
         return Ok((sent, true));
     }
 
-    if let Some(dispatch) = dispatch.as_deref_mut() {
-        dispatch.begin().await?;
-    }
     let submitted: Result<bool> = async {
         // Codex takes a prompt as a request that opens a turn, so the write is the
         // send rather than a line the child picks up on its own schedule. Its
@@ -3613,9 +3634,6 @@ async fn deliver_prompt(
         write_line(stdin, &line).await?;
         Ok(true)
     }.await;
-    if let Some(dispatch) = dispatch {
-        dispatch.finish(&submitted).await?;
-    }
     submitted.map(|runs| (sent, runs))
 }
 

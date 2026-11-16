@@ -133,6 +133,7 @@ pub async fn run(port: u16) -> Result<()> {
     }
     let sink = Sink::new(|event, payload| HUB.publish(event, &payload));
     let home = start_core(sink.clone()).await?;
+    stop_on_signal();
 
     let (token, token_path) = mint_token().await?;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -176,7 +177,14 @@ pub async fn run_mac() -> Result<()> {
     write_port_file(&home, port).await?;
     tokio::spawn(crate::remote_access::start(sink.clone()));
 
-    // launchd, and Quit and stop sessions in dev, stop the server with SIGTERM.
+    stop_on_signal();
+
+    eprintln!("carbon --serve listening on 127.0.0.1:{port}, home {}", home.display());
+    listen(listener, HUB.clone(), sink, token.into(), home.join(carbon_proto::TUNNEL_URL_FILE).into(), true).await
+}
+
+/// Managed preview groups must end on server shutdown on remote machines too.
+fn stop_on_signal() {
     tokio::spawn(async {
         use tokio::signal::unix::{signal, SignalKind};
         let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt())) else {
@@ -188,9 +196,6 @@ pub async fn run_mac() -> Result<()> {
         }
         shut_down(0).await;
     });
-
-    eprintln!("carbon --serve listening on 127.0.0.1:{port}, home {}", home.display());
-    listen(listener, HUB.clone(), sink, token.into(), home.join(carbon_proto::TUNNEL_URL_FILE).into(), true).await
 }
 
 /// Written by `carbon-serve` too, so a Carbon app installed later on a Mac
@@ -324,6 +329,7 @@ fn restart_now() {
 /// agents went, so their reparented children are still named — and never off
 /// the session map alone, whose locks a stuck send can hold forever.
 async fn shut_down(code: i32) -> ! {
+    crate::preview::stop_all().await;
     crate::session::hold_sends();
     #[cfg(feature = "desktop")]
     crate::remote_access::stop_on_exit();
@@ -502,6 +508,7 @@ pub async fn listen(
         let (sink, hub, token, tunnel_file) = (sink.clone(), hub.clone(), token.clone(), tunnel_file.clone());
         connections.spawn(async move {
             let served = match request_line(&stream).await {
+                Some(line) if line.starts_with("GET /preview-tunnel") => crate::preview_tunnel::accept(stream, &token).await,
                 Some(line) if line.starts_with("GET /file?") => file(stream, &token).await,
                 Some(line) if line.starts_with("POST /upload?") => upload(stream, &token).await,
                 Some(_) => connection(stream, sink, hub, &token, &tunnel_file, hosts).await,
@@ -693,12 +700,16 @@ struct Live {
     tasks: HashMap<String, Value>,
     running: std::collections::HashSet<String>,
     queued: HashMap<String, Value>,
+    previews: HashMap<String, Value>,
 }
 
 impl Live {
     fn note(&mut self, event: &str, payload: &Value) {
         let session = payload["sessionId"].as_str().unwrap_or_default().to_string();
         match (event, payload["payload"]["type"].as_str()) {
+            ("preview_changed", _) => {
+                self.previews.insert(session, payload.clone());
+            }
             ("agent_event", Some("permission_requested" | "questions_asked")) => {
                 self.asks.push(payload.clone());
             }
@@ -749,7 +760,8 @@ impl Live {
     fn payload(&self) -> Value {
         let tasks: Vec<&Value> = self.tasks.values().collect();
         let queued: Vec<&Value> = self.queued.values().collect();
-        json!({ "asks": self.asks, "tasks": tasks, "queued": queued, "secrets": crate::secrets::snapshot() })
+        let previews: Vec<&Value> = self.previews.values().collect();
+        json!({ "asks": self.asks, "tasks": tasks, "queued": queued, "previews": previews, "secrets": crate::secrets::snapshot() })
     }
 }
 
@@ -1311,6 +1323,11 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         // not yet listening when it connected — `carbon-serve` included, which
         // an app installed after it meets as This Mac.
         live_state() => ok(HUB.live.lock().unwrap_or_else(|e| e.into_inner()).payload());
+        preview_setup(session_id: String, directory: Option<String>) => crate::preview::preview_setup(session_id, directory).await;
+        preview_start(session_id: String, config: Option<crate::preview::PreviewConfig>) => crate::preview::preview_start(sink, session_id, config).await;
+        preview_status(session_id: String) => crate::preview::preview_status(session_id).await;
+        preview_stop(session_id: String) => crate::preview::preview_stop(sink, session_id).await;
+        preview_logs(session_id: String) => crate::preview::preview_logs(session_id).await;
         list_secret_requests(session_id: String) => ok(crate::secrets::for_session(&session_id));
         answer_secret_request(session_id: String, id: String, values: HashMap<String, String>, keep_file: bool) =>
             crate::secrets::answer(&session_id, &id, values, keep_file, &sink).await;
@@ -1669,6 +1686,18 @@ mod tests {
         assert_eq!(live.payload()["queued"][0]["queued"].as_array().unwrap().len(), 2);
         live.note("queue_changed", &json!({ "sessionId": "s", "queued": [] }));
         assert!(live.queued.is_empty());
+    }
+
+    #[test]
+    fn reconnect_keeps_each_previews_latest_state() {
+        let mut live = Live::default();
+        live.note("preview_changed", &json!({ "sessionId": "a", "status": "starting" }));
+        live.note("preview_changed", &json!({ "sessionId": "b", "status": "running" }));
+        live.note("preview_changed", &json!({ "sessionId": "a", "status": "failed" }));
+        let states = live.payload()["previews"].as_array().unwrap().clone();
+        assert_eq!(states.len(), 2);
+        assert!(states.iter().any(|s| s["sessionId"] == "a" && s["status"] == "failed"));
+        assert!(states.iter().any(|s| s["sessionId"] == "b" && s["status"] == "running"));
     }
 
     #[tokio::test]

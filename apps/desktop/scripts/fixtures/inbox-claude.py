@@ -1,4 +1,4 @@
-import sys, os, json, pathlib, time
+import sys, os, json, pathlib, time, threading
 args = sys.argv[1:]
 if '--version' in args:
     print('2.1.322')
@@ -12,7 +12,6 @@ def option(name, default=None):
 id = option('--session-id', option('--resume', 'probe'))
 home = pathlib.Path(os.environ['CARBON_HOME'])
 log = home / 'claude/projects/fixture' / f'{id}.jsonl'
-log.touch(exist_ok=True)
 with (home / 'spawns.jsonl').open('a') as file:
     file.write(json.dumps(dict(id=id, args=args)) + '\n')
 
@@ -21,6 +20,19 @@ def emit(v):
 
 def result():
     emit(dict(type='result', subtype='success', session_id=id, is_error=False, result='done', duration_ms=1, duration_api_ms=1, num_turns=1, total_cost_usd=0, modelUsage={}, usage=dict(input_tokens=0, output_tokens=0, cache_read_input_tokens=0, cache_creation_input_tokens=0)))
+
+def notification():
+    while not (home / 'gh-entered').exists():
+        time.sleep(0.01)
+    emit(dict(type='system', subtype='init', session_id=id, cwd=os.getcwd(), tools=[], mcp_servers=[], model='sonnet', permissionMode='plan', claude_code_version='2.1.322', agents=[], fast_mode_state='off'))
+    (home / 'notification-open').touch()
+    while not (home / 'finish-notification').exists():
+        time.sleep(0.01)
+    result()
+
+if (home / f'notify-{id}').exists():
+    threading.Thread(target=notification, daemon=True).start()
+
 while (home / f'block-{id}').exists():
     time.sleep(0.05)
 for line in sys.stdin:

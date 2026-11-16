@@ -1,5 +1,10 @@
 use super::receipts;
-use crate::{events::MessageSender, session::manager, sink::Sink, store};
+use crate::{
+    events::{AgentEvent, MessageSender},
+    session::{manager, Harness},
+    sink::Sink,
+    store,
+};
 use anyhow::{bail, Context, Result};
 use carbon_proto::{DeliveryRef, DeliveryState, DeliverySummary, OperationReceipt, Response};
 use serde::{Deserialize, Serialize};
@@ -16,6 +21,14 @@ struct Record {
     sender: Option<MessageSender>,
     #[serde(default)]
     evidence: Vec<PathBuf>,
+    #[serde(default)]
+    native_history: Option<NativeHistory>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct NativeHistory {
+    harness: Harness,
+    thread_id: Option<String>,
 }
 
 pub(crate) struct Dispatch {
@@ -92,27 +105,32 @@ impl Dispatch {
             .await
     }
 
-    /// Persist intent immediately before the transport call, after local prompt preparation.
-    pub(crate) async fn begin(&mut self) -> Result<()> {
-        let target = store::get_session_index_item(self.session_id())
-            .await?
-            .context("the recipient no longer exists")?;
-        self.record.evidence = evidence_paths(&target).await?;
+    /// Persist intent before publishing a prepared prompt, which cannot be retracted.
+    pub(crate) async fn begin(&mut self, harness: Harness, thread_id: Option<&str>) -> Result<()> {
+        let history = NativeHistory {
+            harness,
+            thread_id: thread_id.map(str::to_owned),
+        };
+        self.record.evidence = evidence_paths(&history, self.session_id()).await?;
+        self.record.native_history = Some(history);
         self.transition(DeliveryState::Submitting, None).await
     }
 
+    /// A published prompt cannot be retracted when the server restarts.
+    pub(crate) async fn publish_prompt(
+        &mut self,
+        event: AgentEvent,
+        thread_id: Option<&str>,
+        app: &Sink,
+    ) -> Result<()> {
+        self.begin(event.harness, thread_id).await?;
+        app.emit("agent_event", &event)?;
+        store::append_session_event(self.session_id(), event).await
+    }
+
     /// Submission is distinct from observing a result or the recipient completing its turn.
-    pub(crate) async fn finish(&mut self, result: &Result<bool>) -> Result<()> {
-        match result {
-            Ok(_) => self.transition(DeliveryState::Submitted, None).await,
-            Err(error) => {
-                self.transition(
-                    DeliveryState::Uncertain,
-                    Some(format!("Submission did not return success: {error:#}")),
-                )
-                .await
-            }
-        }
+    pub(crate) async fn submitted(&mut self) -> Result<()> {
+        self.transition(DeliveryState::Submitted, None).await
     }
 }
 
@@ -161,6 +179,7 @@ async fn accept_at(
             prompt: prompt.to_owned(),
             sender,
             evidence: Vec::new(),
+            native_history: None,
         },
     };
     dispatch.save().await?;
@@ -313,7 +332,12 @@ async fn recover(root: &Path) -> Result<()> {
         let mut dispatch = load(root, &summary.message_id)
             .await?
             .context("inbox record vanished")?;
-        let evidence = dispatch.record.evidence.clone();
+        let mut evidence = dispatch.record.evidence.clone();
+        if let Some(history) = &dispatch.record.native_history {
+            evidence.extend(evidence_paths(history, &summary.session_id).await?);
+        }
+        evidence.sort();
+        evidence.dedup();
         let marker = format!("[Carbon delivery {}]", summary.message_id);
         let observed =
             tokio::task::spawn_blocking(move || native_evidence(&evidence, &marker)).await?;
@@ -330,11 +354,11 @@ async fn recover(root: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn evidence_paths(target: &store::SessionIndexItem) -> Result<Vec<PathBuf>> {
-    use crate::session::Harness;
-    let target = target.clone();
-    tokio::task::spawn_blocking(move || match target.harness {
-        Harness::Codex => target
+async fn evidence_paths(history: &NativeHistory, session_id: &str) -> Result<Vec<PathBuf>> {
+    let history = history.clone();
+    let session_id = session_id.to_owned();
+    tokio::task::spawn_blocking(move || match history.harness {
+        Harness::Codex => history
             .thread_id
             .as_ref()
             .and_then(|id| crate::harness::codex::rollout::rollouts().remove(id))
@@ -348,7 +372,7 @@ async fn evidence_paths(target: &store::SessionIndexItem) -> Result<Vec<PathBuf>
                 .into_iter()
                 .flatten()
                 .filter_map(|entry| entry.ok())
-                .map(|entry| entry.path().join(format!("{}.jsonl", target.session_id)))
+                .map(|entry| entry.path().join(format!("{session_id}.jsonl")))
                 .filter(|path| path.is_file())
                 .collect()
         }
@@ -481,6 +505,61 @@ mod tests {
             session_id: "recipient".into(),
             worktree_name: None,
         }
+    }
+
+    #[tokio::test]
+    async fn prompt_publication_is_fenced_before_the_emitter_can_crash() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let home = Home::new();
+        let receipt = make_receipt();
+        accept_at(&home.0, &receipt, "work", None).await.unwrap();
+        let mut dispatch = load(&home.0, &receipt.operation_id).await.unwrap().unwrap();
+        let path = dispatch.path.clone();
+        let fenced = Arc::new(AtomicBool::new(false));
+        let observed = fenced.clone();
+        let sink = Sink::new(move |_, _| {
+            let record: Record = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            observed.store(
+                record.summary.state == DeliveryState::Submitting,
+                Ordering::SeqCst,
+            );
+            panic!("crash after prompt publication, before appending its log");
+        });
+        let event = AgentEvent::mint(
+            receipt.session_id,
+            Harness::Grok,
+            0,
+            None,
+            None,
+            crate::events::AgentEventPayload::UserMessage {
+                text: "work".into(),
+                issues: vec![],
+                mcp_servers: vec![],
+                images: vec![],
+                baseline: None,
+                queued: false,
+                from: None,
+                cwd: None,
+            },
+        );
+        let crashed =
+            tokio::spawn(async move { dispatch.publish_prompt(event, None, &sink).await }).await;
+        assert!(crashed.unwrap_err().is_panic());
+        assert!(
+            fenced.load(Ordering::SeqCst),
+            "a published prompt must never remain accepted for redispatch"
+        );
+        recover(&home.0).await.unwrap();
+        assert_eq!(
+            load(&home.0, &receipt.operation_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .record
+                .summary
+                .state,
+            DeliveryState::Uncertain
+        );
     }
 
     #[tokio::test]

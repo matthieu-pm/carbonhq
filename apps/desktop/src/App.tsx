@@ -51,6 +51,7 @@ import {
   isRecording,
   navigate,
   openInBrowser,
+  openPreviewInBrowser,
   reachableUrl,
   setPendingTab,
   trackBrowserOpen,
@@ -125,6 +126,7 @@ import SpaceTabs from "@/components/layout/SpaceTabs";
 import { useSpaceTabs } from "@/lib/spaceTabs";
 import NavButtons from "@/components/layout/NavButtons";
 import WindowToolbar from "@/components/layout/WindowToolbar";
+import PreviewControl from "@/components/preview/PreviewControl";
 import { placeKey, step as stepHistory, visit as visitPlace, type NavHistory, type Place } from "@/lib/navHistory";
 import { addListTab, closeIssueTab, editIssueTabs, newListTabId, openIssueTab, updateListTab, useIssueTabs } from "@/lib/issueTabs";
 import { CaretMaximizeDiagonalOutline12 } from "@/components/icons/nucleo";
@@ -3254,6 +3256,14 @@ function App() {
               )
             : shownSession ? (
                 <>
+                  {viewTab === "chat" && <PreviewControl key={shownSession.sessionId}
+                    sessionId={shownSession.sessionId} cwd={shownSession.cwd}
+                    disabled={(selectedItem?.archived ?? shownSession.archived) || (selectedItem?.worktreeRemoved ?? shownSession.worktreeRemoved)}
+                    onOpen={async (sessionId, url) => {
+                      await openPreviewInBrowser(sessionId, url);
+                      showPanel("browser", sessionId);
+                    }}
+                  />}
                   <PanelActions
                     // In the Files view alone: the file on screen, or the
                     // session's directory where no file is open.

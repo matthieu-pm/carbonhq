@@ -76,12 +76,16 @@ retains pending mail; the cancelable composer queue stays memory-only and unchan
 
 `carbon session delivery <session-id> <message-id>` reads current state as JSON.
 `cancel-delivery` cancels accepted mail, and target deletion fences both dispatch
-and new acceptance. Submission cannot be recalled. `submitting` is synced just
-before the transport call, and `submitted` after it returns success; this records
+and new acceptance. Submission cannot be recalled. `submitting` is synced before
+publishing the prepared prompt, and `submitted` after the transport returns success; this records
 submission, never completion or a result observed by a parent.
+The outcome write follows the session's turn bookkeeping: saving a large payload
+must not delay opening the turn until after a fast harness result has closed it.
 
 Startup reconciles interrupted submissions against native Claude Code and Codex
-user-message records containing the delivery's unique transport marker. Carbon's
+user-message records containing the delivery's unique transport marker. Recovery
+rediscovers native files by the recorded harness/session identity, including logs
+created after submission starts or Codex rollouts moved into the archive. Carbon's
 pre-send log is never proof. Missing or unfamiliar evidence leaves `uncertain`,
 with no automatic resend. Other harnesses have no native recovery reader yet and
 remain uncertain across this gap. The CLI protocol changes no app/serve command
@@ -91,7 +95,9 @@ To exercise real process crashes with an isolated home and a fake harness, build
 `carbon-serve` with `cargo build --no-default-features --features serve --bin carbon-serve`
 from `apps/desktop/src-tauri`, then run `python3 scripts/test-agent-inbox.py` from
 `apps/desktop`. This also checks forwarding, FIFO, Stop retention, deletion,
-native evidence, receipt recovery, dead children and composer cancellation.
+native evidence, receipt recovery, dead children, composer cancellation, a
+notification turn opening during preparation and immediate replies while large
+delivery records are saved. It needs Python 3, Node with WebSocket support and `cc`.
 
 ## Retry receipt storage
 

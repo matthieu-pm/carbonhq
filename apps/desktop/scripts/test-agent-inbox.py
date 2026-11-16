@@ -10,12 +10,15 @@ subprocess.run(['git', 'init', '-q', str(home / 'repo')], check=True)
 subprocess.run(['git', '-C', str(home / 'repo'), 'config', 'user.name', 'Fixture'], check=True)
 subprocess.run(['git', '-C', str(home / 'repo'), 'config', 'user.email', 'fixture@example.test'], check=True)
 subprocess.run(['git', '-C', str(home / 'repo'), 'commit', '--allow-empty', '-qm', 'fixture'], check=True)
-ids = {name: str(uuid.uuid4()) for name in ['recipient', 'sender', 'blocked', 'delete', 'forward']}
+ids = {name: str(uuid.uuid4()) for name in ['recipient', 'sender', 'blocked', 'delete', 'forward', 'race']}
 rows = [dict(sessionId=id, harness='claude_code', cwd=str(home / 'repo'), projectPath=str(home / 'repo'), branch='main', worktreeName=None, title=name, titleLocked=True, model='sonnet', effort='high', permissionMode='plan', fast=False, status='idle', created='2026-11-16T12:00:00Z', modified='2026-11-16T12:00:00Z', archived=False, pinned=False) for (name, id) in ids.items()]
 (home / 'sessions/index.json').write_text(json.dumps(rows))
 fake = home / 'bin/claude'
 fake.write_text(f'#!{sys.executable}\n' + (pathlib.Path(__file__).parent / 'fixtures/inbox-claude.py').read_text())
 fake.chmod(0o755)
+gh = home / 'bin/gh'
+gh.write_text(f'#!{sys.executable}\n' + (pathlib.Path(__file__).parent / 'fixtures/inbox-gh.py').read_text())
+gh.chmod(0o755)
 env = {**os.environ, 'CARBON_HOME': str(home), 'CARBON_NO_ANALYTICS': '1', 'CLAUDE_CONFIG_DIR': str(home / 'claude'), 'HOME': str(home), 'PATH': str(home / 'bin') + ':' + os.environ['PATH']}
 server = None
 
@@ -100,6 +103,7 @@ try:
     start()
     assert send('recipient', 'first persisted', 'stable-1', fromSessionId=ids['sender'])['delivery']['messageId'] == first['messageId']
     wait_for(lambda : status('recipient', second['messageId'])['state'] == 'submitted')
+    wait_for(lambda: len([row for row in received() if '[Carbon delivery' in row['text']]) >= 2)
     delivered = [r for r in received() if '[Carbon delivery' in r['text']]
     assert [first['messageId'] in delivered[0]['text'], second['messageId'] in delivered[1]['text']] == [True, True], delivered
     assert len(delivered) == 2, delivered
@@ -153,9 +157,56 @@ try:
     two = unwrap(ws('orchestrate', args))['delivery']
     assert one['messageId'] == two['messageId'] and one['requestId'] == 'forwarded-key'
     wait_for(lambda : status('forward', one['messageId'])['state'] == 'submitted')
+    wait_for(lambda: any(one['messageId'] in row['text'] for row in received()))
     assert len([r for r in received() if one['messageId'] in r['text']]) == 1
     assert 'Original remote sender' in next((r['text'] for r in received() if one['messageId'] in r['text']))
     print('PASS machine forwarding preserves identities and sender attribution', flush=True)
+    stop()
+    path = inbox_path(one['messageId'])
+    record = json.loads(path.read_text())
+    assert record['evidence'] == [], 'fixture must create the native log only upon receipt'
+    record['summary']['state'] = 'submitting'
+    path.write_text(json.dumps(record))
+    start()
+    assert status('forward', one['messageId'])['state'] == 'submitted'
+    assert len([r for r in received() if one['messageId'] in r['text']]) == 1
+    print('PASS recovery discovers native evidence created after dispatch begins', flush=True)
+    (home / f"notify-{ids['race']}").touch()
+    send('race', 'warm', None, False)
+    wait_for(lambda: next(row for row in json.loads((home / 'sessions/index.json').read_text()) if row['sessionId'] == ids['race'])['status'] == 'completed')
+    raced = send('race', 'race delivery #owner/repo#12', 'race')['delivery']
+    wait_for(lambda: (home / 'notification-open').exists())
+    wait_for(lambda: next(row for row in json.loads((home / 'sessions/index.json').read_text()) if row['sessionId'] == ids['race'])['status'] == 'in_progress')
+    (home / 'release-gh').touch()
+    time.sleep(0.3)
+    assert status('race', raced['messageId'])['state'] == 'accepted'
+    (home / 'finish-notification').touch()
+    wait_for(lambda: status('race', raced['messageId'])['state'] == 'submitted')
+    wait_for(lambda: len([row for row in received() if 'race delivery' in row['text']]) > 0)
+    time.sleep(0.3)
+    copies = [row for row in received() if 'race delivery' in row['text']]
+    assert len(copies) == 1 and raced['messageId'] in copies[0]['text'], copies
+    print('PASS notification during preparation never escapes the durable inbox', flush=True)
+    stop()
+    subprocess.run(['cc', str(pathlib.Path(__file__).parent / 'fixtures/inbox-fast-claude.c'), '-o', str(fake)], check=True)
+    (home / 'bin/git').write_text('#!/bin/sh\nexit 1\n')
+    (home / 'bin/git').chmod(0o755)
+    rows = json.loads((home / 'sessions/index.json').read_text())
+    for index in range(16):
+        name = f'fast-{index}'
+        ids[name] = str(uuid.uuid4())
+        rows.append({**rows[0], 'sessionId': ids[name], 'title': name, 'status': 'idle'})
+    (home / 'sessions/index.json').write_text(json.dumps(rows))
+    start()
+    fast = [(name, send(name, 'x' * 900000, name)['delivery']['messageId']) for name in ids if name.startswith('fast-')]
+    wait_for(lambda: all(status(name, message)['state'] == 'submitted' for name, message in fast), seconds=30)
+    for name, _ in fast:
+        wait_for(lambda: any(json.loads(line)['payload']['type'] == 'turn_completed' for line in (home / 'sessions' / f'{ids[name]}.jsonl').read_text().splitlines()))
+    rows = json.loads((home / 'sessions/index.json').read_text())
+    assert all(row['status'] == 'completed' for row in rows if row['title'].startswith('fast-')), rows
+    followup = send('fast-0', 'still dispatching', 'fast-followup')['delivery']
+    wait_for(lambda: status('fast-0', followup['messageId'])['state'] == 'submitted')
+    print('PASS fast completion cannot be reopened by delivery persistence', flush=True)
     (home / 'results.json').write_text(json.dumps(dict(passed=True, home=str(home), messages=len(list((home / 'agent-inbox').glob('*.json')))), indent=2))
     print('ARTIFACT', home, flush=True)
 finally:
