@@ -582,6 +582,8 @@ export type CanvasEdit = { name: string | null, frames: Array<CanvasFrame> | nul
 
 export type CanvasEditFile = { path: string, edit: CanvasFrameEdit, };
 
+export type CanvasFocus = { id: string, projectPath: string, revision: number, picks: Array<CanvasPick>, previewFrameId: string | null, };
+
 export type CanvasFrame = { id: string, name: string, geometry: CanvasGeometry, content: CanvasContent, };
 
 export type CanvasFrameEdit = { revision: number, frameId: string, content: CanvasContent, author: CanvasAuthor, };
@@ -592,11 +594,15 @@ export type CanvasList = { files: Array<CanvasSummary>, problems: Array<CanvasPr
 
 export type CanvasNode = { "kind": "element", id: string, name: string, tag: string, attributes: { [key in string]: string }, styles: { [key in string]: string }, children: Array<CanvasNode>, } | { "kind": "text", id: string, name: string, text: string, };
 
+export type CanvasPick = { frameId: string, nodeId: string | null, bounds: CanvasGeometry | null, };
+
 export type CanvasProblem = { id: string, path: string, message: string, };
 
 export type CanvasReconciliation = { canvas: Canvas, problems: Array<CanvasProblem>, };
 
 export type CanvasSummary = { id: string, projectPath: string, projectKey: string, name: string, revision: number, modified: string, frameCount: number, change: CanvasChange, };
+
+export type CanvasUndoState = { canUndo: boolean, canRedo: boolean, undoLabel: string | null, redoLabel: string | null, };
 
 /**
  * Everything that changed between two snapshots.
@@ -1868,7 +1874,7 @@ issues: Array<IssueRef>,
  * Resolved when typed, for `issues`' reason: Claude Code's server list is
  * a child spawned to ask, which has no place inside a flush.
  */
-mcpServers: Array<string>, };
+mcpServers: Array<string>, canvasContext: CanvasFocus | null, };
 
 export type RecoveryAction = "resume" | "retry" | "inspect";
 

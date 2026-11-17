@@ -11,6 +11,10 @@ pub const CANVAS_DELETED: &str = "canvas_deleted";
 
 pub(super) fn announce(sink: &Sink, canvas: &Canvas) {
     let _ = sink.emit(CANVAS_CHANGED, CanvasSummary::from(canvas));
+    let id = canvas.id.clone();
+    tokio::spawn(async move {
+        super::agent::refresh_previews(&id).await;
+    });
 }
 
 /// Lists project-owned files and surfaces unreadable files rather than silently omitting them.

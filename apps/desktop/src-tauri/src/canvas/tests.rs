@@ -64,6 +64,338 @@ fn frame() -> CanvasFrame {
     })).unwrap()
 }
 
+#[tokio::test]
+async fn restoring_identical_design_keeps_existing_undo_and_redo_steps() {
+    let fixture = Fixture::new();
+    let original = fixture.canvas().await;
+    let renamed = fixture.store.edit(&original.id, original.revision, CanvasEdit {
+        name: Some("Renamed".into()), ..Default::default()
+    }, Default::default()).await.unwrap();
+    let (undone, _) = fixture.store.undo(&original.id, renamed.revision, None, false).await.unwrap();
+    let previous = super::undo::state(&undone).unwrap();
+    assert!(previous.can_redo);
+    let restored = fixture.store.restore(&original.id, undone.revision, original.revision, Default::default()).await.unwrap();
+    assert_eq!(serde_json::to_value(super::undo::state(&restored).unwrap()).unwrap(), serde_json::to_value(previous).unwrap());
+    let (redone, _) = fixture.store.undo(&original.id, restored.revision, None, true).await.unwrap();
+    assert_eq!(redone.name, "Renamed");
+    let (undone, _) = fixture.store.undo(&original.id, redone.revision, None, false).await.unwrap();
+    assert_eq!(undone.name, original.name);
+    let renamed = fixture.store.edit(&original.id, undone.revision, CanvasEdit {
+        name: Some("Renamed again".into()), ..Default::default()
+    }, Default::default()).await.unwrap();
+    let renamed_back = fixture.store.edit(&original.id, renamed.revision, CanvasEdit {
+        name: Some(original.name.clone()), ..Default::default()
+    }, Default::default()).await.unwrap();
+    let restored = fixture.store.restore(&original.id, renamed_back.revision, original.revision, Default::default()).await.unwrap();
+    assert!(super::undo::state(&restored).unwrap().can_undo);
+    let (undone, _) = fixture.store.undo(&original.id, restored.revision, None, false).await.unwrap();
+    assert_eq!(undone.name, "Renamed again");
+}
+
+#[tokio::test]
+async fn undoing_version_restore_recovers_owned_images_and_keeps_later_uploads() {
+    let fixture = Fixture::new();
+    let original = fixture.populated().await;
+    let image = id();
+    let upload = |asset_id: String| CanvasAssetUpload {
+        asset_id, name: "pixel.png".into(), offset: 0, data: PNG.into(), complete: true,
+    };
+    let with_image = fixture.store.upload(&original.id, original.revision, upload(image.clone()), Default::default()).await.unwrap().canvas.unwrap();
+    let mut frames = with_image.frames.clone();
+    frames[0].content.asset_ids.push(image.clone());
+    if let CanvasNode::Element { styles, .. } = &mut frames[0].content.nodes[0] {
+        styles.insert("background-image".into(), format!("url('carbon-canvas-asset://{image}')"));
+    }
+    let design = fixture.store.edit(&original.id, with_image.revision, CanvasEdit {
+        frames: Some(frames), ..Default::default()
+    }, Default::default()).await.unwrap();
+    let restored = fixture.store.restore(&original.id, design.revision, original.revision, Default::default()).await.unwrap();
+    let later = id();
+    let uploaded = fixture.store.upload(&original.id, restored.revision, upload(later.clone()), Default::default()).await.unwrap().canvas.unwrap();
+    let (undone, conflicts) = fixture.store.undo(&original.id, uploaded.revision, None, false).await.unwrap();
+    assert!(conflicts.is_empty());
+    assert_eq!(undone.frames, design.frames);
+    assert!(undone.assets.iter().any(|asset| asset.id == later));
+    assert_eq!(fixture.store.read_asset(&original.id, &image, None).await.unwrap().data, PNG);
+    let (redone, conflicts) = fixture.store.undo(&original.id, undone.revision, None, true).await.unwrap();
+    assert!(conflicts.is_empty());
+    assert_eq!(redone.frames, original.frames);
+    assert_eq!(redone.assets.len(), 1);
+    assert_eq!(redone.assets[0].id, later);
+}
+
+#[tokio::test]
+async fn turn_undo_preserves_later_styles_layout_and_camera_and_redoes_only_restored_fields() {
+    let fixture = Fixture::new();
+    let original = fixture.populated().await;
+    let turn = id();
+    let author = CanvasAuthor {
+        session_id: Some(id()),
+        turn_id: Some(turn.clone()),
+        label: Some("Agent turn".into()),
+    };
+    let mut first = original.frames.clone();
+    if let CanvasNode::Element { styles, .. } = &mut first[0].content.nodes[0] {
+        styles.insert("color".into(), "red".into());
+        styles.insert("padding".into(), "24px".into());
+    }
+    let first = fixture
+        .store
+        .edit(
+            &original.id,
+            original.revision,
+            CanvasEdit {
+                frames: Some(first),
+                ..Default::default()
+            },
+            author.clone(),
+        )
+        .await
+        .unwrap();
+    let mut second = first.frames.clone();
+    if let CanvasNode::Element { children, .. } = &mut second[0].content.nodes[0] {
+        if let CanvasNode::Text { text, .. } = &mut children[0] {
+            *text = "Continue".into();
+        }
+    }
+    let second = fixture
+        .store
+        .edit(
+            &original.id,
+            first.revision,
+            CanvasEdit {
+                frames: Some(second),
+                ..Default::default()
+            },
+            author,
+        )
+        .await
+        .unwrap();
+    let mut manual = second.frames.clone();
+    manual[0].geometry.x = 700.0;
+    if let CanvasNode::Element { styles, .. } = &mut manual[0].content.nodes[0] {
+        styles.insert("color".into(), "blue".into());
+        styles.insert("border-radius".into(), "12px".into());
+    }
+    let manual = fixture
+        .store
+        .edit(
+            &original.id,
+            second.revision,
+            CanvasEdit {
+                frames: Some(manual),
+                camera: Some(CanvasCamera {
+                    x: 100.0,
+                    y: 80.0,
+                    zoom: 0.5,
+                    extra: Default::default(),
+                }),
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let (undone, conflicts) = fixture
+        .store
+        .undo(&original.id, manual.revision, Some(&turn), false)
+        .await
+        .unwrap();
+    assert_eq!(conflicts.len(), 1);
+    assert!(conflicts[0].ends_with("/styles/color"));
+    assert_eq!(undone.frames[0].geometry.x, 700.0);
+    assert_eq!(undone.camera, manual.camera);
+    if let CanvasNode::Element {
+        styles, children, ..
+    } = &undone.frames[0].content.nodes[0]
+    {
+        assert_eq!(styles["color"], "blue");
+        assert_eq!(styles["border-radius"], "12px");
+        assert!(!styles.contains_key("padding"));
+        assert!(matches!(&children[0], CanvasNode::Text { text, .. } if text == "Pay"));
+    } else {
+        panic!("missing element");
+    }
+    let (redone, conflicts) = fixture
+        .store
+        .undo(&original.id, undone.revision, None, true)
+        .await
+        .unwrap();
+    assert!(conflicts.is_empty());
+    assert_eq!(redone.frames[0].geometry.x, 700.0);
+    if let CanvasNode::Element {
+        styles, children, ..
+    } = &redone.frames[0].content.nodes[0]
+    {
+        assert_eq!(styles["color"], "blue");
+        assert_eq!(styles["padding"], "24px");
+        assert!(matches!(&children[0], CanvasNode::Text { text, .. } if text == "Continue"));
+    }
+    assert!(fixture
+        .store
+        .undo(&original.id, manual.revision, None, false)
+        .await
+        .unwrap_err()
+        .contains("conflict"));
+}
+
+#[tokio::test]
+async fn undo_added_frame_keeps_later_manual_content_and_survives_reopening() {
+    let fixture = Fixture::new();
+    let original = fixture.canvas().await;
+    let turn = id();
+    let agent = fixture
+        .store
+        .edit(
+            &original.id,
+            original.revision,
+            CanvasEdit {
+                frames: Some(vec![frame()]),
+                ..Default::default()
+            },
+            CanvasAuthor {
+                session_id: Some(id()),
+                turn_id: Some(turn.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let mut later = agent.frames.clone();
+    later[0].name = "Reader's edit".into();
+    let manual = fixture
+        .store
+        .edit(
+            &agent.id,
+            agent.revision,
+            CanvasEdit {
+                frames: Some(later),
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let reopened = Store::at(fixture.store.root.clone());
+    let (undone, conflicts) = reopened
+        .undo(&agent.id, manual.revision, Some(&turn), false)
+        .await
+        .unwrap();
+    assert!(!conflicts.is_empty());
+    assert_eq!(undone.frames, manual.frames);
+    let current = reopened.read(&agent.id).await.unwrap();
+    assert_eq!(current.revision, undone.revision);
+    assert!(super::undo::state(&current).unwrap().can_redo);
+}
+
+#[tokio::test]
+async fn undo_preserves_unknown_frame_and_node_extension_fields() {
+    let fixture = Fixture::new();
+    let original = fixture.populated().await;
+    let mut frames = original.frames.clone();
+    frames[0]
+        .extra
+        .insert("layers".into(), json!({"future":true}));
+    frames[0].extra.insert("order".into(), json!(["future"]));
+    if let CanvasNode::Element {
+        extra, children, ..
+    } = &mut frames[0].content.nodes[0]
+    {
+        extra.insert("parent".into(), json!("future"));
+        if let CanvasNode::Text { extra, .. } = &mut children[0] {
+            extra.insert("children".into(), json!({"future":true}));
+        }
+    }
+    let baseline = fixture
+        .store
+        .edit(
+            &original.id,
+            original.revision,
+            CanvasEdit {
+                frames: Some(frames),
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let mut changed = baseline.frames.clone();
+    changed[0].name = "Renamed".into();
+    let changed = fixture
+        .store
+        .edit(
+            &baseline.id,
+            baseline.revision,
+            CanvasEdit {
+                frames: Some(changed),
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let (undone, conflicts) = fixture
+        .store
+        .undo(&baseline.id, changed.revision, None, false)
+        .await
+        .unwrap();
+    assert!(conflicts.is_empty());
+    assert_eq!(undone.frames, baseline.frames);
+}
+
+#[test]
+fn node_commands_preserve_identity_and_reject_cycles_without_touching_storage() {
+    use carbon_proto::CanvasAction;
+    let mut canvas: Canvas = serde_json::from_value(json!({
+        "id":id(),"projectPath":"/tmp","name":"Design","revision":1,"created":"now","modified":"now","frames":[frame()],"camera":null,"tokens":{},"assets":[],
+        "change":{"id":id(),"beforeRevision":0,"afterRevision":1,"author":{},"restoredFrom":null}
+    })).unwrap();
+    let frame = canvas.frames[0].id.clone();
+    let element = super::nodes::node_id(&canvas.frames[0].content.nodes[0]).to_string();
+    let duplicate = super::nodes::mutate(
+        &mut canvas,
+        &CanvasAction::Duplicate {
+            node: frame.clone(),
+        },
+        None,
+    )
+    .unwrap();
+    assert_eq!(canvas.frames.len(), 2);
+    assert!(
+        canvas.frames[1].geometry.x
+            >= canvas.frames[0].geometry.x + canvas.frames[0].geometry.width + 80.0
+    );
+    assert_ne!(
+        super::nodes::node_id(&canvas.frames[1].content.nodes[0]),
+        element
+    );
+    assert_eq!(duplicate["idMap"].as_object().unwrap().len(), 3);
+    assert!(super::nodes::mutate(
+        &mut canvas,
+        &CanvasAction::Move {
+            node: element.clone(),
+            parent: element.clone(),
+            index: None
+        },
+        None
+    )
+    .unwrap_err()
+    .contains("descendant"));
+    super::nodes::mutate(
+        &mut canvas,
+        &CanvasAction::SetText {
+            node: element.clone(),
+            text: "Done".into(),
+        },
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        super::nodes::node_id(&canvas.frames[0].content.nodes[0]),
+        element
+    );
+}
+
 async fn edit_content(fixture: &Fixture, canvas: &Canvas, text: &str) -> PathBuf {
     let file = fixture
         .store

@@ -379,6 +379,7 @@ async fn create_tab(session: &str, url: &str, id: Option<i32>) -> Result<i32, St
 fn remove_tab(session: &str, id: i32) {
     // Before the entry goes, so it can still read the page the tab ended on.
     automation::forget(id);
+    automation::forget_canvas(id);
     let remaining = {
         let mut tabs = TABS.lock().unwrap();
         tabs.retain(|t| t.id != id);
@@ -688,10 +689,13 @@ fn dispatch(session: &str, message: &Value) {
 /// A target's url and title onto the tab showing it.
 fn retitle(info: &Value) {
     let Some(target) = info["targetId"].as_str() else { return };
-    if let Some(t) = TABS.lock().unwrap().iter_mut().find(|t| t.target.as_deref() == Some(target)) {
+    let changed = if let Some(t) = TABS.lock().unwrap().iter_mut().find(|t| t.target.as_deref() == Some(target)) {
+        let changed = t.url != info["url"].as_str().unwrap_or_default();
         t.url = info["url"].as_str().unwrap_or_default().to_string();
         t.title = info["title"].as_str().unwrap_or_default().to_string();
-    }
+        changed.then_some(t.id)
+    } else { None };
+    if let Some(tab) = changed { automation::navigated(tab); }
 }
 
 fn tab_by_cdp(cdp: &str) -> Option<i32> {
@@ -742,10 +746,10 @@ fn attached(session: &str, params: &Value) {
             t.url = info["url"].as_str().unwrap_or_default().to_string();
             t.title = info["title"].as_str().unwrap_or_default().to_string();
         }
-        popup.then_some(id)
+        id
     };
     // A popup is the tab the page just opened, as on the Mac.
-    if let Some(id) = id {
+    if popup {
         set_active(session, Some(id));
     }
     for (method, params) in [
@@ -756,6 +760,7 @@ fn attached(session: &str, params: &Value) {
     ] {
         fire(session, cdp, method, params);
     }
+    automation::navigated(id);
 }
 
 /// Before the first launch: whether this machine can run Chromium at all, so
@@ -834,6 +839,39 @@ pub fn close_session(session: &str) {
     TABS.lock().unwrap().retain(|t| t.session != session);
     for id in ids {
         automation::forget(id);
+        automation::forget_canvas(id);
     }
     set_active(session, None);
+}
+
+/// Canvas rendering uses a private tab, never an agent's browsing target or cookies.
+pub(crate) async fn canvas_eval(
+    expression: String,
+    width: u32,
+    height: u32,
+    screenshot: bool,
+) -> Result<Value, String> {
+    static RENDER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = RENDER.lock().await;
+    static RENDER_ID: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
+    let session = RENDER_ID.as_str();
+    let tab = create_tab(session, "about:blank", None).await?;
+    let result = async {
+        automation::wait_loaded(tab).await?;
+        let cdp = TABS.lock().unwrap().iter().find(|t| t.id == tab).and_then(|t| t.cdp.clone()).ok_or("Canvas renderer did not attach.")?;
+        call(session, Some(&cdp), "Emulation.setDeviceMetricsOverride", json!({"width":width,"height":height,"deviceScaleFactor":1,"mobile":false})).await?;
+        call(session, Some(&cdp), "Network.enable", json!({})).await?;
+        call(session, Some(&cdp), "Network.setBlockedURLs", json!({"urls":["http://*","https://*","file://*","ftp://*"]})).await?;
+        let reply = call(session, Some(&cdp), "Runtime.evaluate", json!({"expression":expression,"awaitPromise":true,"returnByValue":true,"timeout":20000})).await?;
+        if let Some(exception) = reply.get("exceptionDetails") { return Err(format!("Canvas rendering failed: {}", exception["exception"]["description"].as_str().unwrap_or("invalid render result"))); }
+        let mut value = reply["result"]["value"].clone();
+        if screenshot {
+            let clip = value.get("clip").cloned().ok_or("No visible screenshot bounds.")?;
+            let image = call(session, Some(&cdp), "Page.captureScreenshot", json!({"format":"png","captureBeyondViewport":false,"clip":clip})).await?;
+            value["data"] = image["data"].clone();
+            }
+        Ok(value)
+    }.await;
+    let _ = close_tab(session, tab).await;
+    result
 }

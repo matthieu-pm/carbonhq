@@ -12,9 +12,10 @@ import type { Canvas, CanvasCamera, CanvasGeometry } from "@/types/events";
 import type { ShortcutId } from "@/lib/shortcuts";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 
-export default function CanvasBoard({ canvas, active, picks, onPicks, previews, errors, onVisible, onNewFrame, stats }: {
+export default function CanvasBoard({ canvas, active, picks, onPicks, previews, errors, onVisible, onNewFrame, stats, editing = [] }: {
   canvas: Canvas; active: boolean; picks: CanvasPick[]; onPicks(picks: CanvasPick[]): void;
   previews: Map<string, FramePreview>; errors: Map<string, string>; onVisible(ids: string[]): void; onNewFrame(): void;
+  editing?: string[];
   stats: { cached: number; bytes: number; captures: number };
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -173,7 +174,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
         {previews.get(frame.id) ? <img alt={frame.name} draggable={false} src={previews.get(frame.id)!.url} className="pointer-events-none block h-full w-full" /> : <div className="flex h-full w-full items-center justify-center p-4 text-center text-sm text-neutral-500">{errors.get(frame.id) ?? "Rendering preview…"}</div>}
       </div>)}
     </div>
-    {visible.map((frame) => <span key={frame.id} data-frame-id={frame.id} data-selected={picks.some((p) => p.frameId === frame.id)} className="canvas-frame-label pointer-events-none absolute truncate text-xs text-muted-foreground" style={{ left: camera.x + frame.geometry.x * camera.zoom, top: camera.y + frame.geometry.y * camera.zoom - 24, maxWidth: Math.max(50, frame.geometry.width * camera.zoom), height: 20 }}>{frame.name}</span>)}
+    {visible.map((frame) => <span key={frame.id} data-frame-id={frame.id} data-selected={picks.some((p) => p.frameId === frame.id)} className="canvas-frame-label pointer-events-none absolute inline-flex items-center gap-1.5 text-xs text-muted-foreground" style={{ left: camera.x + frame.geometry.x * camera.zoom, top: camera.y + frame.geometry.y * camera.zoom - 24, maxWidth: Math.max(50, frame.geometry.width * camera.zoom), height: 20 }}>{editing.includes(frame.id) && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}<span className="truncate">{frame.name}</span>{editing.includes(frame.id) && <span role="status" className="shrink-0 text-primary">Agent editing</span>}</span>)}
     {picks.map((pick) => { const frame = canvas.frames.find((f) => f.id === pick.frameId); if (!frame) return null; const layer = pick.nodeId ? previews.get(frame.id)?.boxes.find((b) => b.id === pick.nodeId) : null; const box = layer ? { ...layer, x: frame.geometry.x + layer.x, y: frame.geometry.y + layer.y } : frame.geometry; return <div key={`${pick.frameId}:${pick.nodeId}`} className="canvas-selection pointer-events-none absolute border-2 border-accent-mention" style={{ left: camera.x + box.x * camera.zoom, top: camera.y + box.y * camera.zoom, width: box.width * camera.zoom, height: box.height * camera.zoom }} />; })}
     {marquee && <div className="pointer-events-none absolute border border-accent-mention bg-accent-mention/10" style={{ left: camera.x + marquee.x * camera.zoom, top: camera.y + marquee.y * camera.zoom, width: marquee.width * camera.zoom, height: marquee.height * camera.zoom }} />}
     {!canvas.frames.length && <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground"><p>Add a frame to start designing</p><Button variant="secondary" size="sm" className="pointer-events-auto" onClick={onNewFrame}><Plus />New frame</Button></div>}

@@ -1,5 +1,7 @@
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { IS_MAC } from "@/lib/platform";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { AlertCircle, ChevronDown, Frame, Pencil, Plus, RefreshCw } from "lucide-react";
+import { AlertCircle, ChevronDown, Frame, Pencil, Plus, RefreshCw, Undo2, Redo2 } from "lucide-react";
 
 import PanelLeftIcon from "@/components/icons/PanelLeftIcon";
 import PanelRightIcon from "@/components/icons/PanelRightIcon";
@@ -33,6 +35,10 @@ type CanvasChromeProps = {
   onCreateFile: () => void;
   onRenameFile: () => void;
   onNewFrame: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
   layers: ReactNode;
   board: ReactNode;
   chat: ReactNode;
@@ -195,6 +201,10 @@ export default function CanvasChrome(props: CanvasChromeProps) {
         </IconAction>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
+          {hasFile && <>
+            <IconAction label="Undo canvas edit" shortcut="undo" onClick={() => props.onUndo?.()} disabled={!props.canUndo}><Undo2 /></IconAction>
+            <IconAction label="Redo canvas edit" shortcut="redo" onClick={() => props.onRedo?.()} disabled={!props.canRedo}><Redo2 /></IconAction>
+          </>}
           {hasFile && (
             <IconAction label="Rename canvas" onClick={onRenameFile}>
               <Pencil className="size-3.5" />
@@ -279,10 +289,11 @@ function useWidth(ref: RefObject<HTMLElement | null>): number {
 /// A ghost icon button with its name in a real tooltip, as everywhere else in
 /// the app's chrome.
 function IconAction({
-  ref, label, pressed, controls, disabled, busy, onClick, children,
+  ref, label, shortcut, pressed, controls, disabled, busy, onClick, children,
 }: {
   ref?: RefObject<HTMLButtonElement | null>;
   label: string;
+  shortcut?: "undo" | "redo";
   pressed?: boolean;
   controls?: string;
   disabled?: boolean;
@@ -310,7 +321,7 @@ function IconAction({
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
+      <TooltipContent side="bottom">{label}{shortcut && <KbdGroup><Kbd>{IS_MAC ? "⌘" : "Ctrl"}</Kbd>{shortcut === "redo" && <Kbd>Shift</Kbd>}<Kbd>Z</Kbd></KbdGroup>}</TooltipContent>
     </Tooltip>
   );
 }

@@ -49,6 +49,23 @@ describe("canvas coordinates and selection", () => {
 });
 
 describe("isolated frame document", () => {
+  it("keeps scoped CSS variables with numeric token names", () => {
+    const f = frame(); const node = element();
+    if (node.kind === "element") node.styles = { "--space-2": "12px", padding: "var(--space-2)", "-webkit-line-clamp": "2" };
+    f.content.nodes = [node];
+    expect(frameMarkup(f, {}, {})).toContain("--space-2:12px;padding:var(--space-2);-webkit-line-clamp:2");
+  });
+
+  it("preserves CSS cascade order across sorted property storage", () => {
+    const f = frame();
+    const node = element();
+    if (node.kind === "element") {
+      node.styles = { padding: "var(--space-2)", "padding-left": "24px", "--space-2": "12px" };
+      Object.assign(node, { carbonStyleOrder: ["--space-2", "padding-left", "padding"] });
+    }
+    f.content.nodes = [node];
+    expect(frameMarkup(f, {}, {})).toContain("--space-2:12px;padding-left:24px;padding:var(--space-2)");
+  });
   it("escapes text and attributes while retaining stable element and text ids", () => {
     const f = frame(); f.content.nodes = [element({ title: '\" onmouseover=\"alert(1)' })];
     const markup = frameMarkup(f, { "--radius": "12px" }, {});

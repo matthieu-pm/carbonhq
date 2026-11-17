@@ -11,6 +11,7 @@
 use clap::{Args, CommandFactory, Parser, Subcommand};
 
 mod discovery;
+mod canvas;
 mod draft;
 mod pages;
 mod secret;
@@ -62,6 +63,8 @@ static MACHINE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 #[derive(Subcommand)]
 enum Command {
+    /// Inspect and edit this session's project canvases.
+    Canvas(canvas::CanvasArgs),
     /// Discover available harnesses and inspect their capabilities.
     #[command(subcommand, arg_required_else_help = true)]
     Harness(discovery::HarnessCommand),
@@ -489,6 +492,7 @@ fn run() -> Result<(), String> {
                 | Command::Pages(_)
                 | Command::Secret(_)
                 | Command::Preview(_)
+                | Command::Canvas(_)
                 | Command::Browser(_)
                 | Command::Share(_)
                 | Command::New(_)
@@ -525,6 +529,7 @@ fn run() -> Result<(), String> {
         Command::Pages(command) => pages::run(command),
         Command::Secret(command) => secret::run(command),
         Command::Preview(command) => preview::run(command),
+        Command::Canvas(args) => canvas::run(args),
         Command::Browser(args) => browser(args),
         Command::Share(args) => share(args),
         Command::Machine(command) => machine::run(command),
