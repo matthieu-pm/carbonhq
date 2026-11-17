@@ -379,6 +379,7 @@ async fn create_tab(session: &str, url: &str, id: Option<i32>) -> Result<i32, St
 fn remove_tab(session: &str, id: i32) {
     // Before the entry goes, so it can still read the page the tab ended on.
     automation::forget(id);
+    automation::forget_canvas(id);
     let remaining = {
         let mut tabs = TABS.lock().unwrap();
         tabs.retain(|t| t.id != id);
@@ -688,10 +689,13 @@ fn dispatch(session: &str, message: &Value) {
 /// A target's url and title onto the tab showing it.
 fn retitle(info: &Value) {
     let Some(target) = info["targetId"].as_str() else { return };
-    if let Some(t) = TABS.lock().unwrap().iter_mut().find(|t| t.target.as_deref() == Some(target)) {
+    let changed = if let Some(t) = TABS.lock().unwrap().iter_mut().find(|t| t.target.as_deref() == Some(target)) {
+        let changed = t.url != info["url"].as_str().unwrap_or_default();
         t.url = info["url"].as_str().unwrap_or_default().to_string();
         t.title = info["title"].as_str().unwrap_or_default().to_string();
-    }
+        changed.then_some(t.id)
+    } else { None };
+    if let Some(tab) = changed { automation::navigated(tab); }
 }
 
 fn tab_by_cdp(cdp: &str) -> Option<i32> {
@@ -742,10 +746,10 @@ fn attached(session: &str, params: &Value) {
             t.url = info["url"].as_str().unwrap_or_default().to_string();
             t.title = info["title"].as_str().unwrap_or_default().to_string();
         }
-        popup.then_some(id)
+        id
     };
     // A popup is the tab the page just opened, as on the Mac.
-    if let Some(id) = id {
+    if popup {
         set_active(session, Some(id));
     }
     for (method, params) in [
@@ -756,6 +760,7 @@ fn attached(session: &str, params: &Value) {
     ] {
         fire(session, cdp, method, params);
     }
+    automation::navigated(id);
 }
 
 /// Before the first launch: whether this machine can run Chromium at all, so
@@ -834,6 +839,7 @@ pub fn close_session(session: &str) {
     TABS.lock().unwrap().retain(|t| t.session != session);
     for id in ids {
         automation::forget(id);
+        automation::forget_canvas(id);
     }
     set_active(session, None);
 }

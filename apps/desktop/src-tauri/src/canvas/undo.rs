@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use ts_rs::TS;
@@ -63,10 +65,10 @@ fn save(canvas: &mut Canvas, history: &History) -> Result<(), String> {
 
 /// Snapshot references keep undo bounded without copying whole designs into every revision.
 pub(super) fn record(before: &Canvas, after: &mut Canvas) -> Result<(), String> {
-    if design(before)? == design(after)? {
-        return Ok(());
-    }
     let mut history = history(before)?;
+    if design(before)? == design(after)? {
+        return save(after, &history);
+    }
     history.redo.clear();
     let author = &after.change.author;
     if let Some(step) = history.steps.iter_mut().rev().find(|s| {
@@ -137,13 +139,17 @@ fn design(canvas: &Canvas) -> Result<Value, String> {
         );
     }
     Ok(
-        json!({"name":canvas.name,"tokens":canvas.tokens,"frames":frames,"frameOrder":canvas.frames.iter().map(|f| &f.id).collect::<Vec<_>>()}),
+        json!({"name":canvas.name,"tokens":canvas.tokens,"assets":canvas.assets.iter().map(|a| (a.id.clone(),a)).collect::<BTreeMap<_,_>>(),"frames":frames,"frameOrder":canvas.frames.iter().map(|f| &f.id).collect::<Vec<_>>()}),
     )
 }
 
 fn restore(canvas: &mut Canvas, value: Value) -> Result<(), String> {
     canvas.name = serde_json::from_value(value["name"].clone()).map_err(|e| e.to_string())?;
     canvas.tokens = serde_json::from_value(value["tokens"].clone()).map_err(|e| e.to_string())?;
+    canvas.assets = value["assets"]
+        .as_object().ok_or("Invalid undo assets.")?
+        .values().map(|asset| serde_json::from_value(asset.clone()).map_err(|e| e.to_string()))
+        .collect::<Result<_, _>>()?;
     let frames = value["frames"].as_object().ok_or("Invalid undo frames.")?;
     let mut ids: Vec<String> =
         serde_json::from_value(value["frameOrder"].clone()).map_err(|e| e.to_string())?;

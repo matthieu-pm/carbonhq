@@ -22,8 +22,14 @@ function captureCanvasStyle(style) {
   return { styles, carbonStyleOrder };
 }
 
-function parseCanvasHtml(html) {
-  const doc = new DOMParser().parseFromString(html, "text/html");
+function parseCanvasHtml(html, parentTag = null) {
+  const doc = new DOMParser().parseFromString(parentTag ? "" : html, "text/html");
+  let source = doc.body;
+  if (parentTag) {
+    source = doc.createElement(parentTag);
+    source.innerHTML = html;
+    doc.body.append(source);
+  }
   const forbidden = new Set(["script", "link", "meta", "base", "iframe", "object", "embed", "applet", "frame", "frameset", "portal", "foreignobject", "animate", "animatetransform", "set"]);
   let count = 0;
   const assets = new Set();
@@ -59,6 +65,6 @@ function parseCanvasHtml(html) {
   for (const element of doc.head.children) if (forbidden.has(element.localName) && element.localName !== "meta") throw new Error(`Unsupported head element: <${element.localName}>.`);
   const css = [...doc.querySelectorAll("style")].map(style => style.textContent).join("\n");
   references(css);
-  const nodes = walk(doc.body);
+  const nodes = walk(source);
   return { nodes, css, assetIds: [...assets] };
 }

@@ -84,6 +84,8 @@ The composer copies its visible Canvas context synchronously when Send is presse
 
 `open <frame-or-layer>` opens the owning frame in the session's ordinary browser and reveals it in the selected session's Canvas right panel. Existing browser commands inspect that preview. A document capability serves only the current sanitized frame, has no general server token and expires after two hours. Preview requests recheck project ownership, and changes reload only a browser still showing that preview. Navigation to another page is respected.
 
+Preview layout uses the frame's dimensions, including media queries, viewport units and live hover/focus styles. Resizing the frame updates that viewport. Screenshots and recordings restore the preview's dimensions afterward. Other pages in the same tab keep their normal viewport, and returning to the preview restores its design size. HTML fragments use their destination element's parsing context, so appending table rows preserves their structure.
+
 `shot <frame-or-layer>` runs the same `canvasRenderer.js` sanitizer and viewport/style bridge used by the board, in a private headless tab. It never borrows the session's browsing target. PNG bytes land under the owning session's attachments. A JSON record beside the PNG identifies the exact canvas revision, frame/layer, content hash and timestamp. The turn's context also lists these returned captures. The system prompts and embedded Carbon skill require reading each changed frame's screenshot. Returned evidence proves a capture was returned, not that an agent reviewed it.
 
 Touched frames show an Agent editing label until the main turn completes or is interrupted. `canvas_editors` reconstructs live indicators on reconnect; a server restart clears abandoned indicators. Turn context/evidence metadata lives under the owning server's `canvas-turns`, while designs and their history remain in shared config storage.
@@ -93,6 +95,8 @@ Touched frames show an Agent editing label until the main turn completes or is i
 Canvas Undo/Redo buttons, Cmd/Ctrl-Z, Cmd/Ctrl-Shift-Z and `carbon canvas undo` / `redo` use the same guarded storage operation. The native editing keys stay with text inputs and the composer while those have focus. An agent turn groups all its design mutations into one step; manual edits form separate steps. `undo --turn <turn-id>` addresses a particular turn.
 
 The last 100 steps store immutable revision references in the committed snapshot. Undo compares identity-keyed properties against each mutation's saved result, restores only matching values, preserves later changes and keeps the current camera. Style properties, text, frame geometry and layer parentage can be restored independently. A new/removed subtree is restored only when that is safe. Conflicts are reported as property paths; a result that would orphan layers is rejected without publishing. Redo reapplies only the changes undo actually restored. New design edits clear redo. File duplication starts a separate undo history.
+
+Undoing a version restore also recovers the image metadata needed by its restored references and preserves later uploads. Restoring identical design content retains the current undo and redo history.
 
 ## Server API and events
 

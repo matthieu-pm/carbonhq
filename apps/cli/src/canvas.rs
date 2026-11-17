@@ -80,9 +80,9 @@ enum FrameCommand {
     },
     Arrange {
         node: String,
-        #[arg(long)]
+        #[arg(long, allow_negative_numbers = true)]
         x: Option<f64>,
-        #[arg(long)]
+        #[arg(long, allow_negative_numbers = true)]
         y: Option<f64>,
     },
     Resize {

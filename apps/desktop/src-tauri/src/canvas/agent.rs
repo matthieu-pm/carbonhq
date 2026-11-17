@@ -535,8 +535,13 @@ pub async fn request(request: CanvasRequest, sink: &Sink) -> Result<Value, Strin
             (c, json!({"conflicts":conflicts}))
         }
         action => {
-            let imported = if let Action::Write { html, .. } = action {
-                Some(render::parse(html).await?)
+            let imported = if let Action::Write { html, parent } = action {
+                let frame = nodes::frame_for(&canvas, parent)?;
+                let tag = match nodes::find(&frame.content.nodes, parent) {
+                    Some(CanvasNode::Element { tag, .. }) => Some(tag.as_str()),
+                    _ => None,
+                };
+                Some(render::parse(html, tag).await?)
             } else {
                 None
             };
@@ -712,7 +717,18 @@ async fn open_preview(
     if let carbon_proto::Response::Error { message } = answer {
         return Err(message);
     }
+    size_preview(session, frame).await?;
     Ok(url)
+}
+
+/// A preview keeps live CSS and the frame's viewport rather than inheriting the browser pane's width.
+async fn size_preview(session: &str, frame: &CanvasFrame) -> Result<(), String> {
+    let response = crate::orchestration::drive_canvas_browser(session, carbon_proto::BrowserAction::CanvasViewport {
+        width: frame.geometry.width.ceil() as u32,
+        height: frame.geometry.height.ceil() as u32,
+    }).await.map_err(|e| e.to_string())?;
+    if let carbon_proto::Response::Error { message } = response { return Err(message); }
+    Ok(())
 }
 
 /// A capability exposes one current sanitized frame, never the server credential or arbitrary paths.
@@ -754,6 +770,13 @@ pub(super) async fn refresh_previews(id: &str) {
                 .as_str()
                 .is_some_and(|url| url.ends_with(&format!("/canvas-preview/{key}")))
             {
+                if let Ok(store) = Store::open().await {
+                    if let Ok(canvas) = owned(&store, &preview.session, id).await {
+                        if let Some(frame) = canvas.frames.iter().find(|f| f.id == preview.frame) {
+                            let _ = size_preview(&preview.session, frame).await;
+                        }
+                    }
+                }
                 let _ = crate::orchestration::drive_canvas_browser(
                     &preview.session,
                     carbon_proto::BrowserAction::Reload,

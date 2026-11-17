@@ -88,6 +88,16 @@ fn canvas_edits_carry_the_callers_scope_and_expected_revision_on_v22() {
 }
 
 #[test]
+fn canvas_arrangement_accepts_negative_world_coordinates() {
+    let request = call(
+        &["canvas", "--canvas", "file", "--revision", "7", "frame", "arrange", "frame", "--x", "-100.5", "--y", "-50"],
+        "",
+    );
+    assert_eq!(request["action"]["x"], -100.5);
+    assert_eq!(request["action"]["y"], -50.0);
+}
+
+#[test]
 fn canvas_html_stdin_and_remote_forwarding_preserve_the_target() {
     let html = "<div style=\"padding:24px\">\n<h1>Hello &amp; welcome</h1>\n</div>";
     let request = call(

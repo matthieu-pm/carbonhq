@@ -52,6 +52,13 @@ static SECRET_TABS: std::sync::LazyLock<Mutex<std::collections::HashSet<i32>>> =
 /// nothing clearing it (DRA-233). The override below is what sizes a
 /// capture; shrinking the widget was never part of it.
 static VIEWPORT: Mutex<Option<HashMap<String, (u32, u32)>>> = Mutex::new(None);
+struct CanvasViewport {
+    url: String,
+    size: (u32, u32),
+    runtime: tokio::runtime::Handle,
+}
+static CANVAS_VIEWPORT: std::sync::LazyLock<Mutex<HashMap<i32, CanvasViewport>>> =
+    std::sync::LazyLock::new(Default::default);
 /// A laptop, since nearly everything looked at through here is a page built
 /// for one; the pane itself is a third of a window and lays a page out at
 /// phone breakpoints.
@@ -333,6 +340,11 @@ pub(super) fn forget(tab: i32) {
         emit_recording(&session, false);
         emit_shooting(&session, false, shot);
     }
+}
+
+/// A discarded browser can return; its design viewport goes only when the tab is deleted.
+pub(super) fn forget_canvas(tab: i32) {
+    CANVAS_VIEWPORT.lock().unwrap().remove(&tab);
 }
 
 /// One CDP call on one tab. The backend carries the message and answers
@@ -1095,7 +1107,7 @@ async fn perform(session: &str, action: BrowserAction) -> Answer {
                 tokio::time::sleep(SETTLE).await;
                 set_paused(session, false);
             } else {
-                let _ = cdp(tab, "Emulation.clearDeviceMetricsOverride", json!({})).await;
+                let _ = restore_page_metrics(tab).await;
             }
             if let Some(shot) = shot {
                 uncover(session, shot).await;
@@ -1221,6 +1233,23 @@ async fn perform(session: &str, action: BrowserAction) -> Answer {
             remember_viewport(session, width, height);
             ok(format!("viewport {width}×{height}"))
         }
+        BrowserAction::CanvasViewport { width, height } => {
+            if !(1..=10_000).contains(&width) || !(1..=10_000).contains(&height) {
+                return Err("Invalid Canvas viewport dimensions.".into());
+            }
+            let tab = driven_tab(session)?;
+            let url = tab_state(tab).map(|state| state.0).ok_or("Canvas preview tab closed.")?;
+            if !url.starts_with("http://127.0.0.1:") || !url.contains("/canvas-preview/") {
+                return Err("The current tab is not a Canvas preview.".into());
+            }
+            let _held = CAPTURING.lock().await;
+            CANVAS_VIEWPORT.lock().unwrap().insert(tab, CanvasViewport {
+                url, size: (width, height), runtime: tokio::runtime::Handle::current(),
+            });
+            restore_page_metrics(tab).await?;
+            tokio::time::sleep(SETTLE).await;
+            ok(format!("Canvas viewport {width}×{height}"))
+        }
         BrowserAction::SetDevice { name } => {
             driven_tab(session)?;
             let (label, w, h) = DEVICES
@@ -1259,7 +1288,43 @@ fn screenshot_size(session: &str) -> (u32, u32) {
         .unwrap()
         .as_ref()
         .and_then(|m| m.get(session).copied())
+        .or_else(|| current(session).and_then(canvas_size))
         .unwrap_or(DEFAULT_VIEWPORT)
+}
+
+fn canvas_metrics(width: u32, height: u32) -> Value {
+    json!({"width":width,"height":height,"deviceScaleFactor":1,"mobile":false})
+}
+
+fn canvas_size(tab: i32) -> Option<(u32, u32)> {
+    let (url, _, _) = tab_state(tab)?;
+    CANVAS_VIEWPORT.lock().unwrap().get(&tab)
+        .filter(|target| target.url == url).map(|target| target.size)
+}
+
+/// Navigation clears the design override on other pages and restores it when returning to the preview.
+pub(super) fn navigated(tab: i32) {
+    let runtime = CANVAS_VIEWPORT.lock().unwrap().get(&tab).map(|target| target.runtime.clone());
+    if let Some(runtime) = runtime {
+        // Headless CDP notifications arrive on a plain reader thread, outside Tokio.
+        runtime.spawn(async move {
+            let _held = CAPTURING.lock().await;
+            let _ = restore_page_metrics(tab).await;
+        });
+    }
+}
+
+/// Temporary capture sizes must not leave a live Canvas preview at the pane's width.
+async fn restore_page_metrics(tab: i32) -> Result<(), String> {
+    let recording = RECORDING.lock().unwrap().values()
+        .find(|recording| recording.tab == tab && !recording.closed).map(|r| r.size);
+    if let Some((width, height)) = recording {
+        cdp(tab, "Emulation.setDeviceMetricsOverride", metrics(width, height)).await.map(|_| ())
+    } else if let Some((width, height)) = canvas_size(tab) {
+        cdp(tab, "Emulation.setDeviceMetricsOverride", canvas_metrics(width, height)).await.map(|_| ())
+    } else {
+        cdp(tab, "Emulation.clearDeviceMetricsOverride", json!({})).await.map(|_| ())
+    }
 }
 
 /// Where a session's recordings go, deleted with it (`delete_recordings`).
@@ -1271,7 +1336,7 @@ fn recordings_dir(session: &str) -> PathBuf {
 /// view unparked, and the pane's shutter closed once the page has repainted
 /// at the pane's size, or the reader is handed the recording's layout.
 async fn end_recording(session: &str, tab: i32, shot: u64) {
-    let _ = cdp(tab, "Emulation.clearDeviceMetricsOverride", json!({})).await;
+    let _ = restore_page_metrics(tab).await;
     let _ = relayout();
     tokio::time::sleep(SETTLE).await;
     emit_recording(session, false);
@@ -1587,6 +1652,20 @@ mod tests {
         remember_viewport("s1", 375, 667);
         assert_eq!(screenshot_size("s1"), (375, 667));
         assert_eq!(screenshot_size("unset"), (1440, 900));
+    }
+
+    #[tokio::test]
+    async fn canvas_navigation_can_arrive_outside_the_async_runtime() {
+        let tab = -18282;
+        CANVAS_VIEWPORT.lock().unwrap().insert(tab, CanvasViewport {
+            url: "http://127.0.0.1:1/canvas-preview/test".into(),
+            size: (390, 844), runtime: tokio::runtime::Handle::current(),
+        });
+        std::thread::spawn(move || navigated(tab)).join().unwrap();
+        forget(tab);
+        assert!(CANVAS_VIEWPORT.lock().unwrap().contains_key(&tab));
+        forget_canvas(tab);
+        assert!(!CANVAS_VIEWPORT.lock().unwrap().contains_key(&tab));
     }
 
     #[test]

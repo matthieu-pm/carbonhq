@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, access, realpath } from 'node:fs/promises';
@@ -87,7 +87,7 @@ try {
   const frame = result.data.frameId; revision = result.revision;
   await command(['--revision', '1', 'set-text', frame, 'stale'], null, /conflict/);
   await command(['--revision', String(revision), 'write', frame], '<script>alert(1)</script>', /Unsupported/);
-  result = await command(['--revision', String(revision), 'write', frame], '<style>.surface{background:rgb(20,80,40)} @media(min-width:600px){.surface{background:rgb(180,20,30)}}</style><main class="surface" style="height:100vh;--pad:24px;padding:var(--pad);color:white"><h1 style="font-size:32px">Checkout</h1><button style="width:200px;height:48px">Continue</button></main>');
+  result = await command(['--revision', String(revision), 'write', frame], '<style>.surface{background:rgb(20,80,40)} @media(min-width:600px){.surface{background:rgb(180,20,30)}} .surface button:hover{background:rgb(1,2,3)}</style><main class="surface" style="height:100vh;--pad:24px;padding:var(--pad);color:white"><h1 style="font-size:32px">Checkout</h1><button style="width:200px;height:48px">Continue</button></main>');
   revision = result.revision;
   const hierarchy = await command(['tree', frame]);
   const main = hierarchy.data[0].id, heading = hierarchy.data[0].children[0].id, button = hierarchy.data[0].children[1].id;
@@ -103,6 +103,13 @@ try {
   result = await command(['--revision', String(revision), 'set-style', heading, '{"color":"rgb(255,220,80)","--space-2":"12px","padding":"var(--space-2)"}']); revision = result.revision;
   assert.equal((await command(['get', heading, '--styles'])).data.computed.box.styles['padding-left'], '12px');
   result = await command(['--revision', String(revision), 'set-text', heading, 'Secure checkout']); revision = result.revision;
+  result = await command(['--revision', String(revision), 'write', frame], '<table><tbody></tbody></table>'); revision = result.revision;
+  const table = result.data.nodeIds[0];
+  const tbody = (await command(['tree', table])).data[0].children[0].id;
+  result = await command(['--revision', String(revision), 'write', tbody], '<tr><td>Editable cell</td></tr>'); revision = result.revision;
+  const rows = (await command(['tree', tbody])).data[0].children;
+  assert.equal(rows[0].tag, 'tr'); assert.equal(rows[0].children[0].tag, 'td');
+  result = await command(['--revision', String(revision), 'rm', table]); revision = result.revision;
   const shot = await command(['shot', frame]);
   const png = await readFile(shot.data.path); assert.equal(png.subarray(1, 4).toString(), 'PNG');
   assert.equal(png.readUInt32BE(16), 390); assert.equal(png.readUInt32BE(20), 844);
@@ -117,11 +124,45 @@ try {
   result = await command(['--revision', String(revision), 'frame', 'resize', copy, '--width', '1440', '--height', '900']); revision = result.revision;
   assert.equal((await command(['get', copy, '--styles'])).data.computed.boxes[0].styles['background-color'], 'rgb(180, 20, 30)');
   await command(['open', frame]);
-  const browserText = () => new Promise((resolveBrowser, reject) => {
-    const child = spawn(cli, ['browser', 'get', 'text'], { env }); let output = '', errors = '';
+  const browser = (args) => new Promise((resolveBrowser, reject) => {
+    const child = spawn(cli, ['browser', ...args], { env }); let output = '', errors = '';
     child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { errors += data; }); child.on('exit', code => code === 0 ? resolveBrowser(output) : reject(new Error(errors)));
   });
+  const browserText = () => browser(['get', 'text']);
+  const browserLayout = async () => JSON.parse(await browser(['eval', '({width:innerWidth,height:innerHeight,color:getComputedStyle(document.querySelector("main")).backgroundColor})']));
   assert.match(await browserText(), /Secure checkout/);
+  assert.deepEqual(await browserLayout(), { width: 390, height: 844, color: 'rgb(20, 80, 40)' });
+  await browser(['hover', 'button']);
+  assert.equal((await browser(['eval', 'getComputedStyle(document.querySelector("button")).backgroundColor'])).trim(), 'rgb(1, 2, 3)');
+  const browserShot = (await browser(['screenshot'])).trim();
+  const previewPng = await readFile(browserShot); assert.equal(previewPng.readUInt32BE(16), 390);
+  assert.equal((await browserLayout()).width, 390);
+  result = await command(['--revision', String(revision), 'frame', 'resize', frame, '--width', '412', '--height', '800']); revision = result.revision;
+  await waitFor(browserLayout, layout => layout.width === 412 && layout.height === 800);
+  result = await command(['--revision', String(revision), 'frame', 'resize', frame, '--width', '390', '--height', '844']); revision = result.revision;
+  await waitFor(browserLayout, layout => layout.width === 390 && layout.height === 844);
+  await browser(['open', `http://127.0.0.1:${client.port}/canvas-preview/missing`]);
+  await waitFor(async () => Number(await browser(['eval', 'innerWidth'])), width => width !== 390);
+  await browser(['back']);
+  await waitFor(browserLayout, layout => layout.width === 390);
+  await browser(['record', 'start']);
+  result = await command(['--revision', String(revision), 'frame', 'resize', frame, '--width', '414', '--height', '810']); revision = result.revision;
+  result = await command(['--revision', String(revision), 'set-text', heading, 'Recording resized preview']); revision = result.revision;
+  await waitFor(browserText, text => text.includes('Recording resized preview'));
+  assert.equal((await browserLayout()).width, 390);
+  assert.equal(Number(await browser(['eval', 'devicePixelRatio'])), 2);
+  await browser(['record', 'stop', 'canvas-recording-regression']);
+  await waitFor(browserLayout, layout => layout.width === 414 && layout.height === 810);
+  assert.equal(Number(await browser(['eval', 'devicePixelRatio'])), 1);
+  result = await command(['--revision', String(revision), 'frame', 'resize', frame, '--width', '390', '--height', '844']); revision = result.revision;
+  await waitFor(browserLayout, layout => layout.width === 390 && layout.height === 844);
+  const chrome = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).split('\n')
+    .find(line => line.includes(`--user-data-dir=${join(home, 'browser', session)}`) && line.includes('--remote-debugging-pipe'));
+  assert(chrome, 'the scratch session Chromium must be identifiable');
+  process.kill(Number(chrome.trim().split(/\s+/)[0]), 'SIGKILL');
+  await waitFor(() => browser(['tab']), text => text.includes('discarded'));
+  await waitFor(browserText, text => text.includes('Recording resized preview'));
+  await waitFor(browserLayout, layout => layout.width === 390 && layout.height === 844);
   result = await command(['--revision', String(revision), 'set-text', heading, 'Payment details']); revision = result.revision;
   await waitFor(browserText, text => text.includes('Payment details'));
   await command(['shot', frame]);

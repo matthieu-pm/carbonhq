@@ -10,13 +10,13 @@ fn runtime() -> String {
 }
 
 /// DOMParser reads HTML as data, with no source scripts, custom elements or network execution.
-pub(super) async fn parse(html: &str) -> Result<CanvasContent, String> {
+pub(super) async fn parse(html: &str, parent_tag: Option<&str>) -> Result<CanvasContent, String> {
     if html.len() > 512 * 1024 {
         return Err("HTML input exceeds 512 KiB. Write smaller groups.".into());
     }
     let script = format!(
-        "(()=>{{{IMPORT};return parseCanvasHtml({});}})()",
-        json!(html)
+        "(()=>{{{IMPORT};return parseCanvasHtml({},{});}})()",
+        json!(html), json!(parent_tag)
     );
     let value = evaluate(script, 1440, 900, false).await?;
     let mut content: CanvasContent =

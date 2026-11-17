@@ -115,6 +115,7 @@ impl Request {
     pub fn version(&self) -> u32 {
         match self {
             Request::Canvas(_) => 22,
+            Request::Browser(BrowserRequest { action: BrowserAction::CanvasViewport { .. }, .. }) => 22,
             Request::Discover(_) => 20,
             Request::CreateSession(create) if create.configuration => 20,
             Request::Recovery(_) => 21,
@@ -693,6 +694,11 @@ pub enum BrowserAction {
     /// Errors alone, since last asked.
     Errors,
     SetViewport {
+        width: u32,
+        height: u32,
+    },
+    /// Keep a Canvas preview at its design size without changing other pages in this tab.
+    CanvasViewport {
         width: u32,
         height: u32,
     },
@@ -1537,6 +1543,11 @@ mod tests {
             },
         });
         assert_eq!(Envelope::new(canvas.clone()).v, 22);
+        let canvas_preview = Request::Browser(BrowserRequest {
+            session_id: "s".into(),
+            action: BrowserAction::CanvasViewport { width: 390, height: 844 },
+        });
+        assert_eq!(Envelope::new(canvas_preview).v, 22);
         let forwarded_canvas = Request::OnMachine(OnMachine {
             machine: "box".into(),
             request: Box::new(canvas.clone()),

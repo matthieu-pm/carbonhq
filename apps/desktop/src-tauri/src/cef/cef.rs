@@ -1121,6 +1121,7 @@ wrap_life_span_handler! {
                 host.close_browser(1);
                 return;
             }
+            automation::navigated(id);
             if self.activate || active_id(&self.session).is_none() {
                 set_active(&self.session, Some(id));
             }
@@ -1222,6 +1223,7 @@ wrap_life_span_handler! {
 /// Takes a tab's entry out, for a close. The active tab passes to the last
 /// one left.
 fn remove_tab(session: &str, id: i32) {
+    automation::forget_canvas(id);
     let remaining = {
         let mut tabs = TABS.lock().unwrap();
         tabs.retain(|t| t.id != id);
@@ -1329,6 +1331,7 @@ wrap_display_handler! {
                 history::visit(&session, &url);
             }
             update_tab(self.tab, |t| t.url = url);
+            automation::navigated(self.tab);
         }
         fn on_title_change(&self, _browser: Option<&mut Browser>, title: Option<&CefString>) {
             let title = title.map(CefString::to_string).unwrap_or_default();
@@ -2204,6 +2207,7 @@ pub fn close_session(session_id: &str) {
             // is closed by `on_after_created` on seeing `closing`.
             for t in tabs.iter_mut().filter(|t| t.session == session_id) {
                 t.closing = true;
+                automation::forget_canvas(t.id);
             }
             tabs.retain(|t| t.session != session_id || !t.discarded || t.browser.is_some());
             tabs.iter().filter(|t| t.session == session_id).filter_map(|t| t.browser.clone()).collect()

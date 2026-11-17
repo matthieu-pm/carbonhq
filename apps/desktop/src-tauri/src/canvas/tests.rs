@@ -65,6 +65,66 @@ fn frame() -> CanvasFrame {
 }
 
 #[tokio::test]
+async fn restoring_identical_design_keeps_existing_undo_and_redo_steps() {
+    let fixture = Fixture::new();
+    let original = fixture.canvas().await;
+    let renamed = fixture.store.edit(&original.id, original.revision, CanvasEdit {
+        name: Some("Renamed".into()), ..Default::default()
+    }, Default::default()).await.unwrap();
+    let (undone, _) = fixture.store.undo(&original.id, renamed.revision, None, false).await.unwrap();
+    let previous = super::undo::state(&undone).unwrap();
+    assert!(previous.can_redo);
+    let restored = fixture.store.restore(&original.id, undone.revision, original.revision, Default::default()).await.unwrap();
+    assert_eq!(serde_json::to_value(super::undo::state(&restored).unwrap()).unwrap(), serde_json::to_value(previous).unwrap());
+    let (redone, _) = fixture.store.undo(&original.id, restored.revision, None, true).await.unwrap();
+    assert_eq!(redone.name, "Renamed");
+    let (undone, _) = fixture.store.undo(&original.id, redone.revision, None, false).await.unwrap();
+    assert_eq!(undone.name, original.name);
+    let renamed = fixture.store.edit(&original.id, undone.revision, CanvasEdit {
+        name: Some("Renamed again".into()), ..Default::default()
+    }, Default::default()).await.unwrap();
+    let renamed_back = fixture.store.edit(&original.id, renamed.revision, CanvasEdit {
+        name: Some(original.name.clone()), ..Default::default()
+    }, Default::default()).await.unwrap();
+    let restored = fixture.store.restore(&original.id, renamed_back.revision, original.revision, Default::default()).await.unwrap();
+    assert!(super::undo::state(&restored).unwrap().can_undo);
+    let (undone, _) = fixture.store.undo(&original.id, restored.revision, None, false).await.unwrap();
+    assert_eq!(undone.name, "Renamed again");
+}
+
+#[tokio::test]
+async fn undoing_version_restore_recovers_owned_images_and_keeps_later_uploads() {
+    let fixture = Fixture::new();
+    let original = fixture.populated().await;
+    let image = id();
+    let upload = |asset_id: String| CanvasAssetUpload {
+        asset_id, name: "pixel.png".into(), offset: 0, data: PNG.into(), complete: true,
+    };
+    let with_image = fixture.store.upload(&original.id, original.revision, upload(image.clone()), Default::default()).await.unwrap().canvas.unwrap();
+    let mut frames = with_image.frames.clone();
+    frames[0].content.asset_ids.push(image.clone());
+    if let CanvasNode::Element { styles, .. } = &mut frames[0].content.nodes[0] {
+        styles.insert("background-image".into(), format!("url('carbon-canvas-asset://{image}')"));
+    }
+    let design = fixture.store.edit(&original.id, with_image.revision, CanvasEdit {
+        frames: Some(frames), ..Default::default()
+    }, Default::default()).await.unwrap();
+    let restored = fixture.store.restore(&original.id, design.revision, original.revision, Default::default()).await.unwrap();
+    let later = id();
+    let uploaded = fixture.store.upload(&original.id, restored.revision, upload(later.clone()), Default::default()).await.unwrap().canvas.unwrap();
+    let (undone, conflicts) = fixture.store.undo(&original.id, uploaded.revision, None, false).await.unwrap();
+    assert!(conflicts.is_empty());
+    assert_eq!(undone.frames, design.frames);
+    assert!(undone.assets.iter().any(|asset| asset.id == later));
+    assert_eq!(fixture.store.read_asset(&original.id, &image, None).await.unwrap().data, PNG);
+    let (redone, conflicts) = fixture.store.undo(&original.id, undone.revision, None, true).await.unwrap();
+    assert!(conflicts.is_empty());
+    assert_eq!(redone.frames, original.frames);
+    assert_eq!(redone.assets.len(), 1);
+    assert_eq!(redone.assets[0].id, later);
+}
+
+#[tokio::test]
 async fn turn_undo_preserves_later_styles_layout_and_camera_and_redoes_only_restored_fields() {
     let fixture = Fixture::new();
     let original = fixture.populated().await;
