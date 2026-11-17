@@ -1,20 +1,26 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { frameDocument, frameMarkup, previewKey, PREVIEW_BUDGET, type FramePreview, type LayerBox } from "@/lib/canvasBoard";
+import { frameDocument, frameMarkup, previewKey, PREVIEW_BUDGET, type CanvasAssetSource, type FramePreview, type LayerBox } from "@/lib/canvasBoard";
 import { invoke, serverOfPath } from "@/lib/transport";
 import type { Canvas, CanvasAssetData, CanvasFrame } from "@/types/events";
 
-async function assetsFor(canvas: Canvas, frame: CanvasFrame, owner: string, signal: AbortSignal): Promise<Record<string, string>> {
+async function assetsFor(source: CanvasAssetSource, signal: AbortSignal): Promise<Record<string, string>> {
   const assets: Record<string, string> = {};
   let bytes = 0;
-  for (const id of frame.content.assetIds) {
+  for (const id of source.ids) {
     signal.throwIfAborted();
-    const data = await invoke<CanvasAssetData>("read_canvas_asset", { id: canvas.id, assetId: id, version: canvas.revision }, owner);
+    const data = await invoke<CanvasAssetData>("read_canvas_asset", { id: source.id, assetId: id, version: source.revision }, source.owner);
     signal.throwIfAborted();
     bytes += data.data.length;
     if (bytes > 16 * 1024 * 1024) throw new Error("This frame's images exceed the 16 MiB preview limit.");
     assets[id] = `data:${data.asset.mimeType};base64,${data.data}`;
   }
   return assets;
+}
+
+/// Resolve historical assets only for the active hit test, rather than retaining base64 in every thumbnail.
+export async function resolvePreviewMarkup(preview: FramePreview, signal: AbortSignal): Promise<string> {
+  const assets = await assetsFor(preview.assets, signal);
+  return preview.markup.replace(/carbon-canvas-asset:\/\/([a-zA-Z0-9-]+)/g, (_, id: string) => assets[id] ?? "data:,");
 }
 
 async function rasterize(html: string, width: number, height: number, maxSize: number): Promise<{ url: string; bytes: number }> {
@@ -37,25 +43,27 @@ async function rasterize(html: string, width: number, height: number, maxSize: n
 function Capture({ canvas, frame, owner, maxSize, onReady, onError }: { canvas: Canvas; frame: CanvasFrame; owner: string; maxSize: number; onReady(preview: Omit<FramePreview, "key">): void; onError(message: string): void }) {
   const iframe = useRef<HTMLIFrameElement>(null);
   const [source, setSource] = useState("");
+  const markup = useRef("");
   const token = useRef(crypto.randomUUID()).current;
   const callbacks = useRef({ onReady, onError });
   callbacks.current = { onReady, onError };
   useEffect(() => {
-    let stopped = false, received = false;
+    let stopped = false, received = false, finished = false;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => { if (!stopped && !received) { received = true; callbacks.current.onError("Frame preview timed out. Refresh to try again."); } }, 15000);
+    const fail = (message: string) => { if (!stopped && !finished) { finished = true; received = true; callbacks.current.onError(message); } };
+    const timeout = window.setTimeout(() => fail("Frame preview timed out. Refresh to try again."), 15000);
     const listener = (event: MessageEvent) => {
       if (stopped || received || event.source !== iframe.current?.contentWindow || event.data?.canvasToken !== token) return;
       received = true;
-      if (event.data.error) { callbacks.current.onError(event.data.error); return; }
-      if (typeof event.data.html !== "string" || !Array.isArray(event.data.boxes)) { callbacks.current.onError("Invalid frame preview."); return; }
+      if (event.data.error) { fail(event.data.error); return; }
+      if (typeof event.data.html !== "string" || !Array.isArray(event.data.boxes)) { fail("Invalid frame preview."); return; }
       void rasterize(event.data.html, frame.geometry.width, frame.geometry.height, maxSize).then((image) => {
-        if (stopped) URL.revokeObjectURL(image.url);
-        else callbacks.current.onReady({ ...image, boxes: event.data.boxes as LayerBox[] });
-      }).catch((e) => { if (!stopped) callbacks.current.onError(String(e)); });
+        if (stopped || finished) URL.revokeObjectURL(image.url);
+        else { finished = true; callbacks.current.onReady({ ...image, markup: markup.current, viewport: { width: frame.geometry.width, height: frame.geometry.height }, assets: { id: canvas.id, revision: canvas.revision, ids: frame.content.assetIds, owner }, boxes: event.data.boxes as LayerBox[] }); }
+      }).catch((e) => { fail(String(e)); });
     };
     window.addEventListener("message", listener);
-    void assetsFor(canvas, frame, owner, controller.signal).then((assets) => { if (!stopped) setSource(frameDocument(frameMarkup(frame, canvas.tokens, assets), token, true, frame.geometry)); }).catch((e) => { if (!stopped) callbacks.current.onError(String(e)); });
+    void assetsFor({ id: canvas.id, revision: canvas.revision, ids: frame.content.assetIds, owner }, controller.signal).then((assets) => { if (!stopped) { markup.current = frameMarkup(frame, canvas.tokens, null); setSource(frameDocument(frameMarkup(frame, canvas.tokens, assets), token, true, frame.geometry)); } }).catch((e) => { fail(String(e)); });
     return () => { stopped = true; controller.abort(); clearTimeout(timeout); window.removeEventListener("message", listener); };
   // The component key fixes the canvas, content and dimensions for this capture.
   }, [owner, token, maxSize]);
@@ -77,13 +85,13 @@ export function useFramePreviews(canvas: Canvas | null, owner: string, ids: stri
     for (const [id, value] of cache.current) if (!keep.has(id)) { URL.revokeObjectURL(value.url); cache.current.delete(id); }
     for (const key of failures.current.keys()) if (![...keys.values()].includes(key)) failures.current.delete(key);
   }, [candidateKey, keys]);
-  useEffect(() => () => { cache.current.forEach((p) => URL.revokeObjectURL(p.url)); cache.current.clear(); }, [canvas?.id]);
+  useEffect(() => () => { cache.current.forEach((p) => URL.revokeObjectURL(p.url)); cache.current.clear(); }, [canvas?.id, owner]);
   const next = active && canvas ? candidates.find((id) => cache.current.get(id)?.key !== keys.get(id) && !failures.current.has(keys.get(id)!)) : null;
   const frame = canvas?.frames.find((f) => f.id === next);
   const key = next ? keys.get(next)! : "";
-  const renderer: ReactNode = canvas && frame && next ? <Capture key={`${canvas.id}:${key}`} canvas={canvas} frame={frame} owner={owner} maxSize={maxSize} onReady={(result) => {
+  const renderer: ReactNode = canvas && frame && next ? <Capture key={`${owner}:${canvas.id}:${key}`} canvas={canvas} frame={frame} owner={owner} maxSize={maxSize} onReady={(result) => {
     const previous = cache.current.get(next);
-    const bytes = result.bytes + key.length * 2 + JSON.stringify(result.boxes).length * 2;
+    const bytes = result.bytes + (key.length + result.markup.length) * 2 + (JSON.stringify(result.boxes).length + JSON.stringify(result.assets).length) * 2;
     const used = [...cache.current.values()].reduce((total, p) => total + p.bytes, 0) - (previous?.bytes ?? 0);
     if (used + bytes > PREVIEW_BUDGET) {
       URL.revokeObjectURL(result.url);
@@ -103,15 +111,17 @@ export function useFramePreviews(canvas: Canvas | null, owner: string, ids: stri
 export default function LiveFrame({ canvas, frame, owner }: { canvas: Canvas; frame: CanvasFrame; owner?: string }) {
   const [state, setState] = useState<{ key: string; source: string; error: string | null }>({ key: "", source: "", error: null });
   const token = useRef(crypto.randomUUID()).current;
-  const key = previewKey(frame, canvas.tokens);
+  const key = `${canvas.id}:${previewKey(frame, canvas.tokens)}`;
+  const sourceOwner = owner ?? serverOfPath(canvas.projectPath);
   useEffect(() => {
     let stopped = false;
     const controller = new AbortController();
-    void assetsFor(canvas, frame, owner ?? serverOfPath(canvas.projectPath), controller.signal).then((assets) => {
+    void assetsFor({ id: canvas.id, revision: canvas.revision, ids: frame.content.assetIds, owner: sourceOwner }, controller.signal).then((assets) => {
       if (!stopped) setState({ key, source: frameDocument(frameMarkup(frame, canvas.tokens, assets), token, false, frame.geometry), error: null });
     }).catch((e) => { if (!stopped) setState({ key, source: "", error: String(e) }); });
     return () => { stopped = true; controller.abort(); };
-  }, [key, canvas, frame, owner, token]);
+    // The content key includes the file, viewport and asset IDs; unrelated reads keep the live document.
+  }, [key, sourceOwner, token]);
   return <div className="flex min-h-0 flex-1 flex-col">
     <div className="border-b border-hairline px-3 py-2 text-xs text-muted-foreground">{frame.name} · {frame.geometry.width} × {frame.geometry.height} <span className="ml-1">Frame preview</span></div>
     <div className="min-h-0 flex-1 overflow-auto bg-surface-well p-4">

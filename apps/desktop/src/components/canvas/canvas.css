@@ -24,6 +24,7 @@
   background-size: 24px 24px;
 }
 .canvas-board:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--ring) 50%, transparent); }
+.canvas-board[data-tool="hand"] { cursor: grab; }
 .canvas-board[data-panning="true"] { cursor: grabbing; }
 
 /* Zoom and fit controls: the demo's floating bar, a menu's glass at the
@@ -41,7 +42,7 @@
    selection's own colour, so the name and the outline read as one mark. */
 .canvas-frame-label {
   position: absolute; left: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 12px; line-height: 16px; color: var(--muted-foreground); pointer-events: auto; cursor: default;
+  font-size: 12px; line-height: 16px; color: var(--muted-foreground); pointer-events: none; cursor: default;
 }
 .canvas-frame-label:is([data-selected="true"], [aria-selected="true"], [aria-current="true"]) { color: var(--accent-mention); }
 

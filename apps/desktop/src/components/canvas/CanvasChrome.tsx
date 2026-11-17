@@ -11,11 +11,8 @@ import {
 import Spinner from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { CANVAS_PANEL_TABS as PANEL_TABS, type CanvasPanelTab } from "@/lib/canvasBoard";
 import "./canvas.css";
-
-export type CanvasPanelTab = "chat" | "preview" | "properties";
-
-const PANEL_TABS: readonly CanvasPanelTab[] = ["chat", "preview", "properties"];
 const PANEL_LABELS: Record<CanvasPanelTab, string> = { chat: "Chat", preview: "Preview", properties: "Properties" };
 
 /// Page widths at which each column stops docking. Layers (224) + panel (400)
@@ -159,8 +156,7 @@ export default function CanvasChrome(props: CanvasChromeProps) {
           role="tabpanel"
           id={`${ids}-panel-${tab}`}
           aria-labelledby={`${ids}-tab-${tab}`}
-          // Hidden rather than unmounted, so the chat's scroll and the live
-          // frame survive a look at Properties.
+          // Keep the chat's scroll while looking at Properties; live preview owns its lifecycle.
           className={cn("min-h-0 min-w-0 flex-1 flex-col", panelTab === tab ? "flex" : "hidden")}
         >
           {tab === "chat" ? chat : tab === "preview" ? preview : properties}

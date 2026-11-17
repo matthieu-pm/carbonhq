@@ -5,7 +5,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import ShortcutKeys from "@/components/ShortcutKeys";
 import { Kbd } from "@/components/ui/kbd";
 import { useHotkey } from "@/hooks/useHotkey";
-import { bounds, fitCamera, intersects, pickLayer, togglePick, zoomCamera, type CanvasPick, type FramePreview } from "@/lib/canvasBoard";
+import { bounds, fitCamera, flattenNodes, intersects, pickLayer, togglePick, zoomCamera, type CanvasPick, type FramePreview } from "@/lib/canvasBoard";
+import { resolvePreviewMarkup } from "./FrameRenderer";
 import { cn } from "@/lib/utils";
 import type { Canvas, CanvasCamera, CanvasGeometry } from "@/types/events";
 import type { ShortcutId } from "@/lib/shortcuts";
@@ -27,9 +28,12 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
   const [tool, setTool] = useState<"select" | "hand">("select");
   const [space, setSpace] = useState(false);
   const [marquee, setMarquee] = useState<CanvasGeometry | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const hitTest = useRef<AbortController | null>(null);
+  useEffect(() => () => { hitTest.current?.abort(); }, [active]);
   const drag = useRef<{ id: number; x: number; y: number; camera: CanvasCamera; pan: boolean; moved: boolean; additive: boolean; picks: CanvasPick[]; target: string | null } | null>(null);
-  const current = useRef({ camera, picks, tool, space });
-  current.current = { camera, picks, tool, space };
+  const current = useRef({ camera, picks, tool, space, frames: canvas.frames });
+  current.current = { camera, picks, tool, space, frames: canvas.frames };
   const frameBounds = useMemo(() => bounds(canvas.frames.map((f) => f.geometry)), [canvas.frames]);
   const fit = (selection = false) => {
     const rects = selection ? picks.flatMap((p) => { const f = canvas.frames.find((f) => f.id === p.frameId); if (!f) return []; const b = p.nodeId && previews.get(f.id)?.boxes.find((b) => b.id === p.nodeId); return [b ? { ...b, x: f.geometry.x + b.x, y: f.geometry.y + b.y } : f.geometry]; }) : canvas.frames.map((f) => f.geometry);
@@ -73,9 +77,22 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
       if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (pending) setCamera(pending); pending = null; });
     };
     node.addEventListener("wheel", wheel, { passive: false });
+    let gesture: { camera: CanvasCamera; x: number; y: number } | null = null;
+    const pinch = (event: Event) => {
+      event.preventDefault();
+      const e = event as Event & { scale: number; clientX: number; clientY: number };
+      if (event.type === "gesturestart") {
+        const rect = node.getBoundingClientRect();
+        gesture = { camera: pending ?? current.current.camera, x: e.clientX - rect.left, y: e.clientY - rect.top };
+      }
+      if (gesture && Number.isFinite(e.scale) && e.scale > 0) setCamera(zoomCamera(gesture.camera, e.scale, gesture.x, gesture.y));
+      if (event.type === "gestureend") gesture = null;
+    };
+    const gestures = ["gesturestart", "gesturechange", "gestureend"];
+    gestures.forEach((type) => node.addEventListener(type, pinch, { passive: false }));
     const blur = () => { setSpace(false); drag.current = null; setMarquee(null); };
     window.addEventListener("blur", blur);
-    return () => { node.removeEventListener("wheel", wheel); window.removeEventListener("blur", blur); cancelAnimationFrame(raf); };
+    return () => { node.removeEventListener("wheel", wheel); gestures.forEach((type) => node.removeEventListener(type, pinch)); window.removeEventListener("blur", blur); cancelAnimationFrame(raf); };
   }, [active]);
   const viewport = { x: (-camera.x - 80) / camera.zoom, y: (-camera.y - 80) / camera.zoom, width: (size.width + 160) / camera.zoom, height: (size.height + 160) / camera.zoom };
   const visible = canvas.frames.filter((f) => intersects(f.geometry, viewport));
@@ -89,6 +106,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
   const down = (event: PointerEvent<HTMLDivElement>) => {
     if ((event.target as Element).closest("button") || !event.isPrimary || ![0, 1].includes(event.button)) return;
     root.current?.focus();
+    hitTest.current?.abort(); setSelectionError(null);
     const p = point(event);
     const target = (event.target as Element).closest<HTMLElement>("[data-frame-id]")?.dataset.frameId ?? null;
     drag.current = { id: event.pointerId, ...p, camera, pan: event.button === 1 || tool === "hand" || space, moved: false, additive: event.shiftKey, picks, target };
@@ -117,18 +135,28 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
     const frame = canvas.frames.find((f) => f.id === d.target)!;
     const p = point(event);
     const drill = !d.additive && picks.length === 1 && picks[0].frameId === frame.id;
-    const nodeId = drill ? pickLayer(previews.get(frame.id)?.boxes ?? [], (p.x - camera.x) / camera.zoom - frame.geometry.x, (p.y - camera.y) / camera.zoom - frame.geometry.y) : null;
-    onPicks(togglePick(picks, { frameId: frame.id, nodeId }, d.additive));
+    const preview = previews.get(frame.id);
+    if (!drill || !preview) { onPicks(togglePick(picks, { frameId: frame.id, nodeId: null }, d.additive)); return; }
+    const controller = new AbortController(); hitTest.current = controller;
+    const selection = JSON.stringify(picks);
+    void resolvePreviewMarkup(preview, controller.signal).then((markup) => pickLayer(markup, preview.viewport, ((p.x - camera.x) / camera.zoom - frame.geometry.x) * preview.viewport.width / frame.geometry.width, ((p.y - camera.y) / camera.zoom - frame.geometry.y) * preview.viewport.height / frame.geometry.height, controller.signal)).then((nodeId) => {
+      const latest = current.current.frames.find((f) => f.id === frame.id);
+      if (!controller.signal.aborted && latest && JSON.stringify(current.current.picks) === selection) {
+        const valid = nodeId && flattenNodes(latest.content.nodes).some((n) => n.node.id === nodeId);
+        onPicks([{ frameId: frame.id, nodeId: valid ? nodeId : null }]);
+      }
+    }).catch((error) => { if (!controller.signal.aborted) setSelectionError(String(error)); });
   };
-  return <div ref={root} role="region" aria-label="Canvas board" tabIndex={0} className={cn("canvas-board relative min-h-0 min-w-0 flex-1 touch-none overflow-hidden select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", (tool === "hand" || space) && "cursor-grab")}
+  return <div ref={root} role="region" aria-label="Canvas board" tabIndex={0} data-owns-keys className="canvas-board relative min-h-0 min-w-0 flex-1 touch-none overflow-hidden select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     style={{ backgroundSize: `${Math.max(6, 24 * camera.zoom)}px ${Math.max(6, 24 * camera.zoom)}px`, backgroundPosition: `${camera.x}px ${camera.y}px` }}
-    data-camera={JSON.stringify(camera)} data-preview-count={stats.cached} data-preview-bytes={stats.bytes} data-captures={stats.captures}
+    data-tool={tool === "hand" || space ? "hand" : "select"} data-camera={JSON.stringify(camera)} data-preview-count={stats.cached} data-preview-bytes={stats.bytes} data-captures={stats.captures}
     onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; setMarquee(null); }} onLostPointerCapture={() => { drag.current = null; setMarquee(null); }}
     onKeyDown={(event) => {
       if (event.target !== event.currentTarget) return;
+      hitTest.current?.abort(); setSelectionError(null);
       if (event.key === " ") { event.preventDefault(); setSpace(true); }
-      else if (event.key === "v" || event.key === "h") setTool(event.key === "h" ? "hand" : "select");
-      else if (event.key === "Escape") { event.preventDefault(); onPicks(picks.some((p) => p.nodeId) ? picks.map((p) => ({ ...p, nodeId: null })) : []); }
+      else if (!event.metaKey && !event.ctrlKey && !event.altKey && ["v", "h"].includes(event.key.toLowerCase())) { event.preventDefault(); setTool(event.key.toLowerCase() === "h" ? "hand" : "select"); }
+      else if (event.key === "Escape") { event.preventDefault(); onPicks(picks.some((p) => p.nodeId) ? [...new Set(picks.map((p) => p.frameId))].map((frameId) => ({ frameId, nodeId: null })) : []); }
       else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
         event.preventDefault();
         const index = canvas.frames.findIndex((f) => f.id === focusedId);
@@ -149,6 +177,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
     {picks.map((pick) => { const frame = canvas.frames.find((f) => f.id === pick.frameId); if (!frame) return null; const layer = pick.nodeId ? previews.get(frame.id)?.boxes.find((b) => b.id === pick.nodeId) : null; const box = layer ? { ...layer, x: frame.geometry.x + layer.x, y: frame.geometry.y + layer.y } : frame.geometry; return <div key={`${pick.frameId}:${pick.nodeId}`} className="canvas-selection pointer-events-none absolute border-2 border-accent-mention" style={{ left: camera.x + box.x * camera.zoom, top: camera.y + box.y * camera.zoom, width: box.width * camera.zoom, height: box.height * camera.zoom }} />; })}
     {marquee && <div className="pointer-events-none absolute border border-accent-mention bg-accent-mention/10" style={{ left: camera.x + marquee.x * camera.zoom, top: camera.y + marquee.y * camera.zoom, width: marquee.width * camera.zoom, height: marquee.height * camera.zoom }} />}
     {!canvas.frames.length && <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground"><p>Add a frame to start designing</p><Button variant="secondary" size="sm" className="pointer-events-auto" onClick={onNewFrame}><Plus />New frame</Button></div>}
+    {selectionError && <p role="alert" className="absolute top-3 left-3 max-w-sm rounded-lg bg-popover px-3 py-2 text-sm text-destructive">{selectionError}</p>}
     <div className="canvas-board-toolbar" onPointerDown={(e) => e.stopPropagation()}>
       <Control label="Select" hint={<Kbd>V</Kbd>} pressed={tool === "select"} onClick={() => setTool("select")}><MousePointer2 /></Control>
       <Control label="Hand" hint={<><Kbd>H</Kbd><span className="ml-1">or Space-drag</span></>} pressed={tool === "hand"} onClick={() => setTool("hand")}><Hand /></Control>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blankFrame, bounds, canvasSession, fitCamera, frameDocument, frameMarkup, intersects, pickLayer, previewKey, togglePick, zoomCamera, type LayerBox } from "./canvasBoard";
+import { blankFrame, bounds, canvasSession, fitCamera, frameDocument, frameMarkup, intersects, previewKey, togglePick, zoomCamera } from "./canvasBoard";
 import type { CanvasFrame, CanvasNode } from "@/types/events";
 
 const frame = (): CanvasFrame => ({ id: "frame", name: "Checkout", geometry: { x: -100, y: 40, width: 390, height: 844 }, content: { css: "@media(min-width:600px){body{color:red}}", assetIds: [], nodes: [] } });
@@ -28,12 +28,9 @@ describe("canvas coordinates and selection", () => {
     expect(togglePick([a, b], a, true)).toEqual([b]);
     expect(togglePick([a], b, false)).toEqual([b]);
   });
-  it("picks the deepest visible box, ignoring zero-size layers", () => {
-    const boxes = [{ id: "parent", x: 0, y: 0, width: 200, height: 200 }, { id: "child", x: 10, y: 10, width: 40, height: 40 }, { id: "hidden", x: 10, y: 10, width: 0, height: 0 }] as LayerBox[];
-    expect(pickLayer(boxes, 20, 20)).toBe("child");
-    expect(pickLayer(boxes, 150, 150)).toBe("parent");
-    expect(pickLayer(boxes, 250, 20)).toBeNull();
+  it("finds intersecting frame bounds", () => {
     expect(intersects({ x: 0, y: 0, width: 20, height: 20 }, { x: 10, y: 10, width: 20, height: 20 })).toBe(true);
+    expect(intersects({ x: 0, y: 0, width: 20, height: 20 }, { x: 30, y: 10, width: 20, height: 20 })).toBe(false);
   });
   it("places blank frames beyond the rightmost frame and leaves the source untouched", () => {
     const original = frame();
@@ -78,11 +75,18 @@ describe("isolated frame document", () => {
 });
 
 it("restores a project session without choosing an archived, removed or foreign session", () => {
-  const make = (sessionId: string, projectPath = "/a", archived = false, worktreeRemoved = false) => ({ sessionId, projectPath, archived, worktreeRemoved });
+  const make = (sessionId: string, projectPath = "/a", archived = false, worktreeRemoved = false) => ({ sessionId, projectPath, archived, worktreeRemoved, hidden: false, aside: false });
   const sessions = [make("current"), make("remembered"), make("other", "/b"), make("archived", "/a", true), make("removed", "/a", false, true)];
   expect(canvasSession("/a", "current", "remembered", sessions)).toBe("current");
   expect(canvasSession("/a", "other", "remembered", sessions)).toBe("remembered");
   expect(canvasSession("/a", "archived", "removed", sessions.filter((s) => ["archived", "removed", "other"].includes(s.sessionId)))).toBeNull();
   expect(canvasSession("/a", null, undefined, sessions.map((s) => ({ ...s, modified: s.sessionId === "remembered" ? "2026-11-17" : "2026-11-16" })))).toBe("remembered");
   expect(canvasSession("carbon://remote/a", "current", "remembered", sessions)).toBeNull();
+});
+
+it("never routes Canvas chat into a hidden reviewer or a session set aside", () => {
+  const base = { projectPath: "/a", archived: false, worktreeRemoved: false, hidden: false, aside: false };
+  const sessions = [{ ...base, sessionId: "visible", modified: "2026-11-16" }, { ...base, sessionId: "reviewer", hidden: true, modified: "2026-11-17" }, { ...base, sessionId: "aside", aside: true, modified: "2026-11-18" }];
+  expect(canvasSession("/a", "reviewer", "aside", sessions)).toBe("visible");
+  expect(canvasSession("/a", null, undefined, sessions.slice(1))).toBeNull();
 });

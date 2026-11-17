@@ -1,6 +1,6 @@
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { canvasSession } from "@/lib/canvasBoard";
+import { availableCanvasSessions, canvasSession, CANVAS_PANEL_TABS, type CanvasPanelTab } from "@/lib/canvasBoard";
 import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { CircleDashed, ExternalLink, Plus } from "lucide-react";
@@ -592,7 +592,7 @@ function App() {
   const canvasControls = useRef<CanvasControls | null>(null);
   const [canvasProject, setCanvasProject] = useLocalStorage<string | null>("carbon.canvas.project", null);
   const [canvasSessions, setCanvasSessions] = useLocalStorage<Record<string, string>>("carbon.canvas.sessions", {});
-  const [canvasPanelTab, setCanvasPanelTab] = useState<"chat" | "preview" | "properties">("chat");
+  const [canvasPanelTab, setCanvasPanelTab] = useState<CanvasPanelTab>("chat");
   const canvasPath = spaceProjects.find((p) => p.path === canvasProject)?.path ?? spaceProjects[0]?.path ?? null;
   // The task sidebar floating over the content while the rail's Home is
   // hovered, wherever it is not docked. Closed a beat after the pointer leaves
@@ -2778,8 +2778,7 @@ function App() {
   useHotkey("panel.tab.prev", () => canvasOpen ? stepCanvasPanel(-1) : stepTab(-1), { enabled: canvasOpen || (!!selectedSessionId && !issuesOpen) });
   useHotkey("panel.tab.next", () => canvasOpen ? stepCanvasPanel(1) : stepTab(1), { enabled: canvasOpen || (!!selectedSessionId && !issuesOpen) });
   const stepCanvasPanel = (delta: number) => {
-    const tabs = ["chat", "preview", "properties"] as const;
-    setCanvasPanelTab((tab) => tabs[(tabs.indexOf(tab) + delta + tabs.length) % tabs.length]);
+    setCanvasPanelTab((tab) => CANVAS_PANEL_TABS[(CANVAS_PANEL_TABS.indexOf(tab) + delta + CANVAS_PANEL_TABS.length) % CANVAS_PANEL_TABS.length]);
   };
   // ⌘R re-reads whatever the panel is showing — the same one button in the tab
   // row, so the chord means "refresh this" and never "refresh a specific
@@ -2972,8 +2971,9 @@ function App() {
     setCanvasOpen(true);
   };
   useHotkey("canvas.open", openCanvas, { enabled: canvasEnabled });
+  const canvasChatSessions = availableCanvasSessions(canvasPath, sessionIndexItems);
   const canvasChatReady = !!canvasPath && (selectedSessionId
-    ? sessionIndexItems.some((s) => s.sessionId === selectedSessionId && s.projectPath === canvasPath && !s.archived && !s.worktreeRemoved)
+    ? canvasChatSessions.some((s) => s.sessionId === selectedSessionId)
     : projectPath === canvasPath);
   useEffect(() => {
     if (canvasOpen && canvasChatReady && canvasPath && selectedSessionId && canvasSessions[canvasPath] !== selectedSessionId) {
@@ -3287,17 +3287,17 @@ function App() {
         <div className={cn("min-h-0 min-w-0 flex-1", canvasOpen ? "flex" : "hidden")}>
         {canvasEnabled && <MountOnce when={canvasOpen}>
           <CanvasView controlsRef={canvasControls} active={canvasOpen && !settingsOpen} projects={spaceProjects} projectPath={canvasPath}
-            onProjectChange={changeCanvasProject} sessions={sessionIndexItems.filter((s) => s.projectPath === canvasPath && !s.archived && !s.worktreeRemoved)}
+            onProjectChange={changeCanvasProject} sessions={canvasChatSessions}
             sessionId={selectedSessionId} onSessionChange={(id) => void selectAndLeaveCrew(id)} onNewSession={() => newCanvasSession(canvasPath)}
             panelTab={canvasPanelTab} onPanelTabChange={setCanvasPanelTab} chatReady={canvasChatReady}
-            chat={canvasOpen && canvasChatReady && canvasPanelTab === "chat" ? <>
+            chat={canvasOpen && canvasChatReady ? <>
               <div className="min-h-0 flex-1"><Chat key={selectedSessionId ?? "new"} {...paneState(selectedSessionId ?? "")} {...paneChat}
                 onOpenSession={(id) => goToSession(() => void selectAndLeaveCrew(id))}
                 onOpenSubagent={(id) => goToSession(() => openSubagent(id))}
                 onOpenSubagentPanel={() => goToSession(() => showPanel("more"))}
                 onOpenPlan={() => goToSession(() => showPanel("plan"))}
-                crowded rail={false} active={!settingsOpen} /></div>
-              <div className="shrink-0">{composer}</div>
+                crowded rail={false} active={!settingsOpen && canvasPanelTab === "chat"} /></div>
+              {canvasPanelTab === "chat" && <div className="shrink-0">{composer}</div>}
             </> : null}
             projectPreview={canvasOpen && canvasChatReady && selectedSession ? <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex justify-end border-b border-hairline p-2"><PreviewControl sessionId={selectedSession.sessionId} cwd={selectedSession.cwd}

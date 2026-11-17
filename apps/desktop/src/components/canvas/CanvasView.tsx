@@ -6,13 +6,14 @@ import CanvasProperties from "./CanvasProperties";
 import CanvasBoard from "./CanvasBoard";
 import LiveFrame, { useFramePreviews } from "./FrameRenderer";
 import { useCanvases } from "@/hooks/useCanvases";
-import { blankFrame, flattenNodes, type CanvasPick } from "@/lib/canvasBoard";
+import { blankFrame, flattenNodes, togglePick, type CanvasPanelTab, type CanvasPick } from "@/lib/canvasBoard";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ChevronDown } from "lucide-react";
 import type { Project, SessionIndexItem } from "@/types/events";
 import { projectLabel } from "@/lib/servers";
 import "./canvas.css";
 
-export type CanvasPanelTab = "chat" | "preview" | "properties";
 export type CanvasControls = { toggleLayers(): void; togglePanel(): void; refresh(): void };
 
 export default function CanvasView({ active, projects, projectPath, onProjectChange, sessions, sessionId, onSessionChange, onNewSession, chat, panelTab, onPanelTabChange, chatReady, projectPreview, controlsRef }: {
@@ -46,17 +47,19 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
       files={data.files} fileId={data.fileId} onFileChange={data.select} onCreateFile={() => setDialog("create")} onRenameFile={() => setDialog("rename")}
       onNewFrame={() => setDialog("frame")} loading={data.loading} error={data.error} onRefresh={() => { void data.refresh(); capture.retry(); }} selectionLabel={selectionLabel}
       panelTab={panelTab} onPanelTabChange={onPanelTabChange} panelOpen={panelOpen} onPanelOpenChange={setPanelOpen}
-      layers={<CanvasLayers frames={data.canvas?.frames ?? []} picks={picks} onPick={(p, additive) => {
-        const same = picks.some((s) => s.frameId === p.frameId && s.nodeId === p.nodeId);
-        select(additive ? same ? picks.filter((s) => s.frameId !== p.frameId || s.nodeId !== p.nodeId) : [...picks, p] : [p]);
-      }} />}
+      layers={<CanvasLayers frames={data.canvas?.frames ?? []} picks={picks} onPick={(p, additive) => select(togglePick(picks, p, additive))} />}
       board={data.canvas ? <CanvasBoard key={data.canvas.id} canvas={data.canvas} active={active} picks={picks} onPicks={select} previews={capture.previews} errors={capture.errors} onVisible={setVisible} onNewFrame={() => setDialog("frame")} stats={capture.stats} />
         : <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"><p>{data.loading ? "Loading canvases…" : data.fileId ? "Opening canvas…" : projectPath ? "Create a canvas for your designs" : "Choose a project to open its canvases"}</p>{projectPath && !data.fileId && <Button variant="secondary" size="sm" onClick={() => setDialog("create")}>New canvas</Button>}</div>}
       chat={<div className="flex min-h-0 flex-1 flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-hairline px-3 py-2">
-          <select aria-label="Canvas chat session" className="min-w-0 flex-1 rounded-md bg-transparent text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring" value={currentSession?.sessionId ?? ""} onChange={(e) => e.target.value ? onSessionChange(e.target.value) : onNewSession()}>
-            <option value="">New session</option>{sessions.map((s) => <option key={s.sessionId} value={s.sessionId}>{s.title}</option>)}
-          </select><Button variant="ghost" size="xs" onClick={onNewSession} disabled={!projectPath}>New session</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="ghost" size="xs" aria-label={`Canvas chat session: ${currentSession?.title ?? "Pick a session"}`} disabled={!sessions.length} className="min-w-0 flex-1 justify-between"><span className="truncate">{currentSession?.title ?? "Pick a session"}</span><ChevronDown /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-w-80 min-w-48">
+              <DropdownMenuRadioGroup value={currentSession?.sessionId ?? ""} onValueChange={onSessionChange}>
+                {sessions.map((s) => <DropdownMenuRadioItem key={s.sessionId} value={s.sessionId}><span className="truncate">{s.title}</span></DropdownMenuRadioItem>)}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu><Button variant="ghost" size="xs" onClick={onNewSession} disabled={!projectPath}>New session</Button>
         </div>
         {chatReady ? chat : <p className="p-4 text-sm text-muted-foreground">{projectPath ? "Opening the project session…" : "Choose a project to chat."}</p>}
       </div>}
@@ -67,9 +70,9 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
       properties={<CanvasProperties frame={frame} node={node} box={box} count={picks.length} />}
     />
     {capture.renderer}
-    <CanvasFileDialog open={dialog === "create" || dialog === "rename"} onOpenChange={(open) => { if (!open) setDialog(null); }} initialName={dialog === "rename" ? data.canvas?.name ?? "" : ""} title={dialog === "rename" ? "Rename canvas" : "New canvas"} busy={data.busy} error={data.error}
+    <CanvasFileDialog open={active && (dialog === "create" || dialog === "rename")} onOpenChange={(open) => { if (!open) setDialog(null); }} initialName={dialog === "rename" ? data.canvas?.name ?? "" : ""} title={dialog === "rename" ? "Rename canvas" : "New canvas"} busy={data.busy} error={data.error}
       onSubmit={(name) => { void (dialog === "rename" ? data.edit({ name }) : data.create(name)).then((saved) => { if (saved) setDialog(null); }); }} />
-    <CanvasFrameDialog open={dialog === "frame"} onOpenChange={(open) => { if (!open) setDialog(null); }} busy={data.busy} error={data.error} onSubmit={(name, width, height) => {
+    <CanvasFrameDialog open={active && dialog === "frame"} onOpenChange={(open) => { if (!open) setDialog(null); }} busy={data.busy} error={data.error} onSubmit={(name, width, height) => {
       if (!data.canvas) return;
       const added = blankFrame(name, width, height, data.canvas.frames);
       void data.edit({ frames: [...data.canvas.frames, added] }).then((saved) => { if (saved) { setDialog(null); setSelection({ id: saved.id, picks: [{ frameId: added.id, nodeId: null }] }); } });

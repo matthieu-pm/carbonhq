@@ -1,12 +1,23 @@
 import type { CanvasCamera, CanvasFrame, CanvasGeometry, CanvasNode, SessionIndexItem } from "@/types/events";
 
+export const CANVAS_PANEL_TABS = ["chat", "preview", "properties"] as const;
+export type CanvasPanelTab = typeof CANVAS_PANEL_TABS[number];
+
 export type CanvasPick = { frameId: string; nodeId: string | null };
 export type LayerBox = CanvasGeometry & { id: string; styles: Record<string, string>; text: string };
-export type FramePreview = { key: string; url: string; boxes: LayerBox[]; bytes: number };
+export type CanvasAssetSource = { id: string; revision: number; ids: string[]; owner: string };
+export type FramePreview = { key: string; url: string; markup: string; viewport: Pick<CanvasGeometry, "width" | "height">; assets: CanvasAssetSource; boxes: LayerBox[]; bytes: number };
 export const PREVIEW_BUDGET = 24 * 1024 * 1024;
 
-export function canvasSession(path: string, selected: string | null, remembered: string | undefined, sessions: (Pick<SessionIndexItem, "sessionId" | "projectPath" | "archived" | "worktreeRemoved"> & { modified?: string })[]): string | null {
-  const available = sessions.filter((s) => s.projectPath === path && !s.archived && !s.worktreeRemoved);
+type CanvasSession = Pick<SessionIndexItem, "sessionId" | "projectPath" | "archived" | "worktreeRemoved" | "hidden" | "aside"> & { modified?: string };
+
+export function availableCanvasSessions<T extends CanvasSession>(path: string | null, sessions: T[]): T[] {
+  return sessions.filter((s) => s.projectPath === path && !s.archived && !s.worktreeRemoved && !s.hidden && !s.aside);
+}
+
+/// Keep the reader's current session, then their remembered choice, before choosing the newest.
+export function canvasSession(path: string, selected: string | null, remembered: string | undefined, sessions: CanvasSession[]): string | null {
+  const available = availableCanvasSessions(path, sessions);
   return available.find((s) => s.sessionId === selected)?.sessionId ?? available.find((s) => s.sessionId === remembered)?.sessionId ?? available.sort((a, b) => (b.modified ?? "").localeCompare(a.modified ?? ""))[0]?.sessionId ?? null;
 }
 
@@ -52,12 +63,29 @@ export function previewKey(frame: CanvasFrame, tokens: Record<string, string>): 
   return `${frame.id}:${source.length}:${a >>> 0}:${b >>> 0}`;
 }
 
-export function pickLayer(boxes: LayerBox[], x: number, y: number): string | null {
-  for (let i = boxes.length - 1; i >= 0; i--) {
-    const box = boxes[i];
-    if (box.width > 0 && box.height > 0 && x >= box.x && y >= box.y && x <= box.x + box.width && y <= box.y + box.height) return box.id;
-  }
-  return null;
+/// Let the browser resolve stacking, clipping and wrapped text in one short-lived sandbox.
+export function pickLayer(markup: string, viewport: Pick<CanvasGeometry, "width" | "height">, x: number, y: number, signal: AbortSignal): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement("iframe");
+    const token = crypto.randomUUID();
+    const cleanup = () => { clearTimeout(timeout); window.removeEventListener("message", receive); signal.removeEventListener("abort", abort); iframe.remove(); };
+    const abort = () => { cleanup(); reject(new DOMException("Selection cancelled", "AbortError")); };
+    const receive = (event: MessageEvent) => {
+      if (event.source !== iframe.contentWindow || event.data?.canvasToken !== token) return;
+      cleanup();
+      if (event.data.error) reject(new Error(String(event.data.error)));
+      else resolve(typeof event.data.hit === "string" ? event.data.hit : null);
+    };
+    const timeout = window.setTimeout(() => { cleanup(); reject(new Error("Layer selection timed out. Refresh to try again.")); }, 8000);
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    window.addEventListener("message", receive);
+    iframe.title = "Selecting layer"; iframe.tabIndex = -1; iframe.setAttribute("aria-hidden", "true"); iframe.sandbox.add("allow-scripts");
+    iframe.style.cssText = `position:fixed;left:-20000px;top:0;width:${viewport.width}px;height:${viewport.height}px;border:0;pointer-events:none`;
+    iframe.onload = () => { iframe.getBoundingClientRect(); iframe.contentWindow?.postMessage({ canvasRender: token }, "*"); };
+    iframe.srcdoc = frameDocument(markup, token, true, viewport, { x, y });
+    document.body.append(iframe);
+  });
 }
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -65,8 +93,8 @@ const forbidden = new Set(["script", "style", "link", "meta", "base", "iframe", 
 const voids = new Set(["area", "br", "col", "hr", "img", "input", "source", "track", "wbr"]);
 
 /// Stored markup never receives the app's origin, network access, or executable attributes.
-export function frameMarkup(frame: CanvasFrame, tokens: Record<string, string>, assets: Record<string, string>): string {
-  const resolve = (s: string) => s.replace(/carbon-canvas-asset:\/\/([a-zA-Z0-9-]+)/g, (_, id: string) => assets[id] ?? "data:,");
+export function frameMarkup(frame: CanvasFrame, tokens: Record<string, string>, assets: Record<string, string> | null): string {
+  const resolve = (s: string) => assets ? s.replace(/carbon-canvas-asset:\/\/([a-zA-Z0-9-]+)/g, (_, id: string) => assets[id] ?? "data:,") : s;
   const render = (node: CanvasNode): string => {
     if (node.kind === "text") return `<!--canvas-text:${escape(node.id)}-->${escape(node.text)}`;
     const tag = node.tag;
@@ -81,12 +109,12 @@ export function frameMarkup(frame: CanvasFrame, tokens: Record<string, string>, 
 }
 
 /// One bounded capture is enough for an overview; zoom never resizes its CSS viewport.
-export function frameDocument(markup: string, token: string, capture: boolean, viewport?: Pick<CanvasGeometry, "width" | "height">): string {
-  const script = `(${frameBridge.toString()})(${JSON.stringify(token)},${capture},${JSON.stringify(viewport ?? null)})`;
+export function frameDocument(markup: string, token: string, capture: boolean, viewport?: Pick<CanvasGeometry, "width" | "height">, point?: { x: number; y: number }): string {
+  const script = `(${frameBridge.toString()})(${JSON.stringify(token)},${capture},${JSON.stringify(viewport ?? null)},${JSON.stringify(point ?? null)})`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'nonce-${token}'; base-uri 'none'; form-action 'none'">${markup}<script nonce="${token}">${script}</script></html>`;
 }
 
-function frameBridge(token: string, capture: boolean, viewport: { width: number; height: number } | null) {
+function frameBridge(token: string, capture: boolean, viewport: { width: number; height: number } | null, point: { x: number; y: number } | null) {
   const send = (value: Record<string, unknown>) => parent.postMessage({ canvasToken: token, ...value }, "*");
   document.addEventListener("submit", (e) => e.preventDefault());
   document.addEventListener("click", (e) => { if ((e.target as Element).closest("a")) e.preventDefault(); });
@@ -112,6 +140,20 @@ function frameBridge(token: string, capture: boolean, viewport: { width: number;
     await document.fonts.ready;
     await Promise.all([...document.images].map((img) => img.decode().catch(() => {})));
     if (document.querySelectorAll("*").length > 2000) throw new Error("This frame exceeds the 2,000-element preview limit.");
+    if (point) {
+      document.querySelectorAll<HTMLElement | SVGElement>("*").forEach((el) => el.style.setProperty("pointer-events", "auto", "important"));
+      const element = document.elementsFromPoint(point.x, point.y).find((el) => {
+        for (let ancestor: Element | null = el; ancestor; ancestor = ancestor.parentElement) if (getComputedStyle(ancestor).opacity === "0") return false;
+        return el.hasAttribute("data-canvas-id");
+      });
+      let hit = element?.getAttribute("data-canvas-id") ?? null;
+      if (element) for (const child of element.childNodes) {
+        if (child.nodeType !== 8 || !child.textContent?.startsWith("canvas-text:") || child.nextSibling?.nodeType !== 3) continue;
+        const range = document.createRange(); range.selectNode(child.nextSibling);
+        if ([...range.getClientRects()].some((r) => point.x >= r.left && point.x <= r.right && point.y >= r.top && point.y <= r.bottom)) { hit = child.textContent.slice(12); break; }
+      }
+      send({ hit }); return;
+    }
     const boxes: LayerBox[] = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -145,6 +187,13 @@ function frameBridge(token: string, capture: boolean, viewport: { width: number;
       }
     });
     html.querySelectorAll("script,meta,style").forEach((n) => n.remove());
+    const fonts: string[] = [];
+    const fontRules = (rules: CSSRuleList) => { for (const rule of rules) {
+      if (rule instanceof CSSFontFaceRule) fonts.push(rule.cssText);
+      else if ("cssRules" in rule) fontRules((rule as CSSGroupingRule).cssRules);
+    } };
+    for (const sheet of document.styleSheets) fontRules(sheet.cssRules);
+    if (fonts.length) { const style = document.createElement("style"); style.textContent = fonts.join("\n"); html.querySelector("head")?.append(style); }
     html.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
     const serialized = new XMLSerializer().serializeToString(html);
     if (serialized.length > 16 * 1024 * 1024) throw new Error("This frame exceeds the preview size limit.");

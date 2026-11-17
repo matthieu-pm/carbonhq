@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke, listen, serverOfPath } from "@/lib/transport";
+import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
 import type { Canvas, CanvasEdit, CanvasList, CanvasProblem, CanvasReconciliation, CanvasSummary } from "@/types/events";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 
@@ -11,7 +11,7 @@ export function useCanvases(projectPath: string | null, active: boolean) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const owner = projectPath ? serverOfPath(projectPath) : "local";
+  const owner = projectPath ? serverOfPath(projectPath) : LOCAL;
   const scope = useRef(`canvas-page-${crypto.randomUUID()}`).current;
   const current = useRef({ projectPath, fileId, canvas, active, files });
   current.current = { projectPath, fileId, canvas, active, files };
@@ -55,7 +55,13 @@ export function useCanvases(projectPath: string | null, active: boolean) {
   useEffect(() => {
     if (!active || !projectPath) return;
     let stopped = false;
-    const invalidate = ({ server }: { server: string }) => { if (!stopped && server === owner) { void refresh(); if (current.current.fileId) void read(current.current.fileId); } };
+    const invalidate = ({ server, payload }: { server: string; payload: CanvasSummary }) => {
+      if (stopped || server !== owner) return;
+      const files = current.current.files;
+      if (files.length && !files.some((f) => f.projectKey === payload.projectKey)) return;
+      void refresh();
+      if (payload.id === current.current.fileId) void read(payload.id);
+    };
     const off = [listen<CanvasSummary>("canvas_changed", invalidate), listen<CanvasSummary>("canvas_deleted", invalidate), listen("live_state", ({ server }) => {
       if (!stopped && server === owner) {
         void invoke("watch_canvases", { scope, ids: current.current.files.map((f) => f.id) }, owner).catch((e) => setError(String(e)));
@@ -67,7 +73,11 @@ export function useCanvases(projectPath: string | null, active: boolean) {
   }, [active, owner, projectPath, read, refresh, scope]);
 
   useEffect(() => {
-    setCanvas(null); readSeq.current++;
+    setCanvas((previous) => previous?.id === fileId ? previous : null);
+    readSeq.current++;
+  }, [fileId, projectPath, owner]);
+
+  useEffect(() => {
     if (!active || !fileId || !projectPath) return;
     writeLocalStorage(`carbon.canvas.file:${projectPath}`, fileId);
     void read(fileId, true);

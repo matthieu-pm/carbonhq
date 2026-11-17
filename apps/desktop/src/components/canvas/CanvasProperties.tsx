@@ -85,7 +85,7 @@ export default function CanvasProperties({
       <Section title="Authored styles" fields={authored} />
 
       {blank && <Note>This frame is blank.</Note>}
-      {!box && !blank && <Note>Computed values appear once the frame has rendered.</Note>}
+      {node && !box && <Note>Computed values appear once the frame has rendered.</Note>}
     </div>
   );
 }
