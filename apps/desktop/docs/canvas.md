@@ -1,6 +1,20 @@
 # Canvas storage
 
-CBN-80 supplies the file format and server API. The Canvas rail page, HTML import/export, renderer and agent CLI belong to CBN-81/82. Stored designs are data; this module does not render HTML, execute scripts or modify the project's source.
+CBN-80 supplies the file format and server API. CBN-81 adds the Canvas rail page and isolated frame renderer. HTML import/export and agent commands belong to CBN-82. Stored designs are data; the storage module does not render HTML, execute scripts or modify the project's source.
+
+## Canvas page
+
+Open Canvas from the rail or with Cmd-Option-C (Ctrl-Alt-C outside macOS). Choose a project and a canvas file tab. New canvas creates a named file; New frame adds a blank Desktop (1440 × 900), Mobile (390 × 844), or custom frame. Custom dimensions are whole pixels from 1 to 10,000. File renaming is supported; frame and layer editing remain separate work.
+
+Scroll to pan. Pinch or Cmd/Ctrl-scroll to zoom around the pointer. The Hand tool or Space-drag pans; the Select tool drags a selection marquee. Shift-click adds or removes frames and layers. Click a frame once to select it and again to pick a layer. Arrow keys navigate the board and layers tree; Enter enters a frame and Escape leaves a layer selection. Fit all is Shift-1, fit selection Shift-2, and actual size Shift-0. All three shortcuts are in the shortcuts registry. Camera position and the last open file are remembered locally per canvas/project.
+
+The layers tree, board outlines and read-only Properties share stable frame/layer IDs. Properties reports the renderer's measured bounds and computed styles. Chat uses Carbon's real transcript and composer, with a session picker and New session action. It keeps the current session when it belongs to the project, otherwise restores that project's remembered session or most recent available session. Design chips and agent handoff belong to CBN-83.
+
+Preview separates the focused canvas frame from the running project. Only the focused frame has a live sandboxed iframe; its viewport stays at the frame's CSS dimensions, with scrolling for large frames. The running project uses the selected session's existing browser and preview controls. Hiding the page or frame Preview removes its live iframe.
+
+The overview uses raster images, retained layer geometry and one capture at a time. Captures prioritize the focused and visible frames. Thumbnail resolution falls as more frames become visible; image, key and geometry estimates share a 24 MiB cache budget. Offscreen previews are released. Used styles are frozen before rasterizing, so thumbnail resolution and board zoom do not change viewport units or media queries. A pending replacement retains the previous valid preview. File/project switches reject stale reads and captures. Reopening and reconnecting read durable state and rearm watches.
+
+Both live and capture documents have an opaque sandbox origin. Stored scripts, event handlers, embedded pages and navigation attributes are omitted. CSP blocks network requests, forms and app-origin resources; file-owned images resolve through the owning server into data URLs. The renderer currently limits a frame to 2,000 elements, 16 MiB of embedded image data and 16 MiB of serialized capture markup. These limits report an error without changing the saved design. Unsupported external images/fonts and executable page behavior are not imported by this renderer.
 
 ## Ownership and identity
 
@@ -87,3 +101,5 @@ pnpm build
 ```
 
 The smoke script uses a temporary `CARBON_HOME` and temporary projects. It does not touch the user's designs or running Carbon server.
+
+With this session's Vite preview open through `carbon browser`, run `node scripts/verify-canvas-renderer.mjs` from `apps/desktop`. It checks ten sequential opaque-iframe captures, including mobile, desktop and custom viewports, media queries, viewport units and frozen used styles. It also holds an image decode open while another frame changes, then checks that the pending capture still completes. It also verifies layer hits across stacking, wrapped text, hidden elements and clipped content, plus cancellation. Layer hits use one short-lived sandbox at the retained preview's original CSS viewport; historical images are resolved for that request and released afterwards. Cached markup retains asset references rather than duplicated base64 data. The probe removes its own iframes and reports capture timing. It needs no project or provider call.

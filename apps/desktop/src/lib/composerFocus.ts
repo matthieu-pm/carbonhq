@@ -59,7 +59,7 @@ function focusAtEnd(el: HTMLElement) {
 
 /// Where a printable key belongs to whatever has focus rather than to the
 /// composer: an open menu or dialog, where Radix typeahead reads letters.
-const OWNS_KEYS = "[role=dialog], [role=alertdialog], [role=menu], [role=listbox]";
+const OWNS_KEYS = "[role=dialog], [role=alertdialog], [role=menu], [role=listbox], [data-owns-keys]";
 
 type Keystroke = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">;
 
