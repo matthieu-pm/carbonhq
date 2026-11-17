@@ -46,6 +46,7 @@ const APP_WIDE: ReadonlySet<ShortcutId> = new Set([
   "settings",
   "session.new",
   "spaces.open",
+  "canvas.open",
   "page.new",
   "issues.open",
   "nav.back",

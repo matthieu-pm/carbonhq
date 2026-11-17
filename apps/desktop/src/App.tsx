@@ -1,5 +1,6 @@
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { canvasSession } from "@/lib/canvasBoard";
 import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { CircleDashed, ExternalLink, Plus } from "lucide-react";
@@ -11,6 +12,7 @@ import SubscriptionUsageButton from "@/components/SubscriptionUsageButton";
 import "./App.css";
 import { pagePromptContext, setPageChatHandler, setPageOpener, setPageTaskHandler, type LocatedPage, type Page, type PageTarget } from "@/lib/pages";
 import Chat from "@/components/Chat";
+import type { CanvasControls } from "@/components/canvas/CanvasView";
 import ChatInput from "@/components/ChatInput";
 import DiffWorkerPool from "@/components/DiffWorkerPool";
 import NoticeStack from "@/components/NoticeStack";
@@ -39,6 +41,7 @@ const TABS_PAST_SEPARATOR = 8;
 const IssuePanel = lazy(() => import("@/components/IssuePanel"));
 const PageMentionPicker = lazy(() => import("@/components/spaces/PageMentionPicker"));
 const SpacesView = lazy(() => import("@/components/spaces/SpacesView"));
+const CanvasView = lazy(() => import("@/components/canvas/CanvasView"));
 const IssuesView = lazy(() => import("@/components/IssuesView"));
 const IssueTabView = lazy(() => import("@/components/IssueTabView"));
 const PrPanel = lazy(() => import("@/components/PrPanel"));
@@ -585,6 +588,12 @@ function App() {
   // session they were in is still there when they do.
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [spacesOpen, setSpacesOpen] = useState(false);
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const canvasControls = useRef<CanvasControls | null>(null);
+  const [canvasProject, setCanvasProject] = useLocalStorage<string | null>("carbon.canvas.project", null);
+  const [canvasSessions, setCanvasSessions] = useLocalStorage<Record<string, string>>("carbon.canvas.sessions", {});
+  const [canvasPanelTab, setCanvasPanelTab] = useState<"chat" | "preview" | "properties">("chat");
+  const canvasPath = spaceProjects.find((p) => p.path === canvasProject)?.path ?? spaceProjects[0]?.path ?? null;
   // The task sidebar floating over the content while the rail's Home is
   // hovered, wherever it is not docked. Closed a beat after the pointer leaves
   // both the button and the card, so crossing the gap between them holds it.
@@ -688,7 +697,7 @@ function App() {
   // page's own connect form and the composer's placeholder all read it, and a
   // hook per surface is a second answer to "are we connected" free to disagree
   // with the first.
-  const { pagesEnabled } = useFeatureFlags();
+  const { pagesEnabled, canvasEnabled } = useFeatureFlags();
   const integrations = useIntegrations(true);
   // Either one is enough to draw the page and open the picker: the two are
   // alternatives rather than halves of one connection, and a reader with only
@@ -1047,7 +1056,7 @@ function App() {
     [visibleSessions, crewAnchorId, statusBySession, askingSessions],
   );
   const crewExists = crew.length > 0 && !groupOf(spaceGroups, crewAnchorId);
-  const summaryEligible = !issuesOpen && !spacesOpen && !settingsOpen && viewTab === "chat" && selectedSessionId !== null;
+  const summaryEligible = !issuesOpen && !spacesOpen && !canvasOpen && !settingsOpen && viewTab === "chat" && selectedSessionId !== null;
   // The anchor owns the summary choice, so focusing a child keeps the rail or popover open.
   const summaryId = (crewExists && crewAnchorId) || selectedSessionId;
   const summary = usePinnedSummary(summaryId, summaryEligible, crewExists || !activeGroup);
@@ -1117,7 +1126,7 @@ function App() {
   /// request, its issue — with nothing on screen to say whose they were. The
   /// preference is kept, so coming back restores the pane exactly as it was;
   /// everything that draws or reads reads this instead.
-  const panelShown = panelOpen && !issuesOpen;
+  const panelShown = panelOpen && !issuesOpen && !canvasOpen;
   const mainGroup = crewUp ? null : activeGroup;
   useChatColumnFloor(!mainGroup);
 
@@ -1536,7 +1545,7 @@ function App() {
   // on it closes the pane, whatever tab the pane was on: the reader came for
   // the full width. ⌘E brings it back beside the page, and leaving gives back
   // a pane the arrival took — the sidebar's rule, under its own switch.
-  const fullBrowserOpen = !issuesOpen && viewTab === "browser";
+  const fullBrowserOpen = !issuesOpen && !spacesOpen && !canvasOpen && viewTab === "browser";
   const lastViewTab = useRef(viewTab);
   // The pane's claims, one per pane key, since the pane is per session — see
   // [panelMove](./lib/sidebarAuto.ts) for why one claim was not enough.
@@ -2129,6 +2138,7 @@ function App() {
   const goToSession = (go: () => void) => {
     setPeek(false);
     setSpacesOpen(false);
+    setCanvasOpen(false);
     setIssuesOpen(false);
     closeSettings();
     setOpenDraftId(null);
@@ -2138,6 +2148,7 @@ function App() {
   const referencePage = (page: LocatedPage<Page>) => {
     appendToDraft(composerKey, pagePromptContext(page, activeServer));
     setSpacesOpen(false);
+    setCanvasOpen(false);
     setIssuesOpen(false);
     closeSettings();
     setViewTab("chat");
@@ -2187,7 +2198,7 @@ function App() {
   // ends up on screen, so no route in has to remember to; a step marks where
   // it is going so its own arrival is not recorded as a new visit.
   const pagePlace = {
-    page: spacesOpen ? "spaces" : issuesOpen ? "issues" : "tasks",
+    page: canvasOpen ? "canvas" : spacesOpen ? "spaces" : issuesOpen ? "issues" : "tasks",
     sessionId: selectedSessionId,
   } as const;
   const place: Place = settingsOpen ? { page: "settings", tab: settingsTab, returnTo: pagePlace } : pagePlace;
@@ -2205,7 +2216,7 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hereKey]);
   const placeUsable = (p: Place) =>
-    p.page === "spaces"
+    p.page === "canvas" ? canvasEnabled : p.page === "spaces"
       ? pagesEnabled
       : p.page !== "tasks" || !p.sessionId || sessionIndexItems.some((i) => i.sessionId === p.sessionId);
   const goHistory = (delta: -1 | 1) => {
@@ -2220,8 +2231,13 @@ function App() {
       setSettingsOpen(true);
     } else closeSettings();
     const page = target.page === "settings" ? target.returnTo : target;
+    setCanvasOpen(page.page === "canvas");
     setSpacesOpen(page.page === "spaces");
     setIssuesOpen(page.page === "issues");
+    if (page.page === "canvas") {
+      if (canvasPath) changeCanvasProject(canvasPath);
+      return;
+    }
     if (page.page !== "tasks" || page.sessionId === selectedSessionId) return;
     setOpenDraftId(null);
     if (page.sessionId) void selectAndLeaveCrew(page.sessionId);
@@ -2609,7 +2625,8 @@ function App() {
   };
 
   const toggleSidebar = () => {
-    setCollapsed((prev) => !prev);
+    if (canvasOpen) canvasControls.current?.toggleLayers();
+    else setCollapsed((prev) => !prev);
   };
   useHotkey("sidebar.toggle", toggleSidebar);
   // Spaces suspends the shell's chords, and its sidebar answers to the same
@@ -2678,7 +2695,7 @@ function App() {
   // grid is *on screen*: with none ⌘⌥1 has nothing to point at and must not eat the key,
   // and under the Diff tab or the issues page ⌘W would close a pane the
   // reader cannot see.
-  const gridShown = !!mainGroup && !issuesOpen && viewTab === "chat";
+  const gridShown = !!mainGroup && !issuesOpen && !canvasOpen && !spacesOpen && viewTab === "chat";
   const paneIds = mainGroup ? paneOrder(mainGroup) : [];
   // Keyboard focus moves with the pane. A click moves it by itself, but a
   // chord left it on whatever the old pane held — a link, a subagent control
@@ -2712,10 +2729,10 @@ function App() {
   // Every other arm already carries the guard: `fullBrowserOpen` and
   // `gridShown` both hold `!issuesOpen`, and `panelShown` is the pane the
   // page hides.
-  const fileShown = !issuesOpen && viewTab === "files" && !!activeFile;
+  const fileShown = !issuesOpen && !canvasOpen && viewTab === "files" && !!activeFile;
   const issueTabClosable = issuesOpen && !spacesOpen && issueTabs.tabs.length > 1;
   const rowTabOnScreen =
-    fullBrowserOpen || (!issuesOpen && !!selectedSessionId && (viewTab === "files" || viewTab === "changes"));
+    fullBrowserOpen || (!issuesOpen && !canvasOpen && !!selectedSessionId && (viewTab === "files" || viewTab === "changes"));
   const closeTabOrPane = () => {
     if (issueTabClosable) return editIssueTabs((s) => closeIssueTab(s, s.active));
     // The row's own close, so the chord lands where the cross would — and
@@ -2745,7 +2762,7 @@ function App() {
   // reader aimed at and wrong for a chord that draws nothing and so promises
   // nothing. Off on the issues page, whose own binding opens and shuts the
   // issue pane — only the list knows which row to put back.
-  useHotkey("panel.toggle", togglePanel, { enabled: !!selectedSessionId && !issuesOpen });
+  useHotkey("panel.toggle", () => canvasOpen ? canvasControls.current?.togglePanel() : togglePanel(), { enabled: canvasOpen || (!!selectedSessionId && !issuesOpen) });
   // ⌘⌥E, the side beside ⌘E's visibility. Moves a hidden pane too: the pick
   // is a preference, and it lands wherever the pane next opens.
   useHotkey("panel.side", () => setPanelSide((s) => (s === "left" ? "right" : "left")));
@@ -2758,8 +2775,12 @@ function App() {
   // arrives already known. The shift layout reaches `key`, so the character is
   // `{` rather than `[`; the physical key rides along for the engines that
   // report the unshifted one — see `code`.
-  useHotkey("panel.tab.prev", () => stepTab(-1), { enabled: !!selectedSessionId && !issuesOpen });
-  useHotkey("panel.tab.next", () => stepTab(1), { enabled: !!selectedSessionId && !issuesOpen });
+  useHotkey("panel.tab.prev", () => canvasOpen ? stepCanvasPanel(-1) : stepTab(-1), { enabled: canvasOpen || (!!selectedSessionId && !issuesOpen) });
+  useHotkey("panel.tab.next", () => canvasOpen ? stepCanvasPanel(1) : stepTab(1), { enabled: canvasOpen || (!!selectedSessionId && !issuesOpen) });
+  const stepCanvasPanel = (delta: number) => {
+    const tabs = ["chat", "preview", "properties"] as const;
+    setCanvasPanelTab((tab) => tabs[(tabs.indexOf(tab) + delta + tabs.length) % tabs.length]);
+  };
   // ⌘R re-reads whatever the panel is showing — the same one button in the tab
   // row, so the chord means "refresh this" and never "refresh a specific
   // thing". `panelRefresh` is null on Subagents, which has nothing to fetch,
@@ -2775,6 +2796,7 @@ function App() {
   // Chromium has the key, and cef.rs reloads there.
   const browserShown = fullBrowserOpen || (panelShown && activeTab === "browser");
   useHotkey("panel.refresh", () => {
+    if (canvasOpen) return canvasControls.current?.refresh();
     // "Re-read what I am looking at", the same rule the session case follows:
     // the pane wins where one is open, and the list has it otherwise.
     if (issuesOpen) return refreshIssues();
@@ -2903,6 +2925,7 @@ function App() {
     setPeek(false);
     setPagePickerOpen(false);
     closeSettings();
+    setCanvasOpen(false);
     setSpacesOpen(true);
   };
   useHotkey("spaces.open", openSpaces, { enabled: pagesEnabled });
@@ -2913,11 +2936,13 @@ function App() {
     setPeek(false);
     setPagePickerOpen(false);
     closeSettings();
+    setCanvasOpen(false);
     setSpacesOpen(true);
     setPageCreateSerial((serial) => serial + 1);
   }, { enabled: pagesEnabled });
   // Leaves Spaces too: it covers the sheet, so the page would open behind it.
   const openIssues = () => {
+    setCanvasOpen(false);
     setSpacesOpen(false);
     closeSettings();
     setIssuesOpen(true);
@@ -2925,7 +2950,38 @@ function App() {
   useHotkey("issues.open", openIssues);
   // Docked beside the content unless ⌘B put it away or Spaces, which brings
   // a sidebar of its own, holds the sheet.
-  const sidebarMode = !collapsed && !spacesOpen ? "docked" : peek ? "peek" : "hidden";
+  const newCanvasSession = (path: string | null) => {
+    setOpenDraftId(null);
+    leaveCrew();
+    handleNewSession();
+    handleSelectProject(path);
+    setViewTab("chat");
+  };
+  const changeCanvasProject = (path: string) => {
+    setCanvasProject(path);
+    const target = canvasSession(path, selectedSessionId, canvasSessions[path], sessionIndexItems);
+    if (target === selectedSessionId && target) return;
+    if (target) void selectAndLeaveCrew(target);
+    else newCanvasSession(path);
+  };
+  const openCanvas = () => {
+    const path = selectedSession?.projectPath ?? projectPath ?? canvasPath;
+    setPeek(false); setSpacesPeek(false); setSpacesOpen(false); setIssuesOpen(false); closeSettings();
+    if (path && spaceProjects.some((p) => p.path === path)) changeCanvasProject(path);
+    else if (canvasPath) changeCanvasProject(canvasPath);
+    setCanvasOpen(true);
+  };
+  useHotkey("canvas.open", openCanvas, { enabled: canvasEnabled });
+  const canvasChatReady = !!canvasPath && (selectedSessionId
+    ? sessionIndexItems.some((s) => s.sessionId === selectedSessionId && s.projectPath === canvasPath && !s.archived && !s.worktreeRemoved)
+    : projectPath === canvasPath);
+  useEffect(() => {
+    if (canvasOpen && canvasChatReady && canvasPath && selectedSessionId && canvasSessions[canvasPath] !== selectedSessionId) {
+      setCanvasSessions((prev) => ({ ...prev, [canvasPath]: selectedSessionId }));
+    }
+  }, [canvasOpen, canvasChatReady, canvasPath, selectedSessionId, canvasSessions, setCanvasSessions]);
+  useEffect(() => { if (!canvasEnabled) setCanvasOpen(false); }, [canvasEnabled]);
+  const sidebarMode = !collapsed && !spacesOpen && !canvasOpen ? "docked" : peek ? "peek" : "hidden";
   const fullscreen = useFullscreen();
   useGlass(fullscreen);
 
@@ -3012,11 +3068,13 @@ function App() {
   const spacesPeeks = pagesEnabled && !settingsOpen && collapsed;
   const rail = (
     <Rail
-      place={settingsOpen ? "settings" : spacesOpen ? "spaces" : issuesOpen ? "issues" : "home"}
+      place={settingsOpen ? "settings" : canvasOpen ? "canvas" : spacesOpen ? "spaces" : issuesOpen ? "issues" : "home"}
       spaces={pagesEnabled}
       onHome={() => goToSession(handleNewSession)}
       onSpaces={openSpaces}
       onIssues={openIssues}
+      canvas={canvasEnabled}
+      onCanvas={openCanvas}
       onHomeHover={(over) => !settingsOpen && collapsed && hoverPeek(over)}
       peeks={!settingsOpen && collapsed}
       onSpacesHover={(over) => spacesPeeks && hoverSpacesPeek(over)}
@@ -3030,6 +3088,179 @@ function App() {
     />
   );
 
+  const composer = (
+        <ChatInput
+          placeholder={!selectedSessionId && pendingIssue ? "Describe an issue. @files. /skills." : undefined}
+          onSend={(message, attachments) => void sendFromComposer(message, attachments)}
+          commands={slashCommands}
+          commandsLoading={slashCommandsLoading}
+          mcpServers={mcpServers}
+          cwd={composerCwd}
+          onStop={handleInterrupt}
+          onCancelQueued={handleCancelQueued}
+          onCancelRecording={() => {
+            if (recorder.state !== "recording") return false;
+            void recorder.cancel();
+            return true;
+          }}
+          dictating={recorder.state !== "idle"}
+          dictation={
+            activeServer === LOCAL && <DictateControl
+              state={recorder.state}
+              level={recorder.level}
+              savedAudio={recorder.savedAudio}
+              onStart={() => void recorder.start()}
+              onStop={() => void recorder.stop()}
+              onCancel={() => void recorder.cancel()}
+              onRetry={() => void recorder.retry()}
+              // Reveals rather than opens: the reader asking for the file wants
+              // to keep it, play it, or send it on, and Finder is the one place
+              // all three are reachable. Same reasoning `pickFileOpener` gives.
+              onReveal={() =>
+                recorder.savedAudio && void revealItemInDir(recorder.savedAudio)
+              }
+            />
+          }
+          queuedCount={queuedMessages.length}
+          busy={busy}
+          sessionId={composerKey}
+          isNewTask={!shownSession && !canvasOpen}
+          target={composerTarget}
+          issuesConnected={issuesConnected}
+          issueTrackers={integrations.connected}
+          sessions={composerSessions}
+          modelTakesImages={modelTakesImages}
+          error={error}
+          onDismissError={() => setError(null)}
+          archived={selectedSession?.archived ?? false}
+          onUnarchive={() =>
+            selectedSessionId &&
+            void handleSetSessionFlags(selectedSessionId, { archived: false })
+          }
+          onRemoveWorktree={
+            selectedSessionId && selectedSession?.worktreeName
+              ? () =>
+                  void askAboutWorktree(
+                    selectedSessionId,
+                    selectedSession.worktreeName as string,
+                    selectedSession.title,
+                    "dialog",
+                  )
+              : undefined
+          }
+          handoff={
+            <HandoffRow
+              actions={handoffActions(workStatus, sessionHasPr, !!selectedSessionId, handoffConfig)}
+              // Straight out as a prompt, exactly as if it had been typed. A
+              // turn already running queues it, like any other send.
+              onSend={(prompt) => void handleSendMsg(prompt)}
+              disabled={!selectedSessionId || !!sendHeld}
+            />
+          }
+          // Only on a new task. An agent is fixed at creation, so a live
+          // session cannot be pointed at one that is missing — and a session
+          // that already exists has a CLI that already ran.
+          notice={
+            offlineServer ? (
+              <ServerOfflineNotice server={offlineServer} />
+            ) : !selectedSessionId && missingAgent ? (
+              <AgentMissingNotice agent={missingAgent} />
+            ) : loggedOutAgent && authTurn && selectedSession ? (
+              <LoginExpiredNotice
+                agent={loggedOutAgent}
+                server={activeServer}
+                cwd={selectedSession.cwd}
+                onHandled={() => setLoginHandled(authTurn)}
+              />
+            ) : null
+          }
+          pending={
+            <>
+            {selectedSessionId && <RecoveryNotice key={`${activeServer}:${selectedSessionId}`} sessionId={selectedSessionId} server={activeServer} busy={busy} />}
+            {selectedItem?.continueAt && (
+              <AutoContinueNotice
+                at={selectedItem.continueAt}
+                off={selectedItem.continueOff}
+                onToggle={(on) =>
+                  void invoke("set_auto_continue", { sessionId: selectedItem.sessionId, on }).catch(
+                    setError,
+                  )
+                }
+              />
+            )}
+            </>
+          }
+          held={sendHeld}
+          draftHint={
+            openDraftId ? (
+              <span className={cn("transition-colors duration-300", draftNudge && "text-foreground")}>
+                Changes auto-saved
+              </span>
+            ) : (
+              draftChord && `${formatChords([draftChord])[0].join("")} to save as draft`
+            )
+          }
+          agentUpdate={
+            !selectedSessionId && (
+              <AgentUpdateLine
+                harness={harness}
+                // pi and fx overwrite files a live child reads; the other three
+                // install beside it, so only these two wait on a running turn.
+                waiting={
+                  (harness === "pi" || harness === "fx") &&
+                  sessionIndexItems.some(
+                    (s) =>
+                      s.harness === harness && statusBySession[s.sessionId] === "in_progress",
+                  )
+                }
+              />
+            )
+          }
+          toolbar={
+            <ComposerToolbar
+              server={activeServer}
+              harness={harness}
+              onHarnessChange={setHarness}
+              models={models}
+              modelId={modelId}
+              effort={effort}
+              fast={fast}
+              onFastChange={setFast}
+              fastNote={fastNote}
+              onModelChange={handleModelChange}
+              onRefreshModels={refreshModels}
+              onReloadModels={reloadModels}
+              onSeedProvider={seedFxModels}
+              loadingModels={loadingModels}
+              permissionMode={permissionMode}
+              onPermissionModeChange={setPermissionMode}
+              projects={spaceProjects}
+              projectPath={projectPath}
+              onSelectProject={canvasOpen ? changeCanvasProject : handleSelectProject}
+              onAttachProject={(server, list) => handleAttachProject(server, list, space)}
+              branches={branches}
+              branch={branch}
+              onSelectBranch={handleSelectBranch}
+              onOpenBranches={refreshBranches}
+              pendingBranch={pendingBranch}
+              onConfirmBranchSwitch={(stash) =>
+                pendingBranch && runCheckout(pendingBranch, stash)
+              }
+              onCancelBranchSwitch={() => setPendingBranch(null)}
+              useWorktree={useWorktree}
+              onToggleWorktree={() => setUseWorktree((v) => !v)}
+              onMentionPage={pagesEnabled ? () => setPagePickerOpen(true) : undefined}
+              onAttach={() => void pickAttachments(attachmentKey(composerKey, composerCwd))}
+              contextUsage={contextUsage}
+              sessionId={selectedSessionId}
+              isNewSession={!selectedSessionId}
+              busy={busy}
+              modelLast={!shownSession && !canvasOpen}
+            />
+          }
+        />
+  );
+
   return (
     <TooltipProvider>
     <DiffWorkerPool pair={codeThemePair}>
@@ -3041,8 +3272,9 @@ function App() {
       rail={rail}
       sidebarMode={sidebarMode}
       onPeekHover={hoverPeek}
-      page={pagesEnabled && (
-        <MountOnce when={spacesOpen || spacesPeek}>
+      page={<>
+        <div className={cn("min-h-0 min-w-0 flex-1", spacesOpen ? "flex" : "hidden")}>
+        {pagesEnabled && <MountOnce when={spacesOpen || spacesPeek}>
           <SpacesView active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest} createSerial={pageCreateSerial}
             sidebarCollapsed={collapsed} onExpandSidebar={() => setCollapsed(false)}
             peek={spacesPeek && spacesPeeks} onPeekHover={hoverSpacesPeek}
@@ -3050,9 +3282,34 @@ function App() {
             onDockedWidth={setSpacesDrawn} closeTabRef={spaceTabCloser}
             visibleProjects={space ? spaceProjects.map((p) => p.path) : null}
             onClose={() => setSpacesOpen(false)} />
-        </MountOnce>
-      )}
-      pageOpen={spacesOpen}
+        </MountOnce>}
+        </div>
+        <div className={cn("min-h-0 min-w-0 flex-1", canvasOpen ? "flex" : "hidden")}>
+        {canvasEnabled && <MountOnce when={canvasOpen}>
+          <CanvasView controlsRef={canvasControls} active={canvasOpen && !settingsOpen} projects={spaceProjects} projectPath={canvasPath}
+            onProjectChange={changeCanvasProject} sessions={sessionIndexItems.filter((s) => s.projectPath === canvasPath && !s.archived && !s.worktreeRemoved)}
+            sessionId={selectedSessionId} onSessionChange={(id) => void selectAndLeaveCrew(id)} onNewSession={() => newCanvasSession(canvasPath)}
+            panelTab={canvasPanelTab} onPanelTabChange={setCanvasPanelTab} chatReady={canvasChatReady}
+            chat={canvasOpen && canvasChatReady && canvasPanelTab === "chat" ? <>
+              <div className="min-h-0 flex-1"><Chat key={selectedSessionId ?? "new"} {...paneState(selectedSessionId ?? "")} {...paneChat}
+                onOpenSession={(id) => goToSession(() => void selectAndLeaveCrew(id))}
+                onOpenSubagent={(id) => goToSession(() => openSubagent(id))}
+                onOpenSubagentPanel={() => goToSession(() => showPanel("more"))}
+                onOpenPlan={() => goToSession(() => showPanel("plan"))}
+                crowded rail={false} active={!settingsOpen} /></div>
+              <div className="shrink-0">{composer}</div>
+            </> : null}
+            projectPreview={canvasOpen && canvasChatReady && selectedSession ? <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex justify-end border-b border-hairline p-2"><PreviewControl sessionId={selectedSession.sessionId} cwd={selectedSession.cwd}
+                disabled={selectedSession.archived || selectedSession.worktreeRemoved}
+                onOpen={async (id, url) => { await openPreviewInBrowser(id, url); }} /></div>
+              <BrowserPane sessionId={selectedSession.sessionId} active={!settingsOpen && canvasPanelTab === "preview"} mode="panel" />
+            </div> : <p className="p-4 text-sm text-muted-foreground">Start a project session to run its preview.</p>}
+          />
+        </MountOnce>}
+        </div>
+      </>}
+      pageOpen={spacesOpen || canvasOpen}
       // The issues page fills the column, so the centred empty-composer state
       // is wrong there even with no session selected.
       centered={!shownSession && !issuesOpen && viewTab === "chat"}
@@ -3066,7 +3323,7 @@ function App() {
         />
       }
       panelLeft={panelSide === "left"}
-      panelOpen={issuesOpen ? !!pickedIssue : panelShown}
+      panelOpen={!canvasOpen && (issuesOpen ? !!pickedIssue : panelShown)}
       summaryLayoutRef={summary.ref}
       summaryDocked={summary.docks && !panelShown}
       summary={summary.mode === "pinned" && !issuesOpen && viewTab === "chat" ? summaryCard : null}
@@ -3098,7 +3355,7 @@ function App() {
           // Cleared while the page is up. The column is showing issues, so a
           // lit row would name a session that is nowhere on screen — and the
           // selection itself is kept, which is what makes coming back free.
-          selectedSessionId={issuesOpen || spacesOpen ? null : selectedSessionId}
+          selectedSessionId={issuesOpen || spacesOpen || canvasOpen ? null : selectedSessionId}
           collapsed={false}
           floating={sidebarMode !== "docked"}
           // The sidebar is the reader leaving the crew, and it has to say so
@@ -3178,7 +3435,7 @@ function App() {
 
           {/* A hidden session has no sidebar row, so this is the way back to
               the crew it sits in. */}
-          {!issuesOpen && !spacesOpen && shownSession && hiddenParent && (
+          {!issuesOpen && !spacesOpen && !canvasOpen && shownSession && hiddenParent && (
             <button
               type="button"
               onClick={() =>
@@ -3191,7 +3448,7 @@ function App() {
           )}
           {/* Keep each strip's local state across page switches; hidden strips release their shortcuts. */}
           <ViewTabs
-            active={!issuesOpen && !spacesOpen && !settingsOpen}
+            active={!issuesOpen && !spacesOpen && !canvasOpen && !settingsOpen}
             sessionId={browserSessionId}
             title={viewTitle}
             repoTabs={!!shownSession}
@@ -3219,10 +3476,10 @@ function App() {
               onClose={(id) => spaceTabCloser.current(id)}
               alignX={spacesDrawn ? RAIL_W + spacesDrawn + TABS_PAST_SEPARATOR : 0} />
           )}
-          <IssueTabs state={issueTabs} visible={issuesOpen && !spacesOpen && !settingsOpen}
+          <IssueTabs state={issueTabs} visible={issuesOpen && !spacesOpen && !canvasOpen && !settingsOpen}
             alignX={sidebarDrawn ? RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR : 0} />
 
-          {spacesOpen ? null : issuesOpen
+          {canvasOpen ? <span className="mr-auto px-2 text-sm font-medium">Canvas</span> : spacesOpen ? null : issuesOpen
             ? (
                 <>
                   {activeIssueTab.kind === "issue" && (
@@ -3442,185 +3699,7 @@ function App() {
           </RightPanel>
         ) : null
       }
-      footer={
-        // Only under the transcript it writes into. The other views are not
-        // conversations, and a composer under them would send into a session
-        // the reader can't see. Safe to unmount: the draft and the attachment
-        // tray are module-level stores precisely because the composer already
-        // unmounts crossing the empty state.
-        issuesOpen || viewTab !== "chat" ? null : (
-        <ChatInput
-          placeholder={!selectedSessionId && pendingIssue ? "Describe an issue. @files. /skills." : undefined}
-          onSend={(message, attachments) => void sendFromComposer(message, attachments)}
-          commands={slashCommands}
-          commandsLoading={slashCommandsLoading}
-          mcpServers={mcpServers}
-          cwd={composerCwd}
-          onStop={handleInterrupt}
-          onCancelQueued={handleCancelQueued}
-          onCancelRecording={() => {
-            if (recorder.state !== "recording") return false;
-            void recorder.cancel();
-            return true;
-          }}
-          dictating={recorder.state !== "idle"}
-          dictation={
-            activeServer === LOCAL && <DictateControl
-              state={recorder.state}
-              level={recorder.level}
-              savedAudio={recorder.savedAudio}
-              onStart={() => void recorder.start()}
-              onStop={() => void recorder.stop()}
-              onCancel={() => void recorder.cancel()}
-              onRetry={() => void recorder.retry()}
-              // Reveals rather than opens: the reader asking for the file wants
-              // to keep it, play it, or send it on, and Finder is the one place
-              // all three are reachable. Same reasoning `pickFileOpener` gives.
-              onReveal={() =>
-                recorder.savedAudio && void revealItemInDir(recorder.savedAudio)
-              }
-            />
-          }
-          queuedCount={queuedMessages.length}
-          busy={busy}
-          sessionId={composerKey}
-          isNewTask={!shownSession}
-          target={composerTarget}
-          issuesConnected={issuesConnected}
-          issueTrackers={integrations.connected}
-          sessions={composerSessions}
-          modelTakesImages={modelTakesImages}
-          error={error}
-          onDismissError={() => setError(null)}
-          archived={selectedSession?.archived ?? false}
-          onUnarchive={() =>
-            selectedSessionId &&
-            void handleSetSessionFlags(selectedSessionId, { archived: false })
-          }
-          onRemoveWorktree={
-            selectedSessionId && selectedSession?.worktreeName
-              ? () =>
-                  void askAboutWorktree(
-                    selectedSessionId,
-                    selectedSession.worktreeName as string,
-                    selectedSession.title,
-                    "dialog",
-                  )
-              : undefined
-          }
-          handoff={
-            <HandoffRow
-              actions={handoffActions(workStatus, sessionHasPr, !!selectedSessionId, handoffConfig)}
-              // Straight out as a prompt, exactly as if it had been typed. A
-              // turn already running queues it, like any other send.
-              onSend={(prompt) => void handleSendMsg(prompt)}
-              disabled={!selectedSessionId || !!sendHeld}
-            />
-          }
-          // Only on a new task. An agent is fixed at creation, so a live
-          // session cannot be pointed at one that is missing — and a session
-          // that already exists has a CLI that already ran.
-          notice={
-            offlineServer ? (
-              <ServerOfflineNotice server={offlineServer} />
-            ) : !selectedSessionId && missingAgent ? (
-              <AgentMissingNotice agent={missingAgent} />
-            ) : loggedOutAgent && authTurn && selectedSession ? (
-              <LoginExpiredNotice
-                agent={loggedOutAgent}
-                server={activeServer}
-                cwd={selectedSession.cwd}
-                onHandled={() => setLoginHandled(authTurn)}
-              />
-            ) : null
-          }
-          pending={
-            <>
-            {selectedSessionId && <RecoveryNotice key={`${activeServer}:${selectedSessionId}`} sessionId={selectedSessionId} server={activeServer} busy={busy} />}
-            {selectedItem?.continueAt && (
-              <AutoContinueNotice
-                at={selectedItem.continueAt}
-                off={selectedItem.continueOff}
-                onToggle={(on) =>
-                  void invoke("set_auto_continue", { sessionId: selectedItem.sessionId, on }).catch(
-                    setError,
-                  )
-                }
-              />
-            )}
-            </>
-          }
-          held={sendHeld}
-          draftHint={
-            openDraftId ? (
-              <span className={cn("transition-colors duration-300", draftNudge && "text-foreground")}>
-                Changes auto-saved
-              </span>
-            ) : (
-              draftChord && `${formatChords([draftChord])[0].join("")} to save as draft`
-            )
-          }
-          agentUpdate={
-            !selectedSessionId && (
-              <AgentUpdateLine
-                harness={harness}
-                // pi and fx overwrite files a live child reads; the other three
-                // install beside it, so only these two wait on a running turn.
-                waiting={
-                  (harness === "pi" || harness === "fx") &&
-                  sessionIndexItems.some(
-                    (s) =>
-                      s.harness === harness && statusBySession[s.sessionId] === "in_progress",
-                  )
-                }
-              />
-            )
-          }
-          toolbar={
-            <ComposerToolbar
-              server={activeServer}
-              harness={harness}
-              onHarnessChange={setHarness}
-              models={models}
-              modelId={modelId}
-              effort={effort}
-              fast={fast}
-              onFastChange={setFast}
-              fastNote={fastNote}
-              onModelChange={handleModelChange}
-              onRefreshModels={refreshModels}
-              onReloadModels={reloadModels}
-              onSeedProvider={seedFxModels}
-              loadingModels={loadingModels}
-              permissionMode={permissionMode}
-              onPermissionModeChange={setPermissionMode}
-              projects={spaceProjects}
-              projectPath={projectPath}
-              onSelectProject={handleSelectProject}
-              onAttachProject={(server, list) => handleAttachProject(server, list, space)}
-              branches={branches}
-              branch={branch}
-              onSelectBranch={handleSelectBranch}
-              onOpenBranches={refreshBranches}
-              pendingBranch={pendingBranch}
-              onConfirmBranchSwitch={(stash) =>
-                pendingBranch && runCheckout(pendingBranch, stash)
-              }
-              onCancelBranchSwitch={() => setPendingBranch(null)}
-              useWorktree={useWorktree}
-              onToggleWorktree={() => setUseWorktree((v) => !v)}
-              onMentionPage={pagesEnabled ? () => setPagePickerOpen(true) : undefined}
-              onAttach={() => void pickAttachments(attachmentKey(composerKey, composerCwd))}
-              contextUsage={contextUsage}
-              sessionId={selectedSessionId}
-              isNewSession={!selectedSessionId}
-              busy={busy}
-              modelLast={!shownSession}
-            />
-          }
-        />
-        )
-      }
+      footer={!canvasOpen && !issuesOpen && viewTab === "chat" ? composer : null}
     >
       {/* Hidden rather than unmounted, like everything else in this column:
           the list, its filters and its scroll survive a trip into a session and
@@ -3672,7 +3751,7 @@ function App() {
       {/* Hidden rather than unmounted, the same bargain the right panel's tabs
           make: the transcript keeps its scroll position and its highlighted
           diffs, and the repo view keeps its selection and its reads. */}
-      <TabBody active={!issuesOpen && viewTab === "chat"}>
+      <TabBody active={!issuesOpen && !canvasOpen && viewTab === "chat"}>
       {mainGroup ? (
         <SplitView
           columns={paneColumns}
@@ -3682,7 +3761,7 @@ function App() {
           onFocus={(id) => void handleSelectSessionIndexItem(id)}
           onClose={closeSessionPane}
           onDrop={dropSession}
-          active={!issuesOpen && viewTab === "chat"}
+          active={!issuesOpen && !canvasOpen && viewTab === "chat"}
           chat={paneChat}
         />
       ) : (
@@ -3728,7 +3807,7 @@ function App() {
             // Its own chords only while the composer is pointed here — the same
             // gate a split pane takes, since Stop and scroll-to-bottom act on
             // the session being written to.
-            active={!issuesOpen && viewTab === "chat" && mainSessionId === selectedSessionId}
+            active={!issuesOpen && !spacesOpen && !canvasOpen && viewTab === "chat" && mainSessionId === selectedSessionId}
           />
         )}
       </div>

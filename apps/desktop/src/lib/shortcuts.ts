@@ -97,6 +97,10 @@ export const SHORTCUTS = [
   { id: "tab.reopen", label: "Reopen closed tab", group: "Panels and views", chord: k("t", { shift: true }) },
   { id: "chat.bottom", label: "Scroll chat to bottom", group: "Panels and views", chord: k("ArrowDown") },
   { id: "spaces.open", label: "Open Spaces", group: "Panels and views", chord: k("p") },
+  { id: "canvas.open", label: "Open Canvas", group: "Panels and views", chord: k("c", { alt: true }) },
+  { id: "canvas.fitAll", label: "Fit all frames", group: "Panels and views", chord: k("!", { meta: false, shift: true, code: "Digit1" }) },
+  { id: "canvas.fitSelection", label: "Fit selected frames or layers", group: "Panels and views", chord: k("@", { meta: false, shift: true, code: "Digit2" }) },
+  { id: "canvas.actualSize", label: "Canvas at 100%", group: "Panels and views", chord: k(")", { meta: false, shift: true, code: "Digit0" }) },
   { id: "page.new", label: "New Page", group: "Panels and views", chord: k("p", { shift: true }) },
   { id: "issues.open", label: "Open issues", group: "Panels and views", chord: k("i") },
   { id: "issues.search", label: "Search issues", group: "Panels and views", chord: k("f", { shift: true }) },
@@ -152,6 +156,10 @@ export const PREVIOUS_DEFAULTS: Partial<Record<ShortcutId, Chord | null>> = {
   // A new Page took ⌘⇧P, the chord beside ⌘P that opens Spaces.
   "project.next": k("p", { shift: true }),
   "page.new": null,
+  "canvas.open": null,
+  "canvas.fitAll": null,
+  "canvas.fitSelection": null,
+  "canvas.actualSize": null,
 };
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
