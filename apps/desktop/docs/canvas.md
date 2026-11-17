@@ -1,6 +1,6 @@
 # Canvas storage
 
-CBN-80 supplies the file format and server API. CBN-81 adds the Canvas rail page and isolated frame renderer. HTML import/export and agent commands belong to CBN-82. Stored designs are data; the storage module does not render HTML, execute scripts or modify the project's source.
+CBN-80 supplies the file format and server API. CBN-81 adds the Canvas rail page and isolated frame renderer. CBN-82 adds agent commands, HTML import, rendered evidence and turn undo. Stored designs are data; Canvas never modifies the project's source automatically.
 
 ## Canvas page
 
@@ -50,7 +50,7 @@ Limits: 8 MiB of Canvas JSON, 1,000 frames, 100,000 layers, 48 levels of layer n
 
 All mutations take the process mutex and `lock_across_processes("canvas")`. Failing to acquire either lock refuses the write. Writers re-read the manifest and compare the expected revision while holding both locks. Immutable frame content and a complete snapshot land before the atomic manifest replacement. For an existing file, the manifest is the commit point; an orphan snapshot left by a failed save is never listed as history.
 
-Each committed change records its ID, before/after revisions and optional session, turn and label. Content, layout, tokens and image references are all in the snapshot. This is independent of Git. History lists the latest 100 committed revisions; older ones remain addressable. Restore publishes a new revision with historical design content/layout/assets and the current camera. Property-wise turn undo that preserves later manual edits belongs to CBN-82/86, not this full-version restore.
+Each committed change records its ID, before/after revisions and optional session, turn and label. Content, layout, tokens and image references are all in the snapshot. This is independent of Git. History lists the latest 100 committed revisions; older ones remain addressable. Restore publishes a new revision with historical design content/layout/assets and the current camera. Turn undo is separate from this full-version restore.
 
 Images stay available to historical revisions until the file is permanently deleted. Upload chunks have no visible revision; finalization publishes the image metadata with a guarded revision. Chunk offsets support exact retries and reject conflicting bytes. Finalized image IDs cannot be overwritten.
 
@@ -68,7 +68,31 @@ Recovery uses the last confirmed checkpoint, validates its content/assets, and p
 
 `reconcile_canvas` validates the whole file and expected revision under the same locks as normal saves. A valid edit publishes one revision; its exact-byte receipt is saved with that revision, making reconciliation idempotent across restarts. Invalid or partially written JSON and stale revisions return useful problems with the last saved canvas. They never alter canonical content. After another write advances the revision, prepare a fresh inbox and rebase the intended edit onto it.
 
-Raw writes to `canvas.json`, `history/`, `content/` or `assets/` are unsupported. Direct content editing is confined to the prepared inbox. HTML parsing and targeted node commands will sit above this storage contract in CBN-82.
+Raw writes to `canvas.json`, `history/`, `content/` or `assets/` are unsupported. Direct content editing is confined to the prepared inbox. HTML import and targeted node commands use this same guarded storage contract.
+
+## Agent commands and turn context
+
+`carbon canvas` requires the calling session (`CARBON_SESSION_ID`, or `--session` from an external terminal). An agent shell cannot override its calling session with `--session`. Ownership comes from the session's attached project, never the shell's cwd or whatever project the user opens later. Files in linked worktrees share the existing project key; subprojects remain distinct. All agent reads, writes and image requests check membership. Unreadable manifests whose ownership cannot be established remain visible through the app's storage listing, not the agent's project-scoped list.
+
+`ls` lists canvas files; `new <name>` creates one. `context` returns the turn ID, captured canvas/content revision, frame geometry, selected frame/layer IDs and measured bounds (null until measured), initial preview target and returned screenshot evidence. `tree [node]` reads a compact hierarchy. `get <node>` returns HTML, frame CSS and tokens; `--styles` adds measured bounds and CSS from the isolated renderer. Frame lists include stable IDs, dimensions and immutable content hashes.
+
+The composer copies its visible Canvas context synchronously when Send is pressed, before uploading attachments. The optional `canvasContext` argument of `send_msg` carries that copy. The request's task-local scope follows the send's awaits; `QueuedMessage.canvasContext` retains it across a queued delivery. The first delivered prompt fixes the canvas and selection for the turn. Steering cannot replace them. An explicit `--canvas <id>` addresses another file in the same project. No captured canvas means choose a file explicitly or create one; commands do not guess from the latest selected tab. Existing iOS callers omit this optional send argument and ignore the additive queued-message field.
+
+`write <parent>` appends static HTML from stdin as editable nodes. Each call accepts at most 512 KiB. Scripts, embedded pages, custom elements, executable/navigation attributes and external resource references are refused. Frame-local `<style>` rules and inline styles are retained; file-owned images use `carbon-canvas-asset://` references. `set-style <node> '<JSON>'` uses kebab-case CSS property names; null removes one. `set-text <node> <text>` preserves a text layer's ID and refuses to discard nested element layers. `mv <node> <parent> [--index N]`, `dup <node>` and `rm <node>` retain or replace identities deliberately. Cross-frame moves of layers depending on a frame stylesheet are refused rather than changing unrelated destination styles.
+
+`frame ls`, `frame new`, `frame arrange`, `frame resize`, `frame rename`, `frame dup`, `frame rm`, `frame open` and `frame shot` expose explicit frame operations. New and duplicated frames go beyond existing frames with an 80px gap. Copies receive fresh layer IDs and keep file-local assets/tokens; the original remains unchanged. All writes require `--revision` and publish through the shared storage locks. A conflict requires a fresh read and an intentional rebase; there is no force flag.
+
+`open <frame-or-layer>` opens the owning frame in the session's ordinary browser and reveals it in the selected session's Canvas right panel. Existing browser commands inspect that preview. A document capability serves only the current sanitized frame, has no general server token and expires after two hours. Preview requests recheck project ownership, and changes reload only a browser still showing that preview. Navigation to another page is respected.
+
+`shot <frame-or-layer>` runs the same `canvasRenderer.js` sanitizer and viewport/style bridge used by the board, in a private headless tab. It never borrows the session's browsing target. PNG bytes land under the owning session's attachments. A JSON record beside the PNG identifies the exact canvas revision, frame/layer, content hash and timestamp. The turn's context also lists these returned captures. The system prompts and embedded Carbon skill require reading each changed frame's screenshot. Returned evidence proves a capture was returned, not that an agent reviewed it.
+
+Touched frames show an Agent editing label until the main turn completes or is interrupted. `canvas_editors` reconstructs live indicators on reconnect; a server restart clears abandoned indicators. Turn context/evidence metadata lives under the owning server's `canvas-turns`, while designs and their history remain in shared config storage.
+
+## Turn undo
+
+Canvas Undo/Redo buttons, Cmd/Ctrl-Z, Cmd/Ctrl-Shift-Z and `carbon canvas undo` / `redo` use the same guarded storage operation. The native editing keys stay with text inputs and the composer while those have focus. An agent turn groups all its design mutations into one step; manual edits form separate steps. `undo --turn <turn-id>` addresses a particular turn.
+
+The last 100 steps store immutable revision references in the committed snapshot. Undo compares identity-keyed properties against each mutation's saved result, restores only matching values, preserves later changes and keeps the current camera. Style properties, text, frame geometry and layer parentage can be restored independently. A new/removed subtree is restored only when that is safe. Conflicts are reported as property paths; a result that would orphan layers is rejected without publishing. Redo reapplies only the changes undo actually restored. New design edits clear redo. File duplication starts a separate undo history.
 
 ## Server API and events
 

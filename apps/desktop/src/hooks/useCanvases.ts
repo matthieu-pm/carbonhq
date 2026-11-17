@@ -1,6 +1,7 @@
+import { flattenNodes } from "@/lib/canvasBoard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
-import type { Canvas, CanvasEdit, CanvasList, CanvasProblem, CanvasReconciliation, CanvasSummary } from "@/types/events";
+import type { Canvas, CanvasEdit, CanvasList, CanvasProblem, CanvasReconciliation, CanvasSummary, CanvasUndoState } from "@/types/events";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 
 /// Notifications invalidate durable state; a stale read never wins a project or file switch.
@@ -10,6 +11,8 @@ export function useCanvases(projectPath: string | null, active: boolean) {
   const [canvas, setCanvas] = useState<Canvas | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [undoState, setUndoState] = useState<CanvasUndoState>({ canUndo: false, canRedo: false, undoLabel: null, redoLabel: null });
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const owner = projectPath ? serverOfPath(projectPath) : LOCAL;
   const scope = useRef(`canvas-page-${crypto.randomUUID()}`).current;
@@ -73,6 +76,7 @@ export function useCanvases(projectPath: string | null, active: boolean) {
   }, [active, owner, projectPath, read, refresh, scope]);
 
   useEffect(() => {
+    setNotice(null);
     setCanvas((previous) => previous?.id === fileId ? previous : null);
     readSeq.current++;
   }, [fileId, projectPath, owner]);
@@ -92,7 +96,7 @@ export function useCanvases(projectPath: string | null, active: boolean) {
 
   const mutate = async (operation: () => Promise<Canvas>): Promise<Canvas | null> => {
     if (writing.current) return null;
-    writing.current = true; setBusy(true); setError(null);
+    writing.current = true; setBusy(true); setError(null); setNotice(null);
     const path = projectPath;
     const selected = fileId;
     try {
@@ -114,9 +118,32 @@ export function useCanvases(projectPath: string | null, active: boolean) {
     if (!doc || doc.id !== fileId) return Promise.resolve(null);
     return mutate(() => invoke<Canvas>("update_canvas", { id: doc.id, revision: doc.revision, edit: patch }, owner));
   };
+  useEffect(() => {
+    if (!active || !canvas) { setUndoState({ canUndo: false, canRedo: false, undoLabel: null, redoLabel: null }); return; }
+    let stopped = false;
+    void invoke<CanvasUndoState>("canvas_undo_state", { id: canvas.id }, owner).then((state) => { if (!stopped) setUndoState(state); }).catch((e) => { if (!stopped) setError(String(e)); });
+    return () => { stopped = true; };
+  }, [active, canvas?.id, canvas?.revision, owner]);
+  const undo = (redo = false) => {
+    const doc = current.current.canvas;
+    if (!doc || doc.id !== fileId) return Promise.resolve(null);
+    return mutate(async () => {
+      const result = await invoke<{ canvas: Canvas; conflicts: string[] }>("canvas_undo", { id: doc.id, revision: doc.revision, redo }, owner);
+      if (result.conflicts.length && current.current.fileId === doc.id) {
+        const labels = result.conflicts.map((path) => {
+          const parts = path.split("/");
+          const frame = result.canvas.frames.find((frame) => frame.id === parts[2]);
+          const layer = parts[3] === "layers" && frame ? flattenNodes(frame.content.nodes).find((n) => n.node.id === parts[4])?.node.name : null;
+          return [frame?.name ?? "Canvas", layer, parts.at(-1) === parts[2] ? "content" : parts.at(-1)].filter(Boolean).join(" · ");
+        });
+        setNotice(`Kept later changes: ${[...new Set(labels)].join(", ")}.`);
+      }
+      return result.canvas;
+    });
+  };
   const reload = async () => {
     await refresh();
     if (current.current.projectPath === projectPath && current.current.active && current.current.fileId) await read(current.current.fileId, true);
   };
-  return { files: loadedProject.current === projectPath ? files : [], fileId, select: setFileId, canvas: canvas?.id === fileId && loadedProject.current === projectPath ? canvas : null, loading, busy, error, refresh: reload, create, edit, owner };
+  return { files: loadedProject.current === projectPath ? files : [], fileId, select: setFileId, canvas: canvas?.id === fileId && loadedProject.current === projectPath ? canvas : null, loading, busy, error: notice ?? error, refresh: reload, create, edit, undo, undoState, owner };
 }

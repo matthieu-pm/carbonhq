@@ -23,11 +23,11 @@
 //! ```
 
 use crate::{
+    events::ApprovalPolicy,
     files, git,
     github::{self, MergeMethod},
     harness::Harness,
     issues::{self, IssuePriority, IssueQuery, IssueTracker},
-    events::ApprovalPolicy,
     models::{Effort, ModelId},
     sink::Sink,
     store,
@@ -594,7 +594,12 @@ pub async fn listen(
         let (sink, hub, token, tunnel_file) = (sink.clone(), hub.clone(), token.clone(), tunnel_file.clone());
         connections.spawn(async move {
             let served = match request_line(&stream).await {
-                Some(line) if line.starts_with("GET /preview-tunnel") => crate::preview_tunnel::accept(stream, &token).await,
+                Some(line) if line.starts_with("GET /preview-tunnel") => {
+                    crate::preview_tunnel::accept(stream, &token).await
+                }
+                Some(line) if line.starts_with("GET /canvas-preview/") => {
+                    canvas_preview(stream).await
+                }
                 Some(line) if line.starts_with("GET /file?") => file(stream, &token).await,
                 Some(line) if line.starts_with("POST /upload?") => upload(stream, &token).await,
                 Some(_) => connection(stream, sink, hub, &token, &tunnel_file, hosts).await,
@@ -787,12 +792,16 @@ struct Live {
     running: std::collections::HashSet<String>,
     queued: HashMap<String, Value>,
     previews: HashMap<String, Value>,
+    canvas_editors: Vec<Value>,
 }
 
 impl Live {
     fn note(&mut self, event: &str, payload: &Value) {
         let session = payload["sessionId"].as_str().unwrap_or_default().to_string();
         match (event, payload["payload"]["type"].as_str()) {
+            ("canvas_editors", _) => {
+                self.canvas_editors = payload.as_array().cloned().unwrap_or_default();
+            }
             ("preview_changed", _) => {
                 self.previews.insert(session, payload.clone());
             }
@@ -847,7 +856,7 @@ impl Live {
         let tasks: Vec<&Value> = self.tasks.values().collect();
         let queued: Vec<&Value> = self.queued.values().collect();
         let previews: Vec<&Value> = self.previews.values().collect();
-        json!({ "asks": self.asks, "tasks": tasks, "queued": queued, "previews": previews, "secrets": crate::secrets::snapshot() })
+        json!({ "asks": self.asks, "tasks": tasks, "queued": queued, "previews": previews, "canvasEditors": self.canvas_editors, "secrets": crate::secrets::snapshot() })
     }
 }
 
@@ -1442,11 +1451,11 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
             harness: Harness, model: ModelId, effort: Option<Effort>,
             permission_mode: ApprovalPolicy, fast: bool, cwd: String,
             branch: Option<String>, use_worktree: bool, worktree_name: Option<String>,
-            base_ref: Option<String>, is_new_session: bool,
+            base_ref: Option<String>, is_new_session: bool, canvas_context: Option<crate::canvas::CanvasFocus>,
         ) => crate::send_msg(
             &session_id, &prompt, attachment_paths, harness, model, effort,
             permission_mode, fast, &cwd, branch.as_deref(), use_worktree,
-            worktree_name.as_deref(), base_ref.as_deref(), is_new_session, sink,
+            worktree_name.as_deref(), base_ref.as_deref(), is_new_session, canvas_context, sink,
         ).await;
         interrupt_session(session_id: String) => crate::interrupt_session(&session_id, sink).await;
         list_work_recovery(session_id: Option<String>) => crate::recovery::list_work_recovery(session_id).await;
@@ -1601,6 +1610,9 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         reconcile_canvas(id: String) => crate::canvas::reconcile_canvas(sink.clone(), id).await;
         write_canvas_asset(id: String, revision: u64, upload: crate::canvas::CanvasAssetUpload, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::write_canvas_asset(sink.clone(), id, revision, upload, author).await;
         read_canvas_asset(id: String, asset_id: String, version: Option<u64>) => crate::canvas::read_canvas_asset(id, asset_id, version).await;
+        canvas_editors() => ok(crate::canvas::canvas_editors().await);
+        canvas_undo_state(id: String) => crate::canvas::canvas_undo_state(id).await;
+        canvas_undo(id: String, revision: u64, redo: bool) => Box::pin(crate::canvas::canvas_undo(sink.clone(), id, revision, redo)).await;
         watch_canvases(scope: String, ids: Vec<String>) => crate::canvas::watch_canvases(scope, ids).await;
         list_pages(query: Option<String>, project_path: Option<String>, trashed: Option<bool>) => crate::pages::list_pages(query, project_path, trashed).await;
         read_page(id: String) => crate::pages::read_page(id).await;
@@ -2066,4 +2078,22 @@ mod tests {
         let err = dispatch("stop_task", json!({ "sessionId": 1 }), sink).await.unwrap_err();
         assert!(err.as_str().unwrap().starts_with("invalid arguments to stop_task"));
     }
+}
+
+/// A preview URL carries a document capability instead of the server's general credential.
+async fn canvas_preview(stream: TcpStream) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let (head, reader) = read_head(stream).await?;
+    let mut stream = reader.into_inner().into_inner();
+    let key = head.target.strip_prefix("/canvas-preview/").unwrap_or("");
+    let body = crate::canvas::preview_document(key).await;
+    let (status, body) = match body {
+        Some(body) => ("200 OK", body),
+        None => ("404 Not Found", String::new()),
+    };
+    let header = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Security-Policy: sandbox allow-scripts\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+    stream.write_all(header.as_bytes()).await?;
+    stream.write_all(body.as_bytes()).await?;
+    stream.shutdown().await.ok();
+    Ok(())
 }

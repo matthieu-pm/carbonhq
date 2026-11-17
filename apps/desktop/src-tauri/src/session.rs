@@ -32,6 +32,7 @@ use uuid::Uuid;
 // `Harness` is defined in `crate::harness`; re-exported so existing
 // `crate::session::Harness` imports keep working.
 pub use crate::harness::Harness;
+use crate::sink::Sink;
 use std::{
     collections::HashMap,
     sync::{
@@ -39,7 +40,6 @@ use std::{
         Arc,
     },
 };
-use crate::sink::Sink;
 use tokio::{
     io::AsyncWriteExt,
     process::{Child, ChildStdin},
@@ -95,6 +95,8 @@ pub struct QueuedMessage {
     /// a child spawned to ask, which has no place inside a flush.
     #[serde(default)]
     pub mcp_servers: Vec<String>,
+    #[serde(default)]
+    pub canvas_context: Option<crate::canvas::CanvasFocus>,
 }
 
 /// Held prompts, oldest first. Shared with the stdout task, which is where the
@@ -807,12 +809,13 @@ impl SessionManager {
         claim_continue: Option<&str>,
         app: &Sink,
     ) -> Result<SendOutcome> {
-        self.send_msg_inner(
+        // Forwarded sends add a dispatch layer; this future must not fill its caller's stack.
+        Box::pin(self.send_msg_inner(
             session_id, prompt, attachment_paths, issue_ids, harness, model, effort,
             permission_mode, fast, cwd, branch, use_worktree, worktree_name, base_ref,
             is_new_session, parent_session_id, hidden, title, from, claim_continue, app,
             None, None,
-        ).await
+        )).await
     }
 
     /// A durable dispatch already owns the recipient's slot before reading its recorded pick.
@@ -2840,6 +2843,7 @@ impl Session {
             from,
             issues: issues.to_vec(),
             mcp_servers: mcp_servers.to_vec(),
+            canvas_context: crate::canvas::request_focus(),
         };
         self.queued.lock().await.push(message.clone());
         publish_queue(&self.id, &self.queued, app).await;
@@ -3632,6 +3636,11 @@ async fn deliver_prompt(
     let text = prepared.text;
     let sent = crate::mcp_mentions::with_hint(&text, mcp_servers);
     let sent = crate::issues::drafting::with_context(session_id, &sent).await.map_err(anyhow::Error::msg)?;
+    // Storage futures stay on the heap rather than enlarging the harness send stack.
+    let canvas_prompt = Box::pin(crate::canvas::prepare_prompt(session_id))
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let sent = format!("{sent}{}", canvas_prompt.text);
 
     let sent = match dispatch.as_ref() {
         Some(dispatch) => format!("[Carbon delivery {}]\n{}", dispatch.message_id(), sent),
@@ -3691,15 +3700,27 @@ async fn deliver_prompt(
         }
     }
 
-    if let Some(dispatch) = dispatch.as_deref_mut() {
-        let thread_id = match transport {
-            Transport::Rpc(thread) => Some(thread.id.as_str()),
-            _ => None,
-        };
-        dispatch.publish_prompt(agent_event, thread_id, app).await?;
-    } else {
-        app.emit("agent_event", &agent_event)?;
-        append_session_event(session_id, agent_event).await?;
+    crate::canvas::commit_prompt(&canvas_prompt, app)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let published: Result<()> = async {
+        if let Some(dispatch) = dispatch.as_deref_mut() {
+            let thread_id = match transport {
+                Transport::Rpc(thread) => Some(thread.id.as_str()),
+                _ => None,
+            };
+            dispatch.publish_prompt(agent_event, thread_id, app).await?;
+        } else {
+            app.emit("agent_event", &agent_event)?;
+            append_session_event(session_id, agent_event).await?;
+        }
+
+        Ok(())
+    }
+    .await;
+    if let Err(error) = published {
+        crate::canvas::abort_prompt(&canvas_prompt, app).await;
+        return Err(error);
     }
 
     // Logged, not sent: the caller holds the text and opens the turn itself.
@@ -3768,6 +3789,9 @@ async fn deliver_prompt(
         write_line(stdin, &line).await?;
         Ok(true)
     }.await;
+    if submitted.is_err() {
+        crate::canvas::abort_prompt(&canvas_prompt, app).await;
+    }
     let runs = submitted?;
     Ok((sent, runs, interruption_id))
 }
@@ -3854,6 +3878,9 @@ async fn ingest_event(ctx: &Ingest<'_>, mut agent_event: AgentEvent, app: &Sink,
     // subagent's writes land after this, but its report-back turn closes
     // with its own, fresher snapshot.
     if let AgentEventPayload::TurnCompleted { ref mut head, .. } = agent_event.payload {
+        if agent_event.subagent.is_none() {
+            crate::canvas::finish_turn(ctx.session_id, app).await;
+        }
         *head = crate::git::snapshot_tree(ctx.session_cwd).await;
     }
 
@@ -4397,7 +4424,9 @@ async fn flush_one_per_turn(
             .and_then(|item| item.interruption).filter(|i| i.resumed_at.is_none()).map(|i| i.id);
         let mut texts = Vec::new();
         for message in batch {
-            match deliver_prompt(
+            match crate::canvas::with_focus(
+                message.canvas_context.clone(),
+                deliver_prompt(
                 session_id,
                 harness,
                 &message.text,
@@ -4414,6 +4443,7 @@ async fn flush_one_per_turn(
                 transport,
                 None,
                 app,
+                ),
             )
             .await
             {
@@ -4471,7 +4501,9 @@ async fn deliver_batch(
         // after it, so a snapshot taken here would cut the running turn's
         // range in two and credit it with only the work that came after this
         // prompt. `None` makes `changeRange` walk past it to the real prompt.
-        match deliver_prompt(
+        match crate::canvas::with_focus(
+            message.canvas_context.clone(),
+            deliver_prompt(
             session_id,
             harness,
             &message.text,
@@ -4488,6 +4520,7 @@ async fn deliver_batch(
             transport,
             None,
             app,
+        ),
         )
         .await
         {

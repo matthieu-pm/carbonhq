@@ -27,7 +27,7 @@ pub(super) struct Guard {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Head {
+pub(super) struct Head {
     format_version: u32,
     min_reader_version: u32,
     id: String,
@@ -212,7 +212,7 @@ impl Store {
     }
 
     /// A deletion tombstone remains authoritative even while directory cleanup is pending.
-    async fn head(&self, id: &str) -> Result<Head, String> {
+    pub(super) async fn head(&self, id: &str) -> Result<Head, String> {
         uuid(id)?;
         if fs::try_exists(self.root.join("deleted").join(format!("{id}.json")))
             .await
@@ -458,7 +458,7 @@ impl Store {
     }
 
     /// The caller holds both write locks; only the manifest rename publishes a revision.
-    async fn commit(
+    pub(super) async fn commit(
         &self,
         canvas: &Canvas,
         previous: Option<Head>,
@@ -628,6 +628,7 @@ impl Store {
         let previous = self.head(id).await?;
         let mut canvas = self.read(id).await?;
         check_revision(&canvas, revision)?;
+        let before = canvas.clone();
         if let Some(name) = edit.name {
             canvas.name = name;
         }
@@ -643,6 +644,7 @@ impl Store {
             canvas.camera = Some(camera);
         }
         advance(&mut canvas, author, None)?;
+        super::undo::record(&before, &mut canvas)?;
         self.commit(&canvas, Some(previous), None).await?;
         Ok(canvas)
     }
@@ -713,10 +715,11 @@ impl Store {
         let current = self.read(id).await?;
         check_revision(&current, revision)?;
         let mut restored = self.history(id, Some(version)).await?.remove(0);
-        restored.camera = current.camera;
-        restored.project_key = current.project_key;
+        restored.camera = current.camera.clone();
+        restored.project_key = current.project_key.clone();
         restored.revision = current.revision;
         advance(&mut restored, author, Some(version))?;
+        super::undo::record(&current, &mut restored)?;
         self.commit(&restored, Some(previous), None).await?;
         Ok(restored)
     }
@@ -727,6 +730,7 @@ impl Store {
         let mut copy = self.read(id).await?;
         check_revision(&copy, revision)?;
         copy.id = uuid::Uuid::now_v7().to_string();
+        copy.extra.remove("carbonUndo");
         copy.name = name;
         copy.revision = 1;
         copy.created = crate::events::now_rfc3339();
@@ -750,6 +754,7 @@ impl Store {
         let head = self.head(id).await?;
         let mut canvas = self.read(id).await?;
         check_revision(&canvas, revision)?;
+        let before = canvas.clone();
         let mut frame = canvas
             .frames
             .iter()
@@ -766,6 +771,7 @@ impl Store {
             + 80.0;
         canvas.frames.push(frame);
         advance(&mut canvas, author, None)?;
+        super::undo::record(&before, &mut canvas)?;
         self.commit(&canvas, Some(head), None).await?;
         Ok(canvas)
     }
@@ -1026,6 +1032,7 @@ impl Store {
             .ok_or("The edited frame no longer exists.")?;
         frame.content = edit.content;
         advance(&mut canvas, edit.author, None)?;
+        super::undo::record(current, &mut canvas)?;
         self.commit(&canvas, Some(head), Some((key, digest)))
             .await?;
         Ok(Some(canvas))

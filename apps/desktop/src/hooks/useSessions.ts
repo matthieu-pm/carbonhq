@@ -1,3 +1,4 @@
+import { captureCanvasFocus } from "@/lib/canvasContext";
 import { forgetSessionServer, invoke, listen, LOCAL, noteSession, qualify, serverOfPath, serverOfSession, type ServerId } from "@/lib/transport";
 import { mergeFrom, remoteServers, serverConnected, serverName, subscribeServers } from "@/lib/servers";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -852,6 +853,7 @@ const handleSendMsg = async (
   // The backend reads the recorded cwd on resume, so this only has to be right
   // for a new session.
   const cwd = isNewSession ? projectPath : existing?.cwd ?? projectPath;
+  const canvasContext = captureCanvasFocus(existing?.projectPath ?? projectPath);
 
   if (!cwd) {
     setError("Attach a project first.");
@@ -1006,6 +1008,7 @@ const handleSendMsg = async (
     const outcome = await invoke<SendOutcome>("send_msg", {
       sessionId,
       prompt: message,
+      canvasContext,
       attachmentPaths: sentPaths,
       harness,
       model: isAcp(harness) ? "" : modelId,

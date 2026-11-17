@@ -1,7 +1,8 @@
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { availableCanvasSessions, canvasSession, CANVAS_PANEL_TABS, type CanvasPanelTab } from "@/lib/canvasBoard";
-import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
+import type { CanvasPreviewTarget } from "@/lib/canvasContext";
+import { invoke, listen, LOCAL, serverOfPath, qualify } from "@/lib/transport";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { CircleDashed, ExternalLink, Plus } from "lucide-react";
 import PrStateIcon from "@/components/PrStateIcon";
@@ -589,11 +590,22 @@ function App() {
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [spacesOpen, setSpacesOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
+  const [canvasAgentTarget, setCanvasAgentTarget] = useState<CanvasPreviewTarget | null>(null);
   const canvasControls = useRef<CanvasControls | null>(null);
   const [canvasProject, setCanvasProject] = useLocalStorage<string | null>("carbon.canvas.project", null);
   const [canvasSessions, setCanvasSessions] = useLocalStorage<Record<string, string>>("carbon.canvas.sessions", {});
   const [canvasPanelTab, setCanvasPanelTab] = useState<CanvasPanelTab>("chat");
   const canvasPath = spaceProjects.find((p) => p.path === canvasProject)?.path ?? spaceProjects[0]?.path ?? null;
+  useEffect(() => {
+    const off = listen<Omit<CanvasPreviewTarget, "revealId">>("canvas_open", ({ server, payload }) => {
+      if (payload.sessionId !== selectedSessionId || !selectedSession || server !== serverOfPath(selectedSession.projectPath)) return;
+      const path = qualify(payload.projectPath, server);
+      if (!spaceProjects.some((p) => p.path === path)) return;
+      setCanvasProject(path); setCanvasAgentTarget({ ...payload, revealId: crypto.randomUUID() }); setCanvasOpen(true); setSpacesOpen(false); setIssuesOpen(false); setCanvasPanelTab("preview");
+    });
+    return () => { void off.then((fn) => fn()).catch(console.error); };
+  }, [selectedSessionId, selectedSession, spaceProjects, setCanvasProject]);
+
   // The task sidebar floating over the content while the rail's Home is
   // hovered, wherever it is not docked. Closed a beat after the pointer leaves
   // both the button and the card, so crossing the gap between them holds it.
@@ -3286,7 +3298,7 @@ function App() {
         </div>
         <div className={cn("min-h-0 min-w-0 flex-1", canvasOpen ? "flex" : "hidden")}>
         {canvasEnabled && <MountOnce when={canvasOpen}>
-          <CanvasView controlsRef={canvasControls} active={canvasOpen && !settingsOpen} projects={spaceProjects} projectPath={canvasPath}
+          <CanvasView agentTarget={canvasAgentTarget} controlsRef={canvasControls} active={canvasOpen && !settingsOpen} projects={spaceProjects} projectPath={canvasPath}
             onProjectChange={changeCanvasProject} sessions={canvasChatSessions}
             sessionId={selectedSessionId} onSessionChange={(id) => void selectAndLeaveCrew(id)} onNewSession={() => newCanvasSession(canvasPath)}
             panelTab={canvasPanelTab} onPanelTabChange={setCanvasPanelTab} chatReady={canvasChatReady}

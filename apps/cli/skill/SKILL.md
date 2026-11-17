@@ -807,3 +807,36 @@ the cure is safe.
   is behind, tell the user — you cannot update it from here. Updating the app
   first is the smoother order for exactly that reason: it leaves the CLI behind,
   which is the half that can fix itself.
+
+## Canvas designs
+
+```sh
+carbon canvas ls
+carbon canvas context
+carbon canvas new "Checkout explorations"
+carbon canvas --canvas <file> frame ls
+carbon canvas --canvas <file> --revision 1 frame new "Checkout" --width 390 --height 844
+carbon canvas --canvas <file> tree
+carbon canvas --canvas <file> get <node> --styles
+printf '%s' '<div style="padding:24px"><h1>Checkout</h1></div>' | carbon canvas --canvas <file> --revision 2 write <frame>
+carbon canvas --canvas <file> --revision 3 set-style <node> '{"color":"var(--brand)","margin":null}'
+carbon canvas --canvas <file> --revision 4 set-text <text-node> "Continue"
+carbon canvas --canvas <file> --revision 5 mv <node> <parent> --index 0
+carbon canvas --canvas <file> --revision 6 dup <frame-or-layer>
+carbon canvas --canvas <file> --revision 7 frame arrange <frame> --x 1600 --y 0
+carbon canvas --canvas <file> --revision 8 frame resize <frame> --width 1440 --height 900
+carbon canvas --canvas <file> --revision 9 frame rename <frame> "Checkout — compact"
+carbon canvas --canvas <file> open <frame>
+carbon canvas --canvas <file> shot <frame-or-layer>
+carbon canvas --canvas <file> --revision 10 rm <node>
+carbon canvas --canvas <file> --revision 11 undo
+carbon canvas --canvas <file> --revision 12 redo
+```
+
+Commands default to the calling Carbon session (`CARBON_SESSION_ID`); `--session <id>` works from a terminal outside an agent shell; an agent cannot use it to switch away from its calling session. Only that session's project is reachable, including its linked worktrees, never another project selected in the UI. Read context and the tree before editing. A message captures its open canvas, revision, selected frames/layers and preview target. That target stays fixed for the running turn. `--canvas` chooses another file explicitly. With no captured canvas, choose a listed file explicitly or create one; do not guess from the current UI tab.
+
+Every read and write returns stable IDs and the revision it used. Frame lists also return geometry and content references. Writes require the current `--revision`. On conflict, re-read and rebase the intended change. There is no force flag. `write` appends HTML from stdin as editable layers; stylesheets stay local to the frame. Input is static HTML/CSS, up to 512 KiB per write. Scripts, navigation attributes, embedded pages and external resources are unsupported. Use file-owned `carbon-canvas-asset://` image references. `set-style` uses kebab-case CSS properties and null removes a property. `set-text` preserves a text layer's identity and refuses to erase nested element layers.
+
+The app places new/duplicated frames without overlap. Copies get fresh layer IDs and retain assets/tokens. Layout is app-owned: use frame commands rather than editing canvas.json, history, content or assets by hand. Edits appear live, touched frames show an editing indicator, and the turn forms one undo step. Undo preserves later changed properties and reports conflicts. `undo --turn <turn-id>` can address one turn explicitly.
+
+`open` uses the session's ordinary browser in the Canvas right panel, so `carbon browser` can inspect the frame. Stored executable behavior remains disabled. `shot` returns a PNG path and evidence identifying the canvas revision, frame/layer, content reference and timestamp. Read that image with image tooling. Screenshot every changed frame and check its rendered result before finishing. Returned evidence records a capture, not a claim that you reviewed it. Screenshots use the same isolated renderer as the board and work on the owning server with Carbon's window closed as well.
