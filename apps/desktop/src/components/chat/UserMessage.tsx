@@ -5,6 +5,9 @@ import SessionAvatar from "@/components/SessionAvatar";
 import ClampedBody from "@/components/chat/ClampedBody";
 import FileLink from "@/components/chat/FileLink";
 import ImageRow from "@/components/chat/ImageRow";
+import CanvasReferenceChip from "@/components/canvas/CanvasReferenceChip";
+import { withoutCanvasPreviews } from "@/lib/canvasReferences";
+import { serverOfSession } from "@/lib/transport";
 import { inlineMark } from "@/components/chat/InlineMark";
 import MessageActions from "@/components/chat/MessageActions";
 import SentMessageEditAction, { SentMessageInlineEditor, useSentMessageEditing } from "@/components/chat/SentMessageEditor";
@@ -29,7 +32,7 @@ import { chipLabel } from "@/lib/richText";
 import { shortenPath } from "@/lib/tools";
 import { useSendProgress } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
-import type { ImageRef, IssueRef, MessageSender } from "@/types/events";
+import type { CanvasReference, ImageRef, IssueRef, MessageSender } from "@/types/events";
 
 /// The user's own text, echoed from the event log rather than local state — the
 /// backend synthesizes and persists it, so this renders the same live or replayed.
@@ -68,6 +71,7 @@ export default function UserMessage({
   eventId,
   text,
   images = [],
+  canvasRefs = [],
   issues = [],
   mcpServers = [],
   from = null,
@@ -80,6 +84,7 @@ export default function UserMessage({
   eventId?: string;
   text: string;
   images?: ImageRef[];
+  canvasRefs?: CanvasReference[];
   /// What this prompt was tagged with. Not drawn — the tags are already in the
   /// sentence — but it is where a tag's link comes from, since a URL recovered
   /// from prose would be a guess.
@@ -104,7 +109,7 @@ export default function UserMessage({
   // conversation into a different tree, so a mention resolved against the
   // session's own cwd there would open the fork's copy of the file rather than
   // the one this message named.
-  const { cwd: sessionCwd } = useChatSession();
+  const { cwd: sessionCwd, sessionId } = useChatSession();
   const cwd = writtenIn ?? sessionCwd;
   const body = withLineBreaks(stripSenderPrefix(text, from));
   // The prompt's own links are what bound an issue tag's title, and they are
@@ -164,7 +169,10 @@ export default function UserMessage({
           read before the sentence written about it, on the way in and on the way
           back out. `end` so the row grows leftwards from the same edge the
           bubble sits on. */}
-      <ImageRow images={images} variant="sent" />
+      <ImageRow images={withoutCanvasPreviews(images, canvasRefs)} variant="sent" />
+      {canvasRefs.length > 0 && <div className="flex max-w-[85%] flex-wrap justify-end gap-2">
+        {canvasRefs.map((reference) => <CanvasReferenceChip key={reference.id} reference={reference} server={serverOfSession(sessionId)} />)}
+      </div>}
 
       {body && (
         // `none` in dark, where the bubble already reads as raised by being

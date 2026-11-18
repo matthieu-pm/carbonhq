@@ -3299,6 +3299,7 @@ function App() {
         <div className={cn("min-h-0 min-w-0 flex-1", canvasOpen ? "flex" : "hidden")}>
         {canvasEnabled && <MountOnce when={canvasOpen}>
           <CanvasView agentTarget={canvasAgentTarget} controlsRef={canvasControls} active={canvasOpen && !settingsOpen} projects={spaceProjects} projectPath={canvasPath}
+            composerKey={composerKey} composerCwd={composerCwd}
             onProjectChange={changeCanvasProject} sessions={canvasChatSessions}
             sessionId={selectedSessionId} onSessionChange={(id) => void selectAndLeaveCrew(id)} onNewSession={() => newCanvasSession(canvasPath)}
             panelTab={canvasPanelTab} onPanelTabChange={setCanvasPanelTab} chatReady={canvasChatReady}

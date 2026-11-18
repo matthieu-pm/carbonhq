@@ -107,6 +107,7 @@ impl InspectCapture {
             is_image: false,
             preview: Some(format!("data:image/jpeg;base64,{}", self.screenshot)),
             inspection: Some(self.context.clone()),
+            canvas: None,
         }
     }
 }

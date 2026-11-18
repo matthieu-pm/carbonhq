@@ -3,6 +3,10 @@ import type { CSSProperties } from "react";
 
 import ClampedBody from "@/components/chat/ClampedBody";
 import ImageRow from "@/components/chat/ImageRow";
+import CanvasReferenceChip from "@/components/canvas/CanvasReferenceChip";
+import { canvasReferences, withoutCanvasPreviews } from "@/lib/canvasReferences";
+import { serverOfSession } from "@/lib/transport";
+import { useChatSession } from "@/hooks/useChatSession";
 import { inlineMark } from "@/components/chat/InlineMark";
 import { useHotkey } from "@/hooks/useHotkey";
 import { useChord } from "@/hooks/useShortcuts";
@@ -54,6 +58,7 @@ export default function QueuedMessages({
   // key a few pixels away. The registry keeps the character for the Settings
   // tab, where a `Kbd` is a text chip.
   const chord = useChord("queue.send");
+  const { sessionId } = useChatSession();
 
   if (!messages.length) return null;
 
@@ -72,7 +77,8 @@ export default function QueuedMessages({
                 the sentence it was attached to. The hint is outside it: that is
                 the app talking, not the message. */}
             <div className="flex w-full flex-col items-end gap-1.5 opacity-55">
-              <ImageRow images={imagesOf(attachments)} variant="sent" />
+              <ImageRow images={withoutCanvasPreviews(imagesOf(attachments), canvasReferences(attachments))} variant="sent" />
+              {canvasReferences(attachments).map((reference) => <CanvasReferenceChip key={reference.id} reference={reference} server={serverOfSession(sessionId)} />)}
 
               {/* Guarded like the delivered bubble's: a prompt can be an
                   attachment and nothing else. */}

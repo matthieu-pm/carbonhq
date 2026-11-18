@@ -117,8 +117,8 @@ async fn owned(store: &Store, session: &str, id: &str) -> Result<Canvas, String>
 }
 
 /// Resolve the view once when a prompt is delivered; steering cannot retarget a running turn.
-pub async fn prepare_prompt(session: &str) -> Result<CanvasPrompt, String> {
-    let focus = request_focus();
+pub async fn prepare_prompt(session: &str, has_references: bool) -> Result<CanvasPrompt, String> {
+    let focus = if has_references { None } else { request_focus() };
     let previous = match turn(session).await {
         Ok(previous) => previous,
         Err(error) if focus.is_none() => {
@@ -129,11 +129,11 @@ pub async fn prepare_prompt(session: &str) -> Result<CanvasPrompt, String> {
     };
     if let Some(current) = previous.as_ref().filter(|t| t.running) {
         return Ok(CanvasPrompt {
-            text: context_text(current).await?,
+            text: if has_references { String::new() } else { context_text(current).await? },
             turn: None,
         });
     }
-    if focus.is_none() && previous.is_none() {
+    if focus.is_none() && previous.is_none() && !has_references {
         return Ok(CanvasPrompt {
             text: String::new(),
             turn: None,
@@ -433,7 +433,13 @@ pub async fn request(request: CanvasRequest, sink: &Sink) -> Result<Value, Strin
     }
     let chosen = request.canvas.clone().or_else(||current.as_ref().and_then(|t|t.focus.as_ref().map(|f|f.id.clone()))).ok_or("No canvas was captured for this turn. Use canvas ls, then --canvas <id>, or canvas new.")?;
     let id = chosen.as_str();
-    let canvas = owned(&store, &request.session_id, id).await?;
+    let live_canvas = owned(&store, &request.session_id, id).await?;
+    let canvas = if matches!(request.action, Action::Get { .. } | Action::Shot { .. } | Action::Tree { .. } | Action::Frames) {
+        match request.revision {
+            Some(revision) => store.history(id, Some(revision)).await?.remove(0),
+            None => live_canvas,
+        }
+    } else { live_canvas };
     let envelope = |data: Value| json!({"id":canvas.id,"name":canvas.name,"revision":canvas.revision,"data":data});
     match &request.action {
         Action::Frames => return Ok(envelope(json!(frames(&canvas)))),

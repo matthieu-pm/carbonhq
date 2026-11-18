@@ -3634,10 +3634,10 @@ async fn deliver_prompt(
     // the transcript has to show what the model was actually given.
     let prepared = attachments::prepare(session_id, prompt, attachment_paths, harness).await?;
     let text = prepared.text;
-    let sent = crate::mcp_mentions::with_hint(&text, mcp_servers);
+    let sent = crate::mcp_mentions::with_hint(&format!("{text}{}", prepared.canvas_hint), mcp_servers);
     let sent = crate::issues::drafting::with_context(session_id, &sent).await.map_err(anyhow::Error::msg)?;
     // Storage futures stay on the heap rather than enlarging the harness send stack.
-    let canvas_prompt = Box::pin(crate::canvas::prepare_prompt(session_id))
+    let canvas_prompt = Box::pin(crate::canvas::prepare_prompt(session_id, !prepared.canvas_refs.is_empty()))
         .await
         .map_err(anyhow::Error::msg)?;
     let sent = format!("{sent}{}", canvas_prompt.text);
@@ -3668,6 +3668,7 @@ async fn deliver_prompt(
         .filter(|interruption| interruption.resumed_at.is_none()).map(|interruption| interruption.id);
     let payload = AgentEventPayload::UserMessage {
         text,
+        canvas_refs: (!prepared.canvas_refs.is_empty()).then_some(prepared.canvas_refs),
         issues: issues.to_vec(),
         mcp_servers: mcp_servers.to_vec(),
         images: prepared
@@ -4623,7 +4624,7 @@ pub async fn strand_queue_on_exit(
         // row retiring the queued prompt would drop its attachments from the
         // transcript while telling the reader to resend it. Best effort — a
         // failed prep still surfaces the text rather than losing the prompt.
-        let (text, images) =
+        let (text, images, canvas_refs) =
             match attachments::prepare(session_id, &message.text, &message.attachment_paths, harness)
                 .await
             {
@@ -4638,10 +4639,11 @@ pub async fn strand_queue_on_exit(
                             mime_type: Some(i.mime_type.clone()),
                         })
                         .collect(),
+                    prepared.canvas_refs,
                 ),
                 Err(err) => {
                     eprintln!("[fx strand prepare err] {err:#}");
-                    (message.text.clone(), Vec::new())
+                    (message.text.clone(), Vec::new(), Vec::new())
                 }
             };
         let bubble = AgentEvent::mint(
@@ -4652,6 +4654,7 @@ pub async fn strand_queue_on_exit(
             None,
             AgentEventPayload::UserMessage {
                 text,
+                canvas_refs: (!canvas_refs.is_empty()).then_some(canvas_refs),
                 issues: message.issues.clone(),
                 mcp_servers: message.mcp_servers.clone(),
                 images,
