@@ -9,6 +9,7 @@ mod model;
 mod nodes;
 mod render;
 mod storage;
+pub(crate) mod tokens;
 mod undo;
 mod watch;
 
@@ -20,6 +21,7 @@ pub use assets::{CanvasAssetData, CanvasAssetProgress, CanvasAssetUpload};
 pub(crate) use browser_capture::{BrowserCapture, CapturedPage};
 pub use commands::*;
 pub use model::*;
+pub use tokens::canvas_project_tokens;
 pub use undo::CanvasUndoState;
 pub use watch::start;
 

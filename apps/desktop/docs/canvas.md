@@ -10,6 +10,14 @@ Scroll to pan. Pinch or Cmd/Ctrl-scroll to zoom around the pointer. The Hand too
 
 The layers tree, board outlines and read-only Properties share stable frame/layer IDs. Properties reports the renderer's measured bounds and computed styles. Chat uses Carbon's real transcript and composer, with a session picker and New session action. It keeps the current session when it belongs to the project, otherwise restores that project's remembered session or most recent available session.
 
+## Project tokens
+
+Open **Tokens** to see CSS custom property declarations from the selected Canvas chat session's checkout. With no session selected, Canvas reads the attached project folder. Each row shows the declared value, its source file and line, and the selector or at-rule scope. This includes Tailwind v4 `@theme` declarations, aliases, and theme overrides. Values are shown as declared, so a scoped alias can still read `var(--base)`. **Refresh** reads the current `.css` files, including local edits. Ignored files and dependencies are skipped. An incomplete scan is labelled.
+
+Browser capture keeps its rendered values and records token names where a CSS declaration establishes the link. Styles that can only be measured, such as styles behind an unreadable stylesheet or an ambiguous cascade, keep their computed values. Select a captured layer to see both in **Properties**. Refresh checks token names against the captured checkout when it is active and flags missing names. Refresh leaves the frame, its captured values and its revision intact.
+
+`carbon canvas tokens` reads the calling session's checkout without selecting a canvas. `get` returns a saved node's token links and capture context at the requested revision. A design attachment carries the names it had when added to chat. Use the target project's tokens when applying the design. See the [Paper and Gui comparison](research/cbn-85-paper-gui-tokens.md).
+
 ## Capture
 
 In the browser pane, choose **Capture** and click an element. Use ⌘-click or ⌘Enter to capture the full page at the browser's current CSS viewport width. The capture opens beside the project's existing frames with the new frame selected. If a destination has not been selected, choose or create a canvas. Undo removes the frame as one edit.

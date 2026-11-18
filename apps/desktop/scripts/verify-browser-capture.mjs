@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18,12 +18,15 @@ const env = { ...process.env, CARBON_HOME: home, CARBON_ENDPOINT: join(home, 'ca
 let carbon, web;
 const exec = promisify(execFile);
 const browser = (...args) => exec(resolve(cliPath), ['browser', ...args], { cwd: project, env, timeout: 45_000 });
+const tokens = async () => JSON.parse((await exec(resolve(cliPath), ['canvas', 'tokens'], { cwd: root, env })).stdout);
 const bundle = async name => JSON.parse(await readFile(join(project, name), 'utf8'));
 const layers = nodes => nodes.flatMap(node => [node, ...layers(node.children ?? [])]);
 
 try {
   await mkdir(join(home, 'sessions'), { recursive: true });
   await mkdir(project);
+  const cssPath = join(project, 'tokens.css');
+  await writeFile(cssPath, ':root { --brand: #14283c; --space: 4px; }\n@theme inline { --radius-card: 12px; }\n');
   await writeFile(join(home, 'sessions/index.json'), JSON.stringify([{
     sessionId, harness: 'claude_code', cwd: project, projectPath: project, title: 'Browser capture fixture',
     status: 'idle', created: new Date().toISOString(), modified: new Date().toISOString(), archived: false, pinned: false,
@@ -43,18 +46,27 @@ try {
       return;
     }
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(`<!doctype html><style>
+    res.end(`<!doctype html><html data-theme="light"><style>
       @font-face{font-family:Fixture;src:url(/fixture.woff2);font-weight:100 900}
       @font-face{font-family:PseudoFixture;src:url(/fixture.woff2?icons);font-weight:100 900}
       body{margin:0;background:#f8f6f2}
-      #checkout{width:320px;margin:20px;padding:16px;background:#fff;font-family:Fixture,sans-serif}
+      :root { --brand:#14283c; --space:4px; --radius-card:12px; --same-value:#14283c }
+      @layer base, components;
+      @layer base { main { padding:0 } }
+      @layer components { #checkout { padding:calc(var(--space) * 4) } }
+      #checkout{width:320px;margin:20px;background:#fff;font-family:Fixture,sans-serif;border-radius:var(--radius-card)}
+      .buy { color:var(--brand); }
+      @media (min-width: 10000px) { .buy { color:var(--same-value) } }
+      #overridden { color:var(--same-value); border-left:1px solid; border-left-color:var(--same-value); border-inline-start-color:rgb(20,40,60); }
+      button#overridden { color:rgb(20,40,60); }
       h1::before{content:"*";font-family:PseudoFixture}
       aside{height:32px;overflow:auto}aside span{display:block;height:64px}
       footer{height:2100px}iframe{display:block;width:160px;height:50px}
       </style>
       <main id="checkout" data-astro-source-file="/src/checkout.astro?query=private">
         <h1 style="color:rgb(20,40,60)">Checkout</h1>
-        <button onclick="document.body.remove()">Pay now</button>
+        <button class="buy" style="background-color:var(--brand)" onclick="document.body.remove()">Pay now</button>
+        <button id="overridden">Other</button>
         <img src="/pixel.png" width="24" height="24">
         <iframe src="/embedded"></iframe>
         <iframe sandbox srcdoc="<input value='fixture-private-opaque'>"></iframe>
@@ -72,6 +84,11 @@ try {
     try { await access(env.CARBON_ENDPOINT); break; }
     catch (error) { if (attempt >= 200) throw error; await delay(50); }
   }
+
+  const catalog = await tokens();
+  assert.equal(catalog.source.cwd, await realpath(project));
+  assert.deepEqual(catalog.tokens.find(token => token.name === '--radius-card').scope, ['@theme inline']);
+  assert.equal(catalog.tokens.find(token => token.name === '--brand').value, '#14283c');
 
   await browser('open', `http://127.0.0.1:${web.address().port}/checkout?session=fixture-private-query`);
   await browser('wait', '--load', 'load');
@@ -106,6 +123,23 @@ try {
   assert(document.frame.capture.warnings.some(note => note.includes('Embedded page')));
   assert(document.frame.capture.warnings.some(note => note.includes('could not be inspected')));
   const captured = layers(document.frame.content.nodes);
+  assert.equal(document.frame.content.tokenSource.checkout.cwd, await realpath(project));
+  assert.deepEqual(document.frame.content.tokenSource.theme, ['data-theme=light']);
+  const layerWithText = text => captured.find(node => node.children?.some(child => child.text === text));
+  assert.deepEqual(layerWithText('Pay now').tokenReferences.color, ['--brand']);
+  assert.deepEqual(layerWithText('Pay now').tokenReferences['background-color'], ['--brand']);
+  assert.equal(layerWithText('Pay now').styles.color, 'rgb(20, 40, 60)');
+  assert.equal(layerWithText('Other').tokenReferences?.color, undefined);
+  assert.equal(layerWithText('Other').tokenReferences?.['border-left-color'], undefined);
+  assert.equal(layerWithText('Checkout').tokenReferences?.color, undefined);
+  const main = captured.find(node => node.tag === 'main');
+  assert.deepEqual(main.tokenReferences['padding-left'], ['--space']);
+  assert.deepEqual(main.tokenReferences['border-top-left-radius'], ['--radius-card']);
+  assert.equal(main.styles['padding-left'], '16px');
+  await writeFile(cssPath, ':root { --space: 8px; }\n');
+  const refreshed = await tokens();
+  assert.equal(refreshed.tokens.find(token => token.name === '--space').value, '8px');
+  assert(!refreshed.tokens.some(token => token.name === '--brand'));
   assert(captured.some(node => node.text === 'Below the fold'));
   assert(captured.some(node => node.name === 'Embedded page · Image reference'));
   assert(captured.some(node => node.name === 'Scrolled area · Image reference'));
@@ -157,9 +191,9 @@ try {
   assert(tall.warnings.some(note => note.includes('cropped')));
   await assert.rejects(browser('capture', '--to', 'full.json'), /exists/);
   await assert.rejects(browser('capture', '#missing', '--to', 'missing.json'), /No element matches/);
-  assert.deepEqual((await readdir(project)).sort(), ['element.json', 'full.json', 'image.json', 'source.json', 'tall.json', 'transformed.json']);
+  assert.deepEqual((await readdir(project)).sort(), ['element.json', 'full.json', 'image.json', 'source.json', 'tall.json', 'tokens.css', 'transformed.json']);
   assert.deepEqual(await bundle('full.json'), document);
-  console.log('Verified editable full-page and element exports, original JPEG, fonts, images, raster fallback, privacy, truncation and no overwrite.');
+  console.log('Verified project token refresh, captured token links, editable exports, original JPEG, assets, raster fallback, privacy, truncation and no overwrite.');
 } finally {
   if (carbon && carbon.exitCode == null && carbon.signalCode == null) {
     const exited = once(carbon, 'exit');

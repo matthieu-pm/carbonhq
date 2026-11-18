@@ -73,6 +73,12 @@ async function stop() {
 try {
   let client = await start();
   await client.call('add_project', { path: project });
+  await writeFile(join(project, 'tokens.css'), ':root { --space: 4px; }');
+  const rootTokens = await client.call('canvas_project_tokens', { projectPath: project, sessionId: null });
+  const sessionTokens = await client.call('canvas_project_tokens', { projectPath: project, sessionId: session });
+  assert.deepEqual(rootTokens, sessionTokens);
+  assert.equal(sessionTokens.tokens[0].value, '4px');
+  await assert.rejects(client.call('canvas_project_tokens', { projectPath: other, sessionId: session }), /Choose a session in the Canvas project/);
   const a = await client.call('create_canvas', { projectPath: project, name: 'Mobile checkout' });
   const b = await client.call('create_canvas', { projectPath: project, name: 'Other exploration' });
   const foreign = await client.call('create_canvas', { projectPath: other, name: 'Private other project' });
@@ -102,6 +108,9 @@ try {
   const capturedRevision = revision;
   const attached = await client.call('capture_canvas_selection', { projectPath: project, id: a.id, revision, picks: [{ frameId: frame, nodeId: null }, { frameId: frame, nodeId: heading }] });
   assert.equal(attached.length, 2);
+  assert.deepEqual(JSON.parse(await readFile(attached[0].path, 'utf8')).tokenNames, ['--pad']);
+  const pinned = await command(['--revision', String(revision), 'get', main]);
+  assert.deepEqual(pinned.data.tokenReferences[0].properties.padding.names, ['--pad']);
   const mixed = await client.call('capture_canvas_selection', { projectPath: project, id: a.id, revision, picks: [{ frameId: frame, nodeId: hidden }, { frameId: frame, nodeId: null }] });
   assert.equal(mixed.length, 2);
   assert.equal(mixed[0].canvas.nodeId, hidden);
@@ -237,6 +246,8 @@ try {
   assert.equal(handoff.canvasRefs[0].preview.url, null);
   const retainedImage = handoff.canvasRefs[0].preview.path;
   assert.deepEqual(await readFile(retainedImage), await readFile(attached[0].canvas.preview.path));
+  const retainedContext = JSON.parse(await readFile(retainedImage.replace(/\.png$/, '.json'), 'utf8'));
+  assert.deepEqual(retainedContext.tokenNames, ['--pad']);
   const held = await client.call('send_msg', { ...handoffArgs, prompt: 'TASK_HOLD queued reference' });
   assert(held.queued);
   const canceled = await client.call('cancel_queued', { sessionId: session });

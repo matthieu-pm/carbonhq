@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { CANVAS_PANEL_TABS as PANEL_TABS, type CanvasPanelTab } from "@/lib/canvasBoard";
 import "./canvas.css";
-const PANEL_LABELS: Record<CanvasPanelTab, string> = { chat: "Chat", preview: "Preview", properties: "Properties" };
+const PANEL_LABELS: Record<CanvasPanelTab, string> = { chat: "Chat", preview: "Preview", properties: "Properties", tokens: "Tokens" };
 
 /// Page widths at which each column stops docking. Layers (224) + panel (400)
 /// + a board worth looking at (~480) is the first; layers + board the second.
@@ -48,6 +48,7 @@ type CanvasChromeProps = {
   chat: ReactNode;
   preview: ReactNode;
   properties: ReactNode;
+  tokens: ReactNode;
   panelTab: CanvasPanelTab;
   onPanelTabChange: (tab: CanvasPanelTab) => void;
   panelOpen: boolean;
@@ -60,7 +61,7 @@ type CanvasChromeProps = {
 };
 
 /// The Canvas page inside AppShell's page slot: a strip of project, file tabs
-/// and actions over layers, board and a Chat/Preview/Properties pane.
+/// and actions over the layers, board and right pane.
 ///
 /// The board gets every pixel the columns leave. Below `PANEL_DOCKS` the pane
 /// floats over the board instead of taking width from it, and below
@@ -69,10 +70,11 @@ type CanvasChromeProps = {
 export default function CanvasChrome(props: CanvasChromeProps) {
   const {
     active, projects, projectPath, onProjectChange, files, fileId, onFileChange, onCreateFile, onRenameFile, onNewFrame,
-    layers, board, chat, preview, properties, panelTab, onPanelTabChange, panelOpen, onPanelOpenChange,
+    layers, board, chat, preview, properties, tokens, panelTab, onPanelTabChange, panelOpen, onPanelOpenChange,
     loading, error, onRefresh, selectionLabel,
   } = props;
   const root = useRef<HTMLDivElement>(null);
+  const panels = { chat, preview, properties, tokens };
   const width = useWidth(root);
   const panelDocked = width >= PANEL_DOCKS;
   const layersDocked = width >= LAYERS_DOCK;
@@ -169,7 +171,7 @@ export default function CanvasChrome(props: CanvasChromeProps) {
           // Keep the chat's scroll while looking at Properties; live preview owns its lifecycle.
           className={cn("min-h-0 min-w-0 flex-1 flex-col", panelTab === tab ? "flex" : "hidden")}
         >
-          {tab === "chat" ? chat : tab === "preview" ? preview : properties}
+          {panels[tab]}
         </div>
       ))}
     </aside>

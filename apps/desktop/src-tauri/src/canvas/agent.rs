@@ -227,7 +227,7 @@ async fn context_text(turn: &Turn) -> Result<String, String> {
     if turn.focus.is_none() {
         return Ok(String::new());
     }
-    Ok(format!("\n\n<carbon_canvas_context>\n{}\nCanvas and selection are fixed for this turn. Use carbon canvas commands with explicit node IDs and expected revisions. A different canvas must belong to this session's project. Screenshot each changed frame before finishing.\n</carbon_canvas_context>", context(turn).await.unwrap_or_else(|error| json!({"turnId":turn.id,"canvasId":turn.focus.as_ref().map(|f|&f.id),"unavailable":error}))))
+    Ok(format!("\n\n<carbon_canvas_context>\n{}\nCanvas and selection are fixed for this turn. Use carbon canvas commands with explicit node IDs and expected revisions. A different canvas must belong to this session's project. Run carbon canvas tokens before choosing styles. Prefer a matching project token. In Canvas CSS, use var(--name, verified CSS fallback) so the design can render without project stylesheets. Screenshot each changed frame before finishing.\n</carbon_canvas_context>", context(turn).await.unwrap_or_else(|error| json!({"turnId":turn.id,"canvasId":turn.focus.as_ref().map(|f|&f.id),"unavailable":error}))))
 }
 
 async fn context(turn: &Turn) -> Result<Value, String> {
@@ -341,11 +341,18 @@ fn markup(nodes: &[CanvasNode]) -> String {
 
 /// Agent requests derive ownership from the session; neither cwd nor a canvas ID can widen it.
 pub async fn request(request: CanvasRequest, sink: &Sink) -> Result<Value, String> {
-    let store = Store::open().await?;
     let item = crate::store::get_session_index_item(&request.session_id)
         .await
         .map_err(|e| e.to_string())?
         .ok_or("No such Carbon session.")?;
+    if matches!(request.action, Action::Tokens) {
+        if request.canvas.is_some() || request.revision.is_some() {
+            return Err("Project tokens are read from the session's checkout. Use get for a saved Canvas revision.".into());
+        }
+        let catalog = super::tokens::catalog(super::tokens::CanvasTokenSource::session(&item)).await?;
+        return serde_json::to_value(catalog).map_err(|e| e.to_string());
+    }
+    let store = Store::open().await?;
     let mut current = turn(&request.session_id).await?;
     if current.is_none() {
         let snapshot = crate::store::get_session_by_id(&request.session_id, Some(1))
@@ -471,7 +478,7 @@ pub async fn request(request: CanvasRequest, sink: &Sink) -> Result<Value, Strin
                 None
             };
             return Ok(envelope(
-                json!({"nodeId":node,"frameId":frame.id,"markup":markup(nodes),"css":frame.content.css,"tokens":canvas.tokens,"computed":measured}),
+                json!({"nodeId":node,"frameId":frame.id,"markup":markup(nodes),"css":frame.content.css,"tokens":canvas.tokens,"tokenReferences":super::tokens::links(nodes),"tokenSource":super::tokens::source(&frame.content),"computed":measured}),
             ));
         }
         Action::Shot { node } => {
@@ -567,10 +574,15 @@ pub async fn request(request: CanvasRequest, sink: &Sink) -> Result<Value, Strin
                         .iter_mut()
                         .find(|f| f.id == original.id)
                         .unwrap();
-                    if let Some(CanvasNode::Element { styles, extra, .. }) =
+                    if let Some(CanvasNode::Element { styles: saved, extra, .. }) =
                         nodes::find_mut(&mut frame.content.nodes, node)
                     {
-                        *styles = normalized.styles;
+                        for (key, value) in existing {
+                            if styles.contains_key(key) || normalized.styles.get(key) != Some(value) {
+                                super::tokens::clear_reference(extra, key);
+                            }
+                        }
+                        *saved = normalized.styles;
                         extra.insert(
                             "carbonStyleOrder".into(),
                             json!(normalized.carbon_style_order),

@@ -12,6 +12,7 @@ import CanvasChrome from "./CanvasChrome";
 import { CanvasFileDialog, CanvasFrameDialog } from "./CanvasDialogs";
 import CanvasLayers from "./CanvasLayers";
 import CanvasProperties from "./CanvasProperties";
+import CanvasTokens, { useCanvasTokens } from "./CanvasTokens";
 import CanvasBoard from "./CanvasBoard";
 import LiveFrame, { useFramePreviews } from "./FrameRenderer";
 import { useCanvases } from "@/hooks/useCanvases";
@@ -66,6 +67,8 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
   const box = frame && pick?.nodeId ? capture.previews.get(frame.id)?.boxes.find((b) => b.id === pick.nodeId) ?? null : null;
   const selectionLabel = picks.length > 1 ? `${picks.length} selected` : node?.name ?? frame?.name ?? null;
   const currentSession = sessions.find((s) => s.sessionId === sessionId);
+  const tokens = useCanvasTokens(projectPath, currentSession?.sessionId ?? null, currentSession?.cwd ?? null, data.owner,
+    active && panelOpen && (panelTab === "tokens" || panelTab === "properties"));
   const inspection = useInspection(sessionId ?? "");
   const [agentPreview, setAgentPreview] = useState<{ canvasId: string; frameId: string; sessionId: string } | null>(null);
   const [adding, setAdding] = useState(false);
@@ -167,7 +170,10 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
         <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-2 py-1.5"><Button variant="ghost" size="xs" aria-pressed={previewTarget === "frame"} onClick={() => setPreviewTarget("frame")}>Focused frame</Button><Button variant="ghost" size="xs" aria-pressed={previewTarget === "project"} onClick={() => setPreviewTarget("project")}>Running project</Button></div>
         {previewTarget === "frame" ? active && panelOpen && panelTab === "preview" && data.canvas && frame ? agentPreview?.canvasId === data.canvas.id && agentPreview.frameId === frame.id && agentPreview.sessionId === sessionId ? <BrowserPane sessionId={agentPreview.sessionId} active={active && panelOpen && panelTab === "preview"} mode="panel" /> : <LiveFrame canvas={data.canvas} frame={frame} owner={data.owner} /> : <p className="p-4 text-sm text-muted-foreground">Select a frame to preview it at its original size.</p> : projectPreview}
       </div>}
-      properties={<CanvasProperties frame={frame} node={node} box={box} count={picks.length} canvasId={data.canvas?.id} owner={data.owner} />}
+      properties={<CanvasProperties frame={frame} node={node} box={box} count={picks.length} canvasId={data.canvas?.id} owner={data.owner}
+        catalog={tokens.loading || tokens.error ? null : tokens.catalog} tokenError={Boolean(tokens.error)} />}
+      tokens={<CanvasTokens key={tokens.key} sourcePath={currentSession?.cwd ? displayPath(currentSession.cwd) : projectPath ? displayPath(projectPath) : null}
+        catalog={tokens.catalog} loading={tokens.loading} error={tokens.error} refresh={tokens.refresh} />}
     />
     {capture.renderer}
     <CanvasFileDialog open={active && (dialog === "create" || dialog === "rename")} onOpenChange={(open) => { if (!open) setDialog(null); }} initialName={dialog === "rename" ? data.canvas?.name ?? "" : ""} title={dialog === "rename" ? "Rename canvas" : "New canvas"} busy={data.busy} error={data.error}

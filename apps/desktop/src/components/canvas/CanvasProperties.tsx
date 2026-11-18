@@ -3,10 +3,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { invoke } from "@/lib/transport";
-import type { BrowserCaptureDetails, CanvasAssetData, CanvasFrame, CanvasNode } from "@/types/events";
+import type { BrowserCaptureDetails, CanvasAssetData, CanvasFrame, CanvasNode, CanvasTokenCatalog, CanvasTokenSource } from "@/types/events";
 
 type Box = { x: number; y: number; width: number; height: number; styles: Record<string, string>; text: string };
 type Field = [label: string, value: string];
+type CapturedTokenSource = { checkout: CanvasTokenSource | null; theme: string[] };
 
 /// Read-only properties of the one picked frame or layer.
 ///
@@ -22,6 +23,8 @@ export default function CanvasProperties({
   count,
   canvasId,
   owner,
+  catalog,
+  tokenError,
 }: {
   frame: CanvasFrame | null;
   node: CanvasNode | null;
@@ -29,6 +32,8 @@ export default function CanvasProperties({
   count: number;
   canvasId?: string;
   owner?: string;
+  catalog?: CanvasTokenCatalog | null;
+  tokenError?: boolean;
 }) {
   if (count > 1) {
     return <Empty title={`${count} selected`} detail="Select one frame or layer to see its properties." />;
@@ -86,6 +91,7 @@ export default function CanvasProperties({
       <Section title="Geometry" fields={geometry} />
       <Section title="Layout" fields={layout} />
       <Section title="Appearance" fields={appearance} />
+      <TokenProperties frame={frame} node={node} box={box} catalog={catalog} tokenError={tokenError} />
       <Section title="Text" fields={text}>
         {box && hasText && node && (node.kind === "text" || node.children.every((child) => child.kind === "text")) && (
           <p className="line-clamp-4 rounded-lg bg-surface-well px-2 py-1.5 text-xs break-words whitespace-pre-wrap">{box.text.trim()}</p>
@@ -97,6 +103,46 @@ export default function CanvasProperties({
       {node && !box && <Note>Computed values appear once the frame has rendered.</Note>}
     </div>
   );
+}
+
+function TokenProperties({ frame, node, box, catalog, tokenError }: { frame: CanvasFrame; node: CanvasNode | null; box: Box | null; catalog?: CanvasTokenCatalog | null; tokenError?: boolean }) {
+  const source = (frame.content as { tokenSource?: CapturedTokenSource }).tokenSource;
+  const capture = (frame as { capture?: BrowserCaptureDetails }).capture;
+  const authored = node?.kind === "element" ? node.styles : {};
+  const captured = (node as { tokenReferences?: Record<string, string[]> } | null)?.tokenReferences;
+  const links = Object.entries(authored).flatMap(([property, value]) => {
+    const stored = captured?.[property];
+    const names = Array.isArray(stored) ? stored.filter(name => typeof name === "string") : [...new Set(
+      [...value.matchAll(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\*[\s\S]*?\*\/|(?<![\w\u0080-\u{10FFFF}-])var\(\s*(--[\w\u0080-\u{10FFFF}-]+)\s*(?=[,)])/giu)].flatMap(match => match[1] ?? []),
+    )];
+    return names.length ? [{ property, names, value: stored ? value : box?.styles[property] ?? value }] : [];
+  });
+  const sourcePath = source?.checkout?.cwd;
+  const sameCheckout = !!catalog && (!sourcePath || catalog.source.cwd === sourcePath);
+  const known = new Set(sameCheckout ? catalog.tokens.map(token => token.name) : []);
+  const canCheck = sameCheckout && !catalog.incomplete;
+  const unknown = capture && !capture.imageOnly && node?.kind === "element" && Object.keys(authored).some(key => !links.some(link => link.property === key));
+  if (!links.length && !source && !unknown) return null;
+  return <Section title="Token links" fields={compact([
+    ["Checkout", sourcePath ?? ""],
+    ["Theme", source?.theme?.join(" · ") ?? ""],
+  ])}>
+    {links.length > 0 && <ul className="divide-y divide-hairline">
+      {links.map(({ property, names, value }) => {
+        const missing = canCheck && names.some(name => !known.has(name));
+        return <li key={property} className="py-1.5">
+          <p className="text-xs text-muted-foreground">{property}</p>
+          <p className="flex flex-wrap items-baseline justify-between gap-x-2 font-mono text-xs break-all">
+            <span>{names.join(", ")}</span><span className="text-muted-foreground">{value}</span>
+          </p>
+          {missing && <p className="text-xs text-muted-foreground">Missing from project CSS</p>}
+        </li>;
+      })}
+    </ul>}
+    {links.length > 0 && tokenError && <p className="mt-1 text-xs text-muted-foreground">Couldn’t check links against project CSS.</p>}
+    {links.length > 0 && catalog && !sameCheckout && <p className="mt-1 text-xs text-muted-foreground">The token list is showing a different checkout.</p>}
+    {unknown && <p className="mt-1 text-xs text-muted-foreground">Token links are unknown for styles captured as computed values alone.</p>}
+  </Section>;
 }
 
 function CaptureProperties({ capture, canvasId, owner }: { capture: BrowserCaptureDetails; canvasId: string; owner?: string }) {

@@ -58,7 +58,8 @@ use std::path::PathBuf;
 /// v20 adds discovery and creation receipts with effective configuration.
 /// v21 adds explicit interruption recovery and deduplicated continuation.
 /// v23 adds portable browser captures.
-pub const PROTOCOL_VERSION: u32 = 23;
+/// v24 adds project token discovery for Canvas.
+pub const PROTOCOL_VERSION: u32 = 24;
 
 /// A CLI readiness wait fits inside the socket and remote request deadlines.
 pub const PREVIEW_WAIT_SECS: u64 = 150;
@@ -114,6 +115,7 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
+            Request::Canvas(CanvasRequest { action: CanvasAction::Tokens, .. }) => 24,
             Request::Browser(BrowserRequest { action: BrowserAction::Capture { .. }, .. }) => 23,
             Request::Canvas(_) => 22,
             Request::Browser(BrowserRequest { action: BrowserAction::CanvasViewport { .. }, .. }) => 22,
@@ -1560,6 +1562,10 @@ mod tests {
             action: BrowserAction::Capture { selector: None, path: "capture.json".into() },
         });
         assert_eq!(Envelope::new(browser_capture.clone()).v, 23);
+        let canvas_tokens = Request::Canvas(CanvasRequest {
+            session_id: "session".into(), canvas: None, revision: None, action: CanvasAction::Tokens,
+        });
+        assert_eq!(Envelope::new(canvas_tokens.clone()).v, 24);
         let forwarded_canvas = Request::OnMachine(OnMachine {
             machine: "box".into(),
             request: Box::new(canvas.clone()),
@@ -1579,7 +1585,7 @@ mod tests {
             .chain([&Request::Task(TaskRequest::Status { task_id: "task".into() })])
             .chain([&Request::Recovery(RecoveryRequest::List { session_id: None })])
             .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
-            .chain([&Request::Discover(DiscoveryRequest::Harnesses), &canvas, &browser_capture])
+            .chain([&Request::Discover(DiscoveryRequest::Harnesses), &canvas, &browser_capture, &canvas_tokens])
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));

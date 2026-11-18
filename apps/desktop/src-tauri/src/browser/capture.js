@@ -1,4 +1,4 @@
-(query, handle) => {
+(query, handle, tokenReader) => {
   const ignored = new Set("script style link meta title base template noscript source track".split(" "));
   const raster = new Set("iframe frame frameset portal object embed applet video audio canvas foreignobject input textarea select".split(" "));
   const attributes = new Set("alt colspan rowspan start reversed dir lang viewBox d points x y x1 x2 y1 y2 cx cy r rx ry width height transform fill stroke stroke-width fill-rule clip-rule offset stop-color stop-opacity gradientUnits gradientTransform preserveAspectRatio clip-path mask filter id".split(" "));
@@ -48,6 +48,18 @@
   clip.height = Math.min(10000, bounds.y + bounds.height - clip.y);
   if (!(clip.width > 0 && clip.height > 0)) throw new Error("This capture has no visible area.");
   const warnings = new Set();
+  const tokenReferences = tokenReader(document);
+  const tokenTheme = new Set();
+  for (let element = selected ?? document.body; element; element = element.parentElement) {
+    for (const attribute of ["data-theme", "data-mode", "data-color-mode", "data-color-scheme"]) {
+      const value = element.getAttribute(attribute);
+      if (value && /^[\w-]{1,48}$/.test(value) && ![...tokenTheme].some(theme => theme.startsWith(attribute + "="))) {
+        tokenTheme.add(attribute + "=" + value);
+      }
+    }
+    for (const name of ["dark", "light"]) if (element.classList.contains(name)) tokenTheme.add("." + name);
+    if (tokenTheme.size === 6) break;
+  }
   if (query.selector != null && query.selector.length > 1024) throw new Error("Use a shorter CSS selector.");
   if (clip.width + clip.x < bounds.x + bounds.width || clip.height + clip.y < bounds.y + bounds.height || bounds.x < 0 || bounds.y < 0) {
     warnings.add("Capture was cropped to the available area and the 10,000 px limit.");
@@ -157,6 +169,7 @@
     node.attributes = {};
     node.children = [];
     node.rasterRegion = box;
+    delete node.tokenReferences;
     Object.assign(node.styles, {
       width: box.width + "px", height: box.height + "px", "box-sizing": "border-box",
       color: "transparent", "border-color": "transparent", "box-shadow": "none",
@@ -236,6 +249,14 @@
       }
       if (!svg) node.children.push(...pseudo(current, "::after"));
     }
+    if (!node.rasterRegion && !redact(current)) {
+      const refs = tokenReferences(current, computed, styles);
+      if (styles.position === "fixed") {
+        delete refs["margin-top"];
+        delete refs["margin-left"];
+      }
+      if (Object.keys(refs).length) node.tokenReferences = refs;
+    }
     if (styles.position === "fixed" || styles.position === "sticky") {
       const at = absolute(current);
       if (styles.position === "fixed") Object.assign(styles, {
@@ -270,6 +291,7 @@
         transform: "none", translate: "none",
       });
       if (node.styles.display === "inline") node.styles.display = "block";
+      for (const side of ["top", "right", "bottom", "left"]) delete node.tokenReferences?.["margin-" + side];
     }
     if (!selected) {
       const background = css(getComputedStyle(pageRoot), styleKeys.filter(key => key.startsWith("background-")));
@@ -406,7 +428,7 @@
       }
       return {
         viewport, bounds, clip, pagePath, capturedAt, selector,
-        source, nodes, css: pageCss + fontCss, warnings: [...warnings],
+        source, nodes, css: pageCss + fontCss, warnings: [...warnings], tokenTheme: [...tokenTheme],
         imageOnly: imageOnly || !!selected && !!nodes[0]?.rasterRegion,
         assets: [...resources.values()].map(({ id, kind, data }) => ({ id, kind, data })),
       };

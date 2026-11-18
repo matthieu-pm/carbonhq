@@ -2171,7 +2171,7 @@ pub async fn browser_capture_frame(
         .ok_or("Open a project session to capture to Canvas.")?;
     let result = automation::capture_screen(tab_id, None, Some(automation::ScreenPick {
         nonce: &picker.nonce, context: picker.context.unwrap(), full_page,
-    })).await;
+    }), Some(crate::canvas::tokens::CanvasTokenSource::session(&session))).await;
     stop_canvas_picker(tab_id, &picker).await;
     result?.add_to_canvas(&sink, &session.project_path, &canvas_id).await
 }

@@ -106,6 +106,7 @@ pub(super) const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_TEXT: usize = 40_000;
 const MAX_CONSOLE: usize = 200;
 const CAPTURE_JS: &str = include_str!("capture.js");
+const CAPTURE_TOKENS_JS: &str = include_str!("capture_tokens.js");
 const CAPTURE_SOURCE_JS: &str = include_str!("capture_source.js");
 
 /// A ring where a recorded click lands, fading out after. Pointer events
@@ -1155,7 +1156,9 @@ async fn perform(session: &str, action: BrowserAction) -> Answer {
             if path.exists() {
                 return Err(format!("{} already exists. Choose a new file.", path.display()));
             }
-            let capture = capture_screen(driven_tab(session)?, selector.as_deref(), None).await?;
+            let source = crate::store::get_session_index_item(session).await.map_err(|e| e.to_string())?
+                .as_ref().map(crate::canvas::tokens::CanvasTokenSource::session);
+            let capture = capture_screen(driven_tab(session)?, selector.as_deref(), None, source).await?;
             let mut summary = capture.summary();
             let bytes = serde_json::to_vec(&capture).map_err(|e| e.to_string())?;
             write_new_capture(&path, &bytes).await?;
@@ -1428,7 +1431,13 @@ pub(super) struct ScreenPick<'a> {
 /// Snapshot the current CSS viewport without resizing the page or moving the scroll position.
 pub(super) async fn capture_screen(
     tab: i32, selector: Option<&str>, picker: Option<ScreenPick<'_>>,
+    mut token_source: Option<crate::canvas::tokens::CanvasTokenSource>,
 ) -> Result<crate::canvas::BrowserCapture, String> {
+    if let Some(source) = &mut token_source {
+        if let Ok(path) = tokio::fs::canonicalize(&source.cwd).await {
+            source.cwd = path.to_string_lossy().into_owned();
+        }
+    }
     let _held = CAPTURING.lock().await;
     if RECORDING.lock().unwrap().values().any(|recording| recording.tab == tab && !recording.closed) {
         return Err("Stop recording before capturing this page.".into());
@@ -1440,7 +1449,7 @@ pub(super) async fn capture_screen(
     let handle = json!(format!("__carbonCapture_{}", uuid::Uuid::new_v4()));
     let query = json!({ "selector": selector, "picker": picker, "fullPage": full_page });
     let capture = async {
-        let layout = eval_context(tab, &format!("({CAPTURE_JS})({query},{handle})"), Some(context)).await?;
+        let layout = eval_context(tab, &format!("({CAPTURE_JS})({query},{handle},({CAPTURE_TOKENS_JS}))"), Some(context)).await?;
         let clip = layout.get("clip").ok_or("The browser did not return capture bounds.")?;
         let width = clip["width"].as_f64().ok_or("Invalid capture width.")?;
         let height = clip["height"].as_f64().ok_or("Invalid capture height.")?;
@@ -1469,7 +1478,7 @@ pub(super) async fn capture_screen(
         if page.source.is_none() {
             page.source = source;
         }
-        crate::canvas::BrowserCapture::assemble(page, screenshot)
+        crate::canvas::BrowserCapture::assemble(page, screenshot, token_source)
     }.await;
     if capture.is_err() {
         let _ = eval_context(tab, &format!("window[{handle}]?.release(); delete window[{handle}]"), Some(context)).await;

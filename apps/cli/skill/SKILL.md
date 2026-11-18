@@ -813,6 +813,7 @@ the cure is safe.
 ```sh
 carbon canvas ls
 carbon canvas context
+carbon canvas tokens
 carbon canvas new "Checkout explorations"
 carbon canvas --canvas <file> frame ls
 carbon canvas --canvas <file> --revision 1 frame new "Checkout" --width 390 --height 844
@@ -836,6 +837,8 @@ carbon canvas --canvas <file> --revision 12 redo
 Commands default to the calling Carbon session (`CARBON_SESSION_ID`); `--session <id>` works from a terminal outside an agent shell; an agent cannot use it to switch away from its calling session. Only that session's project is reachable, including its linked worktrees, never another project selected in the UI. Read context and the tree before editing. A message captures its open canvas, revision, selected frames/layers and preview target. That target stays fixed for the running turn. `--canvas` chooses another file explicitly. With no captured canvas, choose a listed file explicitly or create one; do not guess from the current UI tab.
 
 Explicit design attachments are captured references with their own revisions and retained previews. They take precedence over the current Canvas selection for the requested handoff. Read the exact attachment with `carbon canvas --canvas <file> --revision <captured-revision> get <node> --styles` and `shot <node>` using the same flags. A missing captured revision is unavailable; never silently read the latest instead. `--revision` on `get`, `tree`, `frame ls` and `shot` selects an immutable historical read. Leaving it off reads the current design.
+
+Run `carbon canvas tokens` before choosing styles. It reads CSS custom property declarations from the session's current checkout. Check the source file and scope, then prefer the project's token to a literal. In Canvas CSS use `var(--name, verified-fallback)` when the project stylesheet is unavailable to the frame. For a project handoff, use the pinned token names to find the matching definitions in the target checkout. Matching computed values alone cannot establish a token link.
 
 A chip alone is context. Change project code only when the user asks. Reuse existing components, tokens and file layout, and name any new component you need. A screenshot is a reference, not original JSX. Preserve originals when exploring alternatives, with a separate named frame for each. After applying a design, use `carbon preview start` in the session's worktree, open its returned URL with `carbon browser open`, verify the requested screen at its target dimensions, and return screenshot evidence plus any differences or incomplete checks. The handoff does not authorize committing or publishing.
 
