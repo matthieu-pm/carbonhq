@@ -600,7 +600,7 @@ export type CanvasProblem = { id: string, path: string, message: string, };
 
 export type CanvasReconciliation = { canvas: Canvas, problems: Array<CanvasProblem>, };
 
-export type CanvasReference = { id: string, canvasId: string, canvasName: string, projectPath: string, revision: number, frameId: string, frameName: string, nodeId: string | null, name: string, frameWidth: number, frameHeight: number, bounds: CanvasGeometry, contentRef: string, capturedAt: string, preview: ImageRef, };
+export type CanvasReference = { id: string, canvasId: string, canvasName: string, projectPath: string, revision: number, frameId: string, frameName: string, nodeId: string | null, name: string, frameWidth: number, frameHeight: number, bounds: CanvasGeometry, framePreview: boolean, contentRef: string, capturedAt: string, preview: ImageRef, };
 
 export type CanvasReferenceStatus = { state: string, revision: number | null, message: string, };
 

@@ -1,6 +1,6 @@
 import { setCanvasFocus, type CanvasPreviewTarget } from "@/lib/canvasContext";
 import { invoke, listen, displayPath, qualify } from "@/lib/transport";
-import { attachmentKey, restoreAttachments } from "@/hooks/useAttachments";
+import { attachmentKey, readAttachments, restoreAttachments } from "@/hooks/useAttachments";
 import { focusComposer } from "@/lib/composerFocus";
 import { useHotkey } from "@/hooks/useHotkey";
 import { useInspection } from "@/lib/browser";
@@ -67,9 +67,17 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
     addingRef.current = true; setAdding(true); setHandoffError(null);
     const key = targetKey;
     const canvas = data.canvas;
+    const alreadyAttached = readAttachments(key).flatMap((attachment) => attachment.canvas ? [attachment.canvas] : []);
+    const fresh = picks.filter((pick) => !alreadyAttached.some((ref) =>
+      ref.canvasId === canvas.id && ref.revision === canvas.revision && ref.frameId === pick.frameId && ref.nodeId === pick.nodeId));
     try {
-      const attachments = await invoke<Attachment[]>("capture_canvas_selection", { projectPath: displayPath(projectPath), id: canvas.id, revision: canvas.revision, picks: picks.map((p) => ({ ...p, bounds: null })) }, data.owner);
-      restoreAttachments(key, attachments.map((a) => ({ ...a, path: qualify(a.path, data.owner) })));
+      if (fresh.length) {
+        const attachments = await invoke<Attachment[]>("capture_canvas_selection", {
+          projectPath: displayPath(projectPath), id: canvas.id, revision: canvas.revision,
+          picks: fresh.map((pick) => ({ ...pick, bounds: null })),
+        }, data.owner);
+        restoreAttachments(key, attachments.map((attachment) => ({ ...attachment, path: qualify(attachment.path, data.owner) })));
+      }
       if (handoffTarget.current.key === key && handoffTarget.current.active && handoffTarget.current.canvasId === canvas.id) {
         setPanelOpen(true); onPanelTabChange("chat");
         requestAnimationFrame(focusComposer);

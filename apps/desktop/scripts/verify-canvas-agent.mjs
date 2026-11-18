@@ -16,7 +16,14 @@ const session = randomUUID();
 let server, ws, log = '';
 for (const path of [home, project, other, join(home, 'sessions'), join(home, 'bin'), join(home, 'claude/projects/fixture')]) await mkdir(path, { recursive: true });
 await writeFile(join(home, 'sessions/index.json'), JSON.stringify([{ sessionId: session, harness: 'claude_code', cwd: project, projectPath: project, title: 'Canvas agent verification', titleLocked: true, model: 'sonnet', effort: 'high', permissionMode: 'plan', fast: false, status: 'idle', created: '2026-11-17T12:00:00Z', modified: '2026-11-17T12:00:00Z', archived: false, pinned: false }]));
-const fixture = (await readFile(new URL('./fixtures/task-claude.py', import.meta.url), 'utf8')).replace("    if 'TASK_HOLD' in text and 'Delegated task ' not in text:", "    if 'TASK_HOLD' in text:\n        emit(dict(type='system', subtype='status', status='requesting', session_id=id))\n    if 'TASK_HOLD' in text and 'Delegated task ' not in text:");
+const fixture = (await readFile(new URL('./fixtures/task-claude.py', import.meta.url), 'utf8'))
+  .replace("    if 'TASK_HOLD' in text and 'Delegated task ' not in text:", [
+    "    if isinstance(text, list):",
+    "        text = ' '.join(block.get('text', '') for block in text if block['type'] == 'text')",
+    "    if 'TASK_HOLD' in text:",
+    "        emit(dict(type='system', subtype='status', status='requesting', session_id=id))",
+    "    if 'TASK_HOLD' in text and 'Delegated task ' not in text:",
+  ].join('\n'));
 await writeFile(join(home, 'bin/claude'), `#!/usr/bin/env python3\n${fixture}`, { mode: 0o755 });
 const cached = process.env.CARBON_TEST_CHROMIUM ?? join(homedir(), '.carbon-dev/chromium');
 try { await access(cached); await symlink(cached, join(home, 'chromium')); } catch {}
@@ -87,13 +94,27 @@ try {
   const frame = result.data.frameId; revision = result.revision;
   await command(['--revision', '1', 'set-text', frame, 'stale'], null, /conflict/);
   await command(['--revision', String(revision), 'write', frame], '<script>alert(1)</script>', /Unsupported/);
-  result = await command(['--revision', String(revision), 'write', frame], '<style>.surface{background:rgb(20,80,40)} @media(min-width:600px){.surface{background:rgb(180,20,30)}} .surface button:hover{background:rgb(1,2,3)}</style><main class="surface" style="height:100vh;--pad:24px;padding:var(--pad);color:white"><h1 style="font-size:32px">Checkout</h1><button style="width:200px;height:48px">Continue</button></main>');
+  result = await command(['--revision', String(revision), 'write', frame], '<style>.surface{background:rgb(20,80,40)} @media(min-width:600px){.surface{background:rgb(180,20,30)}} .surface button:hover{background:rgb(1,2,3)}</style><main class="surface" style="height:100vh;--pad:24px;padding:var(--pad);color:white"><h1 style="font-size:32px">Checkout</h1><button style="width:200px;height:48px">Continue</button><span style="display:none">Hidden note</span></main>');
   revision = result.revision;
   const hierarchy = await command(['tree', frame]);
   const main = hierarchy.data[0].id, heading = hierarchy.data[0].children[0].id, button = hierarchy.data[0].children[1].id;
+  const hidden = hierarchy.data[0].children[2].id;
   const capturedRevision = revision;
   const attached = await client.call('capture_canvas_selection', { projectPath: project, id: a.id, revision, picks: [{ frameId: frame, nodeId: null }, { frameId: frame, nodeId: heading }] });
   assert.equal(attached.length, 2);
+  const mixed = await client.call('capture_canvas_selection', { projectPath: project, id: a.id, revision, picks: [{ frameId: frame, nodeId: hidden }, { frameId: frame, nodeId: null }] });
+  assert.equal(mixed.length, 2);
+  assert.equal(mixed[0].canvas.nodeId, hidden);
+  assert.equal(mixed[0].canvas.framePreview, true);
+  assert.equal(mixed[1].canvas.framePreview, false);
+  assert.equal(mixed[0].canvas.preview.url, null);
+  const previewUrl = new URL('/file', `http://127.0.0.1:${client.port}`);
+  previewUrl.searchParams.set('path', mixed[0].canvas.preview.path);
+  const previewResponse = await fetch(previewUrl, { headers: { Authorization: `Bearer ${client.token}` } });
+  assert.equal(previewResponse.status, 200);
+  assert.deepEqual(Buffer.from(await previewResponse.arrayBuffer()), await readFile(mixed[0].canvas.preview.path));
+  assert.deepEqual(await readFile(mixed[0].canvas.preview.path), await readFile(mixed[1].canvas.preview.path));
+  assert.match((await command(['--canvas', a.id, '--revision', String(revision), 'get', hidden])).data.markup, /Hidden note/);
   await command(['--canvas', a.id, '--revision', String(revision + 1000), 'get', heading], null, /No committed Canvas revision/);
   assert.equal(attached[0].canvas.revision, capturedRevision);
   assert.equal(attached[0].canvas.frameWidth, 390);
@@ -215,7 +236,7 @@ try {
   assert.equal(handoff.canvasRefs[0].id, attached[0].canvas.id);
   assert.equal(handoff.canvasRefs[0].preview.url, null);
   const retainedImage = handoff.canvasRefs[0].preview.path;
-  assert.deepEqual(await readFile(retainedImage), Buffer.from(attached[0].preview.split(',')[1], 'base64'));
+  assert.deepEqual(await readFile(retainedImage), await readFile(attached[0].canvas.preview.path));
   const held = await client.call('send_msg', { ...handoffArgs, prompt: 'TASK_HOLD queued reference' });
   assert(held.queued);
   const canceled = await client.call('cancel_queued', { sessionId: session });
@@ -226,13 +247,16 @@ try {
   await writeFile(join(home, `finish-${session}`), 'done');
   await waitFor(async () => delivered().find(e => e.text === 'TASK_HOLD queued reference restored'));
   assert.equal(delivered().find(e => e.text === 'TASK_HOLD queued reference restored').canvasRefs[0].revision, capturedRevision);
-  await writeFile(join(home, `finish-${session}`), 'done');
-  await waitFor(() => command(['context']), context => context.running === false);
+  await waitFor(() => readFile(join(home, 'received.jsonl'), 'utf8'), text => text.includes('TASK_HOLD queued reference restored'));
   const latest = await client.call('read_canvas', { id: a.id });
+  const missingPrompt = 'Reference is unavailable. Describe its retained preview.';
+  const waiting = await client.call('send_msg', { ...handoffArgs, prompt: missingPrompt, canvasContext: { ...focus, revision: latest.revision } });
+  assert(waiting.queued);
   await client.call('delete_canvas', { id: a.id, revision: latest.revision });
   assert.equal((await client.call('canvas_reference_status', { reference: attached[0].canvas })).state, 'unavailable');
-  await client.call('send_msg', { ...handoffArgs, prompt: 'Reference is unavailable; describe its retained preview' });
-  await waitFor(() => readFile(join(home, 'received.jsonl'), 'utf8'), text => text.includes('Unavailable:'));
+  await writeFile(join(home, `finish-${session}`), 'done');
+  await waitFor(() => readFile(join(home, 'received.jsonl'), 'utf8'), text => text.includes(missingPrompt) && text.includes('Unavailable:'));
+  assert.equal(delivered().find(e => e.text === missingPrompt).canvasRefs[0].revision, capturedRevision);
   await rm(attached[0].path);
   await stop(); await rm(join(home, 'serve-port'), { force: true }); client = await start();
   const transcript = await client.call('get_session_by_id', { sessionId: session });
@@ -244,7 +268,7 @@ try {
   await client.call('update_canvas', { id: ui.id, revision: ui.revision, edit: { frames: reopened.frames } });
   const state = { home, project, session, canvas: ui.id, frame, port: client.port, token: client.token, screenshot: shot.data.path };
   await writeFile('/tmp/cbn83-verification.json', JSON.stringify(state));
-  console.log(JSON.stringify({ passed: true, checks: ['actual CLI v22', 'project scoping', 'captured turn', 'revision conflicts', 'HTML rejection and editable import', 'computed mobile CSS', 'frame and layer PNGs with durable evidence', 'editing lifecycle', 'duplicate placement', 'browser preview', 'property-wise undo and redo', 'restart recovery', 'multi-selection handoff', 'pinned historical reads and screenshots', 'changed and unavailable references', 'queue cancel and restore', 'durable transcript previews', 'foreign-project handoff rejected', 'missing historical revision refused'], root }));
+  console.log(JSON.stringify({ passed: true, checks: ['actual CLI v22', 'project scoping', 'captured turn', 'revision conflicts', 'HTML rejection and editable import', 'computed mobile CSS', 'frame and layer PNGs with durable evidence', 'editing lifecycle', 'duplicate placement', 'browser preview', 'property-wise undo and redo', 'restart recovery', 'multi-selection handoff', 'pinned historical reads and screenshots', 'changed and unavailable references', 'queue cancel and restore', 'durable transcript previews', 'foreign-project handoff rejected', 'missing historical revision refused', 'hidden layer frame fallback', 'deleted live canvas does not block queued handoff'], root }));
   if (process.argv.includes('--keep')) { console.log('Scratch server retained for browser verification; send a newline to clean up.'); process.stdin.resume(); await once(process.stdin, 'data'); process.stdin.pause(); }
 } catch (error) { console.error(error, log.slice(-5000)); process.exitCode = 1; }
 finally { await stop(); await rm(root, { recursive: true, force: true }); }

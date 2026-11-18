@@ -89,6 +89,28 @@ pub(super) async fn inspect(
     node: &str,
     screenshot: bool,
 ) -> Result<Value, String> {
+    inspect_node(canvas, frame, node, screenshot, false).await
+}
+
+/// Hidden layers still have a stable identity. Use their frame for visual context.
+pub(super) async fn reference_preview(
+    canvas: &Canvas,
+    frame: &CanvasFrame,
+    node: &str,
+) -> Result<(Value, bool), String> {
+    let result = inspect_node(canvas, frame, node, true, true).await?;
+    let frame_preview = result["framePreview"].as_bool().unwrap_or(false);
+    Ok((result, frame_preview))
+}
+
+/// The handoff can fall back to the whole frame without changing CLI crop semantics.
+async fn inspect_node(
+    canvas: &Canvas,
+    frame: &CanvasFrame,
+    node: &str,
+    screenshot: bool,
+    frame_fallback: bool,
+) -> Result<Value, String> {
     let width = frame.geometry.width.ceil() as u32;
     let height = frame.geometry.height.ceil() as u32;
     super::nodes::dimensions(width, height)?;
@@ -107,11 +129,18 @@ pub(super) async fn inspect(
                 clearTimeout(timer);
                 if(event.data.error){{reject(new Error(event.data.error));return;}}
                 const boxes=event.data.boxes;
-                let box=target===frame.id?{{id:frame.id,x:0,y:0,width:frame.geometry.width,height:frame.geometry.height,styles:{{}}}}:boxes.find(b=>b.id===target);
+                const frameBox={{id:frame.id,x:0,y:0,width:frame.geometry.width,height:frame.geometry.height,styles:{{}}}};
+                const fallback={};
+                const shot={};
+                let box=target===frame.id?frameBox:boxes.find(b=>b.id===target);
+                const crop=(b)=>{{const x=Math.max(0,b.x),y=Math.max(0,b.y);return {{x,y,width:Math.min(frame.geometry.width,b.x+b.width)-x,height:Math.min(frame.geometry.height,b.y+b.height)-y,scale:1}};}};
+                let clip=box&&crop(box);
+                let framePreview=false;
+                if(fallback&&(!clip||clip.width<=0||clip.height<=0)){{box=frameBox;clip=crop(box);framePreview=true;}}
                 if(!box){{reject(new Error('Layer is not rendered'));return;}}
-                const x=Math.max(0,box.x),y=Math.max(0,box.y),right=Math.min(frame.geometry.width,box.x+box.width),bottom=Math.min(frame.geometry.height,box.y+box.height);
-                if({}&&(right<=x||bottom<=y)){{reject(new Error('Layer has no visible area inside the frame'));return;}}
-                resolve({{box,boxes,clip:{{x,y,width:right-x,height:bottom-y,scale:1}}}});
+                if(shot&&(clip.width<=0||clip.height<=0)){{reject(new Error('Layer has no visible area inside the frame'));return;}}
+                if(fallback)clip.scale=Math.min(1,960/Math.max(clip.width,clip.height));
+                resolve({{box,boxes,clip,framePreview}});
             }});
             iframe.onload=()=>{{iframe.getBoundingClientRect();iframe.contentWindow.postMessage({{canvasRender:token}},'*');}};
             iframe.srcdoc=frameDocument(frameMarkup(frame,tokens,assets),token,true,frame.geometry,null,target);
@@ -126,6 +155,7 @@ pub(super) async fn inspect(
         json!(uuid::Uuid::new_v4().simple().to_string()),
         width,
         height,
+        frame_fallback,
         screenshot
     );
     evaluate(script, width, height, screenshot).await

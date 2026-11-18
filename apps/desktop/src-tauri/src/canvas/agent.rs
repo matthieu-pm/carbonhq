@@ -117,8 +117,8 @@ async fn owned(store: &Store, session: &str, id: &str) -> Result<Canvas, String>
 }
 
 /// Resolve the view once when a prompt is delivered; steering cannot retarget a running turn.
-pub async fn prepare_prompt(session: &str) -> Result<CanvasPrompt, String> {
-    let focus = request_focus();
+pub async fn prepare_prompt(session: &str, has_references: bool) -> Result<CanvasPrompt, String> {
+    let focus = if has_references { None } else { request_focus() };
     let previous = match turn(session).await {
         Ok(previous) => previous,
         Err(error) if focus.is_none() => {
@@ -129,11 +129,11 @@ pub async fn prepare_prompt(session: &str) -> Result<CanvasPrompt, String> {
     };
     if let Some(current) = previous.as_ref().filter(|t| t.running) {
         return Ok(CanvasPrompt {
-            text: context_text(current).await?,
+            text: if has_references { String::new() } else { context_text(current).await? },
             turn: None,
         });
     }
-    if focus.is_none() && previous.is_none() {
+    if focus.is_none() && previous.is_none() && !has_references {
         return Ok(CanvasPrompt {
             text: String::new(),
             turn: None,

@@ -3637,7 +3637,7 @@ async fn deliver_prompt(
     let sent = crate::mcp_mentions::with_hint(&format!("{text}{}", prepared.canvas_hint), mcp_servers);
     let sent = crate::issues::drafting::with_context(session_id, &sent).await.map_err(anyhow::Error::msg)?;
     // Storage futures stay on the heap rather than enlarging the harness send stack.
-    let canvas_prompt = Box::pin(crate::canvas::prepare_prompt(session_id))
+    let canvas_prompt = Box::pin(crate::canvas::prepare_prompt(session_id, !prepared.canvas_refs.is_empty()))
         .await
         .map_err(anyhow::Error::msg)?;
     let sent = format!("{sent}{}", canvas_prompt.text);

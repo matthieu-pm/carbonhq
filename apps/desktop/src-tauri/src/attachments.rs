@@ -103,7 +103,7 @@ async fn describe(path: &str) -> Result<Attachment> {
 
     let size = meta.len();
     if let Some(capture) = crate::canvas::read_capture(path).await? {
-        return Ok(capture.attachment(path.to_string(), size));
+        return Ok(capture.attachment(path.to_string(), size).await);
     }
     if let Some(capture) = crate::inspection::read(path).await? {
         return Ok(capture.attachment(path.to_string(), size));

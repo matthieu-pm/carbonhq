@@ -1,9 +1,10 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { Frame, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { fileSrc, invoke, listen, qualify, type ServerId } from "@/lib/transport";
+import { fileSrc, invoke, qualify, type ServerId } from "@/lib/transport";
+import { watchCanvasReference } from "@/lib/canvasReferences";
 import type { Attachment, CanvasReference, CanvasReferenceStatus } from "@/types/events";
 
 export default function CanvasReferenceChip({ reference, server, onRefresh }: {
@@ -15,29 +16,24 @@ export default function CanvasReferenceChip({ reference, server, onRefresh }: {
   const [status, setStatus] = useState<CanvasReferenceStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const scope = useId();
-  const watch = open || !!onRefresh;
   useEffect(() => {
     let stopped = false;
     let request = 0;
     const refresh = () => {
       const n = ++request;
-      void invoke<CanvasReferenceStatus>("canvas_reference_status", { reference }, server).then((next) => {
+      const metadata = { ...reference, preview: { path: null, url: null, mimeType: null } };
+      void invoke<CanvasReferenceStatus>("canvas_reference_status", { reference: metadata }, server).then((next) => {
         if (!stopped && n === request) setStatus(next);
       }).catch((e) => { if (!stopped && n === request) setStatus({ state: "unavailable", revision: null, message: `Could not check the design: ${String(e)}` }); });
     };
     setStatus(null);
     refresh();
-    const off = ["canvas_changed", "canvas_deleted", "canvas_problem", "live_state"].map((event) => listen<{ id?: string }>(event, ({ server: owner, payload }) => {
-      if (owner === server && (event === "live_state" || payload.id === reference.canvasId)) refresh();
-    }));
-    if (watch) void invoke("watch_canvases", { scope: `reference:${scope}`, ids: [reference.canvasId] }, server).catch(() => {});
+    const unsubscribe = watchCanvasReference(server, reference.canvasId, refresh);
     return () => {
       stopped = true;
-      off.forEach((p) => void p.then((fn) => fn()).catch(console.error));
-      if (watch) void invoke("watch_canvases", { scope: `reference:${scope}`, ids: [] }, server).catch(() => {});
+      unsubscribe();
     };
-  }, [reference, server, scope, watch]);
+  }, [reference, server]);
   const preview = reference.preview.url ?? (reference.preview.path ? fileSrc(qualify(reference.preview.path, server)) : undefined);
   const label = status?.state === "changed" ? "Design changed" : status?.state === "unavailable" ? "Unavailable" : null;
   const refresh = async () => {
@@ -69,9 +65,10 @@ export default function CanvasReferenceChip({ reference, server, onRefresh }: {
         <DialogTitle className="break-words">{reference.name}</DialogTitle>
         <DialogDescription>{reference.canvasName} · {reference.frameName} · Revision {reference.revision}</DialogDescription>
       </div>
-      {preview && <img src={preview} alt={`Captured ${reference.name}`} className="max-h-[50vh] max-w-full justify-self-center rounded-lg border border-hairline-strong bg-surface-well object-contain" />}
+      {preview && <img src={preview} alt={`Captured ${reference.framePreview ? reference.frameName : reference.name}`} className="max-h-[50vh] max-w-full justify-self-center rounded-lg border border-hairline-strong bg-surface-well object-contain" />}
       <div className="space-y-1 text-ui text-muted-foreground">
-        <p>{reference.frameWidth} × {reference.frameHeight} frame{reference.nodeId ? ` · ${Math.round(reference.bounds.width)} × ${Math.round(reference.bounds.height)} layer` : ""}</p>
+        <p>{reference.frameWidth} × {reference.frameHeight} frame{reference.nodeId && !reference.framePreview ? ` · ${Math.round(reference.bounds.width)} × ${Math.round(reference.bounds.height)} layer` : ""}</p>
+        {reference.framePreview && <p>This layer has no visible crop. Showing its frame.</p>}
         <p>Captured {new Date(reference.capturedAt).toLocaleString()}</p>
         <p role="status">{status?.message ?? "Checking design…"}</p>
       </div>
