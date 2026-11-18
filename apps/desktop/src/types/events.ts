@@ -600,6 +600,8 @@ export type CanvasPick = { frameId: string, nodeId: string | null, bounds: Canva
 
 export type CanvasProblem = { id: string, path: string, message: string, };
 
+export type CanvasProjectToken = { name: string, value: string, file: string, line: number, scope: Array<string>, };
+
 export type CanvasReconciliation = { canvas: Canvas, problems: Array<CanvasProblem>, };
 
 export type CanvasReference = { id: string, canvasId: string, canvasName: string, projectPath: string, revision: number, frameId: string, frameName: string, nodeId: string | null, name: string, frameWidth: number, frameHeight: number, bounds: CanvasGeometry, framePreview: boolean, contentRef: string, capturedAt: string, preview: ImageRef, };
@@ -607,6 +609,10 @@ export type CanvasReference = { id: string, canvasId: string, canvasName: string
 export type CanvasReferenceStatus = { state: string, revision: number | null, message: string, };
 
 export type CanvasSummary = { id: string, projectPath: string, projectKey: string, name: string, revision: number, modified: string, frameCount: number, change: CanvasChange, };
+
+export type CanvasTokenCatalog = { source: CanvasTokenSource, tokens: Array<CanvasProjectToken>, incomplete: boolean, };
+
+export type CanvasTokenSource = { projectPath: string, cwd: string, worktree: string | null, };
 
 export type CanvasUndoState = { canUndo: boolean, canRedo: boolean, undoLabel: string | null, redoLabel: string | null, };
 

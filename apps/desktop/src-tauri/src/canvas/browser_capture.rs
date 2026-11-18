@@ -28,6 +28,8 @@ pub(crate) struct CapturedPage {
     assets: Vec<Resource>,
     pub warnings: Vec<String>,
     pub image_only: bool,
+    #[serde(default)]
+    pub token_theme: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -70,7 +72,7 @@ pub(crate) struct BrowserCapture {
 
 impl BrowserCapture {
     /// Both the board and export use the same frame, original image and file-owned references.
-    pub(crate) fn assemble(mut page: CapturedPage, screenshot: String) -> Result<Self, String> {
+    pub(crate) fn assemble(mut page: CapturedPage, screenshot: String, checkout: Option<super::tokens::CanvasTokenSource>) -> Result<Self, String> {
         if !(0.0..=10_000.0).contains(&page.clip.width)
             || !(0.0..=10_000.0).contains(&page.clip.height)
             || page.clip.width == 0.0
@@ -146,6 +148,10 @@ impl BrowserCapture {
         } else {
             details.page_path.chars().take(140).collect()
         };
+        let mut content_extra = BTreeMap::new();
+        if !page.image_only {
+            content_extra.insert("tokenSource".into(), json!({"checkout":checkout,"theme":page.token_theme}));
+        }
         let frame = CanvasFrame {
             id: Uuid::new_v4().to_string(),
             name,
@@ -163,7 +169,7 @@ impl BrowserCapture {
                     .iter()
                     .map(|resource| resource.asset.id.clone())
                     .collect(),
-                extra: Default::default(),
+                extra: content_extra,
             },
             extra: BTreeMap::from([("capture".into(), json!(details))]),
         };
@@ -394,7 +400,7 @@ mod tests {
             "nodes": [], "css": "", "assets": [], "warnings": ["Image fallback."], "imageOnly": true,
         })).unwrap();
         let original = STANDARD.encode(b"\xff\xd8\xff");
-        let capture = BrowserCapture::assemble(page, original.clone()).unwrap();
+        let capture = BrowserCapture::assemble(page, original.clone(), None).unwrap();
         let (saved, id) = capture
             .append(&store, &project_path, &canvas.id)
             .await

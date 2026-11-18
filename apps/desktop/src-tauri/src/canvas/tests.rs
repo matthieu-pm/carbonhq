@@ -1093,7 +1093,14 @@ async fn recovery_never_reuses_a_revision_even_with_an_old_checkpoint_and_orphan
 #[tokio::test]
 async fn duplicate_frame_preserves_source_tokens_assets_and_allocates_nonoverlapping_geometry() {
     let fixture = Fixture::new();
-    let canvas = fixture.populated().await;
+    let canvas = fixture.canvas().await;
+    let mut frame = frame();
+    frame.content.extra.insert("tokenSource".into(), json!({"checkout":{"cwd":"/design-worktree"},"theme":[".dark"]}));
+    if let CanvasNode::Element { styles, extra, .. } = &mut frame.content.nodes[0] {
+        styles.insert("background".into(), "rgb(0, 0, 0)".into());
+        extra.insert("tokenReferences".into(), json!({"background":["--brand"]}));
+    }
+    let canvas = fixture.store.edit(&canvas.id, 1, CanvasEdit { frames: Some(vec![frame]), ..Default::default() }, Default::default()).await.unwrap();
     let duplicate = fixture
         .store
         .duplicate_frame(&canvas.id, 2, &canvas.frames[0].id, Default::default())
@@ -1111,6 +1118,12 @@ async fn duplicate_frame_preserves_source_tokens_assets_and_allocates_nonoverlap
         duplicate.frames[1].content.css
     );
     assert_eq!(duplicate.tokens, canvas.tokens);
+    let reopened = fixture.store.read(&canvas.id).await.unwrap();
+    assert_eq!(reopened.frames[0].content.extra, reopened.frames[1].content.extra);
+    for frame in reopened.frames {
+        let links = serde_json::to_value(super::tokens::links(&frame.content.nodes)).unwrap();
+        assert_eq!(links[0]["properties"]["background"], json!({"names":["--brand"],"value":"rgb(0, 0, 0)"}));
+    }
 }
 
 #[tokio::test]

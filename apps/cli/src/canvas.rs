@@ -21,6 +21,8 @@ pub struct CanvasArgs {
 enum CanvasCommand {
     /// List this project's canvas files.
     Ls,
+    /// Read CSS custom properties from the session's current checkout.
+    Tokens,
     /// Read the turn's fixed canvas, selection and open preview.
     Context,
     /// Create a canvas in this session's project.
@@ -125,6 +127,7 @@ pub fn run(args: CanvasArgs) -> Result<(), String> {
         .ok_or("Run inside a Carbon session, or pass --session from a terminal.")?;
     let action = match args.command {
         CanvasCommand::Ls => Action::List,
+        CanvasCommand::Tokens => Action::Tokens,
         CanvasCommand::Context => Action::Context,
         CanvasCommand::New { name } => Action::New { name },
         CanvasCommand::Tree { node } => Action::Tree { node },

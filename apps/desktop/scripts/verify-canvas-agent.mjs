@@ -73,6 +73,12 @@ async function stop() {
 try {
   let client = await start();
   await client.call('add_project', { path: project });
+  await writeFile(join(project, 'tokens.css'), ':root { --space: 4px; }');
+  const rootTokens = await client.call('canvas_project_tokens', { projectPath: project, sessionId: null });
+  const sessionTokens = await client.call('canvas_project_tokens', { projectPath: project, sessionId: session });
+  assert.deepEqual(rootTokens, sessionTokens);
+  assert.equal(sessionTokens.tokens[0].value, '4px');
+  await assert.rejects(client.call('canvas_project_tokens', { projectPath: other, sessionId: session }), /Choose a session in the Canvas project/);
   const a = await client.call('create_canvas', { projectPath: project, name: 'Mobile checkout' });
   const b = await client.call('create_canvas', { projectPath: project, name: 'Other exploration' });
   const foreign = await client.call('create_canvas', { projectPath: other, name: 'Private other project' });
@@ -102,6 +108,9 @@ try {
   const capturedRevision = revision;
   const attached = await client.call('capture_canvas_selection', { projectPath: project, id: a.id, revision, picks: [{ frameId: frame, nodeId: null }, { frameId: frame, nodeId: heading }] });
   assert.equal(attached.length, 2);
+  assert.deepEqual(JSON.parse(await readFile(attached[0].path, 'utf8')).tokenNames, ['--pad']);
+  const pinned = await command(['--revision', String(revision), 'get', main]);
+  assert.deepEqual(pinned.data.tokenReferences[0].properties.padding.names, ['--pad']);
   const mixed = await client.call('capture_canvas_selection', { projectPath: project, id: a.id, revision, picks: [{ frameId: frame, nodeId: hidden }, { frameId: frame, nodeId: null }] });
   assert.equal(mixed.length, 2);
   assert.equal(mixed[0].canvas.nodeId, hidden);
@@ -237,6 +246,8 @@ try {
   assert.equal(handoff.canvasRefs[0].preview.url, null);
   const retainedImage = handoff.canvasRefs[0].preview.path;
   assert.deepEqual(await readFile(retainedImage), await readFile(attached[0].canvas.preview.path));
+  const retainedContext = JSON.parse(await readFile(retainedImage.replace(/\.png$/, '.json'), 'utf8'));
+  assert.deepEqual(retainedContext.tokenNames, ['--pad']);
   const held = await client.call('send_msg', { ...handoffArgs, prompt: 'TASK_HOLD queued reference' });
   assert(held.queued);
   const canceled = await client.call('cancel_queued', { sessionId: session });
@@ -266,6 +277,23 @@ try {
   assert.deepEqual(await readFile(replayed.canvasRefs[0].preview.path), await readFile(retainedImage));
   const ui = await client.call('create_canvas', { projectPath: project, name: 'Handoff verification' });
   await client.call('update_canvas', { id: ui.id, revision: ui.revision, edit: { frames: reopened.frames } });
+  const tokenDesign = await client.call('create_canvas', { projectPath: project, name: 'Captured padding links' });
+  const capturedFrame = structuredClone(reopened.frames[0]);
+  const capturedNode = capturedFrame.content.nodes.find(node => node.id === main);
+  const edges = ['padding-top', 'padding-right', 'padding-bottom', 'padding-left'];
+  capturedNode.styles = Object.fromEntries(edges.map(edge => [edge, '4px']));
+  capturedNode.tokenReferences = Object.fromEntries(edges.map(edge => [edge, { names: ['--space'], value: '4px' }]));
+  const tokenSaved = await client.call('update_canvas', { id: tokenDesign.id, revision: tokenDesign.revision, edit: { frames: [capturedFrame] } });
+  const changedColor = await command(['--canvas', tokenDesign.id, '--revision', String(tokenSaved.revision), 'set-style', main, '{"color":"red"}']);
+  const retainedLinks = (await command(['--canvas', tokenDesign.id, 'get', main])).data.tokenReferences[0].properties;
+  assert.deepEqual(Object.keys(retainedLinks).sort(), edges.toSorted());
+  assert.deepEqual(retainedLinks['padding-left'], { names: ['--space'], value: '4px' });
+  const unchanged = await command(['--canvas', tokenDesign.id, '--revision', String(changedColor.revision), 'set-style', main, '{"all":null}']);
+  assert.deepEqual((await command(['--canvas', tokenDesign.id, 'get', main])).data.tokenReferences[0].properties, retainedLinks);
+  const changedBlock = await command(['--canvas', tokenDesign.id, '--revision', String(unchanged.revision), 'set-style', main, '{"padding-block":"4px"}']);
+  assert.deepEqual(Object.keys((await command(['--canvas', tokenDesign.id, 'get', main])).data.tokenReferences[0].properties).sort(), ['padding-left', 'padding-right']);
+  await command(['--canvas', tokenDesign.id, '--revision', String(changedBlock.revision), 'set-style', main, '{"padding":"4px"}']);
+  assert.equal((await command(['--canvas', tokenDesign.id, 'get', main])).data.tokenReferences.some(layer => layer.nodeId === main), false);
   const state = { home, project, session, canvas: ui.id, frame, port: client.port, token: client.token, screenshot: shot.data.path };
   await writeFile('/tmp/cbn83-verification.json', JSON.stringify(state));
   console.log(JSON.stringify({ passed: true, checks: ['actual CLI v22', 'project scoping', 'captured turn', 'revision conflicts', 'HTML rejection and editable import', 'computed mobile CSS', 'frame and layer PNGs with durable evidence', 'editing lifecycle', 'duplicate placement', 'browser preview', 'property-wise undo and redo', 'restart recovery', 'multi-selection handoff', 'pinned historical reads and screenshots', 'changed and unavailable references', 'queue cancel and restore', 'durable transcript previews', 'foreign-project handoff rejected', 'missing historical revision refused', 'hidden layer frame fallback', 'deleted live canvas does not block queued handoff'], root }));

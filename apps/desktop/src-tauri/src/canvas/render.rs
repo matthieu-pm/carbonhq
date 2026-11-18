@@ -53,6 +53,7 @@ async fn assets(canvas: &Canvas, frame: &CanvasFrame) -> Result<BTreeMap<String,
 pub(super) struct CapturedStyle {
     pub styles: BTreeMap<String, String>,
     pub carbon_style_order: Vec<String>,
+    pub retained: Vec<String>,
 }
 
 /// CSSOM applies shorthand replacement and removal without resolving variables prematurely.
@@ -64,19 +65,10 @@ pub(super) async fn styles(
     let script = format!(
         r#"(()=>{{
         {IMPORT}
-        const style=document.createElement('div').style;
-        const set=(key,value)=>{{
-            const important=/\s*!important\s*$/i.test(value);
-            style.setProperty(key,value.replace(/\s*!important\s*$/i,''),important?'important':'');
-        }};
-        for(const [key,value] of {})set(key,value);
-        for(const [key,value] of Object.entries({})){{
-            if(value===null)style.removeProperty(key);
-            else {{set(key,value);if(!style.getPropertyValue(key))throw new Error('Invalid CSS property or value: '+key);}}
-        }}
-        return captureCanvasStyle(style);
+        return patchCanvasStyle({},{},{});
         }})()"#,
         json!(super::nodes::ordered_styles(existing, extra)),
+        json!(extra.get("tokenReferences").and_then(Value::as_object).map(|refs| refs.keys().collect::<Vec<_>>()).unwrap_or_default()),
         json!(patch),
     );
     serde_json::from_value(evaluate(script, 1, 1, false).await?).map_err(|e| e.to_string())

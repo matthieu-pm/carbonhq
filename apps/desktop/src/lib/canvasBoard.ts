@@ -1,7 +1,7 @@
 import { frameDocument } from "./canvasRenderer.js";
 import type { CanvasCamera, CanvasFrame, CanvasGeometry, CanvasNode, SessionIndexItem } from "@/types/events";
 
-export const CANVAS_PANEL_TABS = ["chat", "preview", "properties"] as const;
+export const CANVAS_PANEL_TABS = ["chat", "preview", "properties", "tokens"] as const;
 export type CanvasPanelTab = typeof CANVAS_PANEL_TABS[number];
 
 export type CanvasPick = { frameId: string; nodeId: string | null };

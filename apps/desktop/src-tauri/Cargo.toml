@@ -51,6 +51,8 @@ carbon-proto = { path = "../../../crates/carbon-proto" }
 tauri-plugin-dialog = { version = "2", optional = true }
 tauri-plugin-updater = { version = "2", optional = true }
 fff-search = "0.11.0"
+cssparser = "0.37"
+ignore = "0.4"
 # ACP provides buffer pairs; libgit2 already ships through fff-search.
 git2 = { version = "0.21", default-features = false }
 # Watches the docs panel's open files. Already in the tree behind `fff-search`,

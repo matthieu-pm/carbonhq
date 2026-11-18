@@ -1596,6 +1596,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         delete_draft(id: String) => crate::drafts::delete_draft(id).await;
         read_doc(path: String) => crate::docs::read_doc(path).await;
         list_canvases(project_path: Option<String>) => crate::canvas::list_canvases(project_path).await;
+        canvas_project_tokens(project_path: String, session_id: Option<String>) => crate::canvas::canvas_project_tokens(project_path, session_id).await;
         read_canvas(id: String) => crate::canvas::read_canvas(id).await;
         create_canvas(project_path: String, name: String) => crate::canvas::create_canvas(sink.clone(), project_path, name).await;
         update_canvas(id: String, revision: u64, edit: crate::canvas::CanvasEdit, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::update_canvas(sink.clone(), id, revision, edit, author).await;
