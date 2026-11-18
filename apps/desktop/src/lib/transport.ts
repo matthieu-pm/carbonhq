@@ -185,6 +185,7 @@ export const APP_COMMANDS = new Set([
   "browser_devtools",
   "browser_pick",
   "browser_inspect_add",
+  "browser_capture_frame",
   "browser_snapshot",
   "chromium_status",
   "chromium_download",

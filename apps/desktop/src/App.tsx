@@ -14,6 +14,7 @@ import "./App.css";
 import { pagePromptContext, setPageChatHandler, setPageOpener, setPageTaskHandler, type LocatedPage, type Page, type PageTarget } from "@/lib/pages";
 import Chat from "@/components/Chat";
 import type { CanvasControls } from "@/components/canvas/CanvasView";
+import type { BrowserCaptureResult } from "@/components/browser/BrowserCapture";
 import ChatInput from "@/components/ChatInput";
 import DiffWorkerPool from "@/components/DiffWorkerPool";
 import NoticeStack from "@/components/NoticeStack";
@@ -591,6 +592,7 @@ function App() {
   const [spacesOpen, setSpacesOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasAgentTarget, setCanvasAgentTarget] = useState<CanvasPreviewTarget | null>(null);
+  const [canvasCaptureTarget, setCanvasCaptureTarget] = useState<(BrowserCaptureResult & { revealId: string }) | null>(null);
   const canvasControls = useRef<CanvasControls | null>(null);
   const [canvasProject, setCanvasProject] = useLocalStorage<string | null>("carbon.canvas.project", null);
   const [canvasSessions, setCanvasSessions] = useLocalStorage<Record<string, string>>("carbon.canvas.sessions", {});
@@ -2982,6 +2984,16 @@ function App() {
     else if (canvasPath) changeCanvasProject(canvasPath);
     setCanvasOpen(true);
   };
+  const revealBrowserCapture = (result: BrowserCaptureResult) => {
+    if (!canvasEnabled || !spaceProjects.some(project => project.path === result.projectPath)) return;
+    setCanvasProject(result.projectPath);
+    setCanvasCaptureTarget({ ...result, revealId: crypto.randomUUID() });
+    setCanvasPanelTab("properties");
+    setCanvasOpen(true);
+    setSpacesOpen(false);
+    setIssuesOpen(false);
+    setPeek(false);
+  };
   useHotkey("canvas.open", openCanvas, { enabled: canvasEnabled });
   const canvasChatSessions = availableCanvasSessions(canvasPath, sessionIndexItems);
   const canvasChatReady = !!canvasPath && (selectedSessionId
@@ -3009,6 +3021,9 @@ function App() {
   // empty pane until it lands rather than a different screen.
   const shownSession =
     selectedSession ?? sessionIndexItems.find((i) => i.sessionId === selectedSessionId) ?? null;
+  const browserCaptureProject = canvasEnabled && shownSession?.sessionId === browserSessionId &&
+    serverOfPath(shownSession.projectPath) === LOCAL && spaceProjects.some(p => p.path === shownSession.projectPath)
+    ? shownSession.projectPath : null;
   // Off the index, never the snapshot: `session_changed` writes only there.
   const selectedItem = sessionIndexItems.find((i) => i.sessionId === selectedSessionId);
 
@@ -3298,7 +3313,7 @@ function App() {
         </div>
         <div className={cn("min-h-0 min-w-0 flex-1", canvasOpen ? "flex" : "hidden")}>
         {canvasEnabled && <MountOnce when={canvasOpen}>
-          <CanvasView agentTarget={canvasAgentTarget} controlsRef={canvasControls} active={canvasOpen && !settingsOpen} projects={spaceProjects} projectPath={canvasPath}
+          <CanvasView agentTarget={canvasAgentTarget} captureTarget={canvasCaptureTarget} controlsRef={canvasControls} active={canvasOpen && !settingsOpen} projects={spaceProjects} projectPath={canvasPath}
             composerKey={composerKey} composerCwd={composerCwd}
             onProjectChange={changeCanvasProject} sessions={canvasChatSessions}
             sessionId={selectedSessionId} onSessionChange={(id) => void selectAndLeaveCrew(id)} onNewSession={() => newCanvasSession(canvasPath)}
@@ -3316,7 +3331,8 @@ function App() {
               <div className="flex justify-end border-b border-hairline p-2"><PreviewControl sessionId={selectedSession.sessionId} cwd={selectedSession.cwd}
                 disabled={selectedSession.archived || selectedSession.worktreeRemoved}
                 onOpen={async (id, url) => { await openPreviewInBrowser(id, url); }} /></div>
-              <BrowserPane sessionId={selectedSession.sessionId} active={!settingsOpen && canvasPanelTab === "preview"} mode="panel" />
+              <BrowserPane sessionId={selectedSession.sessionId} active={!settingsOpen && canvasPanelTab === "preview"} mode="panel"
+                captureProject={browserCaptureProject} onCaptured={revealBrowserCapture} />
             </div> : <p className="p-4 text-sm text-muted-foreground">Start a project session to run its preview.</p>}
           />
         </MountOnce>}
@@ -3641,6 +3657,8 @@ function App() {
                 fullOpen={fullBrowserOpen}
                 onExpand={expandBrowser}
                 onCollapse={collapseBrowser}
+                captureProject={browserCaptureProject}
+                onCaptured={revealBrowserCapture}
               />
               </MountOnce>
             </TabBody>
@@ -3854,6 +3872,8 @@ function App() {
             active={fullBrowserOpen}
             mode="full"
             onCollapse={selectedSessionId ? collapseBrowser : undefined}
+            captureProject={browserCaptureProject}
+            onCaptured={revealBrowserCapture}
           />
         </MountOnce>
       </TabBody>

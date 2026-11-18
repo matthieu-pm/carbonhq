@@ -5,6 +5,7 @@ import {
   Check,
   Copy,
   Bug,
+  Camera,
   ExternalLink,
   Globe,
   Maximize2,
@@ -21,6 +22,7 @@ import {
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import AgentBeam from "@/components/browser/AgentBeam";
+import { useBrowserCapture, type BrowserCaptureResult } from "@/components/browser/BrowserCapture";
 import Favicon, { hostOf } from "@/components/browser/Favicon";
 import GlobeFilledIcon from "@/components/icons/GlobeFilledIcon";
 import RecordingNotice from "@/components/browser/RecordingNotice";
@@ -139,6 +141,8 @@ export default function BrowserPane({
   fullOpen = false,
   onExpand,
   onCollapse,
+  captureProject,
+  onCaptured,
 }: {
   sessionId: string;
   active: boolean;
@@ -147,6 +151,8 @@ export default function BrowserPane({
   fullOpen?: boolean;
   onExpand?: () => void;
   onCollapse?: () => void;
+  captureProject?: string | null;
+  onCaptured?: (result: BrowserCaptureResult) => void;
 }) {
   const tabs = useBrowserTabs(sessionId) ?? [];
   const pending = usePendingTab(sessionId);
@@ -236,6 +242,8 @@ export default function BrowserPane({
         mode={mode}
         onExpand={onExpand}
         onCollapse={onCollapse}
+        captureProject={captureProject}
+        onCaptured={onCaptured}
       />
       {!empty &&
         (responsive ? (
@@ -358,6 +366,8 @@ function Chrome({
   mode,
   onExpand,
   onCollapse,
+  captureProject,
+  onCaptured,
 }: {
   active: boolean;
   sessionId: string;
@@ -367,18 +377,24 @@ function Chrome({
   mode: "panel" | "full";
   onExpand?: () => void;
   onCollapse?: () => void;
+  captureProject?: string | null;
+  onCaptured?: (result: BrowserCaptureResult) => void;
 }) {
   const openError = useOpenError(sessionId);
   const inputRef = useRef<HTMLInputElement>(null);
   const inspection = useInspection(sessionId);
-  const picking = inspection.active;
+  const picking = inspection.active && !inspection.canvas;
+  const capturing = inspection.active && inspection.canvas;
+  const recording = useRecording(sessionId);
+  const capturePage = active && captureProject && current && !recording && /^https?:/.test(current.url)
+    ? { projectPath: captureProject, sessionId, tabId: current.id, url: current.url } : null;
+  const capture = useBrowserCapture(capturePage, capturing, onCaptured);
   useHotkey("browser.inspect.add", () => void addPickedElements(sessionId), {
     enabled: active && picking && !inspection.busy && inspection.count > 0,
   });
   // The reader cannot change tabs mid-recording: the agent's next verb goes to
   // whichever tab is active, and a switch here would send it somewhere else.
   // The agent's own tab verbs stay open, since a flow may cross tabs.
-  const recording = useRecording(sessionId);
   const opening = useOpeningUrl(sessionId);
   const url = current?.url ?? opening ?? "";
   const loading = current ? current.loading : opening !== null;
@@ -431,6 +447,12 @@ function Chrome({
 
   return (
     <div className="shrink-0" onKeyDown={(event) => {
+      if (event.key === "Escape" && capturing && !capture.saving) {
+        event.preventDefault();
+        event.stopPropagation();
+        capture.cancel();
+        return;
+      }
       if (event.key === "Escape" && picking && !inspection.busy) {
         event.preventDefault();
         event.stopPropagation();
@@ -667,7 +689,7 @@ function Chrome({
               size="icon-sm"
               aria-label={picking ? "Exit Inspect" : "Inspect"}
               aria-pressed={picking}
-              disabled={!current || inspection.busy}
+              disabled={!current || inspection.busy || capturing || capture.saving}
               className={cn(TOOL_BTN, picking && "bg-primary/15 text-primary")}
               onClick={() => void pickElement(sessionId, !picking)}
             >
@@ -678,6 +700,19 @@ function Chrome({
             {picking ? "Exit Inspect · Esc" : "Inspect"}
           </TooltipContent>
         </Tooltip>
+        {captureProject && <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-sm"
+              aria-label={capturing ? "Exit Capture" : "Capture"}
+              aria-pressed={capturing}
+              disabled={!capturePage || picking || capture.busy || capture.saving}
+              className={cn(TOOL_BTN, capturing && "bg-primary/15 text-primary")}
+              onClick={() => void capture.toggle()}>
+              {capture.busy || capture.saving ? <Spinner className="size-3.5" /> : <Camera className="size-3.5" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side={TIP_SIDE}>{capturing ? "Exit Capture · Esc" : "Capture to Canvas"}</TooltipContent>
+        </Tooltip>}
         <DeviceMenu sessionId={sessionId} disabled={!current} />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -758,6 +793,19 @@ function Chrome({
           )}
         </div>
       )}
+      {(capture.saving || capturing || capture.error) && (
+        <div className="flex min-h-9 items-center gap-2 px-3 pb-1 text-ui text-muted-foreground" role="status">
+          <span className={cn("min-w-0 flex-1", capture.error && "text-destructive")}>
+            {capture.error ?? (capture.saving ? "Capturing to Canvas…" : "Click an element to capture it · ⌘-click for the full page")}
+          </span>
+          {capturing && <Tooltip>
+            <TooltipTrigger asChild><Button variant="secondary" size="sm" className="shrink-0"
+              disabled={capture.saving} onClick={() => void capture.save(true)}>Full page</Button></TooltipTrigger>
+            <TooltipContent side={TIP_SIDE}>Capture full page <KbdGroup><Kbd>⌘</Kbd><Kbd>↵</Kbd></KbdGroup></TooltipContent>
+          </Tooltip>}
+        </div>
+      )}
+      {capture.dialogs}
     </div>
   );
 }

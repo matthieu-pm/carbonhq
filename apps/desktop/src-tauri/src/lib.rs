@@ -1050,6 +1050,8 @@ pub fn run() {
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_inspect_add,
             #[cfg(all(feature = "cef", target_os = "macos"))]
+            cef::browser_capture_frame,
+            #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_snapshot,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             chromium::chromium_status,

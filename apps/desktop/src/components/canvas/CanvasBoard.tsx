@@ -12,10 +12,11 @@ import type { Canvas, CanvasCamera, CanvasGeometry } from "@/types/events";
 import type { ShortcutId } from "@/lib/shortcuts";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
 
-export default function CanvasBoard({ canvas, active, picks, onPicks, previews, errors, onVisible, onNewFrame, stats, editing = [] }: {
+export default function CanvasBoard({ canvas, active, picks, onPicks, previews, errors, onVisible, onNewFrame, stats, editing = [], captureReveal }: {
   canvas: Canvas; active: boolean; picks: CanvasPick[]; onPicks(picks: CanvasPick[]): void;
   previews: Map<string, FramePreview>; errors: Map<string, string>; onVisible(ids: string[]): void; onNewFrame(): void;
   editing?: string[];
+  captureReveal?: { frameId: string; revealId: string } | null;
   stats: { cached: number; bytes: number; captures: number };
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -26,6 +27,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
     return canvas.camera ?? { x: 0, y: 0, zoom: 1 };
   });
   const initial = useRef(false);
+  const shownCapture = useRef<string | null>(null);
   const [tool, setTool] = useState<"select" | "hand">("select");
   const [space, setSpace] = useState(false);
   const [marquee, setMarquee] = useState<CanvasGeometry | null>(null);
@@ -64,6 +66,14 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
     if (canvas.frames.length > previousCount.current && size.width && size.height) setCamera(fitCamera(frameBounds, size.width, size.height));
     previousCount.current = canvas.frames.length;
   }, [canvas.frames.length, frameBounds, size]);
+  useLayoutEffect(() => {
+    if (!active || !size.width || !size.height || !captureReveal || shownCapture.current === captureReveal.revealId) return;
+    const frame = canvas.frames.find(frame => frame.id === captureReveal.frameId);
+    if (!frame) return;
+    shownCapture.current = captureReveal.revealId;
+    setCamera(fitCamera(frame.geometry, size.width, size.height));
+    root.current?.focus();
+  }, [active, canvas.frames, captureReveal, size]);
   useEffect(() => {
     const node = root.current;
     if (!node || !active) return;

@@ -6,6 +6,7 @@ import { useHotkey } from "@/hooks/useHotkey";
 import { useInspection } from "@/lib/browser";
 import { IS_MAC } from "@/lib/platform";
 import BrowserPane from "@/components/browser/BrowserPane";
+import type { BrowserCaptureResult } from "@/components/browser/BrowserCapture";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import CanvasChrome from "./CanvasChrome";
 import { CanvasFileDialog, CanvasFrameDialog } from "./CanvasDialogs";
@@ -24,17 +25,29 @@ import "./canvas.css";
 
 export type CanvasControls = { toggleLayers(): void; togglePanel(): void; refresh(): void };
 
-export default function CanvasView({ active, projects, projectPath, onProjectChange, sessions, sessionId, onSessionChange, onNewSession, chat, panelTab, onPanelTabChange, chatReady, projectPreview, controlsRef, agentTarget, composerKey, composerCwd }: {
+export default function CanvasView({ active, projects, projectPath, onProjectChange, sessions, sessionId, onSessionChange, onNewSession, chat, panelTab, onPanelTabChange, chatReady, projectPreview, controlsRef, agentTarget, captureTarget, composerKey, composerCwd }: {
   active: boolean; projects: Project[]; projectPath: string | null; onProjectChange(path: string): void;
   sessions: SessionIndexItem[]; sessionId: string | null; onSessionChange(id: string): void; onNewSession(): void;
   chat: ReactNode; panelTab: CanvasPanelTab; onPanelTabChange(tab: CanvasPanelTab): void; chatReady: boolean; projectPreview: ReactNode;
   controlsRef: RefObject<CanvasControls | null>;
   agentTarget?: CanvasPreviewTarget | null;
+  captureTarget?: (BrowserCaptureResult & { revealId: string }) | null;
   composerKey?: string | null;
   composerCwd?: string | null;
 }) {
   const data = useCanvases(projectPath, active);
   const [selection, setSelection] = useState<{ id: string | null; picks: CanvasPick[] }>({ id: null, picks: [] });
+  const [captureReveal, setCaptureReveal] = useState<{ frameId: string; revealId: string } | null>(null);
+  const handledCapture = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || !captureTarget || captureTarget.revealId === handledCapture.current || captureTarget.projectPath !== projectPath) return;
+    handledCapture.current = captureTarget.revealId;
+    data.select(captureTarget.canvasId);
+    setSelection({ id: captureTarget.canvasId, picks: [{ frameId: captureTarget.frameId, nodeId: null }] });
+    setCaptureReveal(captureTarget);
+    setPanelOpen(true);
+    void data.refresh();
+  }, [active, captureTarget, projectPath]);
   const picks = selection.id === data.canvas?.id ? selection.picks.filter((p) => data.canvas!.frames.some((f) => f.id === p.frameId && (!p.nodeId || flattenNodes(f.content.nodes).some((n) => n.node.id === p.nodeId)))) : [];
   const select = (next: CanvasPick[]) => setSelection({ id: data.canvas?.id ?? null, picks: next });
   const [visible, setVisible] = useState<string[]>([]);
@@ -135,7 +148,7 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
       onAddToChat={() => void addToChat()} canAddToChat={chatReady && picks.length > 0 && !adding} addingToChat={adding}
       panelTab={panelTab} onPanelTabChange={onPanelTabChange} panelOpen={panelOpen} onPanelOpenChange={setPanelOpen}
       layers={<CanvasLayers frames={data.canvas?.frames ?? []} picks={picks} onPick={(p, additive) => select(togglePick(picks, p, additive))} />}
-      board={data.canvas ? <CanvasBoard key={data.canvas.id} canvas={data.canvas} active={active} picks={picks} onPicks={select} previews={capture.previews} errors={capture.errors} onVisible={setVisible} onNewFrame={() => setDialog("frame")} stats={capture.stats} editing={editors.filter((e) => e.canvasId === data.canvas?.id).map((e) => e.frameId)} />
+      board={data.canvas ? <CanvasBoard key={data.canvas.id} canvas={data.canvas} active={active} picks={picks} onPicks={select} previews={capture.previews} errors={capture.errors} onVisible={setVisible} onNewFrame={() => setDialog("frame")} stats={capture.stats} editing={editors.filter((e) => e.canvasId === data.canvas?.id).map((e) => e.frameId)} captureReveal={captureReveal} />
         : <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"><p>{data.loading ? "Loading canvases…" : data.fileId ? "Opening canvas…" : projectPath ? "Create a canvas for your designs" : "Choose a project to open its canvases"}</p>{projectPath && !data.fileId && <Button variant="secondary" size="sm" onClick={() => setDialog("create")}>New canvas</Button>}</div>}
       chat={<div className="flex min-h-0 flex-1 flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-hairline px-3 py-2">
@@ -154,7 +167,7 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
         <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-2 py-1.5"><Button variant="ghost" size="xs" aria-pressed={previewTarget === "frame"} onClick={() => setPreviewTarget("frame")}>Focused frame</Button><Button variant="ghost" size="xs" aria-pressed={previewTarget === "project"} onClick={() => setPreviewTarget("project")}>Running project</Button></div>
         {previewTarget === "frame" ? active && panelOpen && panelTab === "preview" && data.canvas && frame ? agentPreview?.canvasId === data.canvas.id && agentPreview.frameId === frame.id && agentPreview.sessionId === sessionId ? <BrowserPane sessionId={agentPreview.sessionId} active={active && panelOpen && panelTab === "preview"} mode="panel" /> : <LiveFrame canvas={data.canvas} frame={frame} owner={data.owner} /> : <p className="p-4 text-sm text-muted-foreground">Select a frame to preview it at its original size.</p> : projectPreview}
       </div>}
-      properties={<CanvasProperties frame={frame} node={node} box={box} count={picks.length} />}
+      properties={<CanvasProperties frame={frame} node={node} box={box} count={picks.length} canvasId={data.canvas?.id} owner={data.owner} />}
     />
     {capture.renderer}
     <CanvasFileDialog open={active && (dialog === "create" || dialog === "rename")} onOpenChange={(open) => { if (!open) setDialog(null); }} initialName={dialog === "rename" ? data.canvas?.name ?? "" : ""} title={dialog === "rename" ? "Rename canvas" : "New canvas"} busy={data.busy} error={data.error}

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const script = readFileSync(new URL("../../src-tauri/src/cef/inspect.js", import.meta.url), "utf8");
 
-function page() {
+function page(mode = "inspect") {
   const frames: (() => void)[] = [];
   const observers: { callback: (records: { target: Element }[]) => void; roots: Set<Root | Element> }[] = [];
   const messages: { count: number; action: string }[] = [];
@@ -19,7 +19,7 @@ function page() {
       removeEventListener(type: string, fn: (event: any) => void) { handlers.get(type)?.delete(fn); },
       emit(type: string, data: Record<string, unknown> = {}) {
         const event = { type, clientX: 100, clientY: 100, button: 0, pointerId: 1,
-          altKey: false, shiftKey: false, metaKey: false, ctrlKey: false, stopped: false,
+          altKey: false, shiftKey: false, metaKey: false, ctrlKey: false, isTrusted: true, stopped: false,
           preventDefault() {}, stopImmediatePropagation() { this.stopped = true; }, ...data };
         for (const fn of handlers.get(type) ?? []) { fn(event); if (event.stopped) break; }
       },
@@ -62,6 +62,7 @@ function page() {
     shadowRoot: Root | null = null;
     style: any = style();
     hidden = false;
+    name = "";
     textContent = "Save";
     clientWidth = 800;
     clientHeight = 600;
@@ -127,7 +128,7 @@ function page() {
   const button = new Element("button", "save");
   document.documentElement.append(button);
   pointTarget = button;
-  runInNewContext(script, {
+  runInNewContext(script.replace("__CARBON_PICK_MODE__", mode), {
     window, document, location: { href: "http://localhost/settings?private=1", pathname: "/settings" },
     innerWidth: 800, innerHeight: 600, devicePixelRatio: 2, CSS: { escape: (text: string) => text },
     CSSStyleSheet: class { replaceSync() {} },
@@ -158,6 +159,40 @@ function page() {
 }
 
 describe("inspection page script", () => {
+  it("captures a single element or the whole page without adding an Inspect selection", () => {
+    const element = page("capture");
+    element.pick();
+    expect(element.messages.at(-1)).toMatchObject({ action: "capture_element", count: 0 });
+    const picker = element.window.__carbonPick;
+    expect(picker.canvasTarget(picker.documentId, false).element).toBe(element.button);
+    expect(picker.canvasTarget("another-document", false)).toBeNull();
+    element.emit("keydown", { key: "Enter", metaKey: true });
+    expect(element.messages.at(-1)).toMatchObject({ action: "capture_element" });
+
+    const full = page("capture");
+    full.emit("pointerdown", { metaKey: true });
+    full.emit("pointerup", { metaKey: true });
+    expect(full.messages.at(-1)).toMatchObject({ action: "capture_page", count: 0 });
+    const keyboard = page("capture");
+    keyboard.emit("keydown", { key: "Enter", metaKey: true });
+    expect(keyboard.messages.at(-1)).toMatchObject({ action: "capture_page", count: 0 });
+  });
+
+  it("keeps capture input isolated and refuses synthetic clicks and keys", () => {
+    const p = page("capture");
+    p.emit("pointerdown", { isTrusted: false });
+    p.emit("pointerup", { metaKey: true, isTrusted: false });
+    p.emit("keydown", { key: "Enter", metaKey: true, isTrusted: false });
+    expect(p.messages).toHaveLength(1);
+    expect(p.messages[0]).toMatchObject({ action: "change" });
+    expect(p.shield.name).not.toContain(p.window.__carbonPick.documentId);
+    const uncover = p.window.__carbonPick.coverCapture();
+    p.pick();
+    expect(p.messages).toHaveLength(1);
+    uncover();
+    p.pick();
+    expect(p.messages.at(-1)).toMatchObject({ action: "capture_element" });
+  });
   it("rejects metadata when the page changes during either settling frame", async () => {
     const p = page();
     p.pick();

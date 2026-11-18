@@ -2,6 +2,7 @@
 
 mod agent;
 mod assets;
+mod browser_capture;
 mod commands;
 mod handoff;
 mod model;
@@ -16,6 +17,7 @@ pub use handoff::{capture_canvas_selection, canvas_reference_status, CanvasRefer
 pub(crate) use handoff::{read_capture, prepare_reference, HANDOFF_GUIDANCE};
 
 pub use assets::{CanvasAssetData, CanvasAssetProgress, CanvasAssetUpload};
+pub(crate) use browser_capture::{BrowserCapture, CapturedPage};
 pub use commands::*;
 pub use model::*;
 pub use undo::CanvasUndoState;

@@ -1375,16 +1375,26 @@ wrap_display_handler! {
                 return 0;
             };
             let Ok(message) = serde_json::from_str::<PickerMessage>(rest) else { return 1 };
-            let accepted = PICKING.lock().unwrap().as_ref()
-                .and_then(|p| p.get(&self.tab)).is_some_and(|id| id == &message.document_id);
+            let accepted = current_picker(self.tab).is_some_and(|picker|
+                picker.nonce == message.document_id && picker.context.is_some() == message.canvas);
             if !accepted || message.count > 20 { return 1; }
+            if !matches!(message.action.as_str(), "change" | "cancel")
+                && !(message.canvas && matches!(message.action.as_str(), "capture_element" | "capture_page"))
+            {
+                return 1;
+            }
             if message.action == "cancel" {
                 PICKING.lock().unwrap().as_mut().map(|p| p.remove(&self.tab));
             }
             if let (Some(app), Some(session)) = (APP.get(), session_of(self.tab)) {
+                if message.canvas && matches!(message.action.as_str(), "capture_element" | "capture_page") {
+                    let _ = app.emit("browser_canvas_pick", serde_json::json!({
+                        "sessionId": session, "tabId": self.tab, "fullPage": message.action == "capture_page",
+                    }));
+                }
                 let _ = app.emit("browser_pick", PickEvent {
                     session_id: session, tab_id: self.tab, count: message.count,
-                    active: message.action != "cancel",
+                    active: message.action != "cancel", canvas: message.canvas,
                 });
             }
             1
@@ -1444,16 +1454,36 @@ const BG_JS: &str = r#"(() => {
   report();
 })();"#;
 
-/// A nonce binds each picker to its tab's current document, including console replies.
-static PICKING: Mutex<Option<HashMap<i32, String>>> = Mutex::new(None);
+#[derive(Clone)]
+struct Picker {
+    nonce: String,
+    context: Option<i64>,
+}
+
+/// Capture keeps its nonce and selected element in the isolated world.
+static PICKING: Mutex<Option<HashMap<i32, Picker>>> = Mutex::new(None);
+
+fn current_picker(tab: i32) -> Option<Picker> {
+    PICKING.lock().unwrap().as_ref()?.get(&tab).cloned()
+}
 
 /// Navigation and closing discard the old document's selection rather than retarget it.
 fn disarm_picker(id: i32) {
-    let was = PICKING.lock().unwrap().as_mut().and_then(|s| s.remove(&id)).is_some();
+    disarm_picker_if(id, None);
+}
+
+fn disarm_picker_if(id: i32, nonce: Option<&str>) {
+    let was = {
+        let mut picking = PICKING.lock().unwrap();
+        picking.as_mut().is_some_and(|pickers| {
+            if nonce.is_some() && pickers.get(&id).map(|p| p.nonce.as_str()) != nonce { return false; }
+            pickers.remove(&id).is_some()
+        })
+    };
     if !was { return; }
     if let (Some(app), Some(session)) = (APP.get(), session_of(id)) {
         let _ = app.emit("browser_pick", PickEvent {
-            session_id: session, tab_id: id, count: 0, active: false,
+            session_id: session, tab_id: id, count: 0, active: false, canvas: false,
         });
     }
 }
@@ -1465,6 +1495,7 @@ struct PickEvent {
     tab_id: i32,
     count: usize,
     active: bool,
+    canvas: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -1473,6 +1504,8 @@ struct PickerMessage {
     document_id: String,
     count: usize,
     action: String,
+    #[serde(default)]
+    canvas: bool,
 }
 
 const PICK_JS: &str = include_str!("inspect.js");
@@ -2078,9 +2111,26 @@ pub fn browser_devtools(session_id: String) -> Result<(), String> {
 /// Starts or stops the element picker in the active tab. The pick itself
 /// arrives as a `browser_pick` event.
 #[tauri::command]
-pub fn browser_pick(session_id: String, tab_id: i32, start: bool) -> Result<(), String> {
+pub async fn browser_pick(session_id: String, tab_id: i32, start: bool, canvas: Option<bool>) -> Result<(), String> {
     if session_of(tab_id).as_deref() != Some(session_id.as_str()) {
         return Err("The inspection tab is no longer open".into());
+    }
+    if start && canvas.unwrap_or(false) {
+        let context = automation::capture_context(tab_id).await?;
+        let picker = Picker { nonce: uuid::Uuid::new_v4().to_string(), context: Some(context) };
+        PICKING.lock().unwrap().get_or_insert_with(HashMap::new).insert(tab_id, picker.clone());
+        let code = PICK_JS.replace("__CARBON_DOCUMENT_ID__", &picker.nonce).replace("__CARBON_PICK_MODE__", "capture");
+        if let Err(error) = automation::eval_context(tab_id, &code, picker.context).await {
+            disarm_picker_if(tab_id, Some(&picker.nonce));
+            return Err(error);
+        }
+        return Ok(());
+    }
+    if !start {
+        if let Some(picker) = current_picker(tab_id).filter(|p| p.context.is_some()) {
+            stop_canvas_picker(tab_id, &picker).await;
+            return Ok(());
+        }
     }
     on_main(move || {
         let id = tab_id;
@@ -2089,10 +2139,10 @@ pub fn browser_pick(session_id: String, tab_id: i32, start: bool) -> Result<(), 
         {
             let mut picking = PICKING.lock().unwrap();
             let map = picking.get_or_insert_with(HashMap::new);
-            if start { map.insert(id, nonce.clone()); } else { map.remove(&id); }
+            if start { map.insert(id, Picker { nonce: nonce.clone(), context: None }); } else { map.remove(&id); }
         }
         let code = if start {
-            PICK_JS.replace("__CARBON_DOCUMENT_ID__", &nonce)
+            PICK_JS.replace("__CARBON_DOCUMENT_ID__", &nonce).replace("__CARBON_PICK_MODE__", "inspect")
         } else {
             "window.__carbonPick?.stop()".into()
         };
@@ -2100,11 +2150,37 @@ pub fn browser_pick(session_id: String, tab_id: i32, start: bool) -> Result<(), 
         if !start {
             if let Some(app) = APP.get() {
                 let _ = app.emit("browser_pick", PickEvent {
-                    session_id, tab_id: id, count: 0, active: false,
+                    session_id, tab_id: id, count: 0, active: false, canvas: false,
                 });
             }
         }
     })
+}
+
+/// Append to the chosen canvas only after the named session's picked document is captured.
+#[tauri::command]
+pub async fn browser_capture_frame(
+    sink: crate::sink::Sink, session_id: String, tab_id: i32, canvas_id: String, full_page: bool,
+) -> Result<String, String> {
+    if session_of(tab_id).as_deref() != Some(session_id.as_str()) {
+        return Err("The capture tab is no longer open.".into());
+    }
+    let picker = current_picker(tab_id).filter(|p| p.context.is_some())
+        .ok_or("Capture is no longer active in this tab.")?;
+    let session = crate::store::get_session_index_item(&session_id).await.map_err(|e| e.to_string())?
+        .ok_or("Open a project session to capture to Canvas.")?;
+    let result = automation::capture_screen(tab_id, None, Some(automation::ScreenPick {
+        nonce: &picker.nonce, context: picker.context.unwrap(), full_page,
+    })).await;
+    stop_canvas_picker(tab_id, &picker).await;
+    result?.add_to_canvas(&sink, &session.project_path, &canvas_id).await
+}
+
+async fn stop_canvas_picker(tab: i32, picker: &Picker) {
+    let guard = serde_json::json!(picker.nonce);
+    let code = format!("window.__carbonPick?.documentId === {guard} && window.__carbonPick.stop()");
+    let _ = automation::eval_context(tab, &code, picker.context).await;
+    disarm_picker_if(tab, Some(&picker.nonce));
 }
 
 #[derive(serde::Deserialize)]
@@ -2122,7 +2198,7 @@ pub async fn browser_inspect_add(session_id: String, tab_id: i32) -> Result<Vec<
     if session_of(tab_id).as_deref() != Some(session_id.as_str()) {
         return Err("The inspection tab is no longer open".into());
     }
-    let nonce = PICKING.lock().unwrap().as_ref().and_then(|p| p.get(&tab_id).cloned())
+    let nonce = current_picker(tab_id).filter(|p| p.context.is_none()).map(|p| p.nonce)
         .ok_or("Inspect is no longer active in this tab")?;
     let batch = automation::eval(tab_id, "window.__carbonPick?.capture()").await;
     let revision = batch.as_ref().ok().and_then(|v| v["revision"].as_u64()).unwrap_or(0);

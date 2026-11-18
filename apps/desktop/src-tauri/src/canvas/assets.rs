@@ -102,17 +102,7 @@ impl Store {
             hash: digest.clone(),
             extra: Default::default(),
         };
-        let destination = self.dir(id)?.join("assets").join(digest);
-        if fs::try_exists(&destination)
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            if read_bytes(&destination, MAX_ASSET as u64).await? != pending {
-                return Err("Stored Canvas asset is damaged.".into());
-            }
-        } else {
-            atomic(destination, pending.clone()).await?;
-        }
+        self.put_asset(id, &digest, &pending).await?;
         canvas.assets.push(asset);
         advance(&mut canvas, author, None)?;
         self.asset_commit(&canvas).await?;
@@ -121,6 +111,22 @@ impl Store {
             written: pending.len() as u64,
             canvas: Some(canvas),
         })
+    }
+
+    /// Stage immutable bytes before publishing any revision that references them.
+    pub(super) async fn put_asset(&self, id: &str, digest: &str, bytes: &[u8]) -> Result<(), String> {
+        let destination = self.dir(id)?.join("assets").join(digest);
+        if fs::try_exists(&destination)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            if read_bytes(&destination, MAX_ASSET as u64).await? != bytes {
+                return Err("Stored Canvas asset is damaged.".into());
+            }
+        } else {
+            atomic(destination, bytes.to_vec()).await?;
+        }
+        Ok(())
     }
 
     /// Historical and current reads both verify the bytes against the published image reference.
@@ -148,7 +154,7 @@ impl Store {
     }
 }
 
-fn image_type(bytes: &[u8]) -> Option<&'static str> {
+pub(super) fn image_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("image/png")
     } else if bytes.starts_with(b"\xff\xd8\xff") {
