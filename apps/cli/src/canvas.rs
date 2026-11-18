@@ -10,7 +10,7 @@ pub struct CanvasArgs {
     /// Choose another canvas in this session's project.
     #[arg(long, global = true)]
     canvas: Option<String>,
-    /// Required for edits; use the revision returned by a read.
+    /// Read this immutable revision, or require it as the current revision for edits.
     #[arg(long, global = true)]
     revision: Option<u64>,
     #[command(subcommand)]

@@ -1045,6 +1045,7 @@ export default function ChatInput({
               <div className="px-3 pt-3">
                 <AttachmentTray
                   attachments={attachments}
+                  attachmentKey={attachKey}
                   server={server}
                   onRemove={(path) => {
                     removeAttachment(attachKey, path);

@@ -101,6 +101,13 @@ export function clearAttachments(sessionId: string | null) {
   write(sessionId, EMPTY);
 }
 
+/// Refresh in place, unless the user removed the chip while its capture was pending.
+export function replaceAttachment(sessionId: string | null, path: string, replacement: Attachment) {
+  const current = bySession.get(sessionId);
+  if (!current?.some((attachment) => attachment.path === path)) return;
+  write(sessionId, current.map((attachment) => attachment.path === path ? replacement : attachment));
+}
+
 /// One session's pending attachments. Read-only — every mutation is a
 /// module-level function above, so a caller that only writes (the toolbar's `+`)
 /// takes no subscription and re-renders for nothing.
@@ -118,7 +125,7 @@ export function restoreAttachments(sessionId: string | null, attachments: Attach
   if (!attachments.length) return;
 
   const current = bySession.get(sessionId) ?? EMPTY;
-  const fresh = attachments.filter((a) => !current.some((b) => b.path === a.path));
+  const fresh = attachments.filter((a) => !current.some((b) => b.path === a.path || (a.canvas && b.canvas && a.canvas.canvasId === b.canvas.canvasId && a.canvas.revision === b.canvas.revision && a.canvas.frameId === b.canvas.frameId && a.canvas.nodeId === b.canvas.nodeId)));
   if (!fresh.length) return;
 
   write(sessionId, [...current, ...fresh]);

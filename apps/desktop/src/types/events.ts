@@ -171,7 +171,7 @@ head: string | null,
  * as false, which is what a replayed log should say: no child
  * survives a restart, so nothing on disk is still blocked on this.
  */
-authFailed: boolean, } | { "type": "user_message", text: string, images: Array<ImageRef>, 
+authFailed: boolean, } | { "type": "user_message", text: string, canvasRefs?: Array<CanvasReference>, images: Array<ImageRef>,
 /**
  * The issues this prompt was tagged with, resolved against the tracker
  * as it was sent.
@@ -475,7 +475,7 @@ isImage: boolean,
  * once and held in frontend memory only — the persisted event points at a
  * copy on disk instead, so the session log never carries image bytes.
  */
-preview: string | null, inspection?: InspectContext, };
+preview: string | null, inspection?: InspectContext, canvas?: CanvasReference, };
 
 /**
  * A way of signing in, as an offer the reader picks between.
@@ -599,6 +599,10 @@ export type CanvasPick = { frameId: string, nodeId: string | null, bounds: Canva
 export type CanvasProblem = { id: string, path: string, message: string, };
 
 export type CanvasReconciliation = { canvas: Canvas, problems: Array<CanvasProblem>, };
+
+export type CanvasReference = { id: string, canvasId: string, canvasName: string, projectPath: string, revision: number, frameId: string, frameName: string, nodeId: string | null, name: string, frameWidth: number, frameHeight: number, bounds: CanvasGeometry, contentRef: string, capturedAt: string, preview: ImageRef, };
+
+export type CanvasReferenceStatus = { state: string, revision: number | null, message: string, };
 
 export type CanvasSummary = { id: string, projectPath: string, projectKey: string, name: string, revision: number, modified: string, frameCount: number, change: CanvasChange, };
 

@@ -72,6 +72,7 @@ export default function EventRow({
           eventId={event.id}
           text={payload.text}
           images={payload.images}
+          canvasRefs={payload.canvasRefs}
           issues={payload.issues}
           mcpServers={payload.mcpServers}
           from={payload.from}

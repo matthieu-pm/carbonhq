@@ -1611,6 +1611,8 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         write_canvas_asset(id: String, revision: u64, upload: crate::canvas::CanvasAssetUpload, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::write_canvas_asset(sink.clone(), id, revision, upload, author).await;
         read_canvas_asset(id: String, asset_id: String, version: Option<u64>) => crate::canvas::read_canvas_asset(id, asset_id, version).await;
         canvas_editors() => ok(crate::canvas::canvas_editors().await);
+        capture_canvas_selection(project_path: String, id: String, revision: u64, picks: Vec<crate::canvas::CanvasPick>) => crate::canvas::capture_canvas_selection(project_path, id, revision, picks).await;
+        canvas_reference_status(reference: crate::canvas::CanvasReference) => ok(crate::canvas::canvas_reference_status(reference).await);
         canvas_undo_state(id: String) => crate::canvas::canvas_undo_state(id).await;
         canvas_undo(id: String, revision: u64, redo: bool) => Box::pin(crate::canvas::canvas_undo(sink.clone(), id, revision, redo)).await;
         watch_canvases(scope: String, ids: Vec<String>) => crate::canvas::watch_canvases(scope, ids).await;

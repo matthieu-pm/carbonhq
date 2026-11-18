@@ -433,7 +433,13 @@ pub async fn request(request: CanvasRequest, sink: &Sink) -> Result<Value, Strin
     }
     let chosen = request.canvas.clone().or_else(||current.as_ref().and_then(|t|t.focus.as_ref().map(|f|f.id.clone()))).ok_or("No canvas was captured for this turn. Use canvas ls, then --canvas <id>, or canvas new.")?;
     let id = chosen.as_str();
-    let canvas = owned(&store, &request.session_id, id).await?;
+    let live_canvas = owned(&store, &request.session_id, id).await?;
+    let canvas = if matches!(request.action, Action::Get { .. } | Action::Shot { .. } | Action::Tree { .. } | Action::Frames) {
+        match request.revision {
+            Some(revision) => store.history(id, Some(revision)).await?.remove(0),
+            None => live_canvas,
+        }
+    } else { live_canvas };
     let envelope = |data: Value| json!({"id":canvas.id,"name":canvas.name,"revision":canvas.revision,"data":data});
     match &request.action {
         Action::Frames => return Ok(envelope(json!(frames(&canvas)))),

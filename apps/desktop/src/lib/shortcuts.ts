@@ -87,7 +87,7 @@ export const SHORTCUTS = [
   { id: "panel.tab.prev", label: "Previous panel tab", group: "Panels and views", chord: k("[", { alt: true, code: "BracketLeft" }) },
   { id: "panel.tab.next", label: "Next panel tab", group: "Panels and views", chord: k("]", { alt: true, code: "BracketRight" }) },
   { id: "panel.refresh", label: "Refresh panel or reload page", group: "Panels and views", chord: k("r") },
-  { id: "browser.inspect.add", label: "Add inspected elements to chat", group: "Panels and views", chord: k("l") },
+  { id: "browser.inspect.add", label: "Add selection to chat", group: "Panels and views", chord: k("l") },
   { id: "browser.newTab", label: "New browser tab", group: "Panels and views", chord: k("t") },
   { id: "doc.save", label: "Save doc", group: "Panels and views", chord: k("s") },
   { id: "subtab.prev", label: "Previous tab in the view or panel", group: "Panels and views", chord: k("ArrowLeft", { shift: true }) },

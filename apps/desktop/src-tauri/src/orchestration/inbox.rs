@@ -618,6 +618,7 @@ mod tests {
             None,
             None,
             crate::events::AgentEventPayload::UserMessage {
+                canvas_refs: None,
                 text: "work".into(),
                 issues: vec![],
                 mcp_servers: vec![],

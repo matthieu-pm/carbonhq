@@ -1,5 +1,9 @@
 import { setCanvasFocus, type CanvasPreviewTarget } from "@/lib/canvasContext";
-import { invoke, listen, displayPath } from "@/lib/transport";
+import { invoke, listen, displayPath, qualify } from "@/lib/transport";
+import { attachmentKey, restoreAttachments } from "@/hooks/useAttachments";
+import { focusComposer } from "@/lib/composerFocus";
+import { useHotkey } from "@/hooks/useHotkey";
+import { useInspection } from "@/lib/browser";
 import { IS_MAC } from "@/lib/platform";
 import BrowserPane from "@/components/browser/BrowserPane";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -14,18 +18,20 @@ import { blankFrame, flattenNodes, togglePick, previewKey, type CanvasPanelTab, 
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ChevronDown } from "lucide-react";
-import type { Project, SessionIndexItem } from "@/types/events";
+import type { Attachment, Project, SessionIndexItem } from "@/types/events";
 import { projectLabel } from "@/lib/servers";
 import "./canvas.css";
 
 export type CanvasControls = { toggleLayers(): void; togglePanel(): void; refresh(): void };
 
-export default function CanvasView({ active, projects, projectPath, onProjectChange, sessions, sessionId, onSessionChange, onNewSession, chat, panelTab, onPanelTabChange, chatReady, projectPreview, controlsRef, agentTarget }: {
+export default function CanvasView({ active, projects, projectPath, onProjectChange, sessions, sessionId, onSessionChange, onNewSession, chat, panelTab, onPanelTabChange, chatReady, projectPreview, controlsRef, agentTarget, composerKey, composerCwd }: {
   active: boolean; projects: Project[]; projectPath: string | null; onProjectChange(path: string): void;
   sessions: SessionIndexItem[]; sessionId: string | null; onSessionChange(id: string): void; onNewSession(): void;
   chat: ReactNode; panelTab: CanvasPanelTab; onPanelTabChange(tab: CanvasPanelTab): void; chatReady: boolean; projectPreview: ReactNode;
   controlsRef: RefObject<CanvasControls | null>;
   agentTarget?: CanvasPreviewTarget | null;
+  composerKey?: string | null;
+  composerCwd?: string | null;
 }) {
   const data = useCanvases(projectPath, active);
   const [selection, setSelection] = useState<{ id: string | null; picks: CanvasPick[] }>({ id: null, picks: [] });
@@ -47,8 +53,33 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
   const box = frame && pick?.nodeId ? capture.previews.get(frame.id)?.boxes.find((b) => b.id === pick.nodeId) ?? null : null;
   const selectionLabel = picks.length > 1 ? `${picks.length} selected` : node?.name ?? frame?.name ?? null;
   const currentSession = sessions.find((s) => s.sessionId === sessionId);
-  const [editors, setEditors] = useState<{ canvasId: string; frameId: string }[]>([]);
+  const inspection = useInspection(sessionId ?? "");
   const [agentPreview, setAgentPreview] = useState<{ canvasId: string; frameId: string; sessionId: string } | null>(null);
+  const [adding, setAdding] = useState(false);
+  const addingRef = useRef(false);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const targetKey = attachmentKey(composerKey ?? sessionId, composerCwd ?? projectPath);
+  const handoffTarget = useRef({ key: targetKey, active, canvasId: data.canvas?.id });
+  handoffTarget.current = { key: targetKey, active, canvasId: data.canvas?.id };
+  useEffect(() => setHandoffError(null), [targetKey, data.canvas?.id]);
+  const addToChat = async () => {
+    if (!data.canvas || !projectPath || !picks.length || !chatReady || addingRef.current) return;
+    addingRef.current = true; setAdding(true); setHandoffError(null);
+    const key = targetKey;
+    const canvas = data.canvas;
+    try {
+      const attachments = await invoke<Attachment[]>("capture_canvas_selection", { projectPath: displayPath(projectPath), id: canvas.id, revision: canvas.revision, picks: picks.map((p) => ({ ...p, bounds: null })) }, data.owner);
+      restoreAttachments(key, attachments.map((a) => ({ ...a, path: qualify(a.path, data.owner) })));
+      if (handoffTarget.current.key === key && handoffTarget.current.active && handoffTarget.current.canvasId === canvas.id) {
+        setPanelOpen(true); onPanelTabChange("chat");
+        requestAnimationFrame(focusComposer);
+      }
+    } catch (e) { if (handoffTarget.current.key === key && handoffTarget.current.active && handoffTarget.current.canvasId === canvas.id) setHandoffError(String(e)); }
+    finally { addingRef.current = false; setAdding(false); }
+  };
+  const inspectingPreview = panelOpen && panelTab === "preview" && (previewTarget === "project" || !!agentPreview) && inspection.active;
+  useHotkey("browser.inspect.add", () => void addToChat(), { page: true, enabled: active && chatReady && picks.length > 0 && !adding && !inspectingPreview });
+  const [editors, setEditors] = useState<{ canvasId: string; frameId: string }[]>([]);
   const handledOpen = useRef<string | null>(null);
   useEffect(() => {
     if (!active || !agentTarget || agentTarget.revealId === handledOpen.current || agentTarget.sessionId !== sessionId || agentTarget.projectPath !== displayPath(projectPath ?? "")) return;
@@ -92,7 +123,8 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
     <CanvasChrome active={active} toggleLayersRef={toggleLayersRef} projects={projects.map((p) => ({ path: p.path, name: projectLabel(p) }))} projectPath={projectPath} onProjectChange={onProjectChange}
       files={data.files} fileId={data.fileId} onFileChange={data.select} onCreateFile={() => setDialog("create")} onRenameFile={() => setDialog("rename")}
       onUndo={() => void data.undo()} onRedo={() => void data.undo(true)} canUndo={data.undoState.canUndo && !data.busy} canRedo={data.undoState.canRedo && !data.busy}
-      onNewFrame={() => setDialog("frame")} loading={data.loading} error={data.error} onRefresh={() => { void data.refresh(); capture.retry(); }} selectionLabel={selectionLabel}
+      onNewFrame={() => setDialog("frame")} loading={data.loading} error={handoffError ?? data.error} onRefresh={() => { setHandoffError(null); void data.refresh(); capture.retry(); }} selectionLabel={selectionLabel}
+      onAddToChat={() => void addToChat()} canAddToChat={chatReady && picks.length > 0 && !adding} addingToChat={adding}
       panelTab={panelTab} onPanelTabChange={onPanelTabChange} panelOpen={panelOpen} onPanelOpenChange={setPanelOpen}
       layers={<CanvasLayers frames={data.canvas?.frames ?? []} picks={picks} onPick={(p, additive) => select(togglePick(picks, p, additive))} />}
       board={data.canvas ? <CanvasBoard key={data.canvas.id} canvas={data.canvas} active={active} picks={picks} onPicks={select} previews={capture.previews} errors={capture.errors} onVisible={setVisible} onNewFrame={() => setDialog("frame")} stats={capture.stats} editing={editors.filter((e) => e.canvasId === data.canvas?.id).map((e) => e.frameId)} />

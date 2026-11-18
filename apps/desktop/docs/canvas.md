@@ -8,7 +8,21 @@ Open Canvas from the rail or with Cmd-Option-C (Ctrl-Alt-C outside macOS). Choos
 
 Scroll to pan. Pinch or Cmd/Ctrl-scroll to zoom around the pointer. The Hand tool or Space-drag pans; the Select tool drags a selection marquee. Shift-click adds or removes frames and layers. Click a frame once to select it and again to pick a layer. Arrow keys navigate the board and layers tree; Enter enters a frame and Escape leaves a layer selection. Fit all is Shift-1, fit selection Shift-2, and actual size Shift-0. All three shortcuts are in the shortcuts registry. Camera position and the last open file are remembered locally per canvas/project.
 
-The layers tree, board outlines and read-only Properties share stable frame/layer IDs. Properties reports the renderer's measured bounds and computed styles. Chat uses Carbon's real transcript and composer, with a session picker and New session action. It keeps the current session when it belongs to the project, otherwise restores that project's remembered session or most recent available session. Design chips and agent handoff belong to CBN-83.
+The layers tree, board outlines and read-only Properties share stable frame/layer IDs. Properties reports the renderer's measured bounds and computed styles. Chat uses Carbon's real transcript and composer, with a session picker and New session action. It keeps the current session when it belongs to the project, otherwise restores that project's remembered session or most recent available session.
+
+## Design handoff
+
+Select frames or layers, then use **Add to chat** or Cmd-L (Ctrl-L outside macOS). Each selection becomes a composer chip with its canvas, name, captured revision and rendered preview. The action opens Chat and focuses the composer without sending. Chips can be removed or inspected before sending. Repeating the action adds another batch; an already attached node at the same revision is not duplicated. Up to 32 selections can be captured at once. The browser's Inspect selection keeps Cmd-L while Inspect is active in the visible project preview.
+
+References are captured on the owning server. Each carries stable canvas/frame/layer IDs, frame dimensions, measured bounds, a content fingerprint and capture time. The attachment envelope retains its PNG beside its metadata. Queued messages retain that envelope, and canceling one restores the same chips. Sent messages archive metadata and previews with the session; replay and forks retain them independently of the original upload or Canvas source. The iOS transcript also decodes the references and shows their names and revisions beside its existing image previews.
+
+Inspecting a chip shows the captured preview. A changed frame or its tokens shows **Design changed**, with **Refresh reference** available in the composer. Refresh captures a new explicit revision. A removed layer, missing canvas or unreadable historical version shows **Unavailable** and keeps the preview. Neither a reread nor a notification silently replaces the captured design. The status conservatively checks the whole enclosing frame and its tokens, since an ancestor or sibling can affect a layer's appearance.
+
+The agent receives the picture and a structured reference file with selected IDs, dimensions and current availability. Its instructions require exact `carbon canvas --canvas <id> --revision <captured> get <node> --styles` and `shot <node>` reads. Historical reads retain their revision even after edits or layer removal; a missing canvas/history fails rather than falling back to the newest design. Markup and tokens come from that revision. Project source components are not inferred from pixels; the agent must inspect the actual project.
+
+Attaching alone supplies context. Applying a design to project code requires a user request. The handoff asks the agent to reuse the project's components, tokens and file layout, name any new components, and preserve originals when exploring alternatives. It asks for the correct worktree's managed preview, target-size browser checks, screenshot evidence and any remaining differences. These are instructions and available tools, not proof that an agent followed them. The handoff itself does not publish or commit code.
+
+The comparison with [Paper](research/cbn-83-paper-handoff.md) and [Gui](research/cbn-83-gui-handoff.md) records which behavior was observed and which guarantees Carbon adds.
 
 Preview separates the focused canvas frame from the running project. Only the focused frame has a live sandboxed iframe; its viewport stays at the frame's CSS dimensions, with scrolling for large frames. The running project uses the selected session's existing browser and preview controls. Hiding the page or frame Preview removes its live iframe.
 
@@ -107,6 +121,7 @@ All commands are registered in `serve.rs` and run on the owning server:
 - `canvas_history`, `read_canvas_version`, `restore_canvas_version`, `recover_canvas`
 - `prepare_canvas_frame_edit`, `reconcile_canvas`
 - `write_canvas_asset`, `read_canvas_asset`
+- `capture_canvas_selection`, `canvas_reference_status`
 - `watch_canvases`
 
 `update_canvas` accepts a patch for name, frames, tokens and camera, plus `clearCamera`. Image reads return exact base64 bytes and MIME metadata, optionally at a historical version; arbitrary paths are not exposed.

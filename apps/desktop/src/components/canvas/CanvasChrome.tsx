@@ -11,6 +11,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Spinner from "@/components/ui/spinner";
+import ShortcutKeys from "@/components/ShortcutKeys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { CANVAS_PANEL_TABS as PANEL_TABS, type CanvasPanelTab } from "@/lib/canvasBoard";
@@ -39,6 +40,9 @@ type CanvasChromeProps = {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
+  onAddToChat?: () => void;
+  canAddToChat?: boolean;
+  addingToChat?: boolean;
   layers: ReactNode;
   board: ReactNode;
   chat: ReactNode;
@@ -201,6 +205,12 @@ export default function CanvasChrome(props: CanvasChromeProps) {
         </IconAction>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
+          {props.onAddToChat && <Tooltip>
+            <TooltipTrigger asChild><Button variant="ghost" size="sm" disabled={!props.canAddToChat} onClick={props.onAddToChat}>
+              {props.addingToChat ? <Spinner /> : null}{props.addingToChat ? "Adding…" : "Add to chat"}
+            </Button></TooltipTrigger>
+            <TooltipContent>Add selection to chat <ShortcutKeys ids={["browser.inspect.add"]} /></TooltipContent>
+          </Tooltip>}
           {hasFile && <>
             <IconAction label="Undo canvas edit" shortcut="undo" onClick={() => props.onUndo?.()} disabled={!props.canUndo}><Undo2 /></IconAction>
             <IconAction label="Redo canvas edit" shortcut="redo" onClick={() => props.onRedo?.()} disabled={!props.canRedo}><Redo2 /></IconAction>

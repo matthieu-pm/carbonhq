@@ -160,7 +160,7 @@ struct TurnView: View {
             $0.items.contains { if case .text(_, let t) = $0 { t == turn.finalText } else { false } }
         }.map(open.contains) ?? false
         VStack(alignment: .leading, spacing: 14) {
-            if let prompt = turn.prompt { UserBubble(text: prompt.text, from: prompt.from, images: prompt.images) }
+            if let prompt = turn.prompt { UserBubble(text: prompt.text, from: prompt.from, images: prompt.images, canvasRefs: prompt.canvasRefs) }
             if collapsible || turn.running {
                 ForEach(Array(segments.enumerated()), id: \.offset) { i, segment in
                     let isOpen = open.contains(i)
@@ -297,8 +297,8 @@ struct ItemView: View {
             ToolRow(call: call)
         case .group(_, let name, let calls, let targets, let target):
             GroupRow(name: name, calls: calls, targets: targets, target: target)
-        case .prompt(_, let text, let from, let images):
-            UserBubble(text: text, from: from, images: images)
+        case .prompt(_, let text, let from, let images, let canvasRefs):
+            UserBubble(text: text, from: from, images: images, canvasRefs: canvasRefs)
         case .failure(_, let text):
             FailureRow(text: text)
         }
@@ -340,6 +340,7 @@ struct UserBubble: View {
     let text: String
     let from: String?
     var images: [ImageRef] = []
+    var canvasRefs: [CanvasReference] = []
     /// Typed into a running turn and not yet read by it: held back, dimmed.
     var queued = false
 
@@ -350,6 +351,16 @@ struct UserBubble: View {
                     .font(Theme.Font.micro).foregroundStyle(Theme.tertiary)
             }
             if !images.isEmpty { Thumbnails(images: images) }
+            ForEach(canvasRefs) { reference in
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(reference.name, systemImage: "rectangle.on.rectangle")
+                    Text("\(reference.canvasName) · Revision \(reference.revision)")
+                        .foregroundStyle(Theme.secondary)
+                }
+                .font(Theme.Font.meta)
+                .padding(Theme.Space.s)
+                .background(Theme.raised, in: .rect(cornerRadius: Theme.Radius.sm))
+            }
             if !text.isEmpty {
                 Text(text)
                     .font(Theme.Font.body)

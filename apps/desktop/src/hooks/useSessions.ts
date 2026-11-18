@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { activeMessageEvents } from "@/lib/messageEdit";
 import { flushSync } from "react-dom";
 import { restoreAttachments } from "@/hooks/useAttachments";
+import { canvasReferences } from "@/lib/canvasReferences";
 import { appendStreamingText, peekStreamingBlock, retireStreamingBlock, startStreamingBlock, type StreamingBlock } from "@/hooks/useStreamingBlock";
 import { useComposerPrefs, type EffortByModel } from "@/hooks/useComposerPrefs";
 import { forgetDocs } from "@/hooks/useDocs";
@@ -92,8 +93,8 @@ const repairFxModel = (list: Model[], picked: ModelId): ModelId =>
 /// the picked path would resolve to nothing.
 export function imagesOf(attachments: Attachment[]): ImageRef[] {
   return attachments.flatMap((attachment) =>
-    (attachment.isImage || attachment.inspection) && attachment.preview
-      ? [{ path: null, url: attachment.preview, mimeType: attachment.inspection ? "image/jpeg" : attachment.mimeType }]
+    (attachment.isImage || attachment.inspection || attachment.canvas) && attachment.preview
+      ? [{ path: null, url: attachment.preview, mimeType: attachment.canvas ? "image/png" : attachment.inspection ? "image/jpeg" : attachment.mimeType }]
       : [],
   );
 }
@@ -753,6 +754,7 @@ const provisionalPrompt = (
     type: "user_message",
     text,
     images: imagesOf(attachments),
+    canvasRefs: canvasReferences(attachments),
     issues: [],
     mcpServers: [],
     baseline: null,
