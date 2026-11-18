@@ -57,8 +57,8 @@ use std::path::PathBuf;
 /// v19 adds opt-in delegated tasks and immutable completion results.
 /// v20 adds discovery and creation receipts with effective configuration.
 /// v21 adds explicit interruption recovery and deduplicated continuation.
-/// v22 adds project-scoped Canvas commands.
-pub const PROTOCOL_VERSION: u32 = 22;
+/// v23 adds portable browser captures.
+pub const PROTOCOL_VERSION: u32 = 23;
 
 /// A CLI readiness wait fits inside the socket and remote request deadlines.
 pub const PREVIEW_WAIT_SECS: u64 = 150;
@@ -114,6 +114,7 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
+            Request::Browser(BrowserRequest { action: BrowserAction::Capture { .. }, .. }) => 23,
             Request::Canvas(_) => 22,
             Request::Browser(BrowserRequest { action: BrowserAction::CanvasViewport { .. }, .. }) => 22,
             Request::Discover(_) => 20,
@@ -684,6 +685,12 @@ pub enum BrowserAction {
         path: Option<String>,
         #[serde(default)]
         full: bool,
+    },
+    /// Static layers, assets and screenshot in one file under the session checkout.
+    Capture {
+        #[serde(default)]
+        selector: Option<String>,
+        path: String,
     },
     /// Evaluate JavaScript in the page and answer its JSON value.
     Eval {
@@ -1548,6 +1555,11 @@ mod tests {
             action: BrowserAction::CanvasViewport { width: 390, height: 844 },
         });
         assert_eq!(Envelope::new(canvas_preview).v, 22);
+        let browser_capture = Request::Browser(BrowserRequest {
+            session_id: "session".into(),
+            action: BrowserAction::Capture { selector: None, path: "capture.json".into() },
+        });
+        assert_eq!(Envelope::new(browser_capture.clone()).v, 23);
         let forwarded_canvas = Request::OnMachine(OnMachine {
             machine: "box".into(),
             request: Box::new(canvas.clone()),
@@ -1567,7 +1579,7 @@ mod tests {
             .chain([&Request::Task(TaskRequest::Status { task_id: "task".into() })])
             .chain([&Request::Recovery(RecoveryRequest::List { session_id: None })])
             .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
-            .chain([&Request::Discover(DiscoveryRequest::Harnesses), &canvas])
+            .chain([&Request::Discover(DiscoveryRequest::Harnesses), &canvas, &browser_capture])
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));

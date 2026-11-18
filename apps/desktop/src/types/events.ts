@@ -560,6 +560,8 @@ defaultBase: string | null,
  */
 dirty: number, };
 
+export type BrowserCaptureDetails = { pagePath: string, selector: string | null, source: InspectSource | null, viewport: InspectViewport, bounds: InspectBounds, screenshotBounds: InspectBounds, capturedAt: string, originalAssetId: string, imageOnly: boolean, warnings: Array<string>, };
+
 export type Canvas = { id: string, projectPath: string, projectKey: string, name: string, revision: number, created: string, modified: string, frames: Array<CanvasFrame>, camera: CanvasCamera | null, tokens: { [key in string]: string }, assets: Array<CanvasAsset>, change: CanvasChange, };
 
 export type CanvasAsset = { id: string, name: string, mimeType: string, size: number, hash: string, };

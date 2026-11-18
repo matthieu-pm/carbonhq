@@ -10,6 +10,14 @@ Scroll to pan. Pinch or Cmd/Ctrl-scroll to zoom around the pointer. The Hand too
 
 The layers tree, board outlines and read-only Properties share stable frame/layer IDs. Properties reports the renderer's measured bounds and computed styles. Chat uses Carbon's real transcript and composer, with a session picker and New session action. It keeps the current session when it belongs to the project, otherwise restores that project's remembered session or most recent available session.
 
+## Capture
+
+In the browser pane, choose **Capture** and click an element. Use ⌘-click or ⌘Enter to capture the full page at the browser's current CSS viewport width. The capture opens beside the project's existing frames with the new frame selected. If a destination has not been selected, choose or create a canvas. Undo removes the frame as one edit.
+
+The frame keeps a static copy of text, layout, styles, and available image and font bytes. Properties shows the page path, viewport, available source hints, capture notes, and the original screenshot. Unsupported regions appear as labeled image references. If the screen exceeds the editable layer limit, the whole frame is labeled **Image reference**. Full-page captures report cropping at the viewport width or at the 10,000 px capture limit. Form field values are omitted.
+
+`carbon browser capture [selector] --to <file>` writes the same capture as a versioned JSON file with its original screenshot and assets. Omitting the selector captures the full page. The command uses the session's current browser layout and writes a new file under its checkout. It leaves the Canvas board alone.
+
 ## Design handoff
 
 Select frames or layers, then use **Add to chat** or Cmd-L (Ctrl-L outside macOS). Each selection becomes a composer chip with its canvas, name, captured revision and rendered preview. The action opens Chat and focuses the composer without sending. Chips can be removed or inspected before sending. Repeating the action adds another batch; an already attached node at the same revision is not duplicated. Up to 32 selections can be captured at once. The browser's Inspect selection keeps Cmd-L while Inspect is active in the visible project preview.
@@ -28,7 +36,7 @@ Preview separates the focused canvas frame from the running project. Only the fo
 
 The overview uses raster images, retained layer geometry and one capture at a time. Captures prioritize the focused and visible frames. Thumbnail resolution falls as more frames become visible; image, key and geometry estimates share a 24 MiB cache budget. Offscreen previews are released. Used styles are frozen before rasterizing, so thumbnail resolution and board zoom do not change viewport units or media queries. A pending replacement retains the previous valid preview. File/project switches reject stale reads and captures. Reopening and reconnecting read durable state and rearm watches.
 
-Both live and capture documents have an opaque sandbox origin. Stored scripts, event handlers, embedded pages and navigation attributes are omitted. CSP blocks network requests, forms and app-origin resources; file-owned images resolve through the owning server into data URLs. The renderer currently limits a frame to 2,000 elements, 16 MiB of embedded image data and 16 MiB of serialized capture markup. These limits report an error without changing the saved design. Unsupported external images/fonts and executable page behavior are not imported by this renderer.
+Both live and capture documents have an opaque sandbox origin. Stored scripts, event handlers, embedded pages and navigation attributes are omitted. CSP blocks network requests, forms and app-origin resources. File-owned images and captured fonts resolve through the owning server into data URLs. The renderer currently limits a frame to 2,000 elements, 16 MiB of embedded asset data and 16 MiB of serialized capture markup. These limits report an error without changing the saved design.
 
 ## Ownership and identity
 
@@ -45,7 +53,7 @@ canvases/<file-id>/
   revision.json               highest reserved revision number
   history/<commit-id>.json     immutable revision metadata, layout and content references
   content/<sha256>.json        immutable editable frame content
-  assets/<sha256>              immutable image bytes, owned by this file
+  assets/<sha256>              immutable image and captured font bytes
   edits/<revision>/<frame-id>.json
   uploads/<asset-id>           incomplete images, not visible assets
 ```
@@ -56,7 +64,7 @@ The manifest states `formatVersion`, `minReaderVersion`, file `id`, `revision` a
 
 A frame has an ID, name, geometry (`x`, `y`, `width`, `height`) and content. Content has a node tree, a CSS stylesheet and `assetIds`. Nodes are either elements (`id`, `name`, `tag`, string-valued `attributes`, string-valued CSS `styles`, `children`) or text (`id`, `name`, `text`). CSS variables are stored as strings; shared tokens live separately on the canvas. Camera state is separate from frame content.
 
-Canonical image references use `carbon-canvas-asset://<asset-id>`. URLs in attributes, styles and CSS must name an image in that frame's `assetIds`; every declared asset must exist in the canvas. The owning canvas resolves the URL. A future renderer must isolate untrusted HTML/CSS; storage validation is not a browser sanitizer.
+Canonical asset references use `carbon-canvas-asset://<asset-id>`. URLs in attributes, styles and CSS must name an asset in that frame's `assetIds`. Every declared asset must exist in the canvas. The owning canvas resolves the URL. Storage validates references and the renderer isolates untrusted HTML/CSS.
 
 Limits: 8 MiB of Canvas JSON, 1,000 frames, 100,000 layers, 48 levels of layer nesting, 4,096 images, 20 MiB per image and 256 KiB per decoded upload chunk. Uploads accept PNG, JPEG, GIF, WebP and AVIF signatures. Inline SVG can be represented as element nodes.
 

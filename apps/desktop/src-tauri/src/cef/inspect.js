@@ -1,6 +1,7 @@
 (() => {
   window.__carbonPick?.stop();
   const documentId = '__CARBON_DOCUMENT_ID__';
+  const canvasMode = '__CARBON_PICK_MODE__' === 'capture';
   const host = document.createElement('div');
   host.setAttribute('data-carbon-inspect-overlay', '');
   host.style.cssText = 'all:initial!important;position:fixed!important;inset:0!important;pointer-events:none!important;z-index:2147483647!important';
@@ -44,9 +45,10 @@
   let alt = false;
   let paused = false;
   let revision = 0;
+  let canvasElement = null;
   const pagePath = () => location.pathname;
   let path = location.href;
-  const say = (action = 'change') => console.log('__carbon_pick__' + JSON.stringify({ documentId, count: selected.length, action }));
+  const say = (action = 'change') => console.log('__carbon_pick__' + JSON.stringify({ documentId, count: selected.length, action, canvas: canvasMode }));
   const block = (event) => { event.preventDefault(); event.stopImmediatePropagation(); };
   const bounds = (r) => ({ x: r.x, y: r.y, width: r.width, height: r.height });
   const region = (a, b) => ({ x: Math.max(0, Math.min(a.x, b.x)), y: Math.max(0, Math.min(a.y, b.y)), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) });
@@ -165,8 +167,11 @@
     const point = pointOf(event);
     if (drag && Math.hypot(point.x - drag.x, point.y - drag.y) > 4) {
       drag.moved = true;
-      box(hover, region(drag, point));
-      label.hidden = margin.hidden = padding.hidden = true;
+      if (canvasMode) measure();
+      else {
+        box(hover, region(drag, point));
+        label.hidden = margin.hidden = padding.hidden = true;
+      }
     } else measure();
     block(event);
   };
@@ -180,6 +185,17 @@
   const up = event => {
     block(event);
     if (paused || !drag || event.button !== 0) return;
+    if (canvasMode) {
+      const moved = drag.moved;
+      drag = null;
+      if (moved) return;
+      canvasElement = event.metaKey || event.ctrlKey ? null : elementAt(event);
+      if (canvasElement || event.metaKey || event.ctrlKey) {
+        paused = true;
+        say(canvasElement ? 'capture_element' : 'capture_page');
+      }
+      return;
+    }
     const point = pointOf(event);
     if (drag.moved) {
       const r = region(drag, point);
@@ -199,6 +215,10 @@
   const cancel = event => { block(event); drag = null; measure(); };
   const key = event => {
     if (event.key === 'Escape') { block(event); stop(); say('cancel'); }
+    else if (canvasMode && event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      block(event);
+      if (!paused && event.type === 'keydown') { paused = true; say('capture_page'); }
+    }
     else if (event.key === 'Alt') { alt = event.type === 'keydown'; measure(); }
     else if (!event.metaKey && !event.ctrlKey) block(event);
   };
@@ -242,6 +262,11 @@
   window.__carbonPick = {
     documentId,
     stop,
+    canvasTarget(nonce, fullPage) {
+      if (!canvasMode || nonce !== documentId || path !== location.href || (!fullPage && !canvasElement?.isConnected)) return null;
+      const el = fullPage ? null : canvasElement;
+      return { element: el, selector: el ? selectorOf(el) : null, source: sourceOf(el ?? document.body) };
+    },
     capture() {
       refresh();
       if (paused) throw new Error('An inspection capture is already in progress');

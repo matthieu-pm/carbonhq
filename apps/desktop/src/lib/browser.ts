@@ -80,10 +80,10 @@ function start() {
     fetched.add(sessionId);
     notify();
   });
-  void listen<{ sessionId: string; tabId: number; active: boolean; count: number }>("browser_pick", (e) => {
-    const { tabId, active, count } = e.payload;
+  void listen<{ sessionId: string; tabId: number; active: boolean; count: number; canvas?: boolean }>("browser_pick", (e) => {
+    const { tabId, active, count, canvas } = e.payload;
     const before = inspections.get(tabId) ?? NO_INSPECTION;
-    inspections.set(tabId, { ...before, active, count: active ? count : 0 });
+    inspections.set(tabId, { ...before, active, canvas: active && !!canvas, count: active ? count : 0 });
     notify();
   });
   // A ⌘-chord pressed inside the page. Chromium's view has focus, so the
@@ -343,8 +343,8 @@ export function openDevTools(sessionId: string) {
 
 // --- Picking an element ------------------------------------------------------
 
-type InspectionState = { active: boolean; count: number; busy: boolean; error: string | null };
-const NO_INSPECTION: InspectionState = { active: false, count: 0, busy: false, error: null };
+type InspectionState = { active: boolean; canvas: boolean; count: number; busy: boolean; error: string | null };
+const NO_INSPECTION: InspectionState = { active: false, canvas: false, count: 0, busy: false, error: null };
 const inspections = new Map<number, InspectionState>();
 
 function inspectionTab(sessionId: string): number | undefined {
@@ -364,7 +364,7 @@ export async function addPickedElements(sessionId: string, givenTab?: number) {
   const tabId = givenTab ?? inspectionTab(sessionId);
   if (tabId === undefined) return;
   const state = inspections.get(tabId);
-  if (!state?.active || !state.count || state.busy) return;
+  if (!state?.active || state.canvas || !state.count || state.busy) return;
   inspections.set(tabId, { ...state, busy: true, error: null });
   notify();
   try {
@@ -449,18 +449,19 @@ export function isRecording(sessionId: string): boolean {
   return recording.has(sessionId);
 }
 
-export async function pickElement(sessionId: string, on: boolean) {
-  const tabId = inspectionTab(sessionId);
+export async function pickElement(sessionId: string, on: boolean, canvas = false, givenTab?: number) {
+  const tabId = givenTab ?? inspectionTab(sessionId);
   if (tabId === undefined) return;
   const old = inspections.get(tabId) ?? NO_INSPECTION;
   if (old.busy) return;
-  inspections.set(tabId, { active: on, count: 0, busy: false, error: null });
+  inspections.set(tabId, { ...NO_INSPECTION, active: on, canvas: on && canvas });
   notify();
   try {
-    await invoke("browser_pick", { sessionId, tabId, start: on });
+    await invoke("browser_pick", { sessionId, tabId, start: on, ...(canvas ? { canvas } : {}) });
   } catch (error) {
     inspections.set(tabId, { ...old, error: String(error) });
     notify();
+    if (canvas) throw error;
   }
 }
 

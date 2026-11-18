@@ -105,6 +105,7 @@ pub(super) const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 /// than they say.
 const MAX_TEXT: usize = 40_000;
 const MAX_CONSOLE: usize = 200;
+const CAPTURE_JS: &str = include_str!("capture.js");
 
 /// A ring where a recorded click lands, fading out after. Pointer events
 /// off, so it never takes the click it marks.
@@ -1130,6 +1131,25 @@ async fn perform(session: &str, action: BrowserAction) -> Answer {
             let shown = path.display().to_string();
             Ok((shown.clone(), json!({ "path": shown })))
         }
+        BrowserAction::Capture { selector, path } => {
+            let path = screenshot_path(session, &path).await?;
+            if path.exists() {
+                return Err(format!("{} already exists. Choose a new file.", path.display()));
+            }
+            let capture = capture_screen(driven_tab(session)?, selector.as_deref(), None, false).await?;
+            let mut summary = capture.summary();
+            let bytes = serde_json::to_vec(&capture).map_err(|e| e.to_string())?;
+            write_new_capture(&path, &bytes).await?;
+            let shown = path.display().to_string();
+            summary["path"] = json!(shown);
+            let warnings = summary["warnings"].as_array().map_or(0, |warnings| warnings.len());
+            let result = if warnings == 0 {
+                shown
+            } else {
+                format!("{shown}\nCapture has {warnings} notes. Read the file for details.")
+            };
+            Ok((result, summary))
+        }
         BrowserAction::Eval { js } => {
             let value = eval(driven_tab(session)?, &js).await?;
             let text = match &value {
@@ -1377,6 +1397,62 @@ async fn capture(tab: i32, w: u32, h: u32, full: bool) -> Result<Vec<u8>, String
     base64::engine::general_purpose::STANDARD
         .decode(data)
         .map_err(|e| format!("bad image data: {e}"))
+}
+
+/// Snapshot the current CSS viewport without resizing the page or moving the scroll position.
+pub(super) async fn capture_screen(
+    tab: i32, selector: Option<&str>, picker: Option<&str>, full_page: bool,
+) -> Result<crate::canvas::BrowserCapture, String> {
+    let _held = CAPTURING.lock().await;
+    if RECORDING.lock().unwrap().values().any(|recording| recording.tab == tab && !recording.closed) {
+        return Err("Stop recording before capturing this page.".into());
+    }
+    let handle = json!(format!("__carbonCapture_{}", uuid::Uuid::new_v4()));
+    let query = json!({ "selector": selector, "picker": picker, "fullPage": full_page });
+    let capture = async {
+        let layout = eval(tab, &format!("({CAPTURE_JS})({query},{handle})")).await?;
+        let clip = layout.get("clip").ok_or("The browser did not return capture bounds.")?;
+        let width = clip["width"].as_f64().ok_or("Invalid capture width.")?;
+        let height = clip["height"].as_f64().ok_or("Invalid capture height.")?;
+        let pixel_ratio = layout["scale"].as_f64().unwrap_or(1.0).max(1.0);
+        let scale = (12_000_000.0 / (width * height)).sqrt().min(1.0) / pixel_ratio;
+        let shot = |scale, quality| async move {
+            let mut screenshot = cdp(tab, "Page.captureScreenshot", json!({
+                "format": "jpeg", "quality": quality, "captureBeyondViewport": true,
+                "clip": { "x": clip["x"], "y": clip["y"], "width": width, "height": height, "scale": scale },
+            })).await?;
+            screenshot["data"].take().as_str().map(str::to_owned).ok_or("No capture image came back.".to_string())
+        };
+        let mut screenshot = shot(scale, 90).await?;
+        if screenshot.len() > 5_000_000 {
+            let smaller = scale * (4_000_000.0 / screenshot.len() as f64).sqrt();
+            screenshot = shot(smaller, 82).await?;
+        }
+        let page = eval(tab, &format!("window[{handle}]?.finish()")).await?;
+        if page.is_null() {
+            return Err("The page changed during capture. Try again.".into());
+        }
+        let page: crate::canvas::CapturedPage = serde_json::from_value(page).map_err(|e| format!("Couldn’t read the screen capture. {e}"))?;
+        crate::canvas::BrowserCapture::assemble(page, screenshot)
+    }.await;
+    if capture.is_err() {
+        let _ = eval(tab, &format!("window[{handle}]?.release(); delete window[{handle}]")).await;
+    }
+    capture
+}
+
+async fn write_new_capture(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    let temporary = path.with_file_name(format!(".carbon-capture-{}.tmp", uuid::Uuid::new_v4()));
+    let mut file = tokio::fs::OpenOptions::new().create_new(true).write(true).mode(0o600).open(&temporary).await
+        .map_err(|e| format!("Couldn’t create a capture beside {}: {e}", path.display()))?;
+    let result = async {
+        file.write_all(bytes).await?;
+        file.sync_all().await?;
+        tokio::fs::hard_link(&temporary, path).await
+    }.await;
+    let _ = tokio::fs::remove_file(temporary).await;
+    result.map_err(|e| format!("Couldn’t write {}: {e}", path.display()))
 }
 
 /// Opens and closes the pane's shutter. The capture lays the page out at

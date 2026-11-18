@@ -1,6 +1,9 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import type { CanvasFrame, CanvasNode } from "@/types/events";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { invoke } from "@/lib/transport";
+import type { BrowserCaptureDetails, CanvasAssetData, CanvasFrame, CanvasNode } from "@/types/events";
 
 type Box = { x: number; y: number; width: number; height: number; styles: Record<string, string>; text: string };
 type Field = [label: string, value: string];
@@ -17,11 +20,15 @@ export default function CanvasProperties({
   node,
   box,
   count,
+  canvasId,
+  owner,
 }: {
   frame: CanvasFrame | null;
   node: CanvasNode | null;
   box: Box | null;
   count: number;
+  canvasId?: string;
+  owner?: string;
 }) {
   if (count > 1) {
     return <Empty title={`${count} selected`} detail="Select one frame or layer to see its properties." />;
@@ -64,6 +71,7 @@ export default function CanvasProperties({
 
   const authored = !box && node?.kind === "element" ? Object.entries(node.styles) as Field[] : [];
   const blank = !node && frame.content.nodes.length === 0;
+  const capture = (frame as CanvasFrame & { capture?: BrowserCaptureDetails }).capture;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3 text-ui select-text">
@@ -74,6 +82,7 @@ export default function CanvasProperties({
         </p>
       </header>
 
+      {capture && canvasId && <CaptureProperties key={capture.originalAssetId} capture={capture} canvasId={canvasId} owner={owner} />}
       <Section title="Geometry" fields={geometry} />
       <Section title="Layout" fields={layout} />
       <Section title="Appearance" fields={appearance} />
@@ -88,6 +97,45 @@ export default function CanvasProperties({
       {node && !box && <Note>Computed values appear once the frame has rendered.</Note>}
     </div>
   );
+}
+
+function CaptureProperties({ capture, canvasId, owner }: { capture: BrowserCaptureDetails; canvasId: string; owner?: string }) {
+  const [open, setOpen] = useState(false);
+  const [image, setImage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setError(null);
+    void invoke<CanvasAssetData>("read_canvas_asset", { id: canvasId, assetId: capture.originalAssetId }, owner)
+      .then(({ asset, data }) => { if (!cancelled) setImage(`data:${asset.mimeType};base64,${data}`); })
+      .catch(() => { if (!cancelled) setError("Couldn’t open the original screenshot."); });
+    return () => { cancelled = true; setImage(null); };
+  }, [open, canvasId, capture.originalAssetId, owner]);
+  const source = capture.source?.file;
+  return <Section title="Capture" fields={compact([
+    ["Content", capture.imageOnly ? "Image reference" : "Editable layers"],
+    ["Page", capture.pagePath],
+    ["Viewport", size(capture.viewport.width, capture.viewport.height)],
+    ["Selector", capture.selector ?? ""],
+    ["Source", source ? `${source}${capture.source?.line ? `:${capture.source.line}` : ""}` : ""],
+  ])}>
+    {capture.warnings.length > 0 && <ul className="mb-2 space-y-1 text-xs text-muted-foreground">
+      {capture.warnings.map(warning => <li key={warning}>{warning}</li>)}
+    </ul>}
+    <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>View original screenshot</Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Original screenshot</DialogTitle>
+          <DialogDescription>{capture.pagePath} · {size(capture.screenshotBounds.width, capture.screenshotBounds.height)}</DialogDescription>
+        </DialogHeader>
+        {image
+          ? <div className="max-h-[65vh] overflow-auto rounded-lg bg-surface-well"><img src={image} alt="Original browser capture" className="mx-auto max-w-full" /></div>
+          : <p role="status" className="text-sm text-muted-foreground">{error ?? "Loading screenshot…"}</p>}
+      </DialogContent>
+    </Dialog>
+  </Section>;
 }
 
 function Empty({ title, detail }: { title: string; detail: string }) {

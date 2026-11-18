@@ -1382,9 +1382,14 @@ wrap_display_handler! {
                 PICKING.lock().unwrap().as_mut().map(|p| p.remove(&self.tab));
             }
             if let (Some(app), Some(session)) = (APP.get(), session_of(self.tab)) {
+                if message.canvas && matches!(message.action.as_str(), "capture_element" | "capture_page") {
+                    let _ = app.emit("browser_canvas_pick", serde_json::json!({
+                        "sessionId": session, "tabId": self.tab, "fullPage": message.action == "capture_page",
+                    }));
+                }
                 let _ = app.emit("browser_pick", PickEvent {
                     session_id: session, tab_id: self.tab, count: message.count,
-                    active: message.action != "cancel",
+                    active: message.action != "cancel", canvas: message.canvas,
                 });
             }
             1
@@ -1453,7 +1458,7 @@ fn disarm_picker(id: i32) {
     if !was { return; }
     if let (Some(app), Some(session)) = (APP.get(), session_of(id)) {
         let _ = app.emit("browser_pick", PickEvent {
-            session_id: session, tab_id: id, count: 0, active: false,
+            session_id: session, tab_id: id, count: 0, active: false, canvas: false,
         });
     }
 }
@@ -1465,6 +1470,7 @@ struct PickEvent {
     tab_id: i32,
     count: usize,
     active: bool,
+    canvas: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -1473,6 +1479,8 @@ struct PickerMessage {
     document_id: String,
     count: usize,
     action: String,
+    #[serde(default)]
+    canvas: bool,
 }
 
 const PICK_JS: &str = include_str!("inspect.js");
@@ -2078,7 +2086,7 @@ pub fn browser_devtools(session_id: String) -> Result<(), String> {
 /// Starts or stops the element picker in the active tab. The pick itself
 /// arrives as a `browser_pick` event.
 #[tauri::command]
-pub fn browser_pick(session_id: String, tab_id: i32, start: bool) -> Result<(), String> {
+pub fn browser_pick(session_id: String, tab_id: i32, start: bool, canvas: Option<bool>) -> Result<(), String> {
     if session_of(tab_id).as_deref() != Some(session_id.as_str()) {
         return Err("The inspection tab is no longer open".into());
     }
@@ -2092,7 +2100,9 @@ pub fn browser_pick(session_id: String, tab_id: i32, start: bool) -> Result<(), 
             if start { map.insert(id, nonce.clone()); } else { map.remove(&id); }
         }
         let code = if start {
-            PICK_JS.replace("__CARBON_DOCUMENT_ID__", &nonce)
+            PICK_JS.replace("__CARBON_DOCUMENT_ID__", &nonce).replace(
+                "__CARBON_PICK_MODE__", if canvas.unwrap_or(false) { "capture" } else { "inspect" },
+            )
         } else {
             "window.__carbonPick?.stop()".into()
         };
@@ -2100,11 +2110,32 @@ pub fn browser_pick(session_id: String, tab_id: i32, start: bool) -> Result<(), 
         if !start {
             if let Some(app) = APP.get() {
                 let _ = app.emit("browser_pick", PickEvent {
-                    session_id, tab_id: id, count: 0, active: false,
+                    session_id, tab_id: id, count: 0, active: false, canvas: false,
                 });
             }
         }
     })
+}
+
+/// Append to the chosen canvas only after the named session's picked document is captured.
+#[tauri::command]
+pub async fn browser_capture_frame(
+    sink: crate::sink::Sink, session_id: String, tab_id: i32, canvas_id: String, full_page: bool,
+) -> Result<String, String> {
+    if session_of(tab_id).as_deref() != Some(session_id.as_str()) {
+        return Err("The capture tab is no longer open.".into());
+    }
+    let nonce = PICKING.lock().unwrap().as_ref().and_then(|p| p.get(&tab_id).cloned())
+        .ok_or("Capture is no longer active in this tab.")?;
+    let session = crate::store::get_session_index_item(&session_id).await.map_err(|e| e.to_string())?
+        .ok_or("Open a project session to capture to Canvas.")?;
+    let result = automation::capture_screen(tab_id, None, Some(&nonce), full_page).await;
+    let guard = serde_json::json!(nonce);
+    let _ = automation::eval(tab_id, &format!("window.__carbonPick?.documentId === {guard} && window.__carbonPick.stop()")).await;
+    if PICKING.lock().unwrap().as_ref().and_then(|p| p.get(&tab_id)) == Some(&nonce) {
+        disarm_picker(tab_id);
+    }
+    result?.add_to_canvas(&sink, &session.project_path, &canvas_id).await
 }
 
 #[derive(serde::Deserialize)]

@@ -374,6 +374,7 @@ Verbs:
   find <role|text|label|placeholder|alt|title|testid|first|last|nth> <value> <verb> [arg]
   wait [<selector> | <ms>] [--url ..] [--text ..] [--load ..]
   screenshot [path] [--full] | eval <js> | console | errors
+  capture [selector] --to <file>
   set viewport <w> <h> | set device <name> | zoom <percent|reset>
   record start | record stop [name]
 screenshot and record lay the page out at 1440×900, or the last set viewport/device.";
@@ -429,6 +430,10 @@ struct BrowserCommand {
     /// screenshot: the whole document rather than the viewport.
     #[arg(long)]
     full: bool,
+
+    /// capture: write a self-contained capture under this session's checkout.
+    #[arg(long)]
+    to: Option<String>,
 }
 
 #[derive(Args)]
@@ -946,12 +951,14 @@ fn browser_action(f: &BrowserCommand) -> Result<BrowserAction, String> {
         (f.text.is_some(), "--text"),
         (f.load.is_some(), "--load"),
         (f.full, "--full"),
+        (f.to.is_some(), "--to"),
     ];
     let allowed: &[&str] = match verb.as_str() {
         "snapshot" => &["-i", "-c", "-s"],
         "find" => &["--name", "--exact"],
         "wait" => &["--url", "--text", "--load"],
         "screenshot" => &["--full"],
+        "capture" => &["--to"],
         _ => &[],
     };
     if let Some((_, flag)) = given
@@ -1155,6 +1162,10 @@ fn act(
         "screenshot" => A::Screenshot {
             path: word("").ok(),
             full: f.full,
+        },
+        "capture" if found.is_none() => A::Capture {
+            selector: word("").ok(),
+            path: f.to.clone().ok_or("capture [selector] --to <file>")?,
         },
         "eval" => A::Eval {
             js: word("eval <js>")?,
