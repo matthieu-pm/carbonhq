@@ -233,6 +233,14 @@ impl<'i> DeclarationParser<'i> for Declarations<'_> {
         start: &ParserState,
     ) -> Result<(), ParseError<'i, ()>> {
         let value = consume(input);
+        let name = if name.eq_ignore_ascii_case("initial-value") {
+            self.scope
+                .last()
+                .and_then(|scope| scope.strip_prefix("@property "))
+                .unwrap_or(&name)
+        } else {
+            &name
+        };
         if !name.starts_with("--") || name.len() <= 2 {
             return Ok(());
         }
@@ -274,6 +282,15 @@ impl<'i> AtRuleParser<'i> for Declarations<'_> {
     ) -> Result<Self::Prelude, ParseError<'i, ()>> {
         let prelude = consume(input);
         let name = name.to_ascii_lowercase();
+        if name == "property" {
+            let mut prelude = ParserInput::new(prelude);
+            let mut prelude = Parser::new(&mut prelude);
+            let property = prelude.expect_ident_cloned()?;
+            prelude.expect_exhausted()?;
+            return Ok(property
+                .starts_with("--")
+                .then(|| format!("@property {property}")));
+        }
         Ok(matches!(
             name.as_str(),
             "theme" | "layer" | "media" | "supports" | "container" | "scope" | "starting-style"
@@ -355,17 +372,48 @@ fn used_names(value: &str) -> Vec<String> {
     names.into_iter().collect()
 }
 
-#[derive(Serialize)]
-struct PropertyLink<'a> {
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PropertyLink {
     names: Vec<String>,
-    value: &'a str,
+    value: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    unavailable_at_capture: Vec<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct LayerLinks<'a> {
     node_id: &'a str,
-    properties: BTreeMap<&'a str, PropertyLink<'a>>,
+    properties: BTreeMap<String, PropertyLink>,
+}
+
+fn captured_links(
+    styles: &BTreeMap<String, String>,
+    extra: &Extensions,
+) -> BTreeMap<String, PropertyLink> {
+    let Some(refs) = extra
+        .get("tokenReferences")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return BTreeMap::new();
+    };
+    refs.iter()
+        .filter_map(|(property, stored)| {
+            let mut link: PropertyLink = if let Ok(link) = serde_json::from_value(stored.clone()) {
+                link
+            } else {
+                PropertyLink {
+                    names: serde_json::from_value(stored.clone()).ok()?,
+                    value: styles.get(property)?.clone(),
+                    unavailable_at_capture: vec![],
+                }
+            };
+            link.unavailable_at_capture
+                .retain(|name| link.names.contains(name));
+            (!link.names.is_empty()).then(|| (property.clone(), link))
+        })
+        .collect()
 }
 
 /// Carry proven names beside stored values without changing the frame's rendered CSS.
@@ -382,23 +430,23 @@ pub(super) fn links(nodes: &[CanvasNode]) -> Vec<LayerLinks<'_>> {
         else {
             continue;
         };
-        let capture = extra
-            .get("tokenReferences")
-            .and_then(serde_json::Value::as_object);
-        let referenced: BTreeMap<_, _> = styles
-            .iter()
-            .filter_map(|(property, value)| {
-                let captured = capture.and_then(|refs| refs.get(property));
-                let names: Vec<String> = captured
-                    .and_then(|names| serde_json::from_value(names.clone()).ok())
-                    .unwrap_or_else(|| used_names(value));
-                (!names.is_empty()).then(|| (property.as_str(), PropertyLink { names, value }))
-            })
-            .collect();
-        if !referenced.is_empty() {
+        let mut properties = captured_links(styles, extra);
+        for (property, value) in styles {
+            let names = used_names(value);
+            if !names.is_empty() {
+                properties
+                    .entry(property.clone())
+                    .or_insert_with(|| PropertyLink {
+                        names,
+                        value: value.clone(),
+                        unavailable_at_capture: vec![],
+                    });
+            }
+        }
+        if !properties.is_empty() {
             result.push(LayerLinks {
                 node_id: id,
-                properties: referenced,
+                properties,
             });
         }
         result.extend(links(children));
@@ -420,15 +468,17 @@ pub(super) fn source(content: &CanvasContent) -> Option<&serde_json::Value> {
     content.extra.get("tokenSource")
 }
 
-pub(super) fn clear_reference(extra: &mut Extensions, property: &str) {
-    if let Some(refs) = extra
-        .get_mut("tokenReferences")
-        .and_then(serde_json::Value::as_object_mut)
-    {
-        refs.remove(property);
-        if refs.is_empty() {
-            extra.remove("tokenReferences");
-        }
+pub(super) fn retain_references(
+    styles: &BTreeMap<String, String>,
+    extra: &mut Extensions,
+    retained: &[String],
+) {
+    let mut links = captured_links(styles, extra);
+    links.retain(|property, _| retained.contains(property));
+    if links.is_empty() {
+        extra.remove("tokenReferences");
+    } else {
+        extra.insert("tokenReferences".into(), serde_json::json!(links));
     }
 }
 
@@ -473,6 +523,7 @@ mod tests {
 :root { --brand: red; --space: calc(2 * var(--unit, 4px)); content: "--fake: yes;"; }
 @theme inline { --color-brand: var(--brand); --color-*: initial; }
 @media (prefers-color-scheme: dark) { [data-theme="dark"] { --brand: oklch(0.5 0.2 20); } }
+@property --registered { syntax: '<length>'; inherits: false; initial-value: 8px; }
 "#,
         )
         .unwrap();
@@ -493,7 +544,13 @@ mod tests {
                 .iter()
                 .map(|t| t.name.as_str())
                 .collect::<Vec<_>>(),
-            ["--brand", "--brand", "--color-brand", "--space"]
+            [
+                "--brand",
+                "--brand",
+                "--color-brand",
+                "--registered",
+                "--space"
+            ]
         );
         assert_eq!(first.tokens[0].value, "red");
         assert_eq!(first.tokens[1].line, 6);
@@ -506,7 +563,9 @@ mod tests {
         );
         assert_eq!(first.tokens[2].value, "var(--brand)");
         assert_eq!(first.tokens[2].scope, ["@theme inline"]);
-        assert_eq!(first.tokens[3].value, "calc(2 * var(--unit, 4px))");
+        assert_eq!(first.tokens[3].value, "8px");
+        assert_eq!(first.tokens[3].scope, ["@property --registered"]);
+        assert_eq!(first.tokens[4].value, "calc(2 * var(--unit, 4px))");
         fs::write(&css, ":root { --space: 8px }").unwrap();
         let second = scan(source).unwrap();
         assert_eq!(second.tokens.len(), 1);

@@ -8,6 +8,7 @@ import type { BrowserCaptureDetails, CanvasAssetData, CanvasFrame, CanvasNode, C
 type Box = { x: number; y: number; width: number; height: number; styles: Record<string, string>; text: string };
 type Field = [label: string, value: string];
 type CapturedTokenSource = { checkout: CanvasTokenSource | null; theme: string[] };
+type CapturedTokenLink = { names: string[]; value: string; unavailableAtCapture?: string[] };
 
 /// Read-only properties of the one picked frame or layer.
 ///
@@ -109,26 +110,34 @@ function TokenProperties({ frame, node, box, catalog, tokenError }: { frame: Can
   const source = (frame.content as { tokenSource?: CapturedTokenSource }).tokenSource;
   const capture = (frame as { capture?: BrowserCaptureDetails }).capture;
   const authored = node?.kind === "element" ? node.styles : {};
-  const captured = (node as { tokenReferences?: Record<string, string[]> } | null)?.tokenReferences;
-  const links = Object.entries(authored).flatMap(([property, value]) => {
+  const references = (node as { tokenReferences?: Record<string, CapturedTokenLink | string[]> } | null)?.tokenReferences;
+  const captured = references && typeof references === "object" && !Array.isArray(references) ? references : null;
+  const properties = [...new Set([...Object.keys(authored), ...Object.keys(captured ?? {})])];
+  const links = properties.flatMap(property => {
+    const value = authored[property] ?? "";
     const stored = captured?.[property];
-    const names = Array.isArray(stored) ? stored.filter(name => typeof name === "string") : [...new Set(
+    const snapshot: CapturedTokenLink | undefined = Array.isArray(stored) ? { names: stored, value } : stored;
+    const verified = Array.isArray(snapshot?.names) && typeof snapshot.value === "string" ? snapshot : null;
+    const names = verified ? verified.names.filter(name => typeof name === "string") : [...new Set(
       [...value.matchAll(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\*[\s\S]*?\*\/|(?<![\w\u0080-\u{10FFFF}-])var\(\s*(--[\w\u0080-\u{10FFFF}-]+)\s*(?=[,)])/giu)].flatMap(match => match[1] ?? []),
     )];
-    return names.length ? [{ property, names, value: stored ? value : box?.styles[property] ?? value }] : [];
+    const unavailable = verified?.unavailableAtCapture;
+    const unavailableAtCapture = Array.isArray(unavailable) ? names.filter(name => unavailable.includes(name)) : [];
+    return names.length ? [{ property, names, value: verified?.value ?? box?.styles[property] ?? value, unavailableAtCapture }] : [];
   });
-  const sourcePath = source?.checkout?.cwd;
-  const sameCheckout = !!catalog && (!sourcePath || catalog.source.cwd === sourcePath);
+  const sourcePath = typeof source?.checkout?.cwd === "string" ? source.checkout.cwd : undefined;
+  const theme = Array.isArray(source?.theme) ? source.theme.filter(value => typeof value === "string").join(" · ") : "";
+  const sameCheckout = !!catalog && (sourcePath ? catalog.source.cwd === sourcePath : !capture && !captured);
   const known = new Set(sameCheckout ? catalog.tokens.map(token => token.name) : []);
   const canCheck = sameCheckout && !catalog.incomplete;
   const unknown = capture && !capture.imageOnly && node?.kind === "element" && Object.keys(authored).some(key => !links.some(link => link.property === key));
   if (!links.length && !source && !unknown) return null;
   return <Section title="Token links" fields={compact([
     ["Checkout", sourcePath ?? ""],
-    ["Theme", source?.theme?.join(" · ") ?? ""],
+    ["Theme", theme],
   ])}>
     {links.length > 0 && <ul className="divide-y divide-hairline">
-      {links.map(({ property, names, value }) => {
+      {links.map(({ property, names, value, unavailableAtCapture }) => {
         const missing = canCheck && names.some(name => !known.has(name));
         return <li key={property} className="py-1.5">
           <p className="text-xs text-muted-foreground">{property}</p>
@@ -136,11 +145,12 @@ function TokenProperties({ frame, node, box, catalog, tokenError }: { frame: Can
             <span>{names.join(", ")}</span><span className="text-muted-foreground">{value}</span>
           </p>
           {missing && <p className="text-xs text-muted-foreground">Missing from project CSS</p>}
+          {unavailableAtCapture.length > 0 && <p className="text-xs text-muted-foreground">Unavailable at capture · {unavailableAtCapture.join(", ")}</p>}
         </li>;
       })}
     </ul>}
     {links.length > 0 && tokenError && <p className="mt-1 text-xs text-muted-foreground">Couldn’t check links against project CSS.</p>}
-    {links.length > 0 && catalog && !sameCheckout && <p className="mt-1 text-xs text-muted-foreground">The token list is showing a different checkout.</p>}
+    {links.length > 0 && catalog && !sameCheckout && <p className="mt-1 text-xs text-muted-foreground">{sourcePath ? "The token list is showing a different checkout." : "The capture has no recorded checkout."}</p>}
     {unknown && <p className="mt-1 text-xs text-muted-foreground">Token links are unknown for styles captured as computed values alone.</p>}
   </Section>;
 }

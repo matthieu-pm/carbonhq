@@ -22,6 +22,67 @@ function captureCanvasStyle(style) {
   return { styles, carbonStyleOrder };
 }
 
+function physicalTargets(key, writingMode, direction) {
+  const vertical = /^(?:vertical|sideways)-/.test(writingMode);
+  const block = !vertical ? ["top", "bottom"] : writingMode.endsWith("-rl") ? ["right", "left"] : ["left", "right"];
+  const reversed = (direction === "rtl") !== (writingMode === "sideways-lr");
+  const inline = vertical ? ["top", "bottom"] : ["left", "right"];
+  if (reversed) inline.reverse();
+  const size = /^(min-|max-)?(inline|block)-size$/.exec(key);
+  if (size) return [(size[1] ?? "") + ((size[2] === "inline") !== vertical ? "width" : "height")];
+  const corner = /^border-(start|end)-(start|end)-radius$/.exec(key);
+  if (corner) {
+    const sides = [block[Number(corner[1] === "end")], inline[Number(corner[2] === "end")]];
+    if (vertical) sides.reverse();
+    return [`border-${sides.join("-")}-radius`];
+  }
+  const edge = /^(padding|margin|border)-(inline|block)(?:-(start|end))?(?:-(width|color|style))?$/.exec(key);
+  if (!edge) return [];
+  const [, family, axis, end, part] = edge;
+  const pair = axis === "inline" ? inline : block;
+  const sides = end ? [pair[Number(end === "end")]] : pair;
+  if (family !== "border") return sides.map(side => `${family}-${side}`);
+  return sides.flatMap(side => (part ? [part] : ["width", "color", "style"]).map(kind => `border-${side}-${kind}`));
+}
+
+function patchCanvasStyle(existing, tracked, patch) {
+  const style = document.createElement("div").style;
+  const set = (key, value) => {
+    const important = /\s*!important\s*$/i.test(value);
+    style.setProperty(key, value.replace(/\s*!important\s*$/i, ""), important ? "important" : "");
+  };
+  for (const [key, value] of existing) set(key, value);
+  const flow = () => [style.getPropertyValue("writing-mode"), style.getPropertyValue("direction")];
+  const beforeFlow = flow();
+  const signature = key => [style.getPropertyValue(key), style.getPropertyPriority(key)].join("\0");
+  const before = tracked.map(key => [key, signature(key)]);
+  const probe = document.createElement("div").style;
+  const affected = new Set();
+  for (const [key, value] of Object.entries(patch)) {
+    probe.cssText = "";
+    probe.setProperty(key, "initial");
+    const properties = [key, ...probe];
+    if (value === null) {
+      const declared = new Set(style);
+      if (!properties.some(property => declared.has(property))) continue;
+      style.removeProperty(key);
+    } else {
+      set(key, value);
+      if (!style.getPropertyValue(key)) throw new Error("Invalid CSS property or value: " + key);
+    }
+    for (const property of properties) affected.add(property);
+  }
+  const afterFlow = flow();
+  if (beforeFlow.some((value, index) => value !== afterFlow[index])) {
+    for (const property of style) if (physicalTargets(property, ...afterFlow).length) affected.add(property);
+  }
+  for (const key of [...affected]) {
+    for (const target of [...physicalTargets(key, ...beforeFlow), ...physicalTargets(key, ...afterFlow)]) affected.add(target);
+  }
+  const retained = before.filter(([key, prior]) => !affected.has("all") && !affected.has(key) && prior === signature(key)).map(([key]) => key);
+  return { ...captureCanvasStyle(style), retained };
+}
+
 function parseCanvasHtml(html, parentTag = null) {
   const doc = new DOMParser().parseFromString(parentTag ? "" : html, "text/html");
   let source = doc.body;

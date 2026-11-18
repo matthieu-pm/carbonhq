@@ -47,6 +47,8 @@ try {
     }
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(`<!doctype html><html data-theme="light"><style>
+      @namespace s url(http://www.w3.org/2000/svg);
+      s|text { fill:red!important }
       @font-face{font-family:Fixture;src:url(/fixture.woff2);font-weight:100 900}
       @font-face{font-family:PseudoFixture;src:url(/fixture.woff2?icons);font-weight:100 900}
       body{margin:0;background:#f8f6f2}
@@ -59,6 +61,15 @@ try {
       @media (min-width: 10000px) { .buy { color:var(--same-value) } }
       #overridden { color:var(--same-value); border-left:1px solid; border-left-color:var(--same-value); border-inline-start-color:rgb(20,40,60); }
       button#overridden { color:rgb(20,40,60); }
+      .ordered { color:red; }
+      .ordered { color:var(--brand); width:var(--space); }
+      .ordered::before { content:"·"; color:var(--brand); }
+      .mixed { padding: 1px var(--space) 3px 4px; }
+      .composite { border-inline-start:4px solid var(--brand); background:linear-gradient(var(--brand),red); }
+      .pending { padding-top:var(--radius-card); }
+      #pending { padding: 8px var(--space); padding-left:3px; }
+      [data-theme=dark] { --dark-only:#333; }
+      .unavailable { color:var(--dark-only,lime); }
       h1::before{content:"*";font-family:PseudoFixture}
       aside{height:32px;overflow:auto}aside span{display:block;height:64px}
       footer{height:2100px}iframe{display:block;width:160px;height:50px}
@@ -67,6 +78,12 @@ try {
         <h1 style="color:rgb(20,40,60)">Checkout</h1>
         <button class="buy" style="background-color:var(--brand)" onclick="document.body.remove()">Pay now</button>
         <button id="overridden">Other</button>
+        <p class="ordered">Ordered</p>
+        <p class="mixed">Mixed</p>
+        <p class="composite">Composite</p>
+        <p class="pending" id="pending">Pending</p>
+        <p class="unavailable">Unavailable</p>
+        <svg width="80" height="24"><text y="16" style="fill:var(--brand)">Namespace</text></svg>
         <img src="/pixel.png" width="24" height="24">
         <iframe src="/embedded"></iframe>
         <iframe sandbox srcdoc="<input value='fixture-private-opaque'>"></iframe>
@@ -126,15 +143,27 @@ try {
   assert.equal(document.frame.content.tokenSource.checkout.cwd, await realpath(project));
   assert.deepEqual(document.frame.content.tokenSource.theme, ['data-theme=light']);
   const layerWithText = text => captured.find(node => node.children?.some(child => child.text === text));
-  assert.deepEqual(layerWithText('Pay now').tokenReferences.color, ['--brand']);
-  assert.deepEqual(layerWithText('Pay now').tokenReferences['background-color'], ['--brand']);
+  assert.deepEqual(layerWithText('Pay now').tokenReferences.color.names, ['--brand']);
+  assert.deepEqual(layerWithText('Pay now').tokenReferences['background-color'].names, ['--brand']);
   assert.equal(layerWithText('Pay now').styles.color, 'rgb(20, 40, 60)');
   assert.equal(layerWithText('Other').tokenReferences?.color, undefined);
   assert.equal(layerWithText('Other').tokenReferences?.['border-left-color'], undefined);
   assert.equal(layerWithText('Checkout').tokenReferences?.color, undefined);
+  assert.deepEqual(layerWithText('Ordered').tokenReferences.color.names, ['--brand']);
+  assert.deepEqual(layerWithText('Ordered').tokenReferences.width.names, ['--space']);
+  assert.deepEqual(layerWithText('Ordered').children.find(node => node.name === '::before').tokenReferences.color.names, ['--brand']);
+  assert.equal(layerWithText('Mixed').tokenReferences?.['padding-top'], undefined);
+  assert.equal(layerWithText('Composite').tokenReferences?.['border-left-width'], undefined);
+  assert.equal(layerWithText('Composite').tokenReferences?.['background-color'], undefined);
+  assert.equal(layerWithText('Pending').styles['padding-top'], '8px');
+  assert.equal(layerWithText('Pending').tokenReferences?.['padding-top'], undefined);
+  assert.deepEqual(layerWithText('Unavailable').tokenReferences.color.unavailableAtCapture, ['--dark-only']);
+  assert.equal(layerWithText('Unavailable').styles.color, 'rgb(0, 255, 0)');
+  assert.equal(layerWithText('Namespace').styles.fill, 'rgb(255, 0, 0)');
+  assert.equal(layerWithText('Namespace').tokenReferences?.fill, undefined);
   const main = captured.find(node => node.tag === 'main');
-  assert.deepEqual(main.tokenReferences['padding-left'], ['--space']);
-  assert.deepEqual(main.tokenReferences['border-top-left-radius'], ['--radius-card']);
+  assert.deepEqual(main.tokenReferences['padding-left'].names, ['--space']);
+  assert.deepEqual(main.tokenReferences['border-top-left-radius'].names, ['--radius-card']);
   assert.equal(main.styles['padding-left'], '16px');
   await writeFile(cssPath, ':root { --space: 8px; }\n');
   const refreshed = await tokens();

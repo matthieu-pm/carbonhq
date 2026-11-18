@@ -577,11 +577,7 @@ pub async fn request(request: CanvasRequest, sink: &Sink) -> Result<Value, Strin
                     if let Some(CanvasNode::Element { styles: saved, extra, .. }) =
                         nodes::find_mut(&mut frame.content.nodes, node)
                     {
-                        for (key, value) in existing {
-                            if styles.contains_key(key) || normalized.styles.get(key) != Some(value) {
-                                super::tokens::clear_reference(extra, key);
-                            }
-                        }
+                        super::tokens::retain_references(existing, extra, &normalized.retained);
                         *saved = normalized.styles;
                         extra.insert(
                             "carbonStyleOrder".into(),

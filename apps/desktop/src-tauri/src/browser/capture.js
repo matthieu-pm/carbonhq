@@ -51,14 +51,14 @@
   const tokenReferences = tokenReader(document);
   const tokenTheme = new Set();
   for (let element = selected ?? document.body; element; element = element.parentElement) {
-    for (const attribute of ["data-theme", "data-mode", "data-color-mode", "data-color-scheme"]) {
+    for (const attribute of ["data-theme", "data-mode", "data-scheme", "data-color-mode", "data-color-scheme"]) {
       const value = element.getAttribute(attribute);
       if (value && /^[\w-]{1,48}$/.test(value) && ![...tokenTheme].some(theme => theme.startsWith(attribute + "="))) {
         tokenTheme.add(attribute + "=" + value);
       }
     }
     for (const name of ["dark", "light"]) if (element.classList.contains(name)) tokenTheme.add("." + name);
-    if (tokenTheme.size === 6) break;
+    if (tokenTheme.size === 7) break;
   }
   if (query.selector != null && query.selector.length > 1024) throw new Error("Use a shorter CSS selector.");
   if (clip.width + clip.x < bounds.x + bounds.width || clip.height + clip.y < bounds.y + bounds.height || bounds.x < 0 || bounds.y < 0) {
@@ -163,6 +163,13 @@
   let count = 0;
   const layer = (tag, name, styles, attrs = {}, children = []) => ({ kind: "element", id: id(), name, tag, attributes: attrs, styles, children });
   const text = value => ({ kind: "text", id: id(), name: "Text", text: value.replaceAll("carbon-canvas-asset://", "") });
+  const annotateTokens = (node, refs, computed) => {
+    if (!Object.keys(refs).length) return;
+    node.tokenReferences = Object.fromEntries(Object.entries(refs).map(([property, names]) => [property, {
+      names, value: node.styles[property],
+      unavailableAtCapture: names.filter(name => computed.getPropertyValue(name) === ""),
+    }]));
+  };
   const imageRegion = (node, label, box) => {
     node.tag = "div";
     node.name = label + " · Image reference";
@@ -194,7 +201,9 @@
     });
     count += value ? 2 : 1;
     if (count > 1600) throw new Error("This screen exceeds the editable layer limit.");
-    return [layer("span", type, css(computed), {}, value ? [text(value)] : [])];
+    const node = layer("span", type, css(computed), {}, value ? [text(value)] : []);
+    annotateTokens(node, tokenReferences(el, computed, node.styles, type.slice(2)), computed);
+    return [node];
   };
   const copy = (current, depth) => {
     if (count > 1600 || depth > 38) throw new Error("This screen exceeds the editable layer limit.");
@@ -255,7 +264,7 @@
         delete refs["margin-top"];
         delete refs["margin-left"];
       }
-      if (Object.keys(refs).length) node.tokenReferences = refs;
+      annotateTokens(node, refs, computed);
     }
     if (styles.position === "fixed" || styles.position === "sticky") {
       const at = absolute(current);

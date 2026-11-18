@@ -5,6 +5,9 @@
     ["font-weight", ["font"]], ["letter-spacing", []], ["opacity", []],
     ["box-shadow", []], ["row-gap", ["gap"]], ["column-gap", ["gap"]],
   ]);
+  for (const name of ["width", "height", "min-width", "min-height", "max-width", "max-height"]) {
+    properties.set(name, ["inline", "block"].map(axis => name.replace(/(?:width|height)$/, `${axis}-size`)));
+  }
   const sides = ["top", "right", "bottom", "left"];
   const axes = ["inline", "block"];
   for (const side of sides) {
@@ -26,6 +29,12 @@
   const rules = [];
   let complete = true, scanned = 0, comparisons = 0;
   const styleHas = new Set(["all", ...properties.keys(), ...[...properties.values()].flat()]);
+  const addRule = (selector, style, layer, certainty, complexLayer) => {
+    const declared = new Set(style);
+    if ([...declared].some(name => styleHas.has(name))) {
+      rules.push({ selector, style, declared, layer, certainty, complexLayer, order: rules.length });
+    }
+  };
   const nestedSelector = (selector, parent) => {
     if (parent === null) return selector;
     if (!parent || parent.length > 1024 || /[,\[\]"'\\]/.test(selector)) return "";
@@ -39,9 +48,7 @@
       switch (rule.constructor.name) {
         case "CSSStyleRule": {
           const selector = nestedSelector(rule.selectorText, parent);
-          if (Array.from(rule.style).some(name => styleHas.has(name))) {
-            rules.push({ selector, style: rule.style, layer, certainty: certainty && !!selector, complexLayer });
-          }
+          addRule(selector, rule.style, layer, certainty && !!selector, complexLayer);
           if (rule.cssRules?.length) walk(rule.cssRules, layer, certainty && !!selector, depth + 1, selector, complexLayer);
           break;
         }
@@ -64,9 +71,7 @@
           break;
         }
         case "CSSNestedDeclarations":
-          if (Array.from(rule.style).some(name => styleHas.has(name))) {
-            rules.push({ selector: parent, style: rule.style, layer, certainty: certainty && !!parent, complexLayer });
-          }
+          addRule(parent, rule.style, layer, certainty && !!parent, complexLayer);
           break;
         case "CSSKeyframesRule":
           break;
@@ -78,7 +83,11 @@
   };
   const sheet = (sheet, layer, certainty, depth, media = sheet?.media, complexLayer = false) => {
     if (sheet?.disabled || media?.mediaText && !matchMedia(media.mediaText).matches) return;
-    try { walk(sheet.cssRules, layer, certainty, depth, null, complexLayer); } catch { complete = false; }
+    try {
+      const declarations = sheet.cssRules;
+      const defaultNamespace = Array.from(declarations).some(rule => rule.constructor.name === "CSSNamespaceRule" && !rule.prefix);
+      walk(declarations, layer, certainty && !defaultNamespace, depth, null, complexLayer);
+    } catch { complete = false; }
   };
   for (const stylesheet of [...document.styleSheets, ...(document.adoptedStyleSheets ?? [])]) {
     sheet(stylesheet, null, true, 0);
@@ -94,16 +103,29 @@
       const ids = part.match(/#[\w-]+/g)?.length ?? 0;
       const classes = part.match(/\.[\w-]+/g)?.length ?? 0;
       const tags = part.match(/(^|[\s>+~])[a-z][\w-]*/gi)?.length ?? 0;
-      return ids * 1_000_000 + classes * 1000 + tags;
+      return [ids, classes, tags].some(count => count >= 1000) ? NaN : ids * 1_000_000 + classes * 1000 + tags;
     }));
   };
-  const matches = (rule, element) => {
-    if (!rule.selector) return !rule.certainty;
-    try { return element.matches(rule.selector); } catch { return !rule.certainty; }
+  const matchRule = (rule, element, pseudo) => {
+    let selector = rule.selector;
+    const uncertain = () => [{ ...rule, certainty: false }];
+    if (!selector || /:scope\b|:visited\b/i.test(selector)) return uncertain();
+    if (pseudo) {
+      const suffix = new RegExp(`:{1,2}${pseudo}$`, "i");
+      if (!suffix.test(selector) && !selector.toLowerCase().includes(`:${pseudo}`)) return [];
+      if (selector.includes(",") && /[\[\]("'\\]/.test(selector)) return uncertain();
+      selector = selector.split(",").map(part => part.trim()).filter(part => suffix.test(part))
+        .map(part => part.replace(suffix, "") || "*").join(",");
+      if (!selector) return uncertain();
+    }
+    try { return element.matches(selector) ? [{ ...rule, selector }] : []; }
+    catch { return uncertain(); }
   };
+  const logical = key => /-(?:inline|block|start|end)(?:-|$)|^(?:inline|block)-size$/.test(key);
   const applies = (alias, prop, computed) => {
-    if (!/-(?:inline|block|start|end)(?:-|$)/.test(alias)) return true;
+    if (!logical(alias)) return true;
     if (computed.writingMode !== "horizontal-tb") return true;
+    if (alias.endsWith("-size")) return alias.endsWith("inline-size") === prop.endsWith("width");
     const start = computed.direction === "rtl" ? "right" : "left";
     const end = start === "left" ? "right" : "left";
     if (alias.endsWith("-radius")) {
@@ -116,30 +138,53 @@
     if (qualifier === "start" || qualifier === "end") return side === pair[qualifier === "start" ? 0 : 1];
     return pair.includes(side);
   };
+  const singleFunction = value => {
+    const start = /^[\w-]+\(/.exec(value)?.[0].length;
+    if (!start) return false;
+    let depth = 1, quote = "";
+    for (let index = start; index < value.length; index++) {
+      const char = value[index];
+      if (char === "\\") { index++; continue; }
+      if (quote) { if (char === quote) quote = ""; continue; }
+      if (char === '"' || char === "'") quote = char;
+      if (char === "(") depth++;
+      if (char === ")" && --depth === 0) return index === value.length - 1;
+    }
+    return false;
+  };
   const candidates = (rule, prop, aliases, computed) => {
     const exact = rule.style.getPropertyValue(prop);
     const list = [];
     if (exact) list.push({ key: prop, value: exact });
     for (const key of aliases) {
-      if (!applies(key, prop, computed)) continue;
+      if (exact && !logical(key) || !applies(key, prop, computed)) continue;
       const value = rule.style.getPropertyValue(key);
-      if (value && (!exact || /-(?:inline|block|start|end)(?:-|$)/.test(key))) list.push({ key, value });
+      const direct = /^(?:padding|margin)-(?:inline|block)-(?:start|end)$|^border-(?:inline|block)-(?:start|end)-(?:width|color)$|^border-(?:start|end)-(?:start|end)-radius$|(?:inline|block)-size$/.test(key);
+      const uniform = /^(?:gap|(?:padding|margin)(?:-(?:inline|block))?|border-radius|border(?:-(?:inline|block))?-(?:width|color))$/.test(key);
+      if (value) list.push({ key, value: direct || uniform && singleFunction(value) ? value : "" });
+    }
+    // CSSOM can enumerate a longhand whose pending var() substitution hides its value.
+    for (const key of [prop, ...aliases]) {
+      if (!rule.declared.has(key) || !applies(key, prop, computed) || rule.style.getPropertyValue(key)) continue;
+      const covered = list.some(item => key === prop ? !logical(item.key) : key.startsWith(`${item.key}-`));
+      if (!covered) list.push({ key, value: "" });
     }
     const all = rule.style.getPropertyValue("all");
     if (all) list.push({ key: "all", value: all });
     return list.map(({ key, value }) => ({
       ...rule, value, important: rule.style.getPropertyPriority(key) === "important",
-      certainty: rule.certainty && (computed.writingMode === "horizontal-tb" || !/-(?:inline|block|start|end)(?:-|$)/.test(key)),
+      certainty: rule.certainty && (computed.writingMode === "horizontal-tb" || !logical(key)),
     }));
   };
 
-  return (element, computed, styles) => {
-    if (!complete || element.getRootNode() !== document || element.getAnimations().length) return {};
+  return (element, computed, styles, pseudo = null) => {
+    if (!complete || element.getRootNode() !== document || element.getAnimations().length || pseudo && computed.animationName !== "none") return {};
     comparisons += rules.length;
     if (comparisons > 450_000) return {};
-    const matched = rules.filter(rule => matches(rule, element));
-    const inline = { style: element.style, selector: null, layer: null, certainty: true, inline: true };
-    if (inline.style?.length) matched.push(inline);
+    const matched = rules.flatMap(rule => matchRule(rule, element, pseudo));
+    if (!pseudo && element.style?.length) {
+      matched.push({ style: element.style, declared: new Set(element.style), selector: null, layer: null, certainty: true, inline: true });
+    }
     if (!matched.some(rule => /var\(/i.test(rule.style.cssText))) return {};
     const result = {};
     for (const [prop, aliases] of properties) {
@@ -149,15 +194,17 @@
       const important = possible.some(rule => rule.important && rule.certainty);
       if (important) possible = possible.filter(rule => rule.important);
       const inlineWinner = possible.filter(rule => rule.inline && (rule.important || !possible.some(other => other.important)));
-      if (inlineWinner.length) possible = inlineWinner;
+      if (inlineWinner.some(rule => rule.certainty)) possible = inlineWinner;
       else if (possible.every(rule => rule.certainty) && (important || !possible.some(rule => rule.important))) {
         const layerRank = rule => rule.layer === null ? (important ? -Infinity : Infinity) : (important ? -rule.layer : rule.layer);
         const best = Math.max(...possible.map(layerRank));
         possible = possible.filter(rule => layerRank(rule) === best);
         const scores = possible.map(rule => specificity(rule.selector, element));
-        if (possible.every(rule => !rule.complexLayer) && scores.every(score => score !== null)) {
+        if (possible.every(rule => !rule.complexLayer) && scores.every(Number.isFinite)) {
           const best = Math.max(...scores);
           possible = possible.filter((_, index) => scores[index] === best);
+          const last = Math.max(...possible.map(rule => rule.order));
+          possible = possible.filter(rule => rule.order === last);
         }
       }
       // A computed value cannot identify the source when different declarations might win.
