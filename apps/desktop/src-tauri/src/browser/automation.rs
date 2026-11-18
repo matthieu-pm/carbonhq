@@ -106,6 +106,7 @@ pub(super) const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_TEXT: usize = 40_000;
 const MAX_CONSOLE: usize = 200;
 const CAPTURE_JS: &str = include_str!("capture.js");
+const CAPTURE_SOURCE_JS: &str = include_str!("capture_source.js");
 
 /// A ring where a recorded click lands, fading out after. Pointer events
 /// off, so it never takes the click it marks.
@@ -376,10 +377,28 @@ pub(super) async fn cdp(tab: i32, method: &str, params: Value) -> Reply {
 /// Runs `expression` in the page and answers its value. A thrown error is
 /// the error.
 pub(super) async fn eval(tab: i32, expression: &str) -> Reply {
+    eval_context(tab, expression, None).await
+}
+
+/// Run capture code without exposing its state or input callbacks to the page's scripts.
+pub(super) async fn capture_context(tab: i32) -> Result<i64, String> {
+    let frames = cdp(tab, "Page.getFrameTree", json!({})).await?;
+    let frame = frames.pointer("/frameTree/frame/id").and_then(Value::as_str)
+        .ok_or("The browser has no document to capture.")?;
+    let world = cdp(tab, "Page.createIsolatedWorld", json!({ "frameId": frame, "worldName": "carbon-capture" })).await?;
+    world["executionContextId"].as_i64().ok_or_else(|| "Couldn’t isolate the browser capture.".into())
+}
+
+/// The default world remains available for ordinary agent reads and Inspect.
+pub(super) async fn eval_context(tab: i32, expression: &str, context: Option<i64>) -> Reply {
+    let mut params = json!({ "expression": expression, "returnByValue": true, "awaitPromise": true });
+    if let Some(context) = context {
+        params["contextId"] = json!(context);
+    }
     let reply = cdp(
         tab,
         "Runtime.evaluate",
-        json!({ "expression": expression, "returnByValue": true, "awaitPromise": true }),
+        params,
     )
     .await?;
     if let Some(exception) = reply.get("exceptionDetails") {
@@ -1136,7 +1155,7 @@ async fn perform(session: &str, action: BrowserAction) -> Answer {
             if path.exists() {
                 return Err(format!("{} already exists. Choose a new file.", path.display()));
             }
-            let capture = capture_screen(driven_tab(session)?, selector.as_deref(), None, false).await?;
+            let capture = capture_screen(driven_tab(session)?, selector.as_deref(), None).await?;
             let mut summary = capture.summary();
             let bytes = serde_json::to_vec(&capture).map_err(|e| e.to_string())?;
             write_new_capture(&path, &bytes).await?;
@@ -1399,23 +1418,37 @@ async fn capture(tab: i32, w: u32, h: u32, full: bool) -> Result<Vec<u8>, String
         .map_err(|e| format!("bad image data: {e}"))
 }
 
+/// Binds the selected element to the picker that received the user's input.
+pub(super) struct ScreenPick<'a> {
+    pub(super) nonce: &'a str,
+    pub(super) context: i64,
+    pub(super) full_page: bool,
+}
+
 /// Snapshot the current CSS viewport without resizing the page or moving the scroll position.
 pub(super) async fn capture_screen(
-    tab: i32, selector: Option<&str>, picker: Option<&str>, full_page: bool,
+    tab: i32, selector: Option<&str>, picker: Option<ScreenPick<'_>>,
 ) -> Result<crate::canvas::BrowserCapture, String> {
     let _held = CAPTURING.lock().await;
     if RECORDING.lock().unwrap().values().any(|recording| recording.tab == tab && !recording.closed) {
         return Err("Stop recording before capturing this page.".into());
     }
+    let (context, picker, full_page) = match picker {
+        Some(pick) => (pick.context, Some(pick.nonce), pick.full_page),
+        None => (capture_context(tab).await?, None, false),
+    };
     let handle = json!(format!("__carbonCapture_{}", uuid::Uuid::new_v4()));
     let query = json!({ "selector": selector, "picker": picker, "fullPage": full_page });
     let capture = async {
-        let layout = eval(tab, &format!("({CAPTURE_JS})({query},{handle})")).await?;
+        let layout = eval_context(tab, &format!("({CAPTURE_JS})({query},{handle})"), Some(context)).await?;
         let clip = layout.get("clip").ok_or("The browser did not return capture bounds.")?;
         let width = clip["width"].as_f64().ok_or("Invalid capture width.")?;
         let height = clip["height"].as_f64().ok_or("Invalid capture height.")?;
         let pixel_ratio = layout["scale"].as_f64().unwrap_or(1.0).max(1.0);
         let scale = (12_000_000.0 / (width * height)).sqrt().min(1.0) / pixel_ratio;
+        let source = if layout["sourceLookup"].is_object() {
+            capture_source(tab, &layout["sourceLookup"]).await
+        } else { None };
         let shot = |scale, quality| async move {
             let mut screenshot = cdp(tab, "Page.captureScreenshot", json!({
                 "format": "jpeg", "quality": quality, "captureBeyondViewport": true,
@@ -1428,17 +1461,36 @@ pub(super) async fn capture_screen(
             let smaller = scale * (4_000_000.0 / screenshot.len() as f64).sqrt();
             screenshot = shot(smaller, 82).await?;
         }
-        let page = eval(tab, &format!("window[{handle}]?.finish()")).await?;
+        let page = eval_context(tab, &format!("window[{handle}]?.finish()"), Some(context)).await?;
         if page.is_null() {
             return Err("The page changed during capture. Try again.".into());
         }
-        let page: crate::canvas::CapturedPage = serde_json::from_value(page).map_err(|e| format!("Couldn’t read the screen capture. {e}"))?;
+        let mut page: crate::canvas::CapturedPage = serde_json::from_value(page).map_err(|e| format!("Couldn’t read the screen capture. {e}"))?;
+        if page.source.is_none() {
+            page.source = source;
+        }
         crate::canvas::BrowserCapture::assemble(page, screenshot)
     }.await;
     if capture.is_err() {
-        let _ = eval(tab, &format!("window[{handle}]?.release(); delete window[{handle}]")).await;
+        let _ = eval_context(tab, &format!("window[{handle}]?.release(); delete window[{handle}]"), Some(context)).await;
     }
     capture
+}
+
+async fn capture_source(tab: i32, lookup: &Value) -> Option<crate::inspection::InspectSource> {
+    // The page owns its framework debug properties. The isolated snapshot still checks for changes.
+    let reply = cdp(tab, "Runtime.evaluate", json!({
+        "expression": format!("({CAPTURE_SOURCE_JS})({},{},{})", lookup["selector"], lookup["pagePath"], lookup["documentTimeOrigin"]),
+        "returnByValue": true,
+        "timeout": 100,
+    })).await.ok()?;
+    let mut source: crate::inspection::InspectSource = serde_json::from_value(reply.pointer("/result/value")?.clone()).ok()?;
+    let path = source.file.as_deref()?.split(['?', '#']).next()?.chars().take(1024).collect::<String>();
+    if path.is_empty() || !matches!(source.framework.as_deref(), Some("React" | "Vue" | "Svelte")) {
+        return None;
+    }
+    source.file = Some(path);
+    Some(source)
 }
 
 async fn write_new_capture(path: &Path, bytes: &[u8]) -> Result<(), String> {

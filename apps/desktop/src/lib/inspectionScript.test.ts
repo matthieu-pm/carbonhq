@@ -19,7 +19,7 @@ function page(mode = "inspect") {
       removeEventListener(type: string, fn: (event: any) => void) { handlers.get(type)?.delete(fn); },
       emit(type: string, data: Record<string, unknown> = {}) {
         const event = { type, clientX: 100, clientY: 100, button: 0, pointerId: 1,
-          altKey: false, shiftKey: false, metaKey: false, ctrlKey: false, stopped: false,
+          altKey: false, shiftKey: false, metaKey: false, ctrlKey: false, isTrusted: true, stopped: false,
           preventDefault() {}, stopImmediatePropagation() { this.stopped = true; }, ...data };
         for (const fn of handlers.get(type) ?? []) { fn(event); if (event.stopped) break; }
       },
@@ -62,6 +62,7 @@ function page(mode = "inspect") {
     shadowRoot: Root | null = null;
     style: any = style();
     hidden = false;
+    name = "";
     textContent = "Save";
     clientWidth = 800;
     clientHeight = 600;
@@ -175,6 +176,22 @@ describe("inspection page script", () => {
     const keyboard = page("capture");
     keyboard.emit("keydown", { key: "Enter", metaKey: true });
     expect(keyboard.messages.at(-1)).toMatchObject({ action: "capture_page", count: 0 });
+  });
+
+  it("keeps capture input isolated and refuses synthetic clicks and keys", () => {
+    const p = page("capture");
+    p.emit("pointerdown", { isTrusted: false });
+    p.emit("pointerup", { metaKey: true, isTrusted: false });
+    p.emit("keydown", { key: "Enter", metaKey: true, isTrusted: false });
+    expect(p.messages).toHaveLength(1);
+    expect(p.messages[0]).toMatchObject({ action: "change" });
+    expect(p.shield.name).not.toContain(p.window.__carbonPick.documentId);
+    const uncover = p.window.__carbonPick.coverCapture();
+    p.pick();
+    expect(p.messages).toHaveLength(1);
+    uncover();
+    p.pick();
+    expect(p.messages.at(-1)).toMatchObject({ action: "capture_element" });
   });
   it("rejects metadata when the page changes during either settling frame", async () => {
     const p = page();

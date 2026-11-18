@@ -3,7 +3,7 @@
   const documentId = '__CARBON_DOCUMENT_ID__';
   const canvasMode = '__CARBON_PICK_MODE__' === 'capture';
   const host = document.createElement('div');
-  host.setAttribute('data-carbon-inspect-overlay', '');
+  host.setAttribute('data-carbon-inspect-overlay', canvasMode ? 'capture' : 'inspect');
   host.style.cssText = 'all:initial!important;position:fixed!important;inset:0!important;pointer-events:none!important;z-index:2147483647!important';
   const shadow = host.attachShadow({ mode: 'closed' });
   const stylesheet = new CSSStyleSheet();
@@ -16,7 +16,7 @@
   document.documentElement.append(host);
   // Frame input never bubbles through the app's earlier window capture listeners.
   const shield = document.createElement('iframe');
-  shield.name = '__carbon_inspect_input_' + documentId;
+  shield.name = '__carbon_inspect_input';
   shield.title = 'Inspect input';
   shield.tabIndex = -1;
   shield.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;background:transparent;pointer-events:auto;color-scheme:normal';
@@ -177,14 +177,14 @@
   };
   const down = event => {
     block(event);
-    if (paused || event.button !== 0) return;
+    if (paused || event.button !== 0 || (canvasMode && !event.isTrusted)) return;
     input.focus();
     try { inputDocument.documentElement.setPointerCapture(event.pointerId); } catch {}
     drag = { ...pointOf(event), moved: false, shift: event.shiftKey };
   };
   const up = event => {
     block(event);
-    if (paused || !drag || event.button !== 0) return;
+    if (paused || !drag || event.button !== 0 || (canvasMode && !event.isTrusted)) return;
     if (canvasMode) {
       const moved = drag.moved;
       drag = null;
@@ -214,6 +214,7 @@
   };
   const cancel = event => { block(event); drag = null; measure(); };
   const key = event => {
+    if (canvasMode && !event.isTrusted) return;
     if (event.key === 'Escape') { block(event); stop(); say('cancel'); }
     else if (canvasMode && event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       block(event);
@@ -262,10 +263,19 @@
   window.__carbonPick = {
     documentId,
     stop,
+    coverCapture() {
+      const wasPaused = paused;
+      paused = true;
+      paint.style.setProperty('visibility', 'hidden', 'important');
+      return () => {
+        paused = wasPaused;
+        paint.style.removeProperty('visibility');
+      };
+    },
     canvasTarget(nonce, fullPage) {
-      if (!canvasMode || nonce !== documentId || path !== location.href || (!fullPage && !canvasElement?.isConnected)) return null;
+      if (!canvasMode || nonce !== documentId || !host.isConnected || path !== location.href || (!fullPage && !canvasElement?.isConnected)) return null;
       const el = fullPage ? null : canvasElement;
-      return { element: el, selector: el ? selectorOf(el) : null, source: sourceOf(el ?? document.body) };
+      return { element: el, selector: el ? selectorOf(el) : null };
     },
     capture() {
       refresh();

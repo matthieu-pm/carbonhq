@@ -237,6 +237,7 @@ impl BrowserCapture {
         Ok((canvas, id))
     }
 
+    /// Gives the CLI capture limits and dimensions without sending asset bytes over the socket.
     pub(crate) fn summary(&self) -> Value {
         let details = &self.frame.extra["capture"];
         json!({

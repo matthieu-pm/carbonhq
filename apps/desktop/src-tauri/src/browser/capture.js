@@ -21,9 +21,12 @@
   const pageUrl = location.href;
   if (!["http:", "https:"].includes(location.protocol)) throw new Error("Open a web page to capture it.");
   const pagePath = location.pathname;
+  const documentTimeOrigin = performance.timeOrigin;
   const capturedAt = new Date().toISOString();
   const pageRoot = document.documentElement;
-  const target = query.picker ? window.__carbonPick?.canvasTarget(query.picker, query.fullPage) : null;
+  const scroll = { x: scrollX, y: scrollY };
+  const picker = window.__carbonPick;
+  const target = query.picker ? picker?.canvasTarget(query.picker, query.fullPage) : null;
   if (query.picker && !target) throw new Error("This capture is no longer active. Try capturing again.");
   let selected = target?.element ?? null;
   if (query.selector) {
@@ -32,6 +35,7 @@
     if (!selected) throw new Error("No element matches that selector on this page.");
   }
   if (selected && !selected.isConnected) throw new Error("The selected element has changed. Pick it again.");
+  const selector = (target?.selector ?? query.selector ?? null)?.slice(0, 1024) ?? null;
   const fullPage = !selected;
   const viewport = { width: innerWidth, height: innerHeight, scale: devicePixelRatio };
   const absolute = el => {
@@ -39,9 +43,9 @@
     return { x: r.x + scrollX, y: r.y + scrollY, width: r.width, height: r.height };
   };
   const bounds = selected ? absolute(selected) : { x: 0, y: 0, width: viewport.width, height: Math.max(viewport.height, pageRoot.scrollHeight) };
-  const clip = { x: Math.max(0, Math.floor(bounds.x)), y: Math.max(0, Math.floor(bounds.y)) };
-  clip.width = Math.min(10000, Math.ceil(bounds.x + bounds.width) - clip.x);
-  clip.height = Math.min(10000, Math.ceil(bounds.y + bounds.height) - clip.y);
+  const clip = { x: Math.max(0, bounds.x), y: Math.max(0, bounds.y) };
+  clip.width = Math.min(10000, bounds.x + bounds.width - clip.x);
+  clip.height = Math.min(10000, bounds.y + bounds.height - clip.y);
   if (!(clip.width > 0 && clip.height > 0)) throw new Error("This capture has no visible area.");
   const warnings = new Set();
   if (query.selector != null && query.selector.length > 1024) throw new Error("Use a shorter CSS selector.");
@@ -69,7 +73,7 @@
     const asset = { id: id(), kind, data: "" };
     resources.set(cacheKey, asset);
     asset.done = (async () => {
-      const response = await fetch(url, { credentials: "omit", signal: AbortSignal.timeout(3500) });
+      const response = await fetch(url, { credentials: "same-origin", signal: AbortSignal.timeout(3500) });
       if (!response.ok || !response.body) return;
       const reader = response.body.getReader();
       const chunks = [];
@@ -91,16 +95,19 @@
         ascii.startsWith("GIF87a") || ascii.startsWith("GIF89a") ||
         (ascii.startsWith("RIFF") && ascii.slice(8) === "WEBP") || /^ftypavi[fs]$/.test(ascii.slice(4));
       if (kind === "image" && !supportedImage) {
-        const image = await createImageBitmap(blob);
+        const imageUrl = URL.createObjectURL(blob);
         try {
-          if (!image.width || !image.height || image.width * image.height > 4_000_000) return;
+          const image = new Image();
+          image.src = imageUrl;
+          await image.decode();
+          if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > 4_000_000) return;
           const canvas = document.createElement("canvas");
-          canvas.width = image.width;
-          canvas.height = image.height;
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
           canvas.getContext("2d").drawImage(image, 0, 0);
           blob = await new Promise(resolve => canvas.toBlob(resolve));
           if (!blob || blob.size > 2_500_000) return;
-        } finally { image.close(); }
+        } finally { URL.revokeObjectURL(imageUrl); }
       }
       if (savedBytes + blob.size > 8_000_000) return;
       savedBytes += blob.size;
@@ -118,7 +125,12 @@
   const family = value => value.trim().replace(/^["']|["']$/g, "").toLowerCase();
   const css = (get, keys = styleKeys) => Object.fromEntries(keys.flatMap(prop => {
     const value = get.getPropertyValue(prop);
-    if (!value || value.length > 2048) return [];
+    if (!value) return [];
+    if (prop === "font-family") for (const name of value.split(",")) fonts.add(family(name));
+    if (value.length > 3_500_000) {
+      warnings.add("A " + prop + " value exceeded the capture limit.");
+      return [];
+    }
     const uris = [];
     const safe = value.replace(urlPattern, (_, a, b, c) => {
       const url = a ?? b ?? c;
@@ -130,7 +142,7 @@
     if (uris.length) uses.push(() => {
       if (uris.some(asset => !asset?.data)) warnings.add("A " + prop + " resource could not be copied.");
     });
-    if (/(?:https?:\/\/|file:\/\/|javascript:)/i.test(safe)) {
+    if (safe.length > 2048 || /(?:https?:\/\/|file:\/\/|javascript:)/i.test(safe)) {
       warnings.add("A " + prop + " resource could not be copied.");
       return [];
     }
@@ -154,7 +166,7 @@
     if (node.styles.display === "inline") node.styles.display = "inline-block";
     warnings.add(label + " was captured as an image.");
   };
-  const redact = el => el.matches("input:not([type=button]):not([type=submit]):not([type=reset]):not([type=checkbox]):not([type=radio]),textarea,[contenteditable]:not([contenteditable=false])");
+  const redact = el => el.matches("input:not([type=button]):not([type=submit]):not([type=reset]):not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable]:not([contenteditable=false])");
   const pseudo = (el, type) => {
     const computed = getComputedStyle(el, type);
     const content = computed.content;
@@ -182,14 +194,16 @@
     const tag = current.localName;
     if (ignored.has(tag) || current.hasAttribute("data-carbon-inspect-overlay")) return null;
     const computed = getComputedStyle(current);
-    if (computed.display === "none" || (computed.visibility === "hidden" && !current.children.length)) return null;
+    if (computed.display === "none" || computed.contentVisibility === "hidden" || computed.opacity === "0" ||
+      (computed.visibility !== "visible" && !current.children.length)) return null;
     count++;
     const styles = css(computed);
-    if (fullPage && current !== document.body && current !== pageRoot && /auto|scroll/.test(styles["overflow-y"] ?? "") &&
-      current.scrollHeight > current.clientHeight) {
+    const nestedScroll = current !== document.scrollingElement &&
+      ((/auto|scroll/.test(styles["overflow-y"] ?? "") && current.scrollHeight > current.clientHeight) ||
+        (/auto|scroll/.test(styles["overflow-x"] ?? "") && current.scrollWidth > current.clientWidth));
+    if (fullPage && nestedScroll) {
       warnings.add("Nested scroll areas show their current view.");
     }
-    for (const value of (styles["font-family"] ?? "").split(",")) fonts.add(family(value));
     const svg = current.namespaceURI === "http://www.w3.org/2000/svg";
     const attrs = {};
     for (const { name, value } of current.attributes) {
@@ -204,6 +218,8 @@
       if (node.styles.display === "inline") node.styles.display = "inline-block";
       node.name = "Form field · Value omitted";
       warnings.add("Form field values were omitted.");
+    } else if (nestedScroll && (current.scrollTop || current.scrollLeft)) {
+      imageRegion(node, "Scrolled area", absolute(current));
     } else if (raster.has(tag) || current.shadowRoot || tag.includes("-") || (tag === "svg" && current.querySelector("use, foreignObject, image"))) {
       imageRegion(node, tag === "iframe" ? "Embedded page" : tag, absolute(current));
     } else if (tag === "img") {
@@ -214,6 +230,7 @@
     } else {
       if (!svg) node.children.push(...pseudo(current, "::before"));
       for (const child of current.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE && computed.visibility !== "visible") continue;
         const result = copy(child, depth + 1);
         if (result) node.children.push(result);
       }
@@ -233,6 +250,16 @@
   let nodes = [], imageOnly = false, pageCss = "";
   const root = selected ?? document.body ?? pageRoot;
   try {
+    if (selected) {
+      for (let ancestor = selected; ancestor; ancestor = ancestor.parentElement ?? ancestor.getRootNode().host) {
+        const style = getComputedStyle(ancestor);
+        const matrix = new DOMMatrix(style.transform === "none" ? undefined : style.transform);
+        if (!matrix.is2D || matrix.a !== 1 || matrix.b !== 0 || matrix.c !== 0 || matrix.d !== 1 ||
+          style.scale !== "none" || style.rotate !== "none" || Number(style.zoom) !== 1) {
+          throw new Error("The selected element’s transform was captured as an image.");
+        }
+      }
+    }
     const node = copy(root, 0);
     if (!node || node.kind !== "element") throw new Error("This screen could only be captured as an image.");
     if (selected?.ownerSVGElement) throw new Error("This SVG selection was captured as an image.");
@@ -240,6 +267,7 @@
       Object.assign(node.styles, {
         position: "relative", top: "auto", right: "auto", bottom: "auto", left: "auto",
         "margin-top": "0", "margin-left": "0", "margin-right": "0", "margin-bottom": "0",
+        transform: "none", translate: "none",
       });
       if (node.styles.display === "inline") node.styles.display = "block";
     }
@@ -279,60 +307,88 @@
     }
   }
 
-  const restore = [];
+  const masks = new Map();
   const hide = (element, prop, value) => {
+    if (!masks.has(element)) masks.set(element, { original: element.getAttribute("style"), masked: null, restore: [] });
+    const mask = masks.get(element);
     const original = element.style.getPropertyValue(prop);
     const priority = element.style.getPropertyPriority(prop);
     element.style.setProperty(prop, value, "important");
-    restore.push(() => {
-      if (element.style.getPropertyValue(prop) !== value || element.style.getPropertyPriority(prop) !== "important") return;
+    mask.masked = element.getAttribute("style");
+    const applied = element.style.getPropertyValue(prop);
+    mask.restore.push(() => {
+      if (element.style.getPropertyValue(prop) !== applied || element.style.getPropertyPriority(prop) !== "important") return;
       if (original) element.style.setProperty(prop, original, priority);
       else element.style.removeProperty(prop);
     });
   };
-  for (const el of document.querySelectorAll("[data-carbon-inspect-overlay]")) hide(el, "visibility", "hidden");
+  const fadeOut = element => {
+    hide(element, "transition", "none");
+    hide(element, "opacity", "0");
+  };
+  const uncover = picker?.coverCapture();
+  for (const el of document.querySelectorAll("[data-carbon-inspect-overlay=inspect]")) fadeOut(el);
   const roots = [document];
+  const frameDocuments = new Map();
   for (const tree of roots) {
     for (const el of tree.querySelectorAll("*")) {
       if (el.shadowRoot) roots.push(el.shadowRoot);
-      if (!redact(el) || (!el.isContentEditable && !el.value)) continue;
+      if (el.localName === "iframe" || el.localName === "frame") {
+        const embedded = el.contentDocument;
+        frameDocuments.set(el, embedded);
+        if (embedded) roots.push(embedded);
+        else if (el.getClientRects().length) {
+          fadeOut(el);
+          warnings.add("An embedded page was hidden because its form fields could not be inspected.");
+        }
+      }
+      if (!redact(el)) continue;
+      hide(el, "transition", "none");
       hide(el, "-webkit-text-fill-color", "transparent");
       hide(el, "text-shadow", "none");
       hide(el, "caret-color", "transparent");
-      if (el.isContentEditable) hide(el, "visibility", "hidden");
+      hide(el, "-webkit-text-stroke-width", "0px");
+      if (el.isContentEditable || el.localName === "select") hide(el, "opacity", "0");
     }
   }
-  const release = () => { clearTimeout(timer); for (const undo of restore.splice(0)) undo(); };
-  const timer = setTimeout(release, 5000);
-  const unchanged = () => location.href === pageUrl && document.documentElement === pageRoot
-    && innerWidth === viewport.width && innerHeight === viewport.height
-    && (!selected || selected.isConnected && Object.entries(bounds).every(([key, value]) => Math.abs(absolute(selected)[key] - value) <= 1));
-  const linkedSource = el => {
-    const astro = el.closest("[data-astro-source-file]")?.getAttribute("data-astro-source-file");
-    if (astro) return { confidence: "approximate", file: astro, line: null, framework: "Astro" };
-    const vue = el.__vueParentComponent?.type?.__file;
-    if (vue) return { confidence: "approximate", file: vue, line: null, framework: "Vue" };
-    const reactKey = Object.keys(el).find(key => key.startsWith("__reactFiber$"));
-    const react = el[reactKey]?._debugSource;
-    if (react?.fileName) return { confidence: "exact", file: react.fileName, line: react.lineNumber ?? null, framework: "React" };
-    const svelte = el.__svelte_meta?.loc;
-    if (svelte?.file) return { confidence: "exact", file: svelte.file, line: svelte.line ?? null, framework: "Svelte" };
-    return null;
-  };
-  let cleanSource = null;
-  try {
-    cleanSource = target?.source ?? linkedSource(root);
-    if (cleanSource) {
-      cleanSource.file = typeof cleanSource.file === "string" ? cleanSource.file.split(/[?#]/)[0].slice(0, 1024) : null;
-      cleanSource.line = Number.isInteger(cleanSource.line) && cleanSource.line > 0 && cleanSource.line <= 0xffffffff ? cleanSource.line : null;
+  let changed = false, released = false;
+  const invalidate = () => { changed = true; };
+  const observer = new MutationObserver(invalidate);
+  for (const tree of roots) observer.observe(tree, { subtree: true, attributes: true, childList: true, characterData: true });
+  document.addEventListener("scroll", invalidate, true);
+  document.addEventListener("load", invalidate, true);
+  const release = () => {
+    if (released) return;
+    released = true;
+    clearTimeout(timer);
+    observer.disconnect();
+    document.removeEventListener("scroll", invalidate, true);
+    document.removeEventListener("load", invalidate, true);
+    uncover?.();
+    for (const [element, mask] of masks) {
+      if (element.getAttribute("style") !== mask.masked) {
+        for (const undo of mask.restore.reverse()) undo();
+        if (mask.original === null && element.getAttribute("style") === "") element.removeAttribute("style");
+      } else if (mask.original === null) element.removeAttribute("style");
+      else element.setAttribute("style", mask.original);
     }
-  } catch {}
+  };
+  const timer = setTimeout(release, 5000);
+  const unchanged = () => !released && !changed && !observer.takeRecords().length &&
+    location.href === pageUrl && document.documentElement === pageRoot &&
+    [...frameDocuments].every(([frame, doc]) => frame.contentDocument === doc) &&
+    scrollX === scroll.x && scrollY === scroll.y &&
+    innerWidth === viewport.width && innerHeight === viewport.height
+    && (!selected || selected.isConnected && Object.entries(bounds).every(([key, value]) => Math.abs(absolute(selected)[key] - value) <= 1));
+  const astro = root.closest("[data-astro-source-file]")?.getAttribute("data-astro-source-file");
+  const source = astro ? { confidence: "approximate", file: astro.split(/[?#]/)[0].slice(0, 1024), line: null, framework: "Astro" } : null;
   window[handle] = {
     release,
     async finish() {
+      const stable = unchanged();
       release();
       delete window[handle];
-      if (!unchanged()) throw new Error("The page changed during capture. Try again.");
+      if (!stable) throw new Error("The page changed or capture expired. Try again.");
       await Promise.all([...resources.values()].map(asset => asset.done));
       for (const use of uses) use();
       const loadedFamilies = new Set();
@@ -349,15 +405,15 @@
         }
       }
       return {
-        viewport, bounds, clip, pagePath, capturedAt, selector: (target?.selector ?? query.selector ?? null)?.slice(0, 1024) ?? null,
-        source: cleanSource, nodes, css: pageCss + fontCss, warnings: [...warnings],
+        viewport, bounds, clip, pagePath, capturedAt, selector,
+        source, nodes, css: pageCss + fontCss, warnings: [...warnings],
         imageOnly: imageOnly || !!selected && !!nodes[0]?.rasterRegion,
         assets: [...resources.values()].map(({ id, kind, data }) => ({ id, kind, data })),
       };
     },
   };
   return new Promise(resolve => {
-    const ready = () => resolve({ clip, scale: viewport.scale });
+    const ready = () => resolve({ clip, scale: viewport.scale, sourceLookup: source ? null : { selector, pagePath, documentTimeOrigin } });
     const timeout = setTimeout(ready, 150);
     requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timeout); ready(); }));
   });
