@@ -143,9 +143,7 @@ export default function AppShell({
           // card rather than a second card, so list and conversation read as
           // one place to work with the rail outside it.
           <SlidingSidebar open={sidebarMode === "docked"} ready={motionReady}>
-          <div className={cn("flex h-full shrink-0 border-r border-hairline bg-surface-frame/50", SIDEBAR_TOKENS)}>
-            {sidebar}
-          </div>
+          <DockedSidebarFrame>{sidebar}</DockedSidebarFrame>
           </SlidingSidebar>
         )}
         {/* `min-w-0` is load-bearing: without it a wide code block in the transcript
@@ -267,6 +265,10 @@ export const SIDEBAR_TOKENS = cn(
   "not-dark:[--sidebar-accent:color-mix(in_oklab,var(--foreground)_15%,transparent)]",
   "not-dark:[&_[data-slot=kbd]]:bg-foreground/13",
 );
+
+export function DockedSidebarFrame({ children }: { children: ReactNode }) {
+  return <div className={cn("flex h-full shrink-0 border-r border-hairline bg-surface-frame/50", SIDEBAR_TOKENS)}>{children}</div>;
+}
 
 /// A raised card on the frame: an 8px-round ring and shadow, its contents
 /// clipped to that radius, and the frame's fill bending round each corner.

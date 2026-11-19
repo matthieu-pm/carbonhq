@@ -48,6 +48,7 @@ pub mod headless;
 #[cfg_attr(not(any(feature = "cef", feature = "serve")), allow(dead_code))]
 pub mod recording;
 mod local_servers;
+mod canvas_library;
 pub mod docs;
 pub mod pages;
 pub mod pages_linear;

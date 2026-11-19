@@ -82,6 +82,7 @@ import RightPanel, {
   type PanelTab,
 } from "@/components/RightPanel";
 import {
+  SIDEBAR_MIN,
   useChatColumnFloor,
   usePaneWidth,
 } from "@/components/ResizeHandle";
@@ -124,8 +125,12 @@ import { setIssueTracker } from "@/lib/issueTracker";
 import SpaceTabs from "@/components/layout/SpaceTabs";
 import { useSpaceTabs } from "@/lib/spaceTabs";
 import NavButtons from "@/components/layout/NavButtons";
+import { CanvasLibrary, CanvasTabs } from "@/components/canvases/CanvasLibrary";
+import { canvasRoot, useCanvasLibrary } from "@/hooks/useCanvasLibrary";
+import AttachProjectDialog from "@/components/composer/AttachProjectDialog";
+import WorkspaceSwitch, { type Workspace } from "@/components/layout/WorkspaceSwitch";
 import WindowToolbar from "@/components/layout/WindowToolbar";
-import { placeKey, step as stepHistory, visit as visitPlace, type NavHistory, type Place } from "@/lib/navHistory";
+import { placeKey, step as stepHistory, visit as visitPlace, type NavHistory, type PagePlace, type Place } from "@/lib/navHistory";
 import { addListTab, closeIssueTab, editIssueTabs, newListTabId, openIssueTab, updateListTab, useIssueTabs } from "@/lib/issueTabs";
 import { CaretMaximizeDiagonalOutline12 } from "@/components/icons/nucleo";
 import { offersFast } from "@/lib/fastMode";
@@ -226,6 +231,8 @@ function SettingsReady({ onReady }: { onReady: (ready: boolean) => void }) {
 const NO_ROWS: ReadonlySet<string> = new Set();
 
 function App() {
+  const [workspace, setWorkspace] = useState<Workspace>("Coding");
+  const designOpen = workspace === "Design";
   const {
     selectedSessionId,
     selectedSession,
@@ -583,8 +590,14 @@ function App() {
   // and not a per-session tab, so it is neither in `viewTabs` nor in the
   // selection: it is a place the reader goes and comes back from, and the
   // session they were in is still there when they do.
-  const [issuesOpen, setIssuesOpen] = useState(false);
-  const [spacesOpen, setSpacesOpen] = useState(false);
+  const [codingIssuesOpen, setIssuesOpen] = useState(false);
+  const [codingSpacesOpen, setSpacesOpen] = useState(false);
+  const [designPlace, setDesignPlace] = useState<"home" | "spaces" | "issues">("home");
+  const [canvasAttach, setCanvasAttach] = useState<{ onPicked?: (path: string) => void } | null>(null);
+  const [canvasHomeVisit, setCanvasHomeVisit] = useState(0);
+  const issuesOpen = designOpen ? designPlace === "issues" : codingIssuesOpen;
+  const spacesOpen = designOpen ? designPlace === "spaces" : codingSpacesOpen;
+  const canvasHome = designOpen && designPlace === "home";
   // The task sidebar floating over the content while the rail's Home is
   // hovered, wherever it is not docked. Closed a beat after the pointer leaves
   // both the button and the card, so crossing the gap between them holds it.
@@ -627,6 +640,7 @@ function App() {
   const issueTabs = useIssueTabs();
   const spaceTabs = useSpaceTabs();
   // The docked Spaces sidebar's width, which the tab strip lines up past.
+  const [canvasSidebarWidth, setCanvasSidebarWidth] = useState(SIDEBAR_MIN);
   const [spacesDrawn, setSpacesDrawn] = useState(0);
   // Spaces closes its own tabs, since only it can flush an editor first.
   const spaceTabCloser = useRef<(id: string) => void>(() => {});
@@ -636,6 +650,7 @@ function App() {
   const [issueSearchRequest, setIssueSearchRequest] = useState<{ tabId: string; serial: number } | null>(null);
   const issueListContext = activeIssueTab.kind === "list" ? activeIssueTab : issueTabs.tabs.find((t) => t.kind === "list");
   const newIssue = () => {
+    setWorkspace("Coding");
     const query = issueListContext?.kind === "list" ? issueListContext.query : null;
     goToSession(handleNewSession);
     beginIssueConversation(newTaskId, { tracker: query?.tracker ?? (activeIssueTab.kind === "list" ? activeIssueTab.tracker : activeIssueTab.ref.tracker), destination: query?.teamId ?? "", projectId: query?.projectId ?? null });
@@ -699,6 +714,16 @@ function App() {
   // reopening the app into them would be the app remembering the wrong half of
   // a session.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const canvasLibrary = useCanvasLibrary(spaceProjects, canvasHome && !settingsOpen);
+  const openCanvasHome = () => {
+    setDesignPlace("home");
+    setCanvasHomeVisit((n) => n + 1);
+    canvasLibrary.setLocation(canvasRoot);
+    canvasLibrary.select(null);
+    setSettingsOpen(false);
+    setPeek(false);
+    setSpacesPeek(false);
+  };
   // The shell hides only once the lazy page has committed (`SettingsReady`
   // shares its Suspense boundary), or a first open drew a frame of bare window.
   // Mounted closed on idle, it is already resolved when wanted, so the open is
@@ -738,7 +763,7 @@ function App() {
   };
   // Layout, not ordinary: the switch must be down before the page paints, or a
   // keystroke in that frame reaches a shell nobody can see.
-  useLayoutEffect(() => setHotkeysSuspended(settingsOpen || spacesOpen), [settingsOpen, spacesOpen]);
+  useLayoutEffect(() => setHotkeysSuspended(settingsOpen || spacesOpen || canvasHome), [settingsOpen, spacesOpen, canvasHome]);
 
   // Dictation writes into the composer's draft through the module-level store,
   // not through a prop: the controls reach `ChatInput` as an opaque node, so
@@ -1047,7 +1072,7 @@ function App() {
     [visibleSessions, crewAnchorId, statusBySession, askingSessions],
   );
   const crewExists = crew.length > 0 && !groupOf(spaceGroups, crewAnchorId);
-  const summaryEligible = !issuesOpen && !spacesOpen && !settingsOpen && viewTab === "chat" && selectedSessionId !== null;
+  const summaryEligible = !designOpen && !issuesOpen && !spacesOpen && !settingsOpen && viewTab === "chat" && selectedSessionId !== null;
   // The anchor owns the summary choice, so focusing a child keeps the rail or popover open.
   const summaryId = (crewExists && crewAnchorId) || selectedSessionId;
   const summary = usePinnedSummary(summaryId, summaryEligible, crewExists || !activeGroup);
@@ -1117,7 +1142,7 @@ function App() {
   /// request, its issue — with nothing on screen to say whose they were. The
   /// preference is kept, so coming back restores the pane exactly as it was;
   /// everything that draws or reads reads this instead.
-  const panelShown = panelOpen && !issuesOpen;
+  const panelShown = panelOpen && !issuesOpen && !designOpen;
   const mainGroup = crewUp ? null : activeGroup;
   useChatColumnFloor(!mainGroup);
 
@@ -1536,7 +1561,7 @@ function App() {
   // on it closes the pane, whatever tab the pane was on: the reader came for
   // the full width. ⌘E brings it back beside the page, and leaving gives back
   // a pane the arrival took — the sidebar's rule, under its own switch.
-  const fullBrowserOpen = !issuesOpen && viewTab === "browser";
+  const fullBrowserOpen = !designOpen && !issuesOpen && viewTab === "browser";
   const lastViewTab = useRef(viewTab);
   // The pane's claims, one per pane key, since the pane is per session — see
   // [panelMove](./lib/sidebarAuto.ts) for why one claim was not enough.
@@ -2067,7 +2092,7 @@ function App() {
   }, [filesOpened]);
 
   // An issue tag clicked in a prompt takes the column to the issues page and
-  // opens the pane on it. Installed once: nothing here is per-session, and the
+  // opens the pane on it. Nothing here is per-session, and the
   // reader's place in the conversation is kept the way every other trip to this
   // page keeps it — the session stays selected and is still there on the way
   // back.
@@ -2077,10 +2102,11 @@ function App() {
     // cannot see.
     setIssueOpener((issue) => {
       editIssueTabs((s) => openIssueTab(s, issue));
-      setIssuesOpen(true);
+      if (designOpen) setDesignPlace("issues");
+      else setIssuesOpen(true);
     });
     return () => setIssueOpener(null);
-  }, []);
+  }, [designOpen]);
 
   // A link in the transcript opens as a new tab in the session's browser and
   // flips the main column to the Browser view, leaving the side panel alone.
@@ -2141,6 +2167,7 @@ function App() {
   // back with it — so this is a navigation, not a dismissal. Settings cover the
   // whole window, so they close too.
   const goToSession = (go: () => void) => {
+    setWorkspace("Coding");
     setPeek(false);
     setSpacesOpen(false);
     setIssuesOpen(false);
@@ -2150,6 +2177,7 @@ function App() {
   };
 
   const referencePage = (page: LocatedPage<Page>) => {
+    setWorkspace("Coding");
     appendToDraft(composerKey, pagePromptContext(page, activeServer));
     setSpacesOpen(false);
     setIssuesOpen(false);
@@ -2167,11 +2195,12 @@ function App() {
     setPageOpener((target) => {
       setPageRequest((previous) => ({ target, serial: (previous?.serial ?? 0) + 1 }));
       setPagePickerOpen(false);
-      setSpacesOpen(true);
+      if (designOpen) setDesignPlace("spaces");
+      else setSpacesOpen(true);
       setSettingsOpen(false);
     });
     return () => setPageOpener(null);
-  }, [pagesEnabled]);
+  }, [pagesEnabled, designOpen]);
   useEffect(() => {
     setPageTaskHandler(pagesEnabled ? referencePage : null);
     return () => setPageTaskHandler(null);
@@ -2200,10 +2229,13 @@ function App() {
   // Back and forward over pages and sessions. Every move is recorded off what
   // ends up on screen, so no route in has to remember to; a step marks where
   // it is going so its own arrival is not recorded as a new visit.
-  const pagePlace = {
-    page: spacesOpen ? "spaces" : issuesOpen ? "issues" : "tasks",
+  const codingPlace = {
+    page: codingSpacesOpen ? "spaces" : codingIssuesOpen ? "issues" : "tasks",
     sessionId: selectedSessionId,
   } as const;
+  const pagePlace: PagePlace = !designOpen ? codingPlace
+    : canvasHome ? { page: "canvas", location: canvasLibrary.scope, file: canvasLibrary.active ?? null }
+    : { page: spacesOpen ? "design-spaces" : "design-issues" };
   const place: Place = settingsOpen ? { page: "settings", tab: settingsTab, returnTo: pagePlace } : pagePlace;
   const [navHistory, setNavHistory] = useState<NavHistory>(() => ({ stack: [place], index: 0 }));
   const arrivingRef = useRef<string | null>(null);
@@ -2218,10 +2250,21 @@ function App() {
   // `place` is rebuilt every render; its key is the whole of what it says.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hereKey]);
-  const placeUsable = (p: Place) =>
-    p.page === "spaces"
-      ? pagesEnabled
-      : p.page !== "tasks" || !p.sessionId || sessionIndexItems.some((i) => i.sessionId === p.sessionId);
+  const placeUsable = (p: Place) => {
+    if (p.page === "spaces" || p.page === "design-spaces") return pagesEnabled;
+    if (p.page === "canvas") {
+      const { project, folder } = p.location;
+      if (project && !spaceProjects.some((item) => item.path === project)) return false;
+      const inventory = canvasLibrary.libraries[project];
+      if (folder && inventory && !inventory.folders.includes(folder)) return false;
+      const file = p.file;
+      if (!file) return true;
+      return spaceProjects.some((item) => item.path === file.project) &&
+        !!canvasLibrary.libraries[file.project]?.canvases.some((item) =>
+          !item.archived && item.folder === file.folder && item.name === file.name);
+    }
+    return p.page !== "tasks" || !p.sessionId || sessionIndexItems.some((i) => i.sessionId === p.sessionId);
+  };
   const goHistory = (delta: -1 | 1) => {
     const next = stepHistory(navHistory, delta, placeUsable);
     if (!next) return;
@@ -2229,11 +2272,24 @@ function App() {
     arrivingRef.current = placeKey(target);
     setNavHistory(next.history);
     setPeek(false);
+    setSpacesPeek(false);
     if (target.page === "settings") {
       setSettingsTab(target.tab);
       setSettingsOpen(true);
     } else closeSettings();
     const page = target.page === "settings" ? target.returnTo : target;
+    if (page.page === "canvas" || page.page === "design-spaces" || page.page === "design-issues") {
+      setWorkspace("Design");
+      setDesignPlace(page.page === "canvas" ? "home" : page.page === "design-spaces" ? "spaces" : "issues");
+      if (page.page === "canvas") {
+        setCanvasHomeVisit((n) => n + 1);
+        canvasLibrary.setLocation(page.location);
+        if (page.file) canvasLibrary.open(page.file);
+        else canvasLibrary.select(null);
+      }
+      return;
+    }
+    setWorkspace("Coding");
     setSpacesOpen(page.page === "spaces");
     setIssuesOpen(page.page === "issues");
     if (page.page !== "tasks" || page.sessionId === selectedSessionId) return;
@@ -2387,6 +2443,7 @@ function App() {
   /// only where no filter or space switch landed during the read — everything
   /// below is the click-time render's, and would undo that switch.
   const openFromNotice = async (sessionId: string) => {
+    setWorkspace("Coding");
     const previous = selectedSessionId;
     const gen = filterGen.current;
     const selecting = handleSelectSessionIndexItem(sessionId);
@@ -2628,7 +2685,7 @@ function App() {
   useHotkey("sidebar.toggle", toggleSidebar);
   // Spaces suspends the shell's chords, and its sidebar answers to the same
   // switch, so the chord is bound again where only that page can hear it.
-  useHotkey("sidebar.toggle", toggleSidebar, { enabled: spacesOpen && !settingsOpen, page: true });
+  useHotkey("sidebar.toggle", toggleSidebar, { enabled: (spacesOpen || canvasHome) && !settingsOpen, page: true });
   // Takes the sidebar with it: the field lives there, and a chord that opened a
   // search nobody can see would be worse than no chord. `autoFocus` covers the
   // field this press mounts; the select covers the one already on screen, which
@@ -2639,7 +2696,7 @@ function App() {
     setSearchOpen(true);
     document.querySelector<HTMLInputElement>(`#${SEARCH_INPUT_ID}`)?.select();
   });
-  useHotkey("session.new", () => issuesOpen ? newIssue() : goToSession(handleNewSession));
+  useHotkey("session.new", () => issuesOpen ? newIssue() : goToSession(handleNewSession), { enabled: !canvasHome });
   // Steps the composer's project picker, and only while that picker is on
   // screen: it is drawn for a new task alone, and `enabled` unregisters rather
   // than no-opping, so a session's composer doesn't have ⌘⌥P eaten from it.
@@ -2917,24 +2974,22 @@ function App() {
     setPeek(false);
     setPagePickerOpen(false);
     closeSettings();
-    setSpacesOpen(true);
+    if (designOpen) setDesignPlace("spaces");
+    else setSpacesOpen(true);
   };
   useHotkey("spaces.open", openSpaces, { enabled: pagesEnabled });
   // A serial rather than an event: Spaces mounts on first open, after the
   // chord that opened it, so an event fired now would land on nothing.
   const [pageCreateSerial, setPageCreateSerial] = useState(0);
   useHotkey("page.new", () => {
-    setPeek(false);
-    setPagePickerOpen(false);
-    closeSettings();
-    setSpacesOpen(true);
+    openSpaces();
     setPageCreateSerial((serial) => serial + 1);
   }, { enabled: pagesEnabled });
   // Leaves Spaces too: it covers the sheet, so the page would open behind it.
   const openIssues = () => {
-    setSpacesOpen(false);
     closeSettings();
-    setIssuesOpen(true);
+    if (designOpen) setDesignPlace("issues");
+    else { setSpacesOpen(false); setIssuesOpen(true); }
   };
   useHotkey("issues.open", openIssues);
   // Docked beside the content unless ⌘B put it away or Spaces, which brings
@@ -3023,16 +3078,23 @@ function App() {
   );
   // Only while the sidebars are collapsed: open, each page shows its own, and a
   // card for the other page's would cover it.
+  const headerSidebarWidth = canvasHome ? (collapsed ? 0 : canvasSidebarWidth) : spacesOpen ? spacesDrawn : sidebarDrawn;
+  const breadcrumb = !designOpen && !spacesOpen && !issuesOpen && shownSession && hiddenParent;
+  // A narrow sidebar can end inside the toolbar controls. Let the divider follow them there.
+  const separatorX = !breadcrumb && headerSidebarWidth >= SIDEBAR_MIN ? RAIL_W + headerSidebarWidth : 0;
+  const separatorRight = separatorX ? separatorX + 1 : 0;
+  const tabsStart = separatorRight ? separatorRight + TABS_PAST_SEPARATOR : 0;
   const spacesPeeks = pagesEnabled && !settingsOpen && collapsed;
   const rail = (
     <Rail
       place={settingsOpen ? "settings" : spacesOpen ? "spaces" : issuesOpen ? "issues" : "home"}
       spaces={pagesEnabled}
-      onHome={() => goToSession(handleNewSession)}
+      onHome={designOpen ? openCanvasHome : () => goToSession(handleNewSession)}
+      homeShortcut={designOpen ? null : "session.new"}
       onSpaces={openSpaces}
       onIssues={openIssues}
-      onHomeHover={(over) => !settingsOpen && collapsed && hoverPeek(over)}
-      peeks={!settingsOpen && collapsed}
+      onHomeHover={(over) => !designOpen && !settingsOpen && collapsed && hoverPeek(over)}
+      peeks={!designOpen && !settingsOpen && collapsed}
       onSpacesHover={(over) => spacesPeeks && hoverSpacesPeek(over)}
       spacesPeeks={spacesPeeks}
       footer={
@@ -3055,7 +3117,14 @@ function App() {
       rail={rail}
       sidebarMode={sidebarMode}
       onPeekHover={hoverPeek}
-      page={pagesEnabled && (
+      page={<>
+        <MountOnce when={canvasHome}>
+          <div className={cn("min-w-0 flex-1", canvasHome ? "flex" : "hidden")}>
+            <CanvasLibrary key={canvasHomeVisit} library={canvasLibrary} projects={spaceProjects} collapsed={collapsed}
+              visible={canvasHome && !settingsOpen} onSidebarWidth={setCanvasSidebarWidth} onAttach={(onPicked) => setCanvasAttach({ onPicked })} />
+          </div>
+        </MountOnce>
+        {pagesEnabled && (
         <MountOnce when={spacesOpen || spacesPeek}>
           <SpacesView active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest} createSerial={pageCreateSerial}
             sidebarCollapsed={collapsed} onExpandSidebar={() => setCollapsed(false)}
@@ -3063,10 +3132,10 @@ function App() {
             onNavigate={() => { window.clearTimeout(spacesPeekTimer.current); setSpacesPeek(false); openSpaces(); }}
             onDockedWidth={setSpacesDrawn} closeTabRef={spaceTabCloser}
             visibleProjects={space ? spaceProjects.map((p) => p.path) : null}
-            onClose={() => setSpacesOpen(false)} />
+            onClose={() => designOpen ? openCanvasHome() : setSpacesOpen(false)} />
         </MountOnce>
-      )}
-      pageOpen={spacesOpen}
+      )}</>}
+      pageOpen={canvasHome || spacesOpen}
       // The issues page fills the column, so the centred empty-composer state
       // is wrong there even with no session selected.
       centered={!shownSession && !issuesOpen && viewTab === "chat"}
@@ -3180,19 +3249,17 @@ function App() {
               sidebar, or a breadcrumb taking the tabs' place, it sits in the
               row before them. */}
           {/* Spaces draws its own sidebar, so its edge is `spacesDrawn`. */}
-          {(spacesOpen ? spacesDrawn > 0 : sidebarDrawn > 0 && !(!issuesOpen && shownSession && hiddenParent)) ? (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute top-1/2 h-4 w-px -translate-y-1/2 bg-hairline"
-              style={{ left: RAIL_W + (spacesOpen ? spacesDrawn : sidebarDrawn) }}
-            />
-          ) : (
-            <span aria-hidden className="h-4 w-px shrink-0 bg-hairline" />
-          )}
+          <div
+            className={cn("flex shrink-0 items-center gap-2", separatorX > 0 && "absolute z-10 -translate-x-full")}
+            style={separatorRight ? { left: separatorRight } : undefined}
+          >
+            <WorkspaceSwitch value={workspace} onChange={(next) => { setPeek(false); setSpacesPeek(false); setWorkspace(next); }} />
+            <span aria-hidden className="h-4 w-px bg-hairline" />
+          </div>
 
           {/* A hidden session has no sidebar row, so this is the way back to
               the crew it sits in. */}
-          {!issuesOpen && !spacesOpen && shownSession && hiddenParent && (
+          {!designOpen && breadcrumb && (
             <button
               type="button"
               onClick={() =>
@@ -3204,8 +3271,9 @@ function App() {
             </button>
           )}
           {/* Keep each strip's local state across page switches; hidden strips release their shortcuts. */}
+          {canvasHome && !settingsOpen && <CanvasTabs library={canvasLibrary} alignX={tabsStart} />}
           <ViewTabs
-            active={!issuesOpen && !spacesOpen && !settingsOpen}
+            active={!issuesOpen && !spacesOpen && !settingsOpen && !designOpen}
             sessionId={browserSessionId}
             title={viewTitle}
             repoTabs={!!shownSession}
@@ -3225,18 +3293,17 @@ function App() {
             working={busy}
             branch={prBranch}
             cwd={shownSession?.cwd}
-            // Not past a parent's breadcrumb, whose width the lead leaves out.
-            alignX={hiddenParent || !sidebarDrawn ? 0 : RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR}
+            alignX={tabsStart}
           />
           {pagesEnabled && (
             <SpaceTabs state={spaceTabs} projects={projects} active={spacesOpen && !settingsOpen}
               onClose={(id) => spaceTabCloser.current(id)}
-              alignX={spacesDrawn ? RAIL_W + spacesDrawn + TABS_PAST_SEPARATOR : 0} />
+              alignX={tabsStart} />
           )}
           <IssueTabs state={issueTabs} visible={issuesOpen && !spacesOpen && !settingsOpen}
-            alignX={sidebarDrawn ? RAIL_W + sidebarDrawn + TABS_PAST_SEPARATOR : 0} />
+            alignX={tabsStart} />
 
-          {spacesOpen ? null : issuesOpen
+          {spacesOpen || canvasHome ? null : issuesOpen
             ? (
                 <>
                   {activeIssueTab.kind === "issue" && (
@@ -3795,6 +3862,7 @@ function App() {
     <NoticeStack
       onSelect={(id) => goToSession(() => void openNotice(id))}
       onOpenDrafts={() => {
+        setWorkspace("Coding");
         setShowArchived(false);
         setDraftsShown(true);
       }}
@@ -3819,6 +3887,11 @@ function App() {
       <PageMentionPicker contextKey={`${composerKey ?? "new"}:${activeServer}`} open={pagePickerOpen} onOpenChange={setPagePickerOpen}
         visibleProjects={space ? spaceProjects.map((p) => p.path) : null} onSelect={referencePage} />
     </MountOnce>}
+    {canvasAttach && <AttachProjectDialog open onClose={() => setCanvasAttach(null)} initialServer={activeServer} projects={projects}
+      onAttached={async (server, list) => {
+        const path = await handleAttachProject(server, list, space);
+        if (path) canvasAttach.onPicked?.(path);
+      }} />}
     <DragGhost />
     <QuitDialog />
     <LinkDialog />

@@ -22,6 +22,7 @@ export default function Rail({
   place,
   spaces,
   onHome,
+  homeShortcut = "session.new",
   onSpaces,
   onIssues,
   onHomeHover,
@@ -35,6 +36,7 @@ export default function Rail({
   /// door to a page that refuses to open.
   spaces: boolean;
   onHome: () => void;
+  homeShortcut?: ShortcutId | null;
   onSpaces: () => void;
   onIssues: () => void;
   /// Hovering Home peeks the task sidebar where it is not docked; `false` on
@@ -56,7 +58,7 @@ export default function Rail({
     >
       <RailButton
         label="Home"
-        shortcut="session.new"
+        shortcut={homeShortcut}
         current={place === "home"}
         onClick={onHome}
         onHover={onHomeHover}
@@ -88,7 +90,7 @@ function RailButton({
   children,
 }: {
   label: string;
-  shortcut: ShortcutId;
+  shortcut: ShortcutId | null;
   current: boolean;
   onClick: () => void;
   onHover?: (over: boolean) => void;
@@ -118,7 +120,7 @@ function RailButton({
       </TooltipTrigger>
       <TooltipContent side="right">
         {label}
-        <ShortcutKeys ids={[shortcut]} />
+        {shortcut && <ShortcutKeys ids={[shortcut]} />}
       </TooltipContent>
     </Tooltip>
   );

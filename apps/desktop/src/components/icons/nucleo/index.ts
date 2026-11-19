@@ -11,6 +11,7 @@ export { ChevronDownOutline12 } from "./ChevronDownOutline12";
 export { CircleWarningOutline12 } from "./CircleWarningOutline12";
 export { CubesGlyph18 } from "./CubesGlyph18";
 export { DotsOutline12 } from "./DotsOutline12";
+export { DoodleOutline18 } from "./DoodleOutline18";
 export { EyeOutline18 } from "./EyeOutline18";
 export { EyeSlashOutline18 } from "./EyeSlashOutline18";
 export { FlagOutline18 } from "./FlagOutline18";

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Bookmark, MoreHorizontal, Plus, Search } from "lucide-react";
 
 import ShortcutKeys from "@/components/ShortcutKeys";
-import { useResizable } from "@/components/ResizeHandle";
+import { useSidebarResize } from "@/components/ResizeHandle";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,8 +22,7 @@ export default function IssuesSidebar({ floating, query, label, onNewIssue, onSe
   onSearch: () => void;
   onApply: (view: SavedIssueView) => void;
 }) {
-  const { style, handle } = useResizable({ storageKey: "ade.sidebarWidth", initial: 240, min: 240,
-    edge: "right", label: "Resize the sidebar", pane: floating ? undefined : "sidebar" });
+  const { style, handle } = useSidebarResize({ reserveChatSpace: !floating });
   const views = useIssueViews();
   const [editing, setEditing] = useState<{ id: string | null; name: string; query: IssueQuery } | null>(null);
   const save = () => {

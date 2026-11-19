@@ -1,9 +1,12 @@
-/// Back and forward over where the reader has been: the new task page, a
-/// session, Issues, Spaces and Settings. A browser's history, minus the URL.
+/// Back and forward over the places visited in the Coding and Design workspaces.
 
 import type { SettingsTab } from "@/components/SettingsPage";
+import type { CanvasFile, CanvasLocation } from "@/hooks/useCanvasLibrary";
 
-type PagePlace = { page: "tasks" | "issues" | "spaces"; sessionId: string | null };
+export type PagePlace =
+  | { page: "tasks" | "issues" | "spaces"; sessionId: string | null }
+  | { page: "design-spaces" | "design-issues" }
+  | { page: "canvas"; location: CanvasLocation; file: CanvasFile | null };
 export type Place = PagePlace | { page: "settings"; tab: SettingsTab; returnTo: PagePlace };
 
 export type NavHistory = { stack: Place[]; index: number };
@@ -13,9 +16,15 @@ const DEPTH = 50;
 
 /// What makes two places one. Issues and Spaces keep whichever session was
 /// selected under them, so it says nothing about where the reader is.
-export const placeKey = (place: Place) =>
-  place.page === "settings" ? `settings:${place.tab}`
-    : place.page === "tasks" ? `tasks:${place.sessionId ?? ""}` : place.page;
+export function placeKey(place: Place): string {
+  if (place.page === "canvas") {
+    const { location, file } = place;
+    return JSON.stringify(["canvas", location.project, location.folder, location.archived, file?.project, file?.folder, file?.name]);
+  }
+  if (place.page === "settings") return `settings:${place.tab}`;
+  if (place.page === "tasks") return `tasks:${place.sessionId ?? ""}`;
+  return place.page;
+}
 
 /// Arriving somewhere new drops whatever was ahead, as a browser does.
 export function visit(history: NavHistory, place: Place): NavHistory {

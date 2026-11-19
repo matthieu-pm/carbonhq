@@ -940,7 +940,7 @@ pub async fn resolve_unclaimed_worktree_name(
     }
 
     for _ in 0..16 {
-        let name = random_worktree_name();
+        let name = random_three_word_name();
         if !taken(&name) {
             return Ok(name);
         }
@@ -1027,7 +1027,7 @@ const NOUNS: [&str; 32] = [
 /// Bytes 13–15 only: `uuid` fills bytes 6–11 with a monotonic counter that is
 /// reseeded once per millisecond, so a redraw loop running inside one drew the
 /// same adjective and colour every time and varied nothing but the noun.
-fn random_worktree_name() -> String {
+pub(crate) fn random_three_word_name() -> String {
     let bytes = Uuid::now_v7().into_bytes();
     let pick = |i: usize, list: &[&'static str; 32]| list[(bytes[i] as usize) % list.len()];
 
@@ -2578,7 +2578,7 @@ mod tests {
     #[test]
     fn fast_redraws_vary_every_word() {
         let prefixes: std::collections::HashSet<String> = (0..16)
-            .map(|_| random_worktree_name())
+            .map(|_| random_three_word_name())
             .map(|n| n.rsplit_once('-').unwrap().0.to_string())
             .collect();
         assert!(prefixes.len() > 1, "only drew {prefixes:?}");

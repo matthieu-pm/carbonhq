@@ -1546,6 +1546,8 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         log_branch_commits(cwd: String, limit: u32, skip: u32) => git::log_branch_commits(&cwd, limit, skip).await;
         warm_file_index(cwd: String) => files::warm_file_index(cwd).await;
         search_files(cwd: String, query: String, limit: usize) => files::search_files(cwd, query, limit).await;
+        canvas_library(project_path: String) => crate::canvas_library::list(project_path).await;
+        change_canvas_library(project_path: String, action: crate::canvas_library::Action) => crate::canvas_library::change(project_path, action).await;
         list_dir(cwd: String, dir: String) => files::list_dir(cwd, dir).await;
         read_file(path: String) => read_file(&path).await;
         // Servers listening on *this* machine, which is the one a forwarded

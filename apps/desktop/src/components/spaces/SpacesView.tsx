@@ -4,8 +4,7 @@ import { FileText, Folder, Plus, Search, Trash2 } from "lucide-react";
 import ShortcutKeys from "@/components/ShortcutKeys";
 import { SIDEBAR_TOKENS } from "@/components/layout/AppShell";
 import { RAIL_W } from "@/components/layout/Rail";
-import { useResizable } from "@/components/ResizeHandle";
-import { SIDEBAR_MIN } from "@/components/Sidebar";
+import { useSidebarResize } from "@/components/ResizeHandle";
 import { Kbd } from "@/components/ui/kbd";
 import ListTabBody from "./ListTabBody";
 import PageTabBody from "./PageTabBody";
@@ -91,7 +90,7 @@ export default function SpacesView({ active, projects, visibleProjects, request,
     return () => window.clearTimeout(timer);
   }, [motion]);
   // The task sidebar's own width and key, so the two are one setting.
-  const { style: widthStyle, handle } = useResizable({ storageKey: "ade.sidebarWidth", initial: SIDEBAR_MIN, min: SIDEBAR_MIN, edge: "right", label: "Resize the sidebar" });
+  const { style: widthStyle, handle } = useSidebarResize();
   const width = Number(widthStyle.width);
   const widthVar = { "--spaces-sidebar-w": `${width}px` } as CSSProperties;
   useEffect(() => { onDockedWidth?.(docked ? width : 0); }, [docked, width, onDockedWidth]);
@@ -209,7 +208,7 @@ export default function SpacesView({ active, projects, visibleProjects, request,
   return <div className={cn("spaces-workspace", !active && "hidden")} style={widthVar}>
     <div className="spaces-body">
       <div className="spaces-sidebar-frame" data-open={!sidebarCollapsed} data-motion={motion} inert={sidebarCollapsed || undefined}>{!floating && sidebar}{docked && handle}</div>
-      <main className="content-backdrop spaces-main">
+      <main className="content-backdrop spaces-main library-pane">
         {createError && <div role="alert" className="spaces-error mt-4">{createError}<button onClick={() => setCreateError(null)}>Dismiss</button></div>}
         {state.tabs.map((tab) => {
           if (!seen.current.has(tab.id)) return null;

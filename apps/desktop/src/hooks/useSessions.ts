@@ -544,6 +544,7 @@ const handleAttachProject = async (server: ServerId, list: Project[], space: str
   }
   setProjects((prev) => mergeFrom(prev, server, filed, pathOfProject));
   setProjectPath(attached?.path ?? null);
+  return attached?.path;
 };
 
 // Detaches a project. Sessions that ran in it keep their own recorded paths and

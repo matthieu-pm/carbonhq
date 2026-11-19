@@ -34,6 +34,20 @@ describe("nav history", () => {
     expect(step(walk(tasks("gone")), -1, (p) => !usable(p))).toBeNull();
   });
 
+  it("distinguishes the same folder and canvas names across projects", () => {
+    const canvas = (project: string, name?: string): Place => ({
+      page: "canvas",
+      location: { project, folder: "Sketches", archived: false },
+      file: name ? { project, folder: "Sketches", name } : null,
+    });
+    const places = [canvas("one"), canvas("two"), canvas("two", "Draft"), canvas("one", "Draft")];
+    const history = walk(...places);
+    expect(history.stack.slice(1)).toEqual(places);
+    const back = step(history, -1, all)!;
+    expect(back.place).toEqual(canvas("two", "Draft"));
+    expect(step(back.history, 1, all)?.place).toEqual(canvas("one", "Draft"));
+  });
+
   it("restores Settings sections and the page they covered", () => {
     const appearance: Place = { page: "settings", tab: "appearance", returnTo: issues };
     const skills: Place = { ...appearance, tab: "skills" };

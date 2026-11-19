@@ -119,6 +119,7 @@ export function useResizable({
   label,
   pane,
   floor,
+  publish = true,
 }: {
   storageKey: string;
   initial: number;
@@ -135,6 +136,8 @@ export function useResizable({
   /// for. Absent for a pane on some other row — the files list, whose siblings
   /// are inside the chat column rather than beside it.
   pane?: Pane;
+  /// Alternate pages use the same bounds without reserving space in the chat layout.
+  publish?: boolean;
 }): { style: CSSProperties; handle: ReactNode } {
   const read = () => readLocalStorage(storageKey, initial);
   const [stored, setStored] = useState(read);
@@ -155,7 +158,8 @@ export function useResizable({
   // minimum.
   const columnFloor = useChatFloor();
   // The rail is drawn whatever else is open, so no pane can bid for its width.
-  const bounds = paneBounds(min, useViewportWidth() - RAIL_W, useSeniorPanes(pane), floor ?? columnFloor);
+  const seniorPanes = useSeniorPanes(pane);
+  const bounds = paneBounds(min, useViewportWidth() - RAIL_W, seniorPanes, floor ?? columnFloor);
   const clamp = useCallback(
     (raw: number) => snapWidth(raw, bounds.min, bounds.max, initial),
     [bounds.min, bounds.max, initial],
@@ -168,14 +172,14 @@ export function useResizable({
   // Published on every change and cleared on unmount, which is what a collapsed
   // sidebar is — it returns null rather than rendering a rail.
   useEffect(() => {
-    if (!pane) return;
+    if (!pane || !publish) return;
     widths[pane] = width;
     layoutChanged.emit();
     return () => {
       delete widths[pane];
       layoutChanged.emit();
     };
-  }, [pane, width]);
+  }, [pane, publish, width]);
 
   // Two panes can share a key — Spaces' sidebar takes the task sidebar's — and
   // both stay mounted, so a write tells the other to re-read.
@@ -262,4 +266,18 @@ export function useResizable({
   );
 
   return { style: { width }, handle };
+}
+
+export const SIDEBAR_MIN = 240;
+
+export function useSidebarResize({ reserveChatSpace = false } = {}) {
+  return useResizable({
+    storageKey: "ade.sidebarWidth",
+    initial: SIDEBAR_MIN,
+    min: SIDEBAR_MIN,
+    edge: "right",
+    label: "Resize the sidebar",
+    pane: "sidebar",
+    publish: reserveChatSpace,
+  });
 }

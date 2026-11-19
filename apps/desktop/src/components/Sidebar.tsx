@@ -12,7 +12,6 @@ import {
   Unlink,
   Pin,
   Plus,
-  Search,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -45,6 +44,7 @@ import {
 import ShortcutKeys, { DigitKeys } from "@/components/ShortcutKeys";
 import { useSwipe } from "@/lib/swipe";
 import { playSwipeTick } from "@/lib/tick";
+import { SidebarSearch, sidebarRow } from "@/components/layout/SidebarSearch";
 import { Kbd } from "@/components/ui/kbd";
 import {
   Tooltip,
@@ -60,7 +60,7 @@ import { groupName, members, type SplitGroup } from "@/lib/groups";
 import { sessionBranch } from "@/lib/pr";
 import { projectLabel, serverConnected, serverName, useServers } from "@/lib/servers";
 import { LOCAL, serverOfPath } from "@/lib/transport";
-import { useResizable } from "@/components/ResizeHandle";
+import { useSidebarResize } from "@/components/ResizeHandle";
 import { useJumpDigit } from "@/lib/digitChords";
 import { cn } from "@/lib/utils";
 import type {
@@ -833,10 +833,6 @@ function DevBadge() {
   );
 }
 
-/// The sidebar's floor, and the width the crew counts on it holding when it
-/// judges whether there is room to stand beside the chat.
-export const SIDEBAR_MIN = 240;
-
 export default function Sidebar({
   items,
   search,
@@ -883,26 +879,7 @@ export default function Sidebar({
   draftsShown,
   onToggleDrafts,
 }: SidebarProps) {
-  // `SIDEBAR_MIN` is `w-60`, the width this opened at before it could be dragged — and
-  // its floor as well as its default: narrower, the rows' timestamps and marks
-  // start eating the title they sit beside, so this only ever widens.
-  const { style, handle } = useResizable({
-    storageKey: "ade.sidebarWidth",
-    initial: SIDEBAR_MIN,
-    min: SIDEBAR_MIN,
-    edge: "right",
-    label: "Resize the sidebar",
-    // Dropped while collapsed, which is not an unmount: this component returns
-    // `null` below with its hooks already run, so publishing on mount alone
-    // left the panel taking a sidebar's width off its own cap with no sidebar
-    // on screen.
-    pane: collapsed || floating ? undefined : "sidebar",
-  });
-
-  const closeSearch = () => {
-    onSearchOpenChange(false);
-    onSearchChange("");
-  };
+  const { style, handle } = useSidebarResize({ reserveChatSpace: !collapsed && !floating });
 
   // Recency-ordered, with agent-spawned sessions nested under the one that
   // spawned them, and each row carrying the flags its connector rails are drawn
@@ -1095,69 +1072,15 @@ export default function Sidebar({
           variant="ghost"
           size="sm"
           onClick={onNewSession}
-          className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50"
+          className={sidebarRow}
         >
           <Plus />
           New Task
           <ShortcutKeys ids={["session.new"]} className="ml-auto" />
         </Button>
 
-        {/* The button *becomes* the field, on the same row at the same height:
-            the icon holds its place, the caret lands where the label was, and
-            nothing below it moves. Bare on purpose — a fill, a border or a
-            focus ring here would draw a second kind of control into a strip
-            that is otherwise plain buttons. The transparent border is what holds
-            that promise to the pixel: every button carries one, so the icon
-            would sit a pixel further out without it. */}
-        {searchOpen ? (
-          <div className="group flex h-7 w-full items-center gap-1 border border-transparent px-1.5 text-ui">
-            <Search className="size-3.5 shrink-0" />
-            <input
-              autoFocus
-              id={SEARCH_INPUT_ID}
-              type="text"
-              value={search}
-              placeholder="Search"
-              aria-label="Search tasks"
-              onChange={(e) => onSearchChange(e.target.value)}
-              // Escape is the way out, and it takes the query with it: leaving
-              // a filter behind an input that has closed would hide rows with
-              // nothing on screen saying why.
-              onKeyDown={(e) => {
-                if (e.key !== "Escape") return;
-                e.preventDefault();
-                closeSearch();
-              }}
-              // Only where there is nothing to lose. Clicking away from a query
-              // that is narrowing the list is not a request to drop it.
-              onBlur={() => {
-                if (!search) onSearchOpenChange(false);
-              }}
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-            />
-            {/* The slot keeps naming whichever key does something here, and
-                which one that is turns on focus alone: Escape reaches this
-                input and nothing else, where ⌘F is what brings focus back to a
-                field left holding a query. Esc is withheld over an empty field,
-                which is the one state neither key has anything to do in. CSS
-                rather than a `focused` state: the browser already knows. */}
-            {search && (
-              <Kbd className="hidden group-focus-within:inline-flex">Esc</Kbd>
-            )}
-            <ShortcutKeys ids={["search"]} className="group-focus-within:hidden" />
-          </div>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onSearchOpenChange(true)}
-            className="w-full justify-start px-1.5 text-ui text-sidebar-foreground/80 transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50"
-          >
-            <Search />
-            Search
-            <ShortcutKeys ids={["search"]} className="ml-auto" />
-          </Button>
-        )}
+        <SidebarSearch open={searchOpen} onOpenChange={onSearchOpenChange} value={search}
+          onChange={onSearchChange} id={SEARCH_INPUT_ID} label="Search tasks" />
       </div>
 
       {/* The filter is where project grouping went. */}

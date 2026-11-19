@@ -1572,3 +1572,16 @@ body.session-drag * {
 }
 @keyframes summary-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes summary-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* Round the inset so WebKit keeps toolbar icons on whole pixels during animations. */
+.library-pane {
+  container-type: inline-size;
+  --library-content-inset: round(down, 5.5cqw, 1px);
+  --library-header-inset: var(--library-content-inset);
+}
+@media (max-width: 1000px) {
+  .library-pane { --library-content-inset: 28px; }
+}
+@media (max-width: 720px) {
+  .library-pane { --library-content-inset: 12px; --library-header-inset: 20px; }
+}
