@@ -9,9 +9,9 @@ type AuthoredStyles = {
 
 export type CanvasEditIntent =
   | { kind: "frames"; geometry: Record<string, Partial<CanvasGeometry>>; label: string }
-  | { kind: "reorder"; frameId: string; nodeId: string; index: number }
+  | { kind: "reorder"; frameId: string; nodeId: string; index: number; order?: string }
   | { kind: "style"; frameId: string; nodeId: string | null; styles: StylePatch; label: string }
-  | { kind: "text"; frameId: string; nodeId: string; text: string };
+  | { kind: "text"; frameId: string; nodeId: string; text: string; previous: string };
 
 export function layerSlot(nodes: CanvasNode[], id: string, parent: CanvasNode | null = null): { siblings: CanvasNode[]; parent: CanvasNode | null; index: number } | null {
   for (let index = 0; index < nodes.length; index++) {
@@ -50,7 +50,48 @@ export function editableText(node: CanvasNode | undefined): Extract<CanvasNode, 
 }
 
 export function frameStyles(frame: CanvasFrame): StylePatch {
-  return (frame.content as { bodyStyles?: StylePatch }).bodyStyles ?? {};
+  const styles = (frame.content as { bodyStyles?: unknown }).bodyStyles;
+  if (!styles || typeof styles !== "object" || Array.isArray(styles)) return {};
+  return Object.fromEntries(Object.entries(styles).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+}
+
+function resolveVariables(value: string, tokens: ReadonlyMap<string, string>, visiting: Set<string>, budget: { left: number }): string | undefined {
+  if (visiting.size >= 32 || value.length > 4096) return;
+  const variables = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\*[\s\S]*?\*\/|(?<![\w-])var\(/gi;
+  let resolved = "", next = 0;
+  for (let match = variables.exec(value); match; match = variables.exec(value)) {
+    if (match[0].toLowerCase() !== "var(") continue;
+    if (--budget.left < 0) return;
+    const start = variables.lastIndex;
+    const groups = /\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\*[\s\S]*?\*\/|[()]/g;
+    groups.lastIndex = start;
+    let depth = 1;
+    let end = -1;
+    for (let group = groups.exec(value); group; group = groups.exec(value)) {
+      if (group[0] === "(") depth++;
+      if (group[0] === ")" && --depth === 0) { end = group.index; break; }
+    }
+    if (end < 0) return;
+    const args = value.slice(start, end);
+    const comma = args.indexOf(",");
+    const name = (comma < 0 ? args : args.slice(0, comma)).trim();
+    if (!/^--[\w-]+$/.test(name)) return;
+    const definition = tokens.get(name);
+    let replacement = definition === undefined || visiting.has(name) ? undefined
+      : resolveVariables(definition, tokens, new Set([...visiting, name]), budget);
+    if (replacement === undefined && comma >= 0) replacement = resolveVariables(args.slice(comma + 1).trim(), tokens, visiting, budget);
+    if (replacement === undefined) return;
+    resolved += value.slice(next, match.index) + replacement;
+    if (resolved.length > 4096) return;
+    next = end + 1;
+    variables.lastIndex = next;
+  }
+  return resolved + value.slice(next);
+}
+
+export function resolveCanvasToken(name: string, tokens: ReadonlyMap<string, string>): string | undefined {
+  const value = tokens.get(name);
+  return value === undefined ? undefined : resolveVariables(value, tokens, new Set([name]), { left: 256 });
 }
 
 function styleNode(node: CanvasNode, patch: StylePatch): CanvasNode {
@@ -60,8 +101,20 @@ function styleNode(node: CanvasNode, patch: StylePatch): CanvasNode {
   }
   const existing = node as typeof node & AuthoredStyles;
   const keys = Object.keys(patch);
-  const order = [...new Set([...(existing.carbonStyleOrder ?? []), ...Object.keys(node.styles)])];
-  const tokenReferences = existing.tokenReferences && Object.fromEntries(Object.entries(existing.tokenReferences).filter(([key]) => !Object.hasOwn(patch, key)));
+  const savedOrder = Array.isArray(existing.carbonStyleOrder) ? existing.carbonStyleOrder.filter(key => typeof key === "string") : [];
+  const order = [...new Set([...savedOrder, ...Object.keys(node.styles)])];
+  const affected = new Set(keys);
+  if (typeof document !== "undefined") {
+    const probe = document.createElement("div").style;
+    for (const key of keys) {
+      probe.setProperty(key, "initial");
+      for (const property of probe) affected.add(property);
+      probe.cssText = "";
+    }
+  }
+  const references = existing.tokenReferences;
+  const tokenReferences = references && typeof references === "object" && !Array.isArray(references)
+    ? Object.fromEntries(Object.entries(references).filter(([key]) => !affected.has(key))) : undefined;
   return { ...node, styles: { ...node.styles, ...patch }, carbonStyleOrder: [...order.filter(key => !Object.hasOwn(patch, key)), ...keys], ...(tokenReferences && { tokenReferences }) } as CanvasNode;
 }
 
@@ -83,7 +136,7 @@ export function applyCanvasEdit(frames: CanvasFrame[], edit: CanvasEditIntent): 
       const node = siblings[index];
       if (edit.kind === "reorder") {
         updated.splice(index, 1);
-        updated.splice(edit.index, 0, node);
+        updated.splice(edit.index, 0, edit.order === undefined ? node : styleNode(node, { order: edit.order }));
       } else if (edit.kind === "text" && node.kind === "text") {
         updated[index] = { ...node, text: edit.text };
       } else if (edit.kind === "style") {
@@ -159,7 +212,7 @@ export function reorderLayer(frame: CanvasFrame, nodeId: string, boxes: LayerBox
   const slot = layerSlot(frame.content.nodes, nodeId);
   if (!slot) return null;
   const measured = new Map(boxes.map(box => [box.id, box]));
-  const parent = slot.parent ? measured.get(slot.parent.id)?.styles : undefined;
+  const parent = measured.get(slot.parent?.id ?? frame.id)?.styles;
   const direction = parent?.["flex-direction"];
   const grid = parent?.display?.includes("grid");
   const flex = parent?.display?.includes("flex");
@@ -167,8 +220,8 @@ export function reorderLayer(frame: CanvasFrame, nodeId: string, boxes: LayerBox
   const siblings = slot.siblings.filter(node => node.id !== nodeId);
   const candidates = siblings.flatMap((sibling, index) => {
     const box = measured.get(sibling.id);
-    if (!box || !box.width || !box.height || ["fixed", "absolute"].includes(box.styles.position)) return [];
-    return [{ box, index }];
+    if (!box || !box.width || !box.height || sibling.kind === "element" && (["fixed", "absolute"].includes(box.styles.position) || grid && fixedGridPlacement(box.styles))) return [];
+    return [{ box, index, order: sibling.kind === "element" ? box.styles.order || "0" : "0" }];
   });
   const closest = candidates.reduce<(typeof candidates)[number] | null>((best, candidate) => {
     const distance = (box: LayerBox) => Math.hypot(
@@ -178,7 +231,7 @@ export function reorderLayer(frame: CanvasFrame, nodeId: string, boxes: LayerBox
     return !best || distance(candidate.box) < distance(best.box) ? candidate : best;
   }, null);
   if (!closest) return null;
-  const { box, index } = closest;
+  const { box, index, order: targetOrder } = closest;
   const horizontal = flex ? direction?.startsWith("row") : grid ? !parent?.["grid-auto-flow"]?.startsWith("column")
     : !!source && Math.abs(source.y - box.y) < Math.min(source.height, box.height) / 2;
   const beforeSide = horizontal
@@ -186,19 +239,37 @@ export function reorderLayer(frame: CanvasFrame, nodeId: string, boxes: LayerBox
     : Boolean(flex && direction === "column-reverse");
   const leading = horizontal ? x < box.x + box.width / 2 : y < box.y + box.height / 2;
   const nextIndex = index + (leading !== beforeSide ? 0 : 1);
-  if (nextIndex === slot.index) return null;
+  const sourceOrder = slot.siblings[slot.index].kind === "element" ? source?.styles.order || "0" : "0";
+  const order = (flex || grid) && sourceOrder !== targetOrder ? targetOrder : undefined;
+  if (nextIndex === slot.index && order === undefined) return null;
   const edge = horizontal
     ? { x: box.x + (leading ? 0 : box.width), y: box.y, width: 0, height: box.height }
     : { x: box.x, y: box.y + (leading ? 0 : box.height), width: box.width, height: 0 };
-  return { index: nextIndex, edge };
+  return { index: nextIndex, edge, order };
 }
 
-export function resizedLayer(box: LayerBox, dx: number, dy: number, text: boolean): StylePatch {
+function fixedGridPlacement(styles: Record<string, string>): boolean {
+  return ["grid-row-start", "grid-row-end", "grid-column-start", "grid-column-end"]
+    .some(key => styles[key] && styles[key] !== "auto" && !styles[key].startsWith("span "));
+}
+
+export function hasFixedGridPlacement(box: LayerBox, parent: LayerBox | undefined): boolean {
+  return Boolean(parent?.styles.display?.includes("grid") && fixedGridPlacement(box.styles));
+}
+
+export function sizedStyle(property: "width" | "height", value: string, parent: Record<string, string> | undefined, position?: string): StylePatch {
+  const direction = parent?.["flex-direction"];
+  const flexItem = parent?.display?.includes("flex") && !["absolute", "fixed"].includes(position ?? "");
+  const mainAxis = direction?.startsWith("column") ? "height" : "width";
+  return flexItem && property === mainAxis ? { [property]: value, "flex-basis": value, "flex-grow": "0", "flex-shrink": "0" } : { [property]: value };
+}
+
+export function resizedLayer(box: LayerBox, dx: number, dy: number, text: boolean, parent?: LayerBox): StylePatch {
   const styles: StylePatch = {};
   if (text || box.styles.display === "inline") styles.display = "inline-block";
   const [width, height] = text ? [box.width, box.height] : [parseFloat(box.styles.width), parseFloat(box.styles.height)];
-  if (Math.round(dx)) styles.width = `${Math.max(1, Math.round((Number.isFinite(width) ? width : box.width) + dx))}px`;
-  if (Math.round(dy)) styles.height = `${Math.max(1, Math.round((Number.isFinite(height) ? height : box.height) + dy))}px`;
+  if (Math.round(dx)) Object.assign(styles, sizedStyle("width", `${Math.max(1, Math.round((Number.isFinite(width) ? width : box.width) + dx))}px`, parent?.styles, text ? "static" : box.styles.position));
+  if (Math.round(dy)) Object.assign(styles, sizedStyle("height", `${Math.max(1, Math.round((Number.isFinite(height) ? height : box.height) + dy))}px`, parent?.styles, text ? "static" : box.styles.position));
   return styles;
 }
 

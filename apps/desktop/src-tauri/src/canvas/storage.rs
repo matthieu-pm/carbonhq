@@ -814,14 +814,20 @@ impl Store {
             layers.push(node);
         }
         let mut use_tokens = super::tokens::names(&layers);
+        let mut checked_tokens = BTreeSet::new();
         while let Some(name) = use_tokens.pop() {
-            let Some(value) = original.tokens.get(&name) else {
+            if !checked_tokens.insert(name.clone()) {
                 continue;
-            };
-            if let std::collections::btree_map::Entry::Vacant(entry) = canvas.tokens.entry(name) {
-                entry.insert(value.clone());
+            }
+            if let Some(value) = canvas
+                .tokens
+                .get(&name)
+                .or_else(|| original.tokens.get(&name))
+            {
                 use_tokens.extend(super::tokens::used_names(value));
                 assets.extend(asset_urls(value).map(str::to_owned));
+                let value = value.clone();
+                canvas.tokens.entry(name).or_insert(value);
             }
         }
         let node_ids = layers
@@ -840,20 +846,17 @@ impl Store {
             None => children.len(),
         };
         children.splice(index..index, layers);
+        let mut copies = Vec::new();
         for asset_id in assets {
-            let asset = original
-                .assets
-                .iter()
-                .find(|asset| asset.id == asset_id)
-                .ok_or("A copied layer refers to a missing asset.")?;
-            if let Some(existing) = canvas.assets.iter().find(|item| item.id == asset.id) {
-                if existing.hash != asset.hash {
+            let asset = original.assets.iter().find(|asset| asset.id == asset_id);
+            if let Some(existing) = canvas.assets.iter().find(|item| item.id == asset_id) {
+                if asset.is_some_and(|asset| existing.hash != asset.hash) {
                     return Err("A copied asset conflicts with an existing Canvas asset.".into());
                 }
             } else {
-                let bytes = self.asset_bytes(&original.id, asset).await?;
-                self.put_asset(id, &asset.hash, &bytes).await?;
+                let asset = asset.ok_or("A copied layer refers to a missing asset.")?;
                 canvas.assets.push(asset.clone());
+                copies.push(asset);
             }
             let frame = canvas
                 .frames
@@ -873,6 +876,11 @@ impl Store {
             None,
         )?;
         super::undo::record(&before, &mut canvas)?;
+        validate(&canvas)?;
+        for asset in copies {
+            let bytes = self.asset_bytes(&original.id, asset).await?;
+            self.put_asset(id, &asset.hash, &bytes).await?;
+        }
         self.commit(&canvas, Some(head), None).await?;
         Ok(CanvasLayerPaste {
             canvas,

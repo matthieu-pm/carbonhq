@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -257,6 +257,154 @@ fn merge(
     }
 }
 
+/// A later child keeps the container it depends on while unrelated changes can still be reversed.
+fn preserve_later_parents(current: &Value, merged: &mut Value, conflicts: &mut Vec<String>) {
+    let tokens = merged["tokens"].as_object().cloned().unwrap_or_default();
+    let Some(frames) = merged["frames"].as_object_mut() else {
+        return;
+    };
+    let mut retained_assets = BTreeSet::new();
+    for (frame_id, frame) in frames {
+        let original = &current["frames"][frame_id];
+        let Some(layers) = frame["layers"].as_object_mut() else {
+            continue;
+        };
+        let mut needed: Vec<_> = layers
+            .values()
+            .filter_map(|layer| layer["parent"].as_str().map(str::to_owned))
+            .collect();
+        let mut kept = Vec::new();
+        while let Some(parent) = needed.pop() {
+            if parent == *frame_id
+                || layers
+                    .get(&parent)
+                    .is_some_and(|record| record["node"]["kind"] == "element")
+            {
+                continue;
+            }
+            let Some(record) = original["layers"]
+                .get(&parent)
+                .filter(|record| record["node"]["kind"] == "element")
+            else {
+                continue;
+            };
+            if let Some(ancestor) = record["parent"].as_str() {
+                needed.push(ancestor.to_owned());
+                kept.push((parent.clone(), ancestor.to_owned()));
+            }
+            conflicts.push(format!("/frames/{frame_id}/layers/{parent}/children"));
+            layers.insert(parent, record.clone());
+        }
+        for (id, parent) in kept {
+            let current_order = original["order"][&parent].as_array();
+            let entry = &mut frame["order"][&parent];
+            if entry.is_null() {
+                *entry = json!([]);
+            }
+            let Some(order) = entry.as_array_mut() else {
+                continue;
+            };
+            let id = Value::String(id);
+            if order.contains(&id) {
+                continue;
+            }
+            let previous_index = current_order.and_then(|current| {
+                let index = current.iter().position(|item| *item == id)?;
+                current[..index]
+                    .iter()
+                    .rev()
+                    .find_map(|prior| order.iter().position(|item| item == prior).map(|at| at + 1))
+                    .or_else(|| {
+                        current[index + 1..]
+                            .iter()
+                            .find_map(|next| order.iter().position(|item| item == next))
+                    })
+            });
+            order.insert(previous_index.unwrap_or(order.len()), id);
+        }
+        retain_asset_references(frame, original, frame_id, &tokens, conflicts);
+        if let Some(ids) = frame["frame"]["content"]["assetIds"].as_array() {
+            retained_assets.extend(ids.iter().filter_map(Value::as_str).map(str::to_owned));
+        }
+    }
+    for id in retained_assets {
+        if merged["assets"].get(&id).is_none() {
+            if let Some(asset) = current["assets"].get(&id) {
+                conflicts.push(format!("/assets/{id}"));
+                merged["assets"][&id] = asset.clone();
+            }
+        }
+    }
+}
+
+/// Keep existing file assets used by surviving content even if an earlier edit attached them.
+fn retain_asset_references(
+    frame: &mut Value,
+    original: &Value,
+    frame_id: &str,
+    tokens: &Map<String, Value>,
+    conflicts: &mut Vec<String>,
+) {
+    let Some(prior_ids) = original["frame"]["content"]["assetIds"].as_array() else {
+        return;
+    };
+    if prior_ids.is_empty() {
+        return;
+    }
+    let content = &frame["frame"]["content"];
+    let Some(ids) = content["assetIds"].as_array() else {
+        return;
+    };
+    let missing: BTreeSet<_> = prior_ids
+        .iter()
+        .filter(|id| !ids.contains(id))
+        .filter_map(Value::as_str)
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    fn values(map: &Value) -> impl Iterator<Item = &str> {
+        map.as_object()
+            .into_iter()
+            .flat_map(|map| map.values())
+            .filter_map(Value::as_str)
+    }
+    let mut pending: Vec<_> = content["css"]
+        .as_str()
+        .into_iter()
+        .chain(values(&content["bodyStyles"]))
+        .collect();
+    if let Some(layers) = frame["layers"].as_object() {
+        for layer in layers.values() {
+            pending.extend(
+                values(&layer["node"]["attributes"]).chain(values(&layer["node"]["styles"])),
+            );
+        }
+    }
+    let mut found = BTreeSet::new();
+    let mut checked_tokens = BTreeSet::new();
+    while let Some(value) = pending.pop() {
+        found.extend(
+            asset_urls(value)
+                .filter(|id| missing.contains(id))
+                .map(str::to_owned),
+        );
+        for name in super::tokens::used_names(value) {
+            if let Some(value) = tokens.get(&name).and_then(Value::as_str) {
+                if checked_tokens.insert(name) {
+                    pending.push(value);
+                }
+            }
+        }
+    }
+    if let Some(ids) = frame["frame"]["content"]["assetIds"].as_array_mut() {
+        for id in found {
+            conflicts.push(format!("/frames/{frame_id}/frame/content/assetIds/{id}"));
+            ids.push(Value::String(id));
+        }
+    }
+}
+
 pub(super) fn state(canvas: &Canvas) -> Result<CanvasUndoState, String> {
     let history = history(canvas)?;
     let undo = history.steps.iter().rev().find(|s| !s.undone);
@@ -315,6 +463,7 @@ impl Store {
                 .history(id, Some(after.change.before_revision))
                 .await?
                 .remove(0);
+            let current = design.clone();
             merge(
                 &mut design,
                 &self::design(&before)?,
@@ -322,6 +471,7 @@ impl Store {
                 "",
                 &mut conflicts,
             );
+            preserve_later_parents(&current, &mut design, &mut conflicts);
         }
         restore(&mut canvas, design)?;
         let author = CanvasAuthor {

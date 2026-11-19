@@ -55,6 +55,8 @@ const probe = async () => {
     const hit = await pickLayer(markup, geometry, x, y, new AbortController().signal);
     hits.push({ hit, expected });
   }
+  const loose = { ...layerFrame, content: { ...layerFrame.content, nodes: [node("loose-text", "", {}, [], "Loose text")] } };
+  hits.push({ hit: await pickLayer(frameMarkup(loose, {}, {}), geometry, 12, 10, new AbortController().signal), expected: "loose-text" });
   const aborted = new AbortController(); aborted.abort();
   let cancelled = false;
   try { await pickLayer(markup, geometry, 20, 20, aborted.signal); } catch (error) { cancelled = error.name === "AbortError"; }

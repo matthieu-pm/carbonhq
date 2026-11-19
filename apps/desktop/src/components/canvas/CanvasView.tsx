@@ -39,6 +39,7 @@ function readLayerClipboard(value: string): LayerClipboard | null {
 }
 
 function canvasActionTarget(event: Event, files = false): boolean {
+  if (event instanceof KeyboardEvent && event.isComposing) return false;
   const target = event.target instanceof Element ? event.target : null;
   return !!target?.closest(files ? "[data-canvas-selection], [data-canvas-files]" : "[data-canvas-selection]") && !target.closest("input,textarea,[contenteditable],[role=textbox],[role=menu],[role=dialog]");
 }
@@ -84,6 +85,9 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
   const frame = data.canvas?.frames.find((f) => f.id === pick?.frameId) ?? null;
   const node = useMemo(() => pick?.nodeId && frame ? flattenNodes(frame.content.nodes).find((n) => n.node.id === pick.nodeId)?.node ?? null : null, [frame, pick?.nodeId]);
   const box = frame ? capture.previews.get(frame.id)?.boxes.find((b) => b.id === (pick?.nodeId ?? frame.id)) ?? null : null;
+  const parentStyles = frame && node
+    ? capture.previews.get(frame.id)?.boxes.find(box => box.id === (layerSlot(frame.content.nodes, node.id)?.parent?.id ?? frame.id))?.styles
+    : undefined;
   const latestFile = useRef({ fileId: data.fileId, owner: data.owner });
   latestFile.current = { fileId: data.fileId, owner: data.owner };
   const saveAndSelect = async (doc: Canvas, frames: Canvas["frames"], label: string, nextPicks: CanvasPick[]) => {
@@ -95,19 +99,29 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
   };
   const commitEdit = async (edit: CanvasEditIntent, revision: number) => {
     const doc = data.canvas;
-    if (!doc || data.busy) return;
+    if (!doc || data.busy) return false;
     if (doc.revision !== revision) {
-      data.setError("The canvas changed during this edit. Try again on the latest version.");
-      return;
+      if (edit.kind !== "text") {
+        data.setError("The canvas changed during this edit. Try again on the latest version.");
+        return false;
+      }
+      const target = doc.frames.find(frame => frame.id === edit.frameId);
+      const slot = target && layerSlot(target.content.nodes, edit.nodeId);
+      const current = slot?.siblings[slot.index];
+      if (current?.kind !== "text" || current.text !== edit.previous) {
+        data.setError("This text changed elsewhere. Your draft is still in the editor.");
+        return false;
+      }
     }
     const label = edit.kind === "reorder" ? "Reorder layer" : edit.kind === "text" ? "Edit text" : edit.label;
-    await data.edit({ frames: applyCanvasEdit(doc.frames, edit) }, label, revision);
+    return !!await data.edit({ frames: applyCanvasEdit(doc.frames, edit) }, label, doc.revision);
   };
   const duplicate = () => {
     if (!data.canvas || data.busy || !picks.length) return;
     const result = duplicatePicks(data.canvas.frames, picks);
     void saveAndSelect(data.canvas, result.frames, "Duplicate selection", result.picks);
   };
+  useHotkey("canvas.duplicate", duplicate, { enabled: active && !data.busy && picks.length > 0, page: true, platformOnly: true, when: canvasActionTarget });
   const remove = () => {
     if (!data.canvas || data.busy || !picks.length) return;
     void saveAndSelect(data.canvas, deletePicks(data.canvas.frames, picks), "Delete selection", []);
@@ -167,10 +181,7 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
     };
     const key = (event: KeyboardEvent) => {
       if (!canvasActionTarget(event) || event.defaultPrevented || event.isComposing || data.busy || !picks.length) return;
-      if ((IS_MAC ? event.metaKey : event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "d") {
-        event.preventDefault();
-        duplicate();
-      } else if (["Backspace", "Delete"].includes(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (["Backspace", "Delete"].includes(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         remove();
       }
@@ -295,7 +306,7 @@ export default function CanvasView({ active, projects, projectPath, onProjectCha
         <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-2 py-1.5"><Button variant="ghost" size="xs" aria-pressed={previewTarget === "frame"} onClick={() => setPreviewTarget("frame")}>Focused frame</Button><Button variant="ghost" size="xs" aria-pressed={previewTarget === "project"} onClick={() => setPreviewTarget("project")}>Running project</Button></div>
         {previewTarget === "frame" ? active && panelOpen && panelTab === "preview" && data.canvas && frame ? agentPreview?.canvasId === data.canvas.id && agentPreview.frameId === frame.id && agentPreview.sessionId === sessionId ? <BrowserPane sessionId={agentPreview.sessionId} active={active && panelOpen && panelTab === "preview"} mode="panel" /> : <LiveFrame canvas={data.canvas} frame={frame} owner={data.owner} /> : <p className="p-4 text-sm text-muted-foreground">Select a frame to preview it at its original size.</p> : projectPreview}
       </div>}
-      properties={<CanvasProperties frame={frame} node={node} box={box} count={picks.length} canvasId={data.canvas?.id} owner={data.owner}
+      properties={<CanvasProperties frame={frame} node={node} box={box} parentStyles={parentStyles} count={picks.length} canvasId={data.canvas?.id} owner={data.owner}
         catalog={tokens.loading || tokens.error ? null : tokens.catalog} tokenError={Boolean(tokens.error)}
         tokens={data.canvas?.tokens} revision={data.canvas?.revision} busy={data.busy} onEdit={commitEdit} />}
       tokens={<CanvasTokens key={tokens.key} sourcePath={currentSession?.cwd ? displayPath(currentSession.cwd) : projectPath ? displayPath(projectPath) : null}

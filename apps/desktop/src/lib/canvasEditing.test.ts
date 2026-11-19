@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CanvasFrame, CanvasNode } from "@/types/events";
 import type { LayerBox } from "./canvasBoard";
-import { applyCanvasEdit, duplicatePicks, layerSlot, reorderLayer } from "./canvasEditing";
+import { applyCanvasEdit, duplicatePicks, layerSlot, reorderLayer, resizedLayer, resolveCanvasToken } from "./canvasEditing";
 
 const element = (id: string, children: CanvasNode[] = []): CanvasNode => ({ id, name: id, kind: "element", tag: "div", attributes: {}, styles: {}, children });
 const text: CanvasNode = { id: "text", name: "Text", kind: "text", text: "Label" };
@@ -34,6 +34,36 @@ describe("Canvas manual edits", () => {
     const original = frame([element("grid", [element("a"), element("b"), element("c"), element("d")])]);
     const boxes = [box("grid", 0, 0, { display: "grid", "grid-auto-flow": "row" }), box("a", 0, 0), box("b", 48, 0), box("c", 0, 48), box("d", 48, 48)];
     expect(reorderLayer(original, "a", boxes, 83, 70)).toMatchObject({ index: 3, edge: { x: 88, y: 48 } });
+  });
+
+  it("uses root flex direction and changes CSS order only when moving into another order group", () => {
+    const original = frame([element("a"), element("b"), element("c")]);
+    const boxes = [box("frame", 0, 0, { display: "flex", "flex-direction": "row-reverse" }),
+      box("a", 96, 0, { order: "-1" }), box("b", 48, 0), box("c", 0, 0)];
+    const move = reorderLayer(original, "a", boxes, 3, 15);
+    expect(move).toMatchObject({ index: 2, order: "0" });
+    const [edited] = applyCanvasEdit([original], { kind: "reorder", frameId: "frame", nodeId: "a", index: move!.index, order: move!.order });
+    expect(edited.content.nodes.at(-1)).toMatchObject({ id: "a", styles: { order: "0" } });
+  });
+
+  it("resizes a flex item on its main axis and leaves the other axis alone", () => {
+    const parent = box("parent", 0, 0, { display: "flex", "flex-direction": "column" });
+    expect(resizedLayer(box("item", 0, 0, { width: "40px", height: "60px" }), 0, 15, false, parent))
+      .toEqual({ height: "75px", "flex-basis": "75px", "flex-grow": "0", "flex-shrink": "0" });
+  });
+
+  it("resolves project token aliases and nested CSS fallbacks without keeping a missing dependency", () => {
+    const tokens = new Map([["--spacing", "calc(var(--base) * 2)"], ["--base", "8px"],
+      ["--fill", "var(--missing, rgb(20 40 60 / 60%))"], ["--loop", "var(--loop)"]]);
+    expect(resolveCanvasToken("--spacing", tokens)).toBe("calc(8px * 2)");
+    expect(resolveCanvasToken("--fill", tokens)).toBe("rgb(20 40 60 / 60%)");
+    expect(resolveCanvasToken("--loop", tokens)).toBeUndefined();
+  });
+
+  it("edits old nodes carrying non-array style-order metadata", () => {
+    const node = { ...element("old"), carbonStyleOrder: 42 };
+    const [edited] = applyCanvasEdit([frame([node])], { kind: "style", frameId: "frame", nodeId: "old", styles: { color: "red" }, label: "Colour" });
+    expect(edited.content.nodes[0]).toMatchObject({ carbonStyleOrder: ["color"], styles: { color: "red" } });
   });
 
   it("gives text style a stable layer identity and duplicates descendants only once", () => {

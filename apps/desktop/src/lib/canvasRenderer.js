@@ -106,10 +106,26 @@ function frameBridge(token, capture, viewport, point, detail, editing) {
 				const siblings = [...container.childNodes].filter(node => node !== first &&
 					(node.nodeType === Node.ELEMENT_NODE && node.hasAttribute("data-canvas-id") ||
 					 node.nodeType === Node.COMMENT_NODE && node.data.startsWith("canvas-text:")));
-				const nodes = marker?.nextSibling?.nodeType === Node.TEXT_NODE ? [marker, marker.nextSibling] : [first];
+				const text = marker?.nextSibling?.nodeType === Node.TEXT_NODE ? marker.nextSibling : null;
+				const wrapper = text && edit.order !== undefined ? document.createElement("span") : null;
+				if (wrapper) {
+					marker.after(wrapper);
+					wrapper.append(text);
+				}
+				const nodes = text ? [marker, wrapper ?? text] : [first];
 				const anchor = nodes.at(-1).nextSibling;
+				const styled = element ?? wrapper;
+				const originalStyle = styled?.getAttribute("style");
+				if (styled && edit.order !== undefined) styled.style.setProperty("order", edit.order);
 				for (const node of nodes) container.insertBefore(node, siblings[edit.index] ?? null);
-				revert = () => { for (const node of nodes) container.insertBefore(node, anchor); };
+				revert = () => {
+					for (const node of nodes) container.insertBefore(node, anchor);
+					if (wrapper) wrapper.replaceWith(text);
+					else if (element && edit.order !== undefined) {
+						if (originalStyle === null) element.removeAttribute("style");
+						else element.setAttribute("style", originalStyle);
+					}
+				};
 			}
 		});
 		return;
@@ -135,7 +151,12 @@ function frameBridge(token, capture, viewport, point, detail, editing) {
 		"translate",
 		"z-index",
 		"flex-direction",
+		"order",
 		"grid-auto-flow",
+		"grid-column-start",
+		"grid-column-end",
+		"grid-row-start",
+		"grid-row-end",
 		"direction",
 		"align-items",
 		"justify-content",
@@ -177,7 +198,7 @@ function frameBridge(token, capture, viewport, point, detail, editing) {
 				return el.hasAttribute("data-canvas-id");
 			});
 			let hit = element?.getAttribute("data-canvas-id") ?? null;
-			if (element) for (const child of element.childNodes) {
+			for (const child of (element ?? document.body).childNodes) {
 				if (child.nodeType !== 8 || !child.textContent?.startsWith("canvas-text:") || child.nextSibling?.nodeType !== 3) continue;
 				const range = document.createRange();
 				range.selectNode(child.nextSibling);

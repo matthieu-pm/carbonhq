@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import { Ellipsis, Frame, Hand, Maximize, Minus, MousePointer2, Plus, Scan, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { editableText, layerSlot, movedLayer, reorderLayer, resizedLayer, type CanvasEditIntent } from "@/lib/canvasEditing";
+import { editableText, hasFixedGridPlacement, layerSlot, movedLayer, reorderLayer, resizedLayer, type CanvasEditIntent } from "@/lib/canvasEditing";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import ShortcutKeys from "@/components/ShortcutKeys";
 import { Kbd } from "@/components/ui/kbd";
@@ -33,10 +33,10 @@ type BoardGesture = {
   picks: CanvasPick[];
   target: string | null;
   label: boolean;
-  transform?: { frameId: string; layer: LayerBox | null; resize: boolean; free: boolean; text: boolean };
+  transform?: { frameId: string; layer: LayerBox | null; parent?: LayerBox; resize: boolean; free: boolean; text: boolean };
 };
 
-type TextEdit = { frameId: string; nodeId: string; revision: number; box: LayerBox; initial: string };
+type TextEdit = { frameId: string; nodeId: string; revision: number; box: LayerBox; origin: Pick<CanvasGeometry, "x" | "y">; initial: string };
 
 export default function CanvasBoard({ canvas, active, picks, onPicks, previews, errors, onVisible, onNewFrame, stats, editing = [], captureReveal, edit }: {
   canvas: Canvas; active: boolean; picks: CanvasPick[]; onPicks(picks: CanvasPick[]): void;
@@ -44,7 +44,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
   editing?: string[];
   edit?: {
     disabled: boolean;
-    commit(intent: CanvasEditIntent, revision: number): Promise<void>;
+    commit(intent: CanvasEditIntent, revision: number): Promise<boolean>;
     addText(): void;
     duplicate(): void;
     remove(): void;
@@ -107,13 +107,13 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
   useEffect(() => {
     if (active) return;
     cancelDrag();
-    setTextEdit(null);
   }, [active]);
   const previousCount = useRef(canvas.frames.length);
   useLayoutEffect(() => {
-    if (canvas.frames.length > previousCount.current && size.width && size.height) setCamera(fitCamera(frameBounds, size.width, size.height));
+    const historyChange = canvas.change.restoredFrom != null || /^(?:Undo|Redo) /.test(canvas.change.author.label ?? "");
+    if (!historyChange && canvas.frames.length > previousCount.current && size.width && size.height) setCamera(fitCamera(frameBounds, size.width, size.height));
     previousCount.current = canvas.frames.length;
-  }, [canvas.frames.length, frameBounds, size]);
+  }, [canvas.change, canvas.frames.length, frameBounds, size]);
   useLayoutEffect(() => {
     if (!active || !size.width || !size.height || !captureReveal || shownCapture.current === captureReveal.revealId) return;
     const frame = canvas.frames.find(frame => frame.id === captureReveal.frameId);
@@ -149,7 +149,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
     };
     const gestures = ["gesturestart", "gesturechange", "gestureend"];
     gestures.forEach((type) => node.addEventListener(type, pinch, { passive: false }));
-    const blur = () => { setSpace(false); cancelDrag(); setTextEdit(null); };
+    const blur = () => { setSpace(false); cancelDrag(); };
     window.addEventListener("blur", blur);
     return () => { node.removeEventListener("wheel", wheel); gestures.forEach((type) => node.removeEventListener(type, pinch)); window.removeEventListener("blur", blur); cancelAnimationFrame(raf); };
   }, [active]);
@@ -184,12 +184,14 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
     const picked = !label && picks.length === 1 && picks[0].frameId === target ? picks[0] : null;
     const x = frame ? (p.x - camera.x) / camera.zoom - frame.geometry.x : 0;
     const y = frame ? (p.y - camera.y) / camera.zoom - frame.geometry.y : 0;
-    const layer = frame && picked?.nodeId ? freshPreview(frame)?.boxes.find(box => box.id === picked.nodeId) : undefined;
+    const boxes = frame ? freshPreview(frame)?.boxes : undefined;
+    const layer = picked?.nodeId ? boxes?.find(box => box.id === picked.nodeId) : undefined;
     const inLayer = layer && (resize || intersects(layer, { x, y, width: 0, height: 0 })) ? layer : null;
     const hasLayerSelection = !label && picks.some(pick => pick.frameId === target && pick.nodeId);
     const slot = frame && inLayer ? layerSlot(frame.content.nodes, inLayer.id) : null;
     const transform = !pan && canEdit && frame && !event.shiftKey && (!hasLayerSelection || inLayer)
-      ? { frameId: frame.id, layer: inLayer, resize: !!resize, free: event.altKey, text: slot?.siblings[slot.index].kind === "text" } : undefined;
+      ? { frameId: frame.id, layer: inLayer, parent: boxes?.find(box => box.id === (slot?.parent?.id ?? frame.id)), resize: !!resize, free: event.altKey, text: slot?.siblings[slot.index].kind === "text" }
+      : undefined;
     drag.current = { id: event.pointerId, ...p, camera, revision: canvas.revision, pan, moved: false, additive: event.shiftKey, picks, target, label, transform };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -206,7 +208,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
       return;
     }
     if (d.transform) {
-      const { frameId, layer, resize, free, text } = d.transform;
+      const { frameId, layer, parent, resize, free, text } = d.transform;
       const frame = canvas.frames.find(frame => frame.id === frameId);
       if (!frame || d.revision !== canvas.revision) return;
       const sx = Math.round(dx / d.camera.zoom), sy = Math.round(dy / d.camera.zoom);
@@ -214,12 +216,19 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
         const preview = freshPreview(frame);
         if (!preview) return;
         if (!resize && !free && (text || !["absolute", "fixed"].includes(layer.styles.position))) {
+          if (!text && hasFixedGridPlacement(layer, parent)) {
+            setSelectionError("This layer has a fixed grid position. Hold Option or Alt while dragging to offset it.");
+            return;
+          }
           const slot = reorderLayer(frame, layer.id, preview.boxes, (p.x - d.camera.x) / d.camera.zoom - frame.geometry.x, (p.y - d.camera.y) / d.camera.zoom - frame.geometry.y);
-          updateDraft(slot ? { edit: { kind: "reorder", frameId, nodeId: layer.id, index: slot.index }, edge: { ...slot.edge, x: frame.geometry.x + slot.edge.x, y: frame.geometry.y + slot.edge.y } } : null);
+          updateDraft(slot ? {
+            edit: { kind: "reorder", frameId, nodeId: layer.id, index: slot.index, order: slot.order },
+            edge: { ...slot.edge, x: frame.geometry.x + slot.edge.x, y: frame.geometry.y + slot.edge.y },
+          } : null);
           return;
         }
         if (!sx && !sy) { updateDraft(null); return; }
-        const styles = resize ? resizedLayer(layer, sx, sy, text) : movedLayer(layer, sx, sy, text);
+        const styles = resize ? resizedLayer(layer, sx, sy, text, parent) : movedLayer(layer, sx, sy, text);
         const outline = resize
           ? { ...layer, x: frame.geometry.x + layer.x, y: frame.geometry.y + layer.y, width: Math.max(1, layer.width + sx), height: Math.max(1, layer.height + sy) }
           : { ...layer, x: frame.geometry.x + layer.x + sx, y: frame.geometry.y + layer.y + sy };
@@ -246,14 +255,14 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
   };
 
   const startText = (frame: Canvas["frames"][number], nodeId: string) => {
-    if (!canEdit) return false;
+    if (!canEdit || textEdit) return false;
     const slot = layerSlot(frame.content.nodes, nodeId);
     if (!slot) return false;
     const text = editableText(slot.siblings[slot.index]);
     const boxes = freshPreview(frame)?.boxes;
     const box = boxes?.find(box => box.id === text?.id) ?? boxes?.find(box => box.id === nodeId);
     if (!text || !box) return false;
-    setTextEdit({ frameId: frame.id, nodeId: text.id, revision: canvas.revision, box, initial: text.text });
+    setTextEdit({ frameId: frame.id, nodeId: text.id, revision: canvas.revision, box, origin: frame.geometry, initial: text.text });
     return true;
   };
 
@@ -303,7 +312,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
     left: camera.x + box.x * camera.zoom, top: camera.y + box.y * camera.zoom,
     width: box.width * camera.zoom, height: box.height * camera.zoom,
   });
-  const textFrame = canvas.frames.find(frame => frame.id === textEdit?.frameId);
+  const textOrigin = textEdit && (canvas.frames.find(frame => frame.id === textEdit.frameId)?.geometry ?? textEdit.origin);
   return <div ref={root} role="region" aria-label="Canvas board" tabIndex={0} data-owns-keys data-canvas-selection className="canvas-board relative min-h-0 min-w-0 flex-1 touch-none overflow-hidden select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     style={{ backgroundSize: `${Math.max(6, 24 * camera.zoom)}px ${Math.max(6, 24 * camera.zoom)}px`, backgroundPosition: `${camera.x}px ${camera.y}px` }}
     data-tool={tool === "hand" || space ? "hand" : "select"} data-camera={JSON.stringify(camera)} data-preview-count={stats.cached} data-preview-bytes={stats.bytes} data-captures={stats.captures}
@@ -314,7 +323,12 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
       hitTest.current?.abort(); setSelectionError(null);
       if (event.key === " ") { event.preventDefault(); setSpace(true); }
       else if (!event.metaKey && !event.ctrlKey && !event.altKey && ["v", "h"].includes(event.key.toLowerCase())) { event.preventDefault(); setTool(event.key.toLowerCase() === "h" ? "hand" : "select"); }
-      else if (event.key === "Escape") { event.preventDefault(); if (drag.current) { cancelDrag(); return; } onPicks(picks.some((p) => p.nodeId) ? [...new Set(picks.map((p) => p.frameId))].map((frameId) => ({ frameId, nodeId: null })) : []); }
+      else if (event.key === "Escape") {
+        event.preventDefault();
+        if (drag.current) { cancelDrag(); return; }
+        if (textEdit) { setTextEdit(null); return; }
+        onPicks(picks.some((p) => p.nodeId) ? [...new Set(picks.map((p) => p.frameId))].map((frameId) => ({ frameId, nodeId: null })) : []);
+      }
       else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
         event.preventDefault();
         const index = canvas.frames.findIndex((f) => f.id === focusedId);
@@ -355,12 +369,15 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
       </div>;
     })}
     {painted?.edge && <div aria-hidden className="canvas-insertion" style={screen(painted.edge)} />}
-    {textEdit && textFrame && <InlineCanvasText key={textEdit.nodeId} edit={textEdit} zoom={camera.zoom}
-      position={screen({ ...textEdit.box, x: textFrame.geometry.x + textEdit.box.x, y: textFrame.geometry.y + textEdit.box.y })}
-      onFinish={(value) => {
+    {textEdit && textOrigin && <InlineCanvasText key={textEdit.nodeId} edit={textEdit} zoom={camera.zoom}
+      position={screen({ ...textEdit.box, x: textOrigin.x + textEdit.box.x, y: textOrigin.y + textEdit.box.y })}
+      onFinish={async (value) => {
+        if (value !== null && value !== textEdit.initial) {
+          const saved = await edit?.commit({ kind: "text", frameId: textEdit.frameId, nodeId: textEdit.nodeId, text: value, previous: textEdit.initial }, textEdit.revision);
+          if (!saved) return;
+        }
         setTextEdit(null);
         root.current?.focus({ preventScroll: true });
-        if (value !== null && value !== textEdit.initial) edit?.commit({ kind: "text", frameId: textEdit.frameId, nodeId: textEdit.nodeId, text: value }, textEdit.revision);
       }} onBlur={() => setTextEdit(null)} />}
     {marquee && <div className="pointer-events-none absolute border border-accent-mention bg-accent-mention/10" style={{ left: camera.x + marquee.x * camera.zoom, top: camera.y + marquee.y * camera.zoom, width: marquee.width * camera.zoom, height: marquee.height * camera.zoom }} />}
     {!canvas.frames.length && <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground"><p>Add a frame to start designing</p><Button variant="secondary" size="sm" className="pointer-events-auto" onClick={onNewFrame}><Plus />New frame</Button></div>}
@@ -378,7 +395,7 @@ export default function CanvasBoard({ canvas, active, picks, onPicks, previews, 
             <DropdownMenuItem disabled={!edit.canCopy} onSelect={edit.copy}>Copy layers <kbd className="ml-auto text-xs text-muted-foreground">{IS_MAC ? "⌘C" : "Ctrl+C"}</kbd></DropdownMenuItem>
             <DropdownMenuItem onSelect={edit.paste}>Paste layers <kbd className="ml-auto text-xs text-muted-foreground">{IS_MAC ? "⌘V" : "Ctrl+V"}</kbd></DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={!picks.length} onSelect={edit.duplicate}>Duplicate <kbd className="ml-auto text-xs text-muted-foreground">{IS_MAC ? "⌘D" : "Ctrl+D"}</kbd></DropdownMenuItem>
+            <DropdownMenuItem disabled={!picks.length} onSelect={edit.duplicate}>Duplicate <ShortcutKeys ids={["canvas.duplicate"]} className="ml-auto" /></DropdownMenuItem>
             <DropdownMenuItem disabled={!picks.length} onSelect={edit.remove}>Delete selection</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -398,22 +415,27 @@ function InlineCanvasText({ edit, position, zoom, onFinish, onBlur }: {
   edit: TextEdit;
   position: { left: number; top: number; width: number; height: number };
   zoom: number;
-  onFinish(value: string | null): void;
+  onFinish(value: string | null): Promise<void>;
   onBlur(): void;
 }) {
   const [text, setText] = useState(edit.initial);
+  const [saving, setSaving] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => { input.current?.focus({ preventScroll: true }); input.current?.select(); }, []);
   const styles = edit.box.styles;
   return <textarea ref={input} aria-label="Edit layer text" className="canvas-inline-text" value={text} spellCheck={false}
     style={{ ...position, width: Math.max(120, position.width + 12), minHeight: Math.max(28, position.height + 8), fontFamily: styles["font-family"], fontWeight: styles["font-weight"], fontSize: Math.max(12, (parseFloat(styles["font-size"]) || 16) * zoom) }}
-    onChange={(event) => setText(event.target.value)} onBlur={onBlur}
+    onChange={(event) => setText(event.target.value)} readOnly={saving} onBlur={() => { if (!saving && text === edit.initial) onBlur(); }}
     onKeyDown={(event) => {
-      if (event.nativeEvent.isComposing) return;
+      if (event.nativeEvent.isComposing || saving) return;
       if (event.key === "Escape" || event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
-        onFinish(event.key === "Enter" ? text : null);
+        if (event.key === "Escape") void onFinish(null);
+        else {
+          setSaving(true);
+          void onFinish(text).finally(() => setSaving(false));
+        }
       }
     }} />;
 }

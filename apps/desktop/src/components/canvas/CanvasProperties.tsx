@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { frameStyles, type CanvasEditIntent } from "@/lib/canvasEditing";
+import { frameStyles, resolveCanvasToken, sizedStyle, type CanvasEditIntent } from "@/lib/canvasEditing";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { invoke } from "@/lib/transport";
 import type { BrowserCaptureDetails, CanvasAssetData, CanvasFrame, CanvasNode, CanvasTokenCatalog, CanvasTokenSource } from "@/types/events";
@@ -13,11 +13,12 @@ type CapturedTokenSource = { checkout: CanvasTokenSource | null; theme: string[]
 type CapturedTokenLink = { names: string[]; value: string; unavailableAtCapture?: string[] };
 
 export default function CanvasProperties({
-  frame, node, box, count, canvasId, owner, catalog, tokenError, tokens, revision, busy, onEdit,
+  frame, node, box, parentStyles, count, canvasId, owner, catalog, tokenError, tokens, revision, busy, onEdit,
 }: {
   frame: CanvasFrame | null;
   node: CanvasNode | null;
   box: Box | null;
+  parentStyles?: Record<string, string>;
   count: number;
   canvasId?: string;
   owner?: string;
@@ -41,8 +42,18 @@ export default function CanvasProperties({
 
   const authored = node?.kind === "element" ? node.styles : node ? {} : frameStyles(frame);
   const computed: Record<string, string> = { ...styles, padding: sides(styles, "padding") };
-  const options = new Map(catalog?.tokens.map(token => [token.name, token.value]));
-  for (const [key, value] of Object.entries(tokens ?? {})) options.set(key, value);
+  const declarations = new Map<string, string>();
+  const defaults = new Set<string>();
+  for (const { name, value, scope } of catalog?.tokens ?? []) {
+    const unscoped = scope.every(part => /^(?::root|html|@(?:theme|layer|property)\b)/.test(part));
+    if (!declarations.has(name) || unscoped && !defaults.has(name)) declarations.set(name, value);
+    if (unscoped) defaults.add(name);
+  }
+  for (const [key, value] of Object.entries(tokens ?? {})) declarations.set(key, value);
+  const options = new Map([...declarations.keys()].flatMap(name => {
+    const fallback = resolveCanvasToken(name, declarations);
+    return fallback && !/[;{}]|url\s*\(/i.test(fallback) ? [[name, fallback] as const] : [];
+  }));
   const enabled = !busy && revision !== undefined && !!onEdit;
   const scope = `${frame.id}:${node?.id ?? ""}`;
   const field = (property: string, label: string) => <PropertyInput
@@ -57,7 +68,9 @@ export default function CanvasProperties({
     }}
     onCommit={(value, basis) => onEdit?.({
       kind: "style", frameId: frame.id, nodeId: node?.id ?? null, label: `Change ${label.toLowerCase()}`,
-      styles: { ...(node && ["width", "height"].includes(property) && styles.display === "inline" && { display: "inline-block" }), [property]: value },
+      styles: node && (property === "width" || property === "height")
+        ? { ...(styles.display === "inline" && { display: "inline-block" }), ...sizedStyle(property, value, parentStyles, node.kind === "text" ? "static" : styles.position) }
+        : { [property]: value },
     }, basis)}
   />;
   const geometry = (axis: "x" | "y" | "width" | "height", label: string) => <PropertyInput
