@@ -25,7 +25,6 @@ pub mod agent_updates;
 pub mod analytics;
 pub mod apps;
 pub mod attachments;
-pub mod inspection;
 pub mod auto_continue;
 pub mod binpath;
 #[cfg(all(feature = "cef", target_os = "macos"))]
@@ -49,13 +48,8 @@ pub mod headless;
 #[cfg_attr(not(any(feature = "cef", feature = "serve")), allow(dead_code))]
 pub mod recording;
 mod local_servers;
-pub mod preview;
-#[cfg(any(feature = "serve", feature = "desktop"))]
-pub mod preview_tunnel;
 pub mod docs;
 pub mod pages;
-#[path = "canvas/canvas.rs"]
-pub mod canvas;
 pub mod pages_linear;
 pub mod pages_sync;
 pub mod download;
@@ -221,7 +215,6 @@ async fn send_msg(
     // composer. `None` for everything else the composer sends.
     base_ref: Option<&str>,
     is_new_session: bool,
-    canvas_context: Option<canvas::CanvasFocus>,
     sink: Sink,
 ) -> Result<SendOutcome, Fail> {
     // The tolerant `Deserialize` reads a name this build doesn't know as
@@ -251,44 +244,41 @@ async fn send_msg(
         _ => None,
     };
 
-    let outcome = canvas::with_focus(
-        canvas_context,
-        manager()
-            .send_msg(
-                session_id,
-                prompt,
-                &attachment_paths,
-                // Nothing named, ever: the app tags its issues in the prompt
-                // text, the composer's `#` picker being the only route, so there is
-                // one rule on this side of the bridge. `--issue` on the CLI is the
-                // other caller, and it names them because a flag is not prose.
-                &[],
-                harness,
-                model,
-                effort,
-                permission_mode,
-                fast,
-                cwd,
-                branch,
-                use_worktree,
-                worktree_name,
-                // The composer offers no base ref of its own: a worktree session
-                // created there is one the reader is starting fresh, and the picker
-                // hides the branch list in worktree mode because `-w` would not
-                // honour it. Only a draft carrying one hands it through.
-                base_ref.as_deref(),
-                is_new_session,
-                // The composer never has a parent, and its prompts are the user's
-                // own; only the orchestration socket sets either — or hides one.
-                None,
-                false,
-                None,
-                None,
-                None,
-                &sink,
-            ),
-    )
-    .await?;
+    let outcome = manager()
+        .send_msg(
+            session_id,
+            prompt,
+            &attachment_paths,
+            // Nothing named, ever: the app tags its issues in the prompt
+            // text, the composer's `#` picker being the only route, so there is
+            // one rule on this side of the bridge. `--issue` on the CLI is the
+            // other caller, and it names them because a flag is not prose.
+            &[],
+            harness,
+            model,
+            effort,
+            permission_mode,
+            fast,
+            cwd,
+            branch,
+            use_worktree,
+            worktree_name,
+            // The composer offers no base ref of its own: a worktree session
+            // created there is one the reader is starting fresh, and the picker
+            // hides the branch list in worktree mode because `-w` would not
+            // honour it. Only a draft carrying one hands it through.
+            base_ref.as_deref(),
+            is_new_session,
+            // The composer never has a parent, and its prompts are the user's
+            // own; only the orchestration socket sets either — or hides one.
+            None,
+            false,
+            None,
+            None,
+            None,
+            &sink,
+        )
+        .await?;
     // The new entry rides back to the caller alone, so every other client — the
     // app beside an Island or a phone that started it — hears of it as `carbon new`'s
     // sessions are heard of. The caller's own copy replaces itself.
@@ -1010,7 +1000,6 @@ pub fn run() {
             servers::ignore_server_update,
             servers::check_server_update,
             servers::forward_port,
-            servers::preview_forward,
             servers::add_ssh_server,
             servers::set_server_on,
             servers::rename_server,
@@ -1047,10 +1036,6 @@ pub fn run() {
             cef::browser_devtools,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_pick,
-            #[cfg(all(feature = "cef", target_os = "macos"))]
-            cef::browser_inspect_add,
-            #[cfg(all(feature = "cef", target_os = "macos"))]
-            cef::browser_capture_frame,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_snapshot,
             #[cfg(all(feature = "cef", target_os = "macos"))]

@@ -116,9 +116,6 @@ pub enum AgentEventPayload {
     // ---------- conversation ----------
     UserMessage {
         text: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
-        canvas_refs: Option<Vec<crate::canvas::CanvasReference>>,
         #[serde(default)]
         images: Vec<ImageRef>,
         /// The issues this prompt was tagged with, resolved against the tracker
@@ -962,8 +959,7 @@ mod tests {
                 ref issues,
                 ref mcp_servers,
                 ref cwd,
-                ref canvas_refs,
-            } if text == "hi" && canvas_refs.is_none()
+            } if text == "hi"
                 && images.is_empty()
                 && baseline.is_none()
                 && cwd.is_none()

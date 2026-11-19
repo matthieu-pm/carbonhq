@@ -15,10 +15,10 @@
 
 #[path = "orchestration/discovery.rs"]
 mod discovery;
-#[path = "orchestration/inbox.rs"]
-pub(crate) mod inbox;
 #[path = "orchestration/receipts.rs"]
 pub(crate) mod receipts;
+#[path = "orchestration/inbox.rs"]
+pub(crate) mod inbox;
 #[path = "orchestration/tasks.rs"]
 pub(crate) mod tasks;
 
@@ -320,12 +320,6 @@ fn session_named(request: &Request) -> Option<&str> {
         Request::SetAside(r) => Some(&r.session_id),
         Request::Share(r) => Some(&r.session_id),
         Request::Browser(r) => Some(&r.session_id),
-        Request::Canvas(r) => Some(&r.session_id),
-        Request::Preview(
-            carbon_proto::PreviewRequest::Start { session_id, .. }
-            | carbon_proto::PreviewRequest::Stop { session_id }
-            | carbon_proto::PreviewRequest::Url { session_id }
-            | carbon_proto::PreviewRequest::Logs { session_id }) => Some(session_id),
         Request::Secret(carbon_proto::SecretRequest::Create { session_id, .. }
             | carbon_proto::SecretRequest::Status { session_id, .. }
             | carbon_proto::SecretRequest::Cancel { session_id, .. }) => Some(session_id),
@@ -807,11 +801,6 @@ async fn dispatch(request: Request, app: &Sink) -> Result<Response> {
 
 async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::OperationReceipt>, app: &Sink) -> Result<Response> {
     match request {
-        Request::Canvas(request) => Ok(Response::Canvas {
-            data: Box::pin(crate::canvas::request(request, app))
-                .await
-                .map_err(anyhow::Error::msg)?,
-        }),
         Request::Discover(request) => discovery::request(request, app).await,
         Request::Recovery(request) => {
             use carbon_proto::RecoveryRequest;
@@ -832,7 +821,6 @@ async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::Operati
         Request::SendMessage(send) => send_message(send, None, receipt, app).await,
         Request::LinkIssues(link) => link_issues(link, app).await,
         Request::WriteIssue(write) => write_issue(write, app).await,
-        Request::Preview(request) => Ok(crate::preview::request(request, app).await),
         Request::Secret(request) => Ok(Response::Secret {
             data: crate::secrets::request(request, app).await.map_err(anyhow::Error::msg)?,
         }),
@@ -2284,20 +2272,4 @@ mod tests {
             assert!(err.contains(&harness.wire_name()), "{err} omits a harness");
         }
     }
-}
-
-/// Canvas previews use the session's ordinary browser, including the app's CEF host.
-pub async fn drive_canvas_browser(
-    session: &str,
-    action: carbon_proto::BrowserAction,
-) -> Result<Response> {
-    let request = Request::Browser(carbon_proto::BrowserRequest {
-        session_id: session.into(),
-        action,
-    });
-    #[cfg(feature = "desktop")]
-    if crate::is_server() {
-        return ask_app(request).await;
-    }
-    answer_on_screen(request).await
 }

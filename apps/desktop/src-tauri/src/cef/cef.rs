@@ -929,7 +929,7 @@ fn sweep() {
     let candidates: Vec<i32> = candidates
         .into_iter()
         .filter(|(id, session)| {
-            !picking.contains_key(id) && automation::parked(*id).is_none() && !automation::driving(session)
+            !picking.contains(id) && automation::parked(*id).is_none() && !automation::driving(session)
         })
         .map(|(id, _)| id)
         .collect();
@@ -1029,7 +1029,7 @@ wrap_client! {
             Some(CarbonLoad::new(self.tab))
         }
         fn keyboard_handler(&self) -> Option<KeyboardHandler> {
-            Some(CarbonKeyboard::new(self.tab))
+            Some(CarbonKeyboard::new())
         }
         fn focus_handler(&self) -> Option<FocusHandler> {
             Some(CarbonFocus::new(self.session.clone()))
@@ -1121,7 +1121,6 @@ wrap_life_span_handler! {
                 host.close_browser(1);
                 return;
             }
-            automation::navigated(id);
             if self.activate || active_id(&self.session).is_none() {
                 set_active(&self.session, Some(id));
             }
@@ -1223,7 +1222,6 @@ wrap_life_span_handler! {
 /// Takes a tab's entry out, for a close. The active tab passes to the last
 /// one left.
 fn remove_tab(session: &str, id: i32) {
-    automation::forget_canvas(id);
     let remaining = {
         let mut tabs = TABS.lock().unwrap();
         tabs.retain(|t| t.id != id);
@@ -1331,7 +1329,6 @@ wrap_display_handler! {
                 history::visit(&session, &url);
             }
             update_tab(self.tab, |t| t.url = url);
-            automation::navigated(self.tab);
         }
         fn on_title_change(&self, _browser: Option<&mut Browser>, title: Option<&CefString>) {
             let title = title.map(CefString::to_string).unwrap_or_default();
@@ -1374,28 +1371,20 @@ wrap_display_handler! {
                 automation::log(self.tab, error, text);
                 return 0;
             };
-            let Ok(message) = serde_json::from_str::<PickerMessage>(rest) else { return 1 };
-            let accepted = current_picker(self.tab).is_some_and(|picker|
-                picker.nonce == message.document_id && picker.context.is_some() == message.canvas);
-            if !accepted || message.count > 20 { return 1; }
-            if !matches!(message.action.as_str(), "change" | "cancel")
-                && !(message.canvas && matches!(message.action.as_str(), "capture_element" | "capture_page"))
-            {
+            let id = self.tab;
+            // Any page can log the prefix; only a tab whose picker this app
+            // started is listened to, once, and only a payload of the shape
+            // `PICK_JS` writes — `null` for a cancel. Parsed before the gate
+            // is spent, so a malformed line costs nothing. A binding through
+            // the render process would be the trusted channel; this is the
+            // gate until there is one.
+            let Ok(element) = serde_json::from_str::<Option<PickedElement>>(rest) else { return 1 };
+            if !PICKING.lock().unwrap().get_or_insert_with(HashSet::new).remove(&id) {
                 return 1;
             }
-            if message.action == "cancel" {
-                PICKING.lock().unwrap().as_mut().map(|p| p.remove(&self.tab));
-            }
-            if let (Some(app), Some(session)) = (APP.get(), session_of(self.tab)) {
-                if message.canvas && matches!(message.action.as_str(), "capture_element" | "capture_page") {
-                    let _ = app.emit("browser_canvas_pick", serde_json::json!({
-                        "sessionId": session, "tabId": self.tab, "fullPage": message.action == "capture_page",
-                    }));
-                }
-                let _ = app.emit("browser_pick", PickEvent {
-                    session_id: session, tab_id: self.tab, count: message.count,
-                    active: message.action != "cancel", canvas: message.canvas,
-                });
+            let Some(session) = session_of(id) else { return 1 };
+            if let Some(app) = APP.get() {
+                let _ = app.emit("browser_pick", PickEvent { session_id: session, element });
             }
             1
         }
@@ -1454,37 +1443,21 @@ const BG_JS: &str = r#"(() => {
   report();
 })();"#;
 
-#[derive(Clone)]
-struct Picker {
-    nonce: String,
-    context: Option<i64>,
-}
+/// Tabs whose picker is running. An entry is spent by the first pick line,
+/// and dropped by a navigation or a close, since the script that would
+/// write one is gone with the document.
+static PICKING: Mutex<Option<HashSet<i32>>> = Mutex::new(None);
 
-/// Capture keeps its nonce and selected element in the isolated world.
-static PICKING: Mutex<Option<HashMap<i32, Picker>>> = Mutex::new(None);
-
-fn current_picker(tab: i32) -> Option<Picker> {
-    PICKING.lock().unwrap().as_ref()?.get(&tab).cloned()
-}
-
-/// Navigation and closing discard the old document's selection rather than retarget it.
+/// Disarms a tab's picker and tells the pane, so its button does not stay
+/// pressed for a picker that no longer exists. From `on_load_start` on the
+/// main frame and from `on_before_close`.
 fn disarm_picker(id: i32) {
-    disarm_picker_if(id, None);
-}
-
-fn disarm_picker_if(id: i32, nonce: Option<&str>) {
-    let was = {
-        let mut picking = PICKING.lock().unwrap();
-        picking.as_mut().is_some_and(|pickers| {
-            if nonce.is_some() && pickers.get(&id).map(|p| p.nonce.as_str()) != nonce { return false; }
-            pickers.remove(&id).is_some()
-        })
-    };
-    if !was { return; }
+    let was = PICKING.lock().unwrap().as_mut().map(|s| s.remove(&id)).unwrap_or(false);
+    if !was {
+        return;
+    }
     if let (Some(app), Some(session)) = (APP.get(), session_of(id)) {
-        let _ = app.emit("browser_pick", PickEvent {
-            session_id: session, tab_id: id, count: 0, active: false, canvas: false,
-        });
+        let _ = app.emit("browser_pick", PickEvent { session_id: session, element: None });
     }
 }
 
@@ -1492,23 +1465,115 @@ fn disarm_picker_if(id: i32, nonce: Option<&str>) {
 #[serde(rename_all = "camelCase")]
 struct PickEvent {
     session_id: String,
-    tab_id: i32,
-    count: usize,
-    active: bool,
-    canvas: bool,
+    /// `None` is a cancel.
+    element: Option<PickedElement>,
 }
 
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PickerMessage {
-    document_id: String,
-    count: usize,
-    action: String,
-    #[serde(default)]
-    canvas: bool,
+/// What `PICK_JS` reports, typed so a page cannot hand the composer an
+/// arbitrary object. Mirrors `PickedElement` in browser.ts.
+#[derive(Clone, Serialize, serde::Deserialize)]
+struct PickedElement {
+    url: String,
+    title: String,
+    selector: String,
+    tag: String,
+    text: String,
+    attrs: HashMap<String, String>,
+    rect: PickRect,
+    styles: PickStyles,
 }
 
-const PICK_JS: &str = include_str!("inspect.js");
+#[derive(Clone, Serialize, serde::Deserialize)]
+struct PickRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[derive(Clone, Serialize, serde::Deserialize)]
+struct PickStyles {
+    color: String,
+    background: String,
+    font: String,
+}
+
+/// Injected into the page to pick an element: a highlight follows the
+/// pointer, a click reports the element under it and stops, Escape stops.
+/// Everything it needs to say goes out through `console.log` with
+/// `PICK_PREFIX`; see `on_console_message`. Re-running it replaces a live one.
+const PICK_JS: &str = r#"(() => {
+  if (window.__carbonPick) window.__carbonPick.stop();
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #f5c400;background:rgba(245,196,0,.12);border-radius:3px;transition:all 40ms;';
+  document.documentElement.appendChild(box);
+  const say = (v) => console.log('__carbon_pick__' + (v ? JSON.stringify(v) : 'null'));
+  const selectorOf = (el) => {
+    const parts = [];
+    for (let e = el, i = 0; e && e.nodeType === 1 && i < 5; e = e.parentElement, i++) {
+      let s = e.tagName.toLowerCase();
+      if (e.id) { parts.unshift(s + '#' + CSS.escape(e.id)); break; }
+      const cls = [...e.classList].filter(c => !/^[a-z]+-\[|:/.test(c)).slice(0, 2);
+      if (cls.length) s += '.' + cls.map(CSS.escape).join('.');
+      const p = e.parentElement;
+      if (p) {
+        const same = [...p.children].filter(c => c.tagName === e.tagName);
+        if (same.length > 1) s += ':nth-of-type(' + (same.indexOf(e) + 1) + ')';
+      }
+      parts.unshift(s);
+    }
+    return parts.join(' > ');
+  };
+  const at = (ev) => {
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    return el && el !== box ? el : null;
+  };
+  const move = (ev) => {
+    const el = at(ev);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    box.style.left = r.left + 'px'; box.style.top = r.top + 'px';
+    box.style.width = r.width + 'px'; box.style.height = r.height + 'px';
+  };
+  // The press is swallowed on both edges and the pick made on the click,
+  // so the page never sees a click on the element that was picked.
+  const block = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+  const click = (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const el = at(ev);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    say({
+      url: location.href,
+      title: document.title,
+      selector: selectorOf(el),
+      tag: el.tagName.toLowerCase(),
+      text: (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 200),
+      attrs: Object.fromEntries(['id','class','role','aria-label','name','href','src','type','placeholder'].filter(a => el.getAttribute(a)).map(a => [a, el.getAttribute(a).slice(0, 120)])),
+      rect: { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) },
+      styles: { color: cs.color, background: cs.backgroundColor, font: cs.fontSize + ' ' + cs.fontFamily.split(',')[0] },
+    });
+    stop();
+  };
+  const key = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); say(null); stop(); } };
+  const opts = { capture: true };
+  const stop = () => {
+    document.removeEventListener('mousemove', move, opts);
+    document.removeEventListener('click', click, opts);
+    document.removeEventListener('mousedown', block, opts);
+    document.removeEventListener('mouseup', block, opts);
+    document.removeEventListener('keydown', key, opts);
+    box.remove();
+    delete window.__carbonPick;
+  };
+  document.addEventListener('mousemove', move, opts);
+  document.addEventListener('mousedown', block, opts);
+  document.addEventListener('mouseup', block, opts);
+  document.addEventListener('click', click, opts);
+  document.addEventListener('keydown', key, opts);
+  window.__carbonPick = { stop };
+})();"#;
 
 wrap_load_handler! {
     struct CarbonLoad {
@@ -1608,9 +1673,7 @@ struct ForwardedKey {
 }
 
 wrap_keyboard_handler! {
-    struct CarbonKeyboard {
-        tab: i32,
-    }
+    struct CarbonKeyboard;
 
     impl KeyboardHandler {
         fn on_pre_key_event(
@@ -1645,8 +1708,7 @@ wrap_keyboard_handler! {
                     _ => {}
                 }
             }
-            let inspecting = PICKING.lock().unwrap().as_ref().is_some_and(|p| p.contains_key(&self.tab));
-            if !shift && !alt && !ctrl && PAGE_CHORDS.contains(&ch) && !(ch == 'l' && inspecting) {
+            if !shift && !alt && !ctrl && PAGE_CHORDS.contains(&ch) {
                 return 0;
             }
             let (key, code) = match event.windows_key_code {
@@ -2111,164 +2173,22 @@ pub fn browser_devtools(session_id: String) -> Result<(), String> {
 /// Starts or stops the element picker in the active tab. The pick itself
 /// arrives as a `browser_pick` event.
 #[tauri::command]
-pub async fn browser_pick(session_id: String, tab_id: i32, start: bool, canvas: Option<bool>) -> Result<(), String> {
-    if session_of(tab_id).as_deref() != Some(session_id.as_str()) {
-        return Err("The inspection tab is no longer open".into());
-    }
-    if start && canvas.unwrap_or(false) {
-        let context = automation::capture_context(tab_id).await?;
-        let picker = Picker { nonce: uuid::Uuid::new_v4().to_string(), context: Some(context) };
-        PICKING.lock().unwrap().get_or_insert_with(HashMap::new).insert(tab_id, picker.clone());
-        let code = PICK_JS.replace("__CARBON_DOCUMENT_ID__", &picker.nonce).replace("__CARBON_PICK_MODE__", "capture");
-        if let Err(error) = automation::eval_context(tab_id, &code, picker.context).await {
-            disarm_picker_if(tab_id, Some(&picker.nonce));
-            return Err(error);
-        }
-        return Ok(());
-    }
-    if !start {
-        if let Some(picker) = current_picker(tab_id).filter(|p| p.context.is_some()) {
-            stop_canvas_picker(tab_id, &picker).await;
-            return Ok(());
-        }
-    }
+pub fn browser_pick(session_id: String, start: bool) -> Result<(), String> {
     on_main(move || {
-        let id = tab_id;
+        let Some(id) = active_id(&session_id) else { return };
         let Some(frame) = browser_of(id).and_then(|b| b.main_frame()) else { return };
-        let nonce = uuid::Uuid::new_v4().to_string();
         {
             let mut picking = PICKING.lock().unwrap();
-            let map = picking.get_or_insert_with(HashMap::new);
-            if start { map.insert(id, Picker { nonce: nonce.clone(), context: None }); } else { map.remove(&id); }
-        }
-        let code = if start {
-            PICK_JS.replace("__CARBON_DOCUMENT_ID__", &nonce).replace("__CARBON_PICK_MODE__", "inspect")
-        } else {
-            "window.__carbonPick?.stop()".into()
-        };
-        frame.execute_java_script(Some(&CefString::from(code.as_str())), None, 0);
-        if !start {
-            if let Some(app) = APP.get() {
-                let _ = app.emit("browser_pick", PickEvent {
-                    session_id, tab_id: id, count: 0, active: false, canvas: false,
-                });
+            let set = picking.get_or_insert_with(HashSet::new);
+            if start {
+                set.insert(id);
+            } else {
+                set.remove(&id);
             }
         }
+        let code = if start { PICK_JS } else { "window.__carbonPick && window.__carbonPick.stop()" };
+        frame.execute_java_script(Some(&CefString::from(code)), None, 0);
     })
-}
-
-/// Append to the chosen canvas only after the named session's picked document is captured.
-#[tauri::command]
-pub async fn browser_capture_frame(
-    sink: crate::sink::Sink, session_id: String, tab_id: i32, canvas_id: String, full_page: bool,
-) -> Result<String, String> {
-    if session_of(tab_id).as_deref() != Some(session_id.as_str()) {
-        return Err("The capture tab is no longer open.".into());
-    }
-    let picker = current_picker(tab_id).filter(|p| p.context.is_some())
-        .ok_or("Capture is no longer active in this tab.")?;
-    let session = crate::store::get_session_index_item(&session_id).await.map_err(|e| e.to_string())?
-        .ok_or("Open a project session to capture to Canvas.")?;
-    let result = automation::capture_screen(tab_id, None, Some(automation::ScreenPick {
-        nonce: &picker.nonce, context: picker.context.unwrap(), full_page,
-    }), Some(crate::canvas::tokens::CanvasTokenSource::session(&session))).await;
-    stop_canvas_picker(tab_id, &picker).await;
-    result?.add_to_canvas(&sink, &session.project_path, &canvas_id).await
-}
-
-async fn stop_canvas_picker(tab: i32, picker: &Picker) {
-    let guard = serde_json::json!(picker.nonce);
-    let code = format!("window.__carbonPick?.documentId === {guard} && window.__carbonPick.stop()");
-    let _ = automation::eval_context(tab, &code, picker.context).await;
-    disarm_picker_if(tab, Some(&picker.nonce));
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PickBatch {
-    document_id: String,
-    revision: u64,
-    items: Vec<crate::inspection::InspectContext>,
-}
-
-/// Captures only the named tab and document; a navigation fails instead of moving the pick.
-#[tauri::command]
-pub async fn browser_inspect_add(session_id: String, tab_id: i32) -> Result<Vec<crate::attachments::Attachment>, String> {
-    let _held = automation::CAPTURING.lock().await;
-    if session_of(tab_id).as_deref() != Some(session_id.as_str()) {
-        return Err("The inspection tab is no longer open".into());
-    }
-    let nonce = current_picker(tab_id).filter(|p| p.context.is_none()).map(|p| p.nonce)
-        .ok_or("Inspect is no longer active in this tab")?;
-    let batch = automation::eval(tab_id, "window.__carbonPick?.capture()").await;
-    let revision = batch.as_ref().ok().and_then(|v| v["revision"].as_u64()).unwrap_or(0);
-    let result = match batch {
-        Ok(value) => capture_picks(tab_id, &nonce, value).await,
-        Err(error) => Err(error),
-    };
-    let finish = format!("window.__carbonPick?.documentId === {} && window.__carbonPick.finish({}, {})",
-        serde_json::to_string(&nonce).unwrap(), revision, result.is_ok());
-    let _ = automation::eval(tab_id, &finish).await;
-    result
-}
-
-/// Keeps overlays out of the pixels and checks the document again after every screenshot.
-async fn capture_picks(tab: i32, nonce: &str, value: serde_json::Value) -> Result<Vec<crate::attachments::Attachment>, String> {
-    let batch: PickBatch = serde_json::from_value(value).map_err(|e| e.to_string())?;
-    if batch.document_id != nonce || batch.items.len() > 20 {
-        return Err("The inspected page changed; select the elements again".into());
-    }
-    let check = format!("window.__carbonPick?.documentId === {} && window.__carbonPick.valid({})",
-        serde_json::to_string(nonce).unwrap(), batch.revision);
-    let mut captures = Vec::new();
-    for mut context in batch.items {
-        let r = &context.bounds;
-        let w = context.viewport.width;
-        let h = context.viewport.height;
-        if ![r.x, r.y, r.width, r.height, w, h].iter().all(|n| n.is_finite()) || w <= 0.0 || h <= 0.0 {
-            return Err("The selection has invalid bounds".into());
-        }
-        let right = (r.x + r.width).clamp(0.0, w);
-        let bottom = (r.y + r.height).clamp(0.0, h);
-        let crop = crate::inspection::InspectBounds {
-            x: r.x.clamp(0.0, w), y: r.y.clamp(0.0, h),
-            width: right - r.x.clamp(0.0, w), height: bottom - r.y.clamp(0.0, h),
-        };
-        if crop.width <= 0.0 || crop.height <= 0.0 { return Err("The selected element is outside the viewport".into()); }
-        let metrics = automation::cdp(tab, "Page.getLayoutMetrics", serde_json::json!({})).await?;
-        let vp = &metrics["cssVisualViewport"];
-        let params = serde_json::json!({
-            "format": "jpeg", "quality": 85, "captureBeyondViewport": false,
-            "clip": { "x": crop.x + vp["pageX"].as_f64().unwrap_or(0.0), "y": crop.y + vp["pageY"].as_f64().unwrap_or(0.0),
-                "width": crop.width, "height": crop.height, "scale": 1 },
-        });
-        let image = automation::cdp(tab, "Page.captureScreenshot", params).await?;
-        if automation::eval(tab, &check).await? != serde_json::Value::Bool(true) {
-            return Err("The inspected page changed during capture; select the elements again".into());
-        }
-        context.page_path = context.page_path.split(['?', '#']).next().unwrap_or("/").to_string();
-        if context.kind == "region" {
-            context.selector = None;
-            context.markup = None;
-            context.styles.clear();
-            context.source = crate::inspection::InspectSource {
-                confidence: crate::inspection::SourceConfidence::Unavailable,
-                file: None, line: None, framework: None,
-            };
-        } else if context.kind != "element" {
-            return Err("Unknown inspection selection kind".into());
-        }
-        context.screenshot_bounds = Some(crop);
-        context.tab_id = tab;
-        context.document_id = nonce.to_string();
-        let data = image["data"].as_str().ok_or("No inspection screenshot came back")?.to_string();
-        captures.push((context, data));
-    }
-    let mut attachments = Vec::new();
-    for (context, data) in captures {
-        attachments.push(crate::inspection::save(context, data).await.map_err(|e| e.to_string())?);
-    }
-    Ok(attachments)
 }
 
 /// Closes every tab a session holds, for settle and delete.
@@ -2283,7 +2203,6 @@ pub fn close_session(session_id: &str) {
             // is closed by `on_after_created` on seeing `closing`.
             for t in tabs.iter_mut().filter(|t| t.session == session_id) {
                 t.closing = true;
-                automation::forget_canvas(t.id);
             }
             tabs.retain(|t| t.session != session_id || !t.discarded || t.browser.is_some());
             tabs.iter().filter(|t| t.session == session_id).filter_map(|t| t.browser.clone()).collect()

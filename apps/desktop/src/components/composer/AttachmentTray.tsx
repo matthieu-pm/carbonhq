@@ -1,8 +1,5 @@
 import { X } from "lucide-react";
 
-import InspectionChip from "@/components/composer/InspectionChip";
-import CanvasReferenceChip from "@/components/canvas/CanvasReferenceChip";
-import { replaceAttachment } from "@/hooks/useAttachments";
 import FileIcon from "@/components/FileIcon";
 import { LOCAL, type ServerId } from "@/lib/transport";
 import { useUpload } from "@/lib/uploads";
@@ -24,7 +21,6 @@ export default function AttachmentTray({
   server,
   onRemove,
   modelTakesImages,
-  attachmentKey,
 }: {
   attachments: Attachment[];
   /// Where the composer sends. A remote one is uploaded to as tiles are
@@ -34,7 +30,6 @@ export default function AttachmentTray({
   /// Whether the picked model can be handed an image at all. Some pi models
   /// report `input: ["text"]` and mean it.
   modelTakesImages: boolean;
-  attachmentKey: string | null;
 }) {
   // Said, not enforced. The image is still sent, because the harness's own
   // refusal names what was wrong where a guess made here could not — and Carbon's
@@ -48,7 +43,7 @@ export default function AttachmentTray({
     // knows what sits below it.
     <ul className="flex flex-wrap gap-2">
       {attachments.map((attachment) => (
-        <Tile key={attachment.path} attachment={attachment} server={server} onRemove={onRemove} attachmentKey={attachmentKey} />
+        <Tile key={attachment.path} attachment={attachment} server={server} onRemove={onRemove} />
       ))}
       {server !== LOCAL &&
         attachments.map((a) => <UploadError key={a.path} attachment={a} server={server} />)}
@@ -69,12 +64,10 @@ function Tile({
   attachment,
   server,
   onRemove,
-  attachmentKey,
 }: {
   attachment: Attachment;
   server: ServerId;
   onRemove: (path: string) => void;
-  attachmentKey: string | null;
 }) {
   const sending = useUpload(server, attachment.path);
   const pending = server !== LOCAL && !sending?.path && !sending?.error;
@@ -88,13 +81,7 @@ function Tile({
       // tooltip is a system popup reporting back what they just did.
       className="group relative"
     >
-      {attachment.canvas ? (
-        <CanvasReferenceChip reference={attachment.canvas} server={server} onRefresh={(replacement) => {
-          replaceAttachment(attachmentKey, attachment.path, replacement);
-        }} />
-      ) : attachment.inspection ? (
-        <InspectionChip attachment={attachment} onRemove={onRemove} />
-      ) : attachment.preview ? (
+      {attachment.preview ? (
         <img
           src={attachment.preview}
           alt={attachment.name}

@@ -32,7 +32,6 @@ use uuid::Uuid;
 // `Harness` is defined in `crate::harness`; re-exported so existing
 // `crate::session::Harness` imports keep working.
 pub use crate::harness::Harness;
-use crate::sink::Sink;
 use std::{
     collections::HashMap,
     sync::{
@@ -40,6 +39,7 @@ use std::{
         Arc,
     },
 };
+use crate::sink::Sink;
 use tokio::{
     io::AsyncWriteExt,
     process::{Child, ChildStdin},
@@ -95,8 +95,6 @@ pub struct QueuedMessage {
     /// a child spawned to ask, which has no place inside a flush.
     #[serde(default)]
     pub mcp_servers: Vec<String>,
-    #[serde(default)]
-    pub canvas_context: Option<crate::canvas::CanvasFocus>,
 }
 
 /// Held prompts, oldest first. Shared with the stdout task, which is where the
@@ -809,13 +807,12 @@ impl SessionManager {
         claim_continue: Option<&str>,
         app: &Sink,
     ) -> Result<SendOutcome> {
-        // Forwarded sends add a dispatch layer; this future must not fill its caller's stack.
-        Box::pin(self.send_msg_inner(
+        self.send_msg_inner(
             session_id, prompt, attachment_paths, issue_ids, harness, model, effort,
             permission_mode, fast, cwd, branch, use_worktree, worktree_name, base_ref,
             is_new_session, parent_session_id, hidden, title, from, claim_continue, app,
             None, None,
-        )).await
+        ).await
     }
 
     /// A durable dispatch already owns the recipient's slot before reading its recorded pick.
@@ -2254,13 +2251,11 @@ impl SessionManager {
             session.kill().await?;
         }
 
-        crate::preview::close_session(session_id).await;
         let existed = remove_session_worktree(&item).await?;
 
         let relocated = relocate_session_to_project(session_id)
             .await?
             .with_context(|| format!("no session {session_id}"))?;
-        crate::preview::close_session(session_id).await;
 
         Ok((relocated, existed))
     }
@@ -2291,7 +2286,6 @@ impl SessionManager {
     }
 
     pub async fn settle(&self, session_id: &str) -> Result<()> {
-        crate::preview::close_session(session_id).await;
         let running = self.take(session_id).await;
         // The tabs close whatever the kill answered: the session is already
         // out of the map, so nothing would come back to close them.
@@ -2384,10 +2378,7 @@ impl SessionManager {
             eprintln!("could not delete pi's session file for {session_id}: {e}");
         }
 
-        let deleted = delete_session(session_id).await;
-        // A start can land after settle while deletion still awaits disk work.
-        crate::preview::close_session(session_id).await;
-        deleted
+        delete_session(session_id).await
     }
 
     /// Moves a session's unread mark: `Completed` → `Idle` on a read, `Idle` →
@@ -2843,7 +2834,6 @@ impl Session {
             from,
             issues: issues.to_vec(),
             mcp_servers: mcp_servers.to_vec(),
-            canvas_context: crate::canvas::request_focus(),
         };
         self.queued.lock().await.push(message.clone());
         publish_queue(&self.id, &self.queued, app).await;
@@ -3634,13 +3624,8 @@ async fn deliver_prompt(
     // the transcript has to show what the model was actually given.
     let prepared = attachments::prepare(session_id, prompt, attachment_paths, harness).await?;
     let text = prepared.text;
-    let sent = crate::mcp_mentions::with_hint(&format!("{text}{}", prepared.canvas_hint), mcp_servers);
+    let sent = crate::mcp_mentions::with_hint(&text, mcp_servers);
     let sent = crate::issues::drafting::with_context(session_id, &sent).await.map_err(anyhow::Error::msg)?;
-    // Storage futures stay on the heap rather than enlarging the harness send stack.
-    let canvas_prompt = Box::pin(crate::canvas::prepare_prompt(session_id, !prepared.canvas_refs.is_empty()))
-        .await
-        .map_err(anyhow::Error::msg)?;
-    let sent = format!("{sent}{}", canvas_prompt.text);
 
     let sent = match dispatch.as_ref() {
         Some(dispatch) => format!("[Carbon delivery {}]\n{}", dispatch.message_id(), sent),
@@ -3668,7 +3653,6 @@ async fn deliver_prompt(
         .filter(|interruption| interruption.resumed_at.is_none()).map(|interruption| interruption.id);
     let payload = AgentEventPayload::UserMessage {
         text,
-        canvas_refs: (!prepared.canvas_refs.is_empty()).then_some(prepared.canvas_refs),
         issues: issues.to_vec(),
         mcp_servers: mcp_servers.to_vec(),
         images: prepared
@@ -3701,27 +3685,15 @@ async fn deliver_prompt(
         }
     }
 
-    crate::canvas::commit_prompt(&canvas_prompt, app)
-        .await
-        .map_err(anyhow::Error::msg)?;
-    let published: Result<()> = async {
-        if let Some(dispatch) = dispatch.as_deref_mut() {
-            let thread_id = match transport {
-                Transport::Rpc(thread) => Some(thread.id.as_str()),
-                _ => None,
-            };
-            dispatch.publish_prompt(agent_event, thread_id, app).await?;
-        } else {
-            app.emit("agent_event", &agent_event)?;
-            append_session_event(session_id, agent_event).await?;
-        }
-
-        Ok(())
-    }
-    .await;
-    if let Err(error) = published {
-        crate::canvas::abort_prompt(&canvas_prompt, app).await;
-        return Err(error);
+    if let Some(dispatch) = dispatch.as_deref_mut() {
+        let thread_id = match transport {
+            Transport::Rpc(thread) => Some(thread.id.as_str()),
+            _ => None,
+        };
+        dispatch.publish_prompt(agent_event, thread_id, app).await?;
+    } else {
+        app.emit("agent_event", &agent_event)?;
+        append_session_event(session_id, agent_event).await?;
     }
 
     // Logged, not sent: the caller holds the text and opens the turn itself.
@@ -3790,9 +3762,6 @@ async fn deliver_prompt(
         write_line(stdin, &line).await?;
         Ok(true)
     }.await;
-    if submitted.is_err() {
-        crate::canvas::abort_prompt(&canvas_prompt, app).await;
-    }
     let runs = submitted?;
     Ok((sent, runs, interruption_id))
 }
@@ -3879,9 +3848,6 @@ async fn ingest_event(ctx: &Ingest<'_>, mut agent_event: AgentEvent, app: &Sink,
     // subagent's writes land after this, but its report-back turn closes
     // with its own, fresher snapshot.
     if let AgentEventPayload::TurnCompleted { ref mut head, .. } = agent_event.payload {
-        if agent_event.subagent.is_none() {
-            crate::canvas::finish_turn(ctx.session_id, app).await;
-        }
         *head = crate::git::snapshot_tree(ctx.session_cwd).await;
     }
 
@@ -4425,9 +4391,7 @@ async fn flush_one_per_turn(
             .and_then(|item| item.interruption).filter(|i| i.resumed_at.is_none()).map(|i| i.id);
         let mut texts = Vec::new();
         for message in batch {
-            match crate::canvas::with_focus(
-                message.canvas_context.clone(),
-                deliver_prompt(
+            match deliver_prompt(
                 session_id,
                 harness,
                 &message.text,
@@ -4444,7 +4408,6 @@ async fn flush_one_per_turn(
                 transport,
                 None,
                 app,
-                ),
             )
             .await
             {
@@ -4502,9 +4465,7 @@ async fn deliver_batch(
         // after it, so a snapshot taken here would cut the running turn's
         // range in two and credit it with only the work that came after this
         // prompt. `None` makes `changeRange` walk past it to the real prompt.
-        match crate::canvas::with_focus(
-            message.canvas_context.clone(),
-            deliver_prompt(
+        match deliver_prompt(
             session_id,
             harness,
             &message.text,
@@ -4521,7 +4482,6 @@ async fn deliver_batch(
             transport,
             None,
             app,
-        ),
         )
         .await
         {
@@ -4624,7 +4584,7 @@ pub async fn strand_queue_on_exit(
         // row retiring the queued prompt would drop its attachments from the
         // transcript while telling the reader to resend it. Best effort — a
         // failed prep still surfaces the text rather than losing the prompt.
-        let (text, images, canvas_refs) =
+        let (text, images) =
             match attachments::prepare(session_id, &message.text, &message.attachment_paths, harness)
                 .await
             {
@@ -4639,11 +4599,10 @@ pub async fn strand_queue_on_exit(
                             mime_type: Some(i.mime_type.clone()),
                         })
                         .collect(),
-                    prepared.canvas_refs,
                 ),
                 Err(err) => {
                     eprintln!("[fx strand prepare err] {err:#}");
-                    (message.text.clone(), Vec::new(), Vec::new())
+                    (message.text.clone(), Vec::new())
                 }
             };
         let bubble = AgentEvent::mint(
@@ -4654,7 +4613,6 @@ pub async fn strand_queue_on_exit(
             None,
             AgentEventPayload::UserMessage {
                 text,
-                canvas_refs: (!canvas_refs.is_empty()).then_some(canvas_refs),
                 issues: message.issues.clone(),
                 mcp_servers: message.mcp_servers.clone(),
                 images,

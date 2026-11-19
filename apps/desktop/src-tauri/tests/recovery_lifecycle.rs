@@ -106,7 +106,6 @@ async fn each_harness_retains_process_exit_and_stale_resolution_does_not_write()
     let status = Arc::new(Mutex::new(StatusTracker::default()));
     status.lock().await.on_send();
     let queued = Arc::new(Mutex::new(vec![ade_lib::session::QueuedMessage {
-        canvas_context: None,
         id: "stranded".into(),
         session_id: removed.clone(),
         text: "Do not recreate deleted work".into(),

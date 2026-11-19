@@ -351,18 +351,6 @@ struct ImageRef: Decodable, Hashable {
     let mimeType: String?
 }
 
-struct CanvasReference: Decodable, Hashable, Identifiable {
-    let id: String
-    let name: String
-    let canvasName: String
-    let revision: UInt64
-}
-
-private struct LenientCanvasReference: Decodable {
-    let ref: CanvasReference?
-    init(from decoder: Decoder) { ref = try? CanvasReference(from: decoder) }
-}
-
 /// One entry that may fail alone, so a bad image costs that image.
 private struct LenientImage: Decodable {
     let ref: ImageRef?
@@ -391,7 +379,7 @@ enum Payload: Decodable {
     case turnReplayed(promptEventId: String, replacementEventId: String)
     case turnCompleted(failed: Bool, finalText: String?)
     /// `queued` is a prompt typed into a running turn, which answers it inside that turn.
-    case userMessage(text: String, fromTitle: String?, fromId: String?, queued: Bool, images: [ImageRef], mcpServers: [String], canvasRefs: [CanvasReference])
+    case userMessage(text: String, fromTitle: String?, fromId: String?, queued: Bool, images: [ImageRef], mcpServers: [String])
     case assistantText(String)
     case toolStarted(callId: String, name: String, toolType: String, input: JSON, title: String?)
     case toolUpdated(callId: String, input: JSON)
@@ -426,8 +414,7 @@ enum Payload: Decodable {
                     fromTitle: from?["title"], fromId: from?["sessionId"],
                     queued: (try? c.decode(Bool.self, forKey: "queued")) ?? false,
                     images: decodeImages(c),
-                    mcpServers: (try? c.decode([String].self, forKey: "mcpServers")) ?? [],
-                    canvasRefs: ((try? c.decode([LenientCanvasReference].self, forKey: "canvasRefs")) ?? []).compactMap(\.ref))
+                    mcpServers: (try? c.decode([String].self, forKey: "mcpServers")) ?? [])
             case "assistant_text":
                 self = .assistantText(try c.decode(String.self, forKey: "text"))
             case "tool_call_started":

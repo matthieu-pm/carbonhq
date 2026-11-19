@@ -966,7 +966,6 @@ fn strip_image_bytes(mut structured: Value) -> Value {
 fn user_message(text: String) -> AgentEventPayload {
     AgentEventPayload::UserMessage {
         text,
-        canvas_refs: None,
         images: vec![],
         // Nothing to link: a tag is resolved where a prompt is *sent*, and this
         // one arrived off the wire rather than being one this app issued.

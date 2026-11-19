@@ -11,8 +11,6 @@
 
 mod discovery;
 pub use discovery::*;
-mod canvas;
-pub use canvas::*;
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -52,17 +50,12 @@ use std::path::PathBuf;
 /// reader needs "update the Carbon app". v14 added managed Markdown Pages;
 /// v15 added one-use secret requests. v16 added retry keys: ignoring one would
 /// repeat work while reporting success, so only keyed requests require v16.
-/// v17 adds managed preview commands.
+/// v17 was used for managed preview commands.
 /// v18 adds durable delivery acceptance and delivery status/cancellation.
 /// v19 adds opt-in delegated tasks and immutable completion results.
 /// v20 adds discovery and creation receipts with effective configuration.
 /// v21 adds explicit interruption recovery and deduplicated continuation.
-/// v23 adds portable browser captures.
-/// v24 adds project token discovery for Canvas.
-pub const PROTOCOL_VERSION: u32 = 24;
-
-/// A CLI readiness wait fits inside the socket and remote request deadlines.
-pub const PREVIEW_WAIT_SECS: u64 = 150;
+pub const PROTOCOL_VERSION: u32 = 21;
 
 /// The oldest envelope the app still answers. Rises only when a shape is
 /// *renamed*, never for an addition: v4 renamed `LinkIssues.identifiers` to
@@ -115,10 +108,6 @@ impl Request {
     /// as the half to update. No wildcard arm: a new variant has to say which.
     pub fn version(&self) -> u32 {
         match self {
-            Request::Canvas(CanvasRequest { action: CanvasAction::Tokens, .. }) => 24,
-            Request::Browser(BrowserRequest { action: BrowserAction::Capture { .. }, .. }) => 23,
-            Request::Canvas(_) => 22,
-            Request::Browser(BrowserRequest { action: BrowserAction::CanvasViewport { .. }, .. }) => 22,
             Request::Discover(_) => 20,
             Request::CreateSession(create) if create.configuration => 20,
             Request::Recovery(_) => 21,
@@ -156,7 +145,6 @@ impl Request {
             Request::WriteIssue(_) => 13,
             Request::Pages(_) => 14,
             Request::Secret(_) => 15,
-            Request::Preview(_) => 17,
             // v12 is when the wrapper itself arrived. A newer request inside it
             // has to stamp its own version, or a v12 app parses the wrapper and
             // then says it could not parse the line instead of naming the update.
@@ -168,7 +156,6 @@ impl Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
-    Canvas(CanvasRequest),
     Discover(DiscoveryRequest),
     Recovery(RecoveryRequest),
     Task(TaskRequest),
@@ -199,29 +186,7 @@ pub enum Request {
     WriteIssue(WriteIssue),
     Pages(PageRequest),
     Secret(SecretRequest),
-    Preview(PreviewRequest),
     OnMachine(OnMachine),
-}
-
-/// All preview verbs target one session on its owning server.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "action", rename_all = "snake_case", rename_all_fields = "camelCase")]
-pub enum PreviewRequest {
-    Start { session_id: String, command: Option<String>, directory: Option<String> },
-    Stop { session_id: String },
-    Url { session_id: String },
-    Logs { session_id: String },
-}
-
-impl Request {
-    /// Extra time only for preview readiness, including a forwarded request.
-    pub fn waits_for_preview(&self) -> bool {
-        match self {
-            Self::Preview(PreviewRequest::Start { .. }) => true,
-            Self::OnMachine(on) => on.request.waits_for_preview(),
-            _ => false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -688,12 +653,6 @@ pub enum BrowserAction {
         #[serde(default)]
         full: bool,
     },
-    /// Static layers, assets and screenshot in one file under the session checkout.
-    Capture {
-        #[serde(default)]
-        selector: Option<String>,
-        path: String,
-    },
     /// Evaluate JavaScript in the page and answer its JSON value.
     Eval {
         js: String,
@@ -703,11 +662,6 @@ pub enum BrowserAction {
     /// Errors alone, since last asked.
     Errors,
     SetViewport {
-        width: u32,
-        height: u32,
-    },
-    /// Keep a Canvas preview at its design size without changing other pages in this tab.
-    CanvasViewport {
         width: u32,
         height: u32,
     },
@@ -1084,19 +1038,8 @@ pub enum Response {
     Pages {
         data: serde_json::Value,
     },
-    Canvas {
-        data: serde_json::Value,
-    },
     Secret {
         data: serde_json::Value,
-    },
-    Preview {
-        url: Option<String>,
-        logs: Option<String>,
-    },
-    PreviewFailed {
-        message: String,
-        logs: String,
     },
     /// Every issue the session carries *after* the change, so the caller sees
     /// the result rather than a diff it has to apply to what it believed.
@@ -1511,18 +1454,6 @@ mod tests {
         assert_eq!(decoded.v, 15);
         assert!(matches!(decoded.request, Request::OnMachine(on)
             if matches!(*on.request, Request::Secret(SecretRequest::Status { .. }))));
-        let preview = Request::Preview(PreviewRequest::Start {
-            session_id: "s".into(), command: Some("pnpm dev --port {port}".into()), directory: Some("apps/web".into()),
-        });
-        assert_eq!(Envelope::new(preview.clone()).v, 17);
-        assert!(preview.waits_for_preview());
-        let preview_elsewhere = Request::OnMachine(OnMachine {
-            machine: "vps".into(), request: Box::new(preview.clone()),
-        });
-        assert!(preview_elsewhere.waits_for_preview());
-        let decoded: Envelope = serde_json::from_str(&encode_line(&Envelope::new(preview_elsewhere)).unwrap()).unwrap();
-        assert_eq!(decoded.v, 17);
-        assert!(!Request::Preview(PreviewRequest::Logs { session_id: "s".into() }).waits_for_preview());
         let keyed = [
             Request::CreateSession(CreateSession { request_id: Some("create-1".into()), ..Default::default() }),
             Request::SendMessage(SendMessage { request_id: Some("send-1".into()), ..Default::default() }),
@@ -1542,50 +1473,18 @@ mod tests {
             assert!(matches!(decoded.request, Request::LookupReceipt(ReceiptLookup { request }) if matches!(*request, Request::CreateSession(_) | Request::SendMessage(_))));
             assert!(wire.contains("lookup_receipt"));
         }
-        let canvas = Request::Canvas(CanvasRequest {
-            session_id: "s".into(),
-            canvas: Some("file".into()),
-            revision: Some(3),
-            action: CanvasAction::SetText {
-                node: "text".into(),
-                text: "Hello".into(),
-            },
-        });
-        assert_eq!(Envelope::new(canvas.clone()).v, 22);
-        let canvas_preview = Request::Browser(BrowserRequest {
-            session_id: "s".into(),
-            action: BrowserAction::CanvasViewport { width: 390, height: 844 },
-        });
-        assert_eq!(Envelope::new(canvas_preview).v, 22);
-        let browser_capture = Request::Browser(BrowserRequest {
-            session_id: "session".into(),
-            action: BrowserAction::Capture { selector: None, path: "capture.json".into() },
-        });
-        assert_eq!(Envelope::new(browser_capture.clone()).v, 23);
-        let canvas_tokens = Request::Canvas(CanvasRequest {
-            session_id: "session".into(), canvas: None, revision: None, action: CanvasAction::Tokens,
-        });
-        assert_eq!(Envelope::new(canvas_tokens.clone()).v, 24);
-        let forwarded_canvas = Request::OnMachine(OnMachine {
-            machine: "box".into(),
-            request: Box::new(canvas.clone()),
-        });
-        assert_eq!(forwarded_canvas.version(), 22);
-        let decoded: Envelope =
-            serde_json::from_str(&encode_line(&Envelope::new(forwarded_canvas)).unwrap()).unwrap();
-        assert!(matches!(decoded.request, Request::OnMachine(_)));
         let newest = old
             .iter()
             .chain(&drafts)
             .chain([&share])
             .chain(&servers)
             .chain(&sessions)
-            .chain([&remote, &elsewhere, &write, &pages, &secret, &preview])
+            .chain([&remote, &elsewhere, &write, &pages, &secret])
             .chain(&keyed)
             .chain([&Request::Task(TaskRequest::Status { task_id: "task".into() })])
             .chain([&Request::Recovery(RecoveryRequest::List { session_id: None })])
             .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
-            .chain([&Request::Discover(DiscoveryRequest::Harnesses), &canvas, &browser_capture, &canvas_tokens])
+            .chain([&Request::Discover(DiscoveryRequest::Harnesses)])
             .map(Request::version)
             .max();
         assert_eq!(newest, Some(PROTOCOL_VERSION));

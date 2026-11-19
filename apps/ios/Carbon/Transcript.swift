@@ -61,12 +61,12 @@ enum Item: Identifiable {
     case group(id: String, name: String, calls: [ToolCall], targets: Int, target: String?)
     /// A prompt typed into the running turn: the reader's own words, kept on
     /// screen through a collapse.
-    case prompt(id: String, text: String, from: String?, images: [ImageRef], canvasRefs: [CanvasReference])
+    case prompt(id: String, text: String, from: String?, images: [ImageRef])
     case failure(id: String, text: String)
 
     var id: String {
         switch self {
-        case .text(let id, _), .group(let id, _, _, _, _), .prompt(let id, _, _, _, _), .failure(let id, _): id
+        case .text(let id, _), .group(let id, _, _, _, _), .prompt(let id, _, _, _), .failure(let id, _): id
         case .tool(let call): call.id
         }
     }
@@ -83,7 +83,7 @@ enum Item: Identifiable {
 /// A user prompt to the `turn_completed` that closes it.
 struct Turn: Identifiable {
     let id: String
-    var prompt: (text: String, from: String?, images: [ImageRef], canvasRefs: [CanvasReference])?
+    var prompt: (text: String, from: String?, images: [ImageRef])?
     var work: [Item] = []
     var completed = false
     /// The red row a failed turn closes on.
@@ -180,7 +180,7 @@ func buildTurns(_ events: [AgentEvent], busy: Bool) -> [Turn] {
     for e in main {
         switch e.payload {
         case .toolStarted(let callId, _, _, _, _) where results[callId] == nil: open.append(callId)
-        case .userMessage(_, _, _, false, _, _, _): abandoned.formUnion(open); open = []
+        case .userMessage(_, _, _, false, _, _): abandoned.formUnion(open); open = []
         default: break
         }
     }
@@ -225,14 +225,14 @@ func buildTurns(_ events: [AgentEvent], busy: Bool) -> [Turn] {
 
     for e in main {
         switch e.payload {
-        case .userMessage(let text, let fromTitle, let fromId, let queued, let images, _, let canvasRefs):
+        case .userMessage(let text, let fromTitle, let fromId, let queued, let images, _):
             let shown = stripSender(text, title: fromTitle, id: fromId)
             if queued, current != nil {
                 flushCalls()
-                current?.work.append(.prompt(id: e.id, text: shown, from: fromTitle, images: images, canvasRefs: canvasRefs))
+                current?.work.append(.prompt(id: e.id, text: shown, from: fromTitle, images: images))
             } else {
                 close()
-                current = Turn(id: e.id, prompt: (shown, fromTitle, images, canvasRefs))
+                current = Turn(id: e.id, prompt: (shown, fromTitle, images))
             }
         case .assistantText(let text) where !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
             if current == nil { current = Turn(id: "head-\(e.id)") }

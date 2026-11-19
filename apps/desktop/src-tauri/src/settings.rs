@@ -79,7 +79,7 @@ pub struct FeatureFlags {
 pub async fn get_feature_flags() -> FeatureFlags {
     FeatureFlags {
         pages_enabled: true,
-        canvas_enabled: true,
+        canvas_enabled: false,
     }
 }
 
@@ -363,7 +363,7 @@ mod tests {
             assert_eq!(settings.analytics_enabled, AppSettings::default().analytics_enabled);
             assert_eq!(
                 serde_json::to_value(get_feature_flags().await).unwrap(),
-                serde_json::json!({ "pagesEnabled": true, "canvasEnabled": true })
+                serde_json::json!({ "pagesEnabled": true, "canvasEnabled": false })
             );
         }
         std::fs::remove_dir_all(dir).unwrap();

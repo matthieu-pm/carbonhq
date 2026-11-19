@@ -171,7 +171,7 @@ head: string | null,
  * as false, which is what a replayed log should say: no child
  * survives a restart, so nothing on disk is still blocked on this.
  */
-authFailed: boolean, } | { "type": "user_message", text: string, canvasRefs?: Array<CanvasReference>, images: Array<ImageRef>,
+authFailed: boolean, } | { "type": "user_message", text: string, images: Array<ImageRef>, 
 /**
  * The issues this prompt was tagged with, resolved against the tracker
  * as it was sent.
@@ -475,7 +475,7 @@ isImage: boolean,
  * once and held in frontend memory only — the persisted event points at a
  * copy on disk instead, so the session log never carries image bytes.
  */
-preview: string | null, inspection?: InspectContext, canvas?: CanvasReference, };
+preview: string | null, };
 
 /**
  * A way of signing in, as an offer the reader picks between.
@@ -559,62 +559,6 @@ defaultBase: string | null,
  * changes". Zero switches without asking.
  */
 dirty: number, };
-
-export type BrowserCaptureDetails = { pagePath: string, selector: string | null, source: InspectSource | null, viewport: InspectViewport, bounds: InspectBounds, screenshotBounds: InspectBounds, capturedAt: string, originalAssetId: string, imageOnly: boolean, warnings: Array<string>, };
-
-export type Canvas = { id: string, projectPath: string, projectKey: string, name: string, revision: number, created: string, modified: string, frames: Array<CanvasFrame>, camera: CanvasCamera | null, tokens: { [key in string]: string }, assets: Array<CanvasAsset>, change: CanvasChange, };
-
-export type CanvasAsset = { id: string, name: string, mimeType: string, size: number, hash: string, };
-
-export type CanvasAssetData = { asset: CanvasAsset, data: string, };
-
-export type CanvasAssetProgress = { written: number, canvas: Canvas | null, };
-
-export type CanvasAssetUpload = { assetId: string, name: string, offset: number, data: string, complete: boolean, };
-
-export type CanvasAuthor = { sessionId: string | null, turnId: string | null, label: string | null, };
-
-export type CanvasCamera = { x: number, y: number, zoom: number, };
-
-export type CanvasChange = { id: string, beforeRevision: number, afterRevision: number, author: CanvasAuthor, restoredFrom: number | null, };
-
-export type CanvasContent = { nodes: Array<CanvasNode>, css: string, assetIds: Array<string>, };
-
-export type CanvasEdit = { name: string | null, frames: Array<CanvasFrame> | null, camera: CanvasCamera | null, clearCamera: boolean, tokens: { [key in string]: string } | null, };
-
-export type CanvasEditFile = { path: string, edit: CanvasFrameEdit, };
-
-export type CanvasFocus = { id: string, projectPath: string, revision: number, picks: Array<CanvasPick>, previewFrameId: string | null, };
-
-export type CanvasFrame = { id: string, name: string, geometry: CanvasGeometry, content: CanvasContent, };
-
-export type CanvasFrameEdit = { revision: number, frameId: string, content: CanvasContent, author: CanvasAuthor, };
-
-export type CanvasGeometry = { x: number, y: number, width: number, height: number, };
-
-export type CanvasList = { files: Array<CanvasSummary>, problems: Array<CanvasProblem>, };
-
-export type CanvasNode = { "kind": "element", id: string, name: string, tag: string, attributes: { [key in string]: string }, styles: { [key in string]: string }, children: Array<CanvasNode>, } | { "kind": "text", id: string, name: string, text: string, };
-
-export type CanvasPick = { frameId: string, nodeId: string | null, bounds: CanvasGeometry | null, };
-
-export type CanvasProblem = { id: string, path: string, message: string, };
-
-export type CanvasProjectToken = { name: string, value: string, file: string, line: number, scope: Array<string>, };
-
-export type CanvasReconciliation = { canvas: Canvas, problems: Array<CanvasProblem>, };
-
-export type CanvasReference = { id: string, canvasId: string, canvasName: string, projectPath: string, revision: number, frameId: string, frameName: string, nodeId: string | null, name: string, frameWidth: number, frameHeight: number, bounds: CanvasGeometry, framePreview: boolean, contentRef: string, capturedAt: string, preview: ImageRef, };
-
-export type CanvasReferenceStatus = { state: string, revision: number | null, message: string, };
-
-export type CanvasSummary = { id: string, projectPath: string, projectKey: string, name: string, revision: number, modified: string, frameCount: number, change: CanvasChange, };
-
-export type CanvasTokenCatalog = { source: CanvasTokenSource, tokens: Array<CanvasProjectToken>, incomplete: boolean, };
-
-export type CanvasTokenSource = { projectPath: string, cwd: string, worktree: string | null, };
-
-export type CanvasUndoState = { canUndo: boolean, canRedo: boolean, undoLabel: string | null, redoLabel: string | null, };
 
 /**
  * Everything that changed between two snapshots.
@@ -923,14 +867,6 @@ export type InputDevice = {
  * index silently starts naming a different device.
  */
 name: string, isDefault: boolean, };
-
-export type InspectBounds = { x: number, y: number, width: number, height: number, };
-
-export type InspectContext = { kind: string, selector: string | null, pagePath: string, title: string, viewport: InspectViewport, bounds: InspectBounds, screenshotBounds?: InspectBounds, markup: string | null, styles: { [key in string]: string }, source: InspectSource, tabId: number, documentId: string, capturedAt: string, };
-
-export type InspectSource = { confidence: SourceConfidence, file: string | null, line: number | null, framework: string | null, };
-
-export type InspectViewport = { width: number, height: number, scale: number, };
 
 /**
  * Which half of the install failed, and it is tagged because the two have
@@ -1691,28 +1627,6 @@ export type PrMarkState = "OPEN" | "MERGED";
 export type PrUnavailable = { "kind": "no_cli" } | { "kind": "not_authenticated" } | { "kind": "no_remote" } | { "kind": "other", "detail": string };
 
 /**
- * What a project runs to preview: a folder relative to the session's
- * checkout (`""` for its root) and a shell command, where `{port}` is
- * replaced by the port Carbon picked. `PORT` carries it too.
- */
-export type PreviewConfig = { directory: string, command: string, };
-
-/**
- * What the first-start form needs: the project's saved config, if any, and a
- * command read off `package.json` in the chosen folder (`""` for none).
- */
-export type PreviewSetup = { config: PreviewConfig | null, suggestedCommand: string, };
-
-/**
- * One session's preview. `url` is set only while running and is always an
- * explicit loopback address (`http://127.0.0.1:<port>` or
- * `http://[::1]:<port>`); `message` says why a run stopped or failed.
- */
-export type PreviewState = { sessionId: string, status: PreviewStatus, config: PreviewConfig, port: number, url: string | null, message: string | null, };
-
-export type PreviewStatus = "starting" | "running" | "stopped" | "failed";
-
-/**
  * A directory the user attached, and the root a session runs in. Distinct from
  * [`crate::store::SessionIndexItem::project_path`], which records where a
  * session *did* run — a project can be detached without rewriting history.
@@ -1886,7 +1800,7 @@ issues: Array<IssueRef>,
  * Resolved when typed, for `issues`' reason: Claude Code's server list is
  * a child spawned to ask, which has no place inside a flush.
  */
-mcpServers: Array<string>, canvasContext: CanvasFocus | null, };
+mcpServers: Array<string>, };
 
 export type RecoveryAction = "resume" | "retry" | "inspect";
 
@@ -2437,8 +2351,6 @@ argumentHint: string,
  * Other names that reach the same command. Absent on most.
  */
 aliases: Array<string>, };
-
-export type SourceConfidence = "exact" | "approximate" | "unavailable";
 
 export type Stage = "connecting" | "finding" | "starting";
 

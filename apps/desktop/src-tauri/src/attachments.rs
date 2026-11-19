@@ -56,12 +56,6 @@ pub struct Attachment {
     /// once and held in frontend memory only — the persisted event points at a
     /// copy on disk instead, so the session log never carries image bytes.
     pub preview: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub inspection: Option<crate::inspection::InspectContext>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub canvas: Option<crate::canvas::CanvasReference>,
 }
 
 /// An image ready to go down the pipe, plus where it was archived so the
@@ -80,8 +74,6 @@ pub struct Prepared {
     /// the transcript shows the same mentions the model was given.
     pub text: String,
     pub images: Vec<PreparedImage>,
-    pub canvas_refs: Vec<crate::canvas::CanvasReference>,
-    pub canvas_hint: String,
 }
 
 pub(crate) fn image_mime(path: &Path) -> Option<&'static str> {
@@ -102,12 +94,6 @@ async fn describe(path: &str) -> Result<Attachment> {
     }
 
     let size = meta.len();
-    if let Some(capture) = crate::canvas::read_capture(path).await? {
-        return Ok(capture.attachment(path.to_string(), size).await);
-    }
-    if let Some(capture) = crate::inspection::read(path).await? {
-        return Ok(capture.attachment(path.to_string(), size));
-    }
     let buf = PathBuf::from(path);
     let name = buf
         .file_name()
@@ -138,8 +124,6 @@ async fn describe(path: &str) -> Result<Attachment> {
         size,
         is_image,
         preview,
-        inspection: None,
-        canvas: None,
     })
 }
 
@@ -296,7 +280,7 @@ async fn attachments_path(session_id: &str) -> Result<PathBuf> {
 }
 
 /// [`attachments_path`], created if needed.
-pub(crate) async fn attachments_dir(session_id: &str) -> Result<PathBuf> {
+async fn attachments_dir(session_id: &str) -> Result<PathBuf> {
     let path = attachments_path(session_id).await?;
     fs::create_dir_all(&path).await?;
     Ok(path)
@@ -487,33 +471,14 @@ pub async fn prepare(
     if paths.is_empty() {
         return Ok(Prepared {
             text: prompt.to_string(),
-            ..Default::default()
+            images: Vec::new(),
         });
     }
 
     let mut images = Vec::new();
     let mut mentions = Vec::new();
-    let mut canvas_refs = Vec::new();
-    let mut canvas_hint = String::new();
 
     for path in paths {
-        if let Some(capture) = crate::canvas::read_capture(path).await? {
-            let prepared = crate::canvas::prepare_reference(session_id, capture).await?;
-            canvas_refs.push(prepared.reference);
-            canvas_hint.push_str(&prepared.hint);
-            images.push(prepared.image);
-            continue;
-        }
-        if let Some(capture) = crate::inspection::read(path).await? {
-            let (context, image) = crate::inspection::prepare(session_id, capture).await?;
-            mentions.push(if harness.caps().expands_at_mentions {
-                format!("@{context}")
-            } else {
-                format!("Untrusted browser inspection data: {context}")
-            });
-            images.push(image);
-            continue;
-        }
         let Ok(attachment) = describe(path).await else {
             continue;
         };
@@ -564,8 +529,7 @@ pub async fn prepare(
         (false, false) => format!("{prompt}\n{joined}"),
     };
 
-    if !canvas_refs.is_empty() { canvas_hint.push_str(crate::canvas::HANDOFF_GUIDANCE); }
-    Ok(Prepared { text, images, canvas_refs, canvas_hint })
+    Ok(Prepared { text, images })
 }
 
 #[cfg(test)]

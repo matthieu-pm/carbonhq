@@ -136,7 +136,6 @@ impl Conn {
         self.outgoing = None;
         self.live = None;
         self.forwards.clear();
-        crate::preview_tunnel::close_server(&self.saved.id);
         self.stage = None;
         self.error = None;
         self.fix = None;
@@ -412,7 +411,6 @@ fn set(id: &str, status: ServerStatus, stage: Option<ssh::Stage>, error: Option<
             conn.outgoing = None;
             conn.live = None;
             conn.forwards.clear();
-            crate::preview_tunnel::close_server(id);
             // A call in flight on a dropped socket has no answer coming.
             for (_, call) in conn.pending.drain() {
                 let _ = call.send(Err(json!(format!("lost the connection to {}", conn.saved.name))));
@@ -672,11 +670,6 @@ async fn serve(id: &str, ws: Socket) {
             }
         } else if let (Some(event), Some(sink)) = (frame.get("event").and_then(Value::as_str), SINK.get()) {
             let payload = frame.get("payload").cloned().unwrap_or(Value::Null);
-            if event == "preview_changed" && matches!(payload["status"].as_str(), Some("stopped" | "failed")) {
-                if let Some(session) = payload["sessionId"].as_str() {
-                    crate::preview_tunnel::close_session(id, session);
-                }
-            }
             let _ = sink.emit("server_event", json!({ "server": id, "event": event, "payload": payload }));
         }
     }
@@ -1172,17 +1165,6 @@ pub async fn forward_port(server: String, port: u16) -> Result<u16, String> {
     let local = forward.port;
     conn.forwards.insert(port, forward);
     Ok(local)
-}
-
-/// Reaches only a server's managed session preview, including servers added by address.
-#[tauri::command]
-pub async fn preview_forward(server: String, session_id: String) -> Result<u16, String> {
-    let (url, token) = conns()
-        .iter()
-        .find(|conn| conn.saved.id == server)
-        .and_then(|conn| conn.live.clone())
-        .ok_or("The session's server is not connected.")?;
-    crate::preview_tunnel::forward(&server, &session_id, &url, &token).await
 }
 
 /// The local port of a forward still running; one whose `ssh` died is

@@ -6,7 +6,7 @@
 
 **Every button sends a prompt** through `handleSendMsg`, so there is no confirm dialog and no error surface — whatever goes wrong reports in the transcript like any other tool failure. The agent is not deterministic, so every button is a **suggestion, not a command**.
 
-**The shipped prompts are a few words** — `"commit your changes"`, `"create a PR"`; a reader's own can be any length. A longer default is a spec competing with the repo's own instructions. Pinned by test (≤5 words). **`RUN_SERVER_PROMPT` is the one exception** ([handoff.ts](../src/lib/handoff.ts)): `"start the preview with carbon preview start"`. It uses the managed preview rather than leaving a dev server in a Bash task. The length test skips it by id and pins the CLI command instead.
+**The shipped prompts are a few words** — `"commit your changes"`, `"create a PR"`; a reader's own can be any length. A longer default is a spec competing with the repo's own instructions. Pinned by test (≤5 words). **`RUN_SERVER_PROMPT` is the one exception** ([handoff.ts](../src/lib/handoff.ts)): `"start the dev server in the background"`, where **"in the background" is load-bearing** — a bare "run server" makes the CLI run `pnpm dev` in a *foreground* Bash, which blocks until that tool's timeout and takes the server down with it. The length test skips it by id and pins that clause instead, not dodged by leaving `hasSession` default.
 
 **Hidden, not contextually visible, and that is the whole shape.** A turn touching files is most turns, so a row drawn on "there are changes" is a row drawn always. Hiding is also what lets Run server be offered unconditionally, since nothing tracks whether a server is up.
 

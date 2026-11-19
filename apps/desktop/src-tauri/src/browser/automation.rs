@@ -52,13 +52,6 @@ static SECRET_TABS: std::sync::LazyLock<Mutex<std::collections::HashSet<i32>>> =
 /// nothing clearing it (DRA-233). The override below is what sizes a
 /// capture; shrinking the widget was never part of it.
 static VIEWPORT: Mutex<Option<HashMap<String, (u32, u32)>>> = Mutex::new(None);
-struct CanvasViewport {
-    url: String,
-    size: (u32, u32),
-    runtime: tokio::runtime::Handle,
-}
-static CANVAS_VIEWPORT: std::sync::LazyLock<Mutex<HashMap<i32, CanvasViewport>>> =
-    std::sync::LazyLock::new(Default::default);
 /// A laptop, since nearly everything looked at through here is a page built
 /// for one; the pane itself is a third of a window and lays a page out at
 /// phone breakpoints.
@@ -105,9 +98,6 @@ pub(super) const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 /// than they say.
 const MAX_TEXT: usize = 40_000;
 const MAX_CONSOLE: usize = 200;
-const CAPTURE_JS: &str = include_str!("capture.js");
-const CAPTURE_TOKENS_JS: &str = include_str!("capture_tokens.js");
-const CAPTURE_SOURCE_JS: &str = include_str!("capture_source.js");
 
 /// A ring where a recorded click lands, fading out after. Pointer events
 /// off, so it never takes the click it marks.
@@ -345,11 +335,6 @@ pub(super) fn forget(tab: i32) {
     }
 }
 
-/// A discarded browser can return; its design viewport goes only when the tab is deleted.
-pub(super) fn forget_canvas(tab: i32) {
-    CANVAS_VIEWPORT.lock().unwrap().remove(&tab);
-}
-
 /// One CDP call on one tab. The backend carries the message and answers
 /// through `answer`, failing it there for a tab that is gone.
 pub(super) async fn cdp(tab: i32, method: &str, params: Value) -> Reply {
@@ -378,28 +363,10 @@ pub(super) async fn cdp(tab: i32, method: &str, params: Value) -> Reply {
 /// Runs `expression` in the page and answers its value. A thrown error is
 /// the error.
 pub(super) async fn eval(tab: i32, expression: &str) -> Reply {
-    eval_context(tab, expression, None).await
-}
-
-/// Run capture code without exposing its state or input callbacks to the page's scripts.
-pub(super) async fn capture_context(tab: i32) -> Result<i64, String> {
-    let frames = cdp(tab, "Page.getFrameTree", json!({})).await?;
-    let frame = frames.pointer("/frameTree/frame/id").and_then(Value::as_str)
-        .ok_or("The browser has no document to capture.")?;
-    let world = cdp(tab, "Page.createIsolatedWorld", json!({ "frameId": frame, "worldName": "carbon-capture" })).await?;
-    world["executionContextId"].as_i64().ok_or_else(|| "Couldn’t isolate the browser capture.".into())
-}
-
-/// The default world remains available for ordinary agent reads and Inspect.
-pub(super) async fn eval_context(tab: i32, expression: &str, context: Option<i64>) -> Reply {
-    let mut params = json!({ "expression": expression, "returnByValue": true, "awaitPromise": true });
-    if let Some(context) = context {
-        params["contextId"] = json!(context);
-    }
     let reply = cdp(
         tab,
         "Runtime.evaluate",
-        params,
+        json!({ "expression": expression, "returnByValue": true, "awaitPromise": true }),
     )
     .await?;
     if let Some(exception) = reply.get("exceptionDetails") {
@@ -1128,7 +1095,7 @@ async fn perform(session: &str, action: BrowserAction) -> Answer {
                 tokio::time::sleep(SETTLE).await;
                 set_paused(session, false);
             } else {
-                let _ = restore_page_metrics(tab).await;
+                let _ = cdp(tab, "Emulation.clearDeviceMetricsOverride", json!({})).await;
             }
             if let Some(shot) = shot {
                 uncover(session, shot).await;
@@ -1150,27 +1117,6 @@ async fn perform(session: &str, action: BrowserAction) -> Answer {
             write_nofollow(&path, &bytes).map_err(|e| format!("could not write {}: {e}", path.display()))?;
             let shown = path.display().to_string();
             Ok((shown.clone(), json!({ "path": shown })))
-        }
-        BrowserAction::Capture { selector, path } => {
-            let path = screenshot_path(session, &path).await?;
-            if path.exists() {
-                return Err(format!("{} already exists. Choose a new file.", path.display()));
-            }
-            let source = crate::store::get_session_index_item(session).await.map_err(|e| e.to_string())?
-                .as_ref().map(crate::canvas::tokens::CanvasTokenSource::session);
-            let capture = capture_screen(driven_tab(session)?, selector.as_deref(), None, source).await?;
-            let mut summary = capture.summary();
-            let bytes = serde_json::to_vec(&capture).map_err(|e| e.to_string())?;
-            write_new_capture(&path, &bytes).await?;
-            let shown = path.display().to_string();
-            summary["path"] = json!(shown);
-            let warnings = summary["warnings"].as_array().map_or(0, |warnings| warnings.len());
-            let result = if warnings == 0 {
-                shown
-            } else {
-                format!("{shown}\nCapture has {warnings} notes. Read the file for details.")
-            };
-            Ok((result, summary))
         }
         BrowserAction::Eval { js } => {
             let value = eval(driven_tab(session)?, &js).await?;
@@ -1275,23 +1221,6 @@ async fn perform(session: &str, action: BrowserAction) -> Answer {
             remember_viewport(session, width, height);
             ok(format!("viewport {width}×{height}"))
         }
-        BrowserAction::CanvasViewport { width, height } => {
-            if !(1..=10_000).contains(&width) || !(1..=10_000).contains(&height) {
-                return Err("Invalid Canvas viewport dimensions.".into());
-            }
-            let tab = driven_tab(session)?;
-            let url = tab_state(tab).map(|state| state.0).ok_or("Canvas preview tab closed.")?;
-            if !url.starts_with("http://127.0.0.1:") || !url.contains("/canvas-preview/") {
-                return Err("The current tab is not a Canvas preview.".into());
-            }
-            let _held = CAPTURING.lock().await;
-            CANVAS_VIEWPORT.lock().unwrap().insert(tab, CanvasViewport {
-                url, size: (width, height), runtime: tokio::runtime::Handle::current(),
-            });
-            restore_page_metrics(tab).await?;
-            tokio::time::sleep(SETTLE).await;
-            ok(format!("Canvas viewport {width}×{height}"))
-        }
         BrowserAction::SetDevice { name } => {
             driven_tab(session)?;
             let (label, w, h) = DEVICES
@@ -1330,43 +1259,7 @@ fn screenshot_size(session: &str) -> (u32, u32) {
         .unwrap()
         .as_ref()
         .and_then(|m| m.get(session).copied())
-        .or_else(|| current(session).and_then(canvas_size))
         .unwrap_or(DEFAULT_VIEWPORT)
-}
-
-fn canvas_metrics(width: u32, height: u32) -> Value {
-    json!({"width":width,"height":height,"deviceScaleFactor":1,"mobile":false})
-}
-
-fn canvas_size(tab: i32) -> Option<(u32, u32)> {
-    let (url, _, _) = tab_state(tab)?;
-    CANVAS_VIEWPORT.lock().unwrap().get(&tab)
-        .filter(|target| target.url == url).map(|target| target.size)
-}
-
-/// Navigation clears the design override on other pages and restores it when returning to the preview.
-pub(super) fn navigated(tab: i32) {
-    let runtime = CANVAS_VIEWPORT.lock().unwrap().get(&tab).map(|target| target.runtime.clone());
-    if let Some(runtime) = runtime {
-        // Headless CDP notifications arrive on a plain reader thread, outside Tokio.
-        runtime.spawn(async move {
-            let _held = CAPTURING.lock().await;
-            let _ = restore_page_metrics(tab).await;
-        });
-    }
-}
-
-/// Temporary capture sizes must not leave a live Canvas preview at the pane's width.
-async fn restore_page_metrics(tab: i32) -> Result<(), String> {
-    let recording = RECORDING.lock().unwrap().values()
-        .find(|recording| recording.tab == tab && !recording.closed).map(|r| r.size);
-    if let Some((width, height)) = recording {
-        cdp(tab, "Emulation.setDeviceMetricsOverride", metrics(width, height)).await.map(|_| ())
-    } else if let Some((width, height)) = canvas_size(tab) {
-        cdp(tab, "Emulation.setDeviceMetricsOverride", canvas_metrics(width, height)).await.map(|_| ())
-    } else {
-        cdp(tab, "Emulation.clearDeviceMetricsOverride", json!({})).await.map(|_| ())
-    }
 }
 
 /// Where a session's recordings go, deleted with it (`delete_recordings`).
@@ -1378,7 +1271,7 @@ fn recordings_dir(session: &str) -> PathBuf {
 /// view unparked, and the pane's shutter closed once the page has repainted
 /// at the pane's size, or the reader is handed the recording's layout.
 async fn end_recording(session: &str, tab: i32, shot: u64) {
-    let _ = restore_page_metrics(tab).await;
+    let _ = cdp(tab, "Emulation.clearDeviceMetricsOverride", json!({})).await;
     let _ = relayout();
     tokio::time::sleep(SETTLE).await;
     emit_recording(session, false);
@@ -1419,101 +1312,6 @@ async fn capture(tab: i32, w: u32, h: u32, full: bool) -> Result<Vec<u8>, String
     base64::engine::general_purpose::STANDARD
         .decode(data)
         .map_err(|e| format!("bad image data: {e}"))
-}
-
-/// Binds the selected element to the picker that received the user's input.
-pub(super) struct ScreenPick<'a> {
-    pub(super) nonce: &'a str,
-    pub(super) context: i64,
-    pub(super) full_page: bool,
-}
-
-/// Snapshot the current CSS viewport without resizing the page or moving the scroll position.
-pub(super) async fn capture_screen(
-    tab: i32, selector: Option<&str>, picker: Option<ScreenPick<'_>>,
-    mut token_source: Option<crate::canvas::tokens::CanvasTokenSource>,
-) -> Result<crate::canvas::BrowserCapture, String> {
-    if let Some(source) = &mut token_source {
-        if let Ok(path) = tokio::fs::canonicalize(&source.cwd).await {
-            source.cwd = path.to_string_lossy().into_owned();
-        }
-    }
-    let _held = CAPTURING.lock().await;
-    if RECORDING.lock().unwrap().values().any(|recording| recording.tab == tab && !recording.closed) {
-        return Err("Stop recording before capturing this page.".into());
-    }
-    let (context, picker, full_page) = match picker {
-        Some(pick) => (pick.context, Some(pick.nonce), pick.full_page),
-        None => (capture_context(tab).await?, None, false),
-    };
-    let handle = json!(format!("__carbonCapture_{}", uuid::Uuid::new_v4()));
-    let query = json!({ "selector": selector, "picker": picker, "fullPage": full_page });
-    let capture = async {
-        let layout = eval_context(tab, &format!("({CAPTURE_JS})({query},{handle},({CAPTURE_TOKENS_JS}))"), Some(context)).await?;
-        let clip = layout.get("clip").ok_or("The browser did not return capture bounds.")?;
-        let width = clip["width"].as_f64().ok_or("Invalid capture width.")?;
-        let height = clip["height"].as_f64().ok_or("Invalid capture height.")?;
-        let pixel_ratio = layout["scale"].as_f64().unwrap_or(1.0).max(1.0);
-        let scale = (12_000_000.0 / (width * height)).sqrt().min(1.0) / pixel_ratio;
-        let source = if layout["sourceLookup"].is_object() {
-            capture_source(tab, &layout["sourceLookup"]).await
-        } else { None };
-        let shot = |scale, quality| async move {
-            let mut screenshot = cdp(tab, "Page.captureScreenshot", json!({
-                "format": "jpeg", "quality": quality, "captureBeyondViewport": true,
-                "clip": { "x": clip["x"], "y": clip["y"], "width": width, "height": height, "scale": scale },
-            })).await?;
-            screenshot["data"].take().as_str().map(str::to_owned).ok_or("No capture image came back.".to_string())
-        };
-        let mut screenshot = shot(scale, 90).await?;
-        if screenshot.len() > 5_000_000 {
-            let smaller = scale * (4_000_000.0 / screenshot.len() as f64).sqrt();
-            screenshot = shot(smaller, 82).await?;
-        }
-        let page = eval_context(tab, &format!("window[{handle}]?.finish()"), Some(context)).await?;
-        if page.is_null() {
-            return Err("The page changed during capture. Try again.".into());
-        }
-        let mut page: crate::canvas::CapturedPage = serde_json::from_value(page).map_err(|e| format!("Couldn’t read the screen capture. {e}"))?;
-        if page.source.is_none() {
-            page.source = source;
-        }
-        crate::canvas::BrowserCapture::assemble(page, screenshot, token_source)
-    }.await;
-    if capture.is_err() {
-        let _ = eval_context(tab, &format!("window[{handle}]?.release(); delete window[{handle}]"), Some(context)).await;
-    }
-    capture
-}
-
-async fn capture_source(tab: i32, lookup: &Value) -> Option<crate::inspection::InspectSource> {
-    // The page owns its framework debug properties. The isolated snapshot still checks for changes.
-    let reply = cdp(tab, "Runtime.evaluate", json!({
-        "expression": format!("({CAPTURE_SOURCE_JS})({},{},{})", lookup["selector"], lookup["pagePath"], lookup["documentTimeOrigin"]),
-        "returnByValue": true,
-        "timeout": 100,
-    })).await.ok()?;
-    let mut source: crate::inspection::InspectSource = serde_json::from_value(reply.pointer("/result/value")?.clone()).ok()?;
-    let path = source.file.as_deref()?.split(['?', '#']).next()?.chars().take(1024).collect::<String>();
-    if path.is_empty() || !matches!(source.framework.as_deref(), Some("React" | "Vue" | "Svelte")) {
-        return None;
-    }
-    source.file = Some(path);
-    Some(source)
-}
-
-async fn write_new_capture(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    use tokio::io::AsyncWriteExt;
-    let temporary = path.with_file_name(format!(".carbon-capture-{}.tmp", uuid::Uuid::new_v4()));
-    let mut file = tokio::fs::OpenOptions::new().create_new(true).write(true).mode(0o600).open(&temporary).await
-        .map_err(|e| format!("Couldn’t create a capture beside {}: {e}", path.display()))?;
-    let result = async {
-        file.write_all(bytes).await?;
-        file.sync_all().await?;
-        tokio::fs::hard_link(&temporary, path).await
-    }.await;
-    let _ = tokio::fs::remove_file(temporary).await;
-    result.map_err(|e| format!("Couldn’t write {}: {e}", path.display()))
 }
 
 /// Opens and closes the pane's shutter. The capture lays the page out at
@@ -1789,20 +1587,6 @@ mod tests {
         remember_viewport("s1", 375, 667);
         assert_eq!(screenshot_size("s1"), (375, 667));
         assert_eq!(screenshot_size("unset"), (1440, 900));
-    }
-
-    #[tokio::test]
-    async fn canvas_navigation_can_arrive_outside_the_async_runtime() {
-        let tab = -18282;
-        CANVAS_VIEWPORT.lock().unwrap().insert(tab, CanvasViewport {
-            url: "http://127.0.0.1:1/canvas-preview/test".into(),
-            size: (390, 844), runtime: tokio::runtime::Handle::current(),
-        });
-        std::thread::spawn(move || navigated(tab)).join().unwrap();
-        forget(tab);
-        assert!(CANVAS_VIEWPORT.lock().unwrap().contains_key(&tab));
-        forget_canvas(tab);
-        assert!(!CANVAS_VIEWPORT.lock().unwrap().contains_key(&tab));
     }
 
     #[test]

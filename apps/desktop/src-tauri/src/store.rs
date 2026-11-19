@@ -2353,13 +2353,6 @@ fn repoint_events(
             };
             image.path = Some(to_dir.join(rest).to_string_lossy().into_owned());
         }
-        if let AgentEventPayload::UserMessage { canvas_refs: Some(canvas_refs), .. } = &mut event.payload {
-            for reference in canvas_refs {
-                if let Some(rest) = reference.preview.path.as_ref().and_then(|path| Path::new(path).strip_prefix(from_dir).ok()) {
-                    reference.preview.path = Some(to_dir.join(rest).to_string_lossy().into_owned());
-                }
-            }
-        }
     }
 }
 
@@ -3327,7 +3320,6 @@ mod tests {
         let mut events = vec![
             event(AgentEventPayload::UserMessage {
                 text: "look at this".into(),
-                canvas_refs: None,
                 images: vec![image("/home/.carbon/attachments/parent/a.png")],
                 issues: vec![],
                 mcp_servers: vec![],
@@ -3341,7 +3333,6 @@ mod tests {
             // actually written in, and it has to survive every copy after.
             event(AgentEventPayload::UserMessage {
                 text: "and this".into(),
-                canvas_refs: None,
                 images: vec![],
                 issues: vec![],
                 mcp_servers: vec![],

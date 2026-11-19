@@ -23,11 +23,11 @@
 //! ```
 
 use crate::{
-    events::ApprovalPolicy,
     files, git,
     github::{self, MergeMethod},
     harness::Harness,
     issues::{self, IssuePriority, IssueQuery, IssueTracker},
+    events::ApprovalPolicy,
     models::{Effort, ModelId},
     sink::Sink,
     store,
@@ -203,7 +203,6 @@ pub async fn run(port: u16) -> Result<()> {
     }
     let sink = Sink::new(|event, payload| HUB.publish(event, &payload));
     let home = start_core(sink.clone()).await?;
-    stop_on_signal();
 
     let (token, token_path) = mint_token().await?;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -247,14 +246,7 @@ pub async fn run_mac() -> Result<()> {
     write_port_file(&home, port).await?;
     tokio::spawn(crate::remote_access::start(sink.clone()));
 
-    stop_on_signal();
-
-    eprintln!("carbon --serve listening on 127.0.0.1:{port}, home {}", home.display());
-    listen(listener, HUB.clone(), sink, token.into(), home.join(carbon_proto::TUNNEL_URL_FILE).into(), true).await
-}
-
-/// Managed preview groups must end on server shutdown on remote machines too.
-fn stop_on_signal() {
+    // launchd, and Quit and stop sessions in dev, stop the server with SIGTERM.
     tokio::spawn(async {
         use tokio::signal::unix::{signal, SignalKind};
         let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt())) else {
@@ -266,6 +258,9 @@ fn stop_on_signal() {
         }
         shut_down(0).await;
     });
+
+    eprintln!("carbon --serve listening on 127.0.0.1:{port}, home {}", home.display());
+    listen(listener, HUB.clone(), sink, token.into(), home.join(carbon_proto::TUNNEL_URL_FILE).into(), true).await
 }
 
 /// Written by `carbon-serve` too, so a Carbon app installed later on a Mac
@@ -399,7 +394,6 @@ fn restart_now() {
 /// agents went, so their reparented children are still named — and never off
 /// the session map alone, whose locks a stuck send can hold forever.
 async fn shut_down(code: i32) -> ! {
-    crate::preview::stop_all().await;
     crate::session::hold_sends();
     #[cfg(feature = "desktop")]
     crate::remote_access::stop_on_exit();
@@ -491,7 +485,6 @@ async fn start_core(sink: Sink) -> Result<PathBuf> {
     }
     sweep_browser_profiles().await;
     crate::auto_continue::rearm(&sink).await;
-    crate::canvas::start(sink.clone());
     let page_sync_sink = sink.clone();
     tokio::spawn(async move {
         loop {
@@ -594,12 +587,6 @@ pub async fn listen(
         let (sink, hub, token, tunnel_file) = (sink.clone(), hub.clone(), token.clone(), tunnel_file.clone());
         connections.spawn(async move {
             let served = match request_line(&stream).await {
-                Some(line) if line.starts_with("GET /preview-tunnel") => {
-                    crate::preview_tunnel::accept(stream, &token).await
-                }
-                Some(line) if line.starts_with("GET /canvas-preview/") => {
-                    canvas_preview(stream).await
-                }
                 Some(line) if line.starts_with("GET /file?") => file(stream, &token).await,
                 Some(line) if line.starts_with("POST /upload?") => upload(stream, &token).await,
                 Some(_) => connection(stream, sink, hub, &token, &tunnel_file, hosts).await,
@@ -791,20 +778,12 @@ struct Live {
     tasks: HashMap<String, Value>,
     running: std::collections::HashSet<String>,
     queued: HashMap<String, Value>,
-    previews: HashMap<String, Value>,
-    canvas_editors: Vec<Value>,
 }
 
 impl Live {
     fn note(&mut self, event: &str, payload: &Value) {
         let session = payload["sessionId"].as_str().unwrap_or_default().to_string();
         match (event, payload["payload"]["type"].as_str()) {
-            ("canvas_editors", _) => {
-                self.canvas_editors = payload.as_array().cloned().unwrap_or_default();
-            }
-            ("preview_changed", _) => {
-                self.previews.insert(session, payload.clone());
-            }
             ("agent_event", Some("permission_requested" | "questions_asked")) => {
                 self.asks.push(payload.clone());
             }
@@ -855,8 +834,7 @@ impl Live {
     fn payload(&self) -> Value {
         let tasks: Vec<&Value> = self.tasks.values().collect();
         let queued: Vec<&Value> = self.queued.values().collect();
-        let previews: Vec<&Value> = self.previews.values().collect();
-        json!({ "asks": self.asks, "tasks": tasks, "queued": queued, "previews": previews, "canvasEditors": self.canvas_editors, "secrets": crate::secrets::snapshot() })
+        json!({ "asks": self.asks, "tasks": tasks, "queued": queued, "secrets": crate::secrets::snapshot() })
     }
 }
 
@@ -1434,11 +1412,6 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         // not yet listening when it connected — `carbon-serve` included, which
         // an app installed after it meets as This Mac.
         live_state() => ok(HUB.live.lock().unwrap_or_else(|e| e.into_inner()).payload());
-        preview_setup(session_id: String, directory: Option<String>) => crate::preview::preview_setup(session_id, directory).await;
-        preview_start(session_id: String, config: Option<crate::preview::PreviewConfig>) => crate::preview::preview_start(sink, session_id, config).await;
-        preview_status(session_id: String) => crate::preview::preview_status(session_id).await;
-        preview_stop(session_id: String) => crate::preview::preview_stop(sink, session_id).await;
-        preview_logs(session_id: String) => crate::preview::preview_logs(session_id).await;
         list_secret_requests(session_id: String) => ok(crate::secrets::for_session(&session_id));
         answer_secret_request(session_id: String, id: String, values: HashMap<String, String>, keep_file: bool) =>
             crate::secrets::answer(&session_id, &id, values, keep_file, &sink).await;
@@ -1451,11 +1424,11 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
             harness: Harness, model: ModelId, effort: Option<Effort>,
             permission_mode: ApprovalPolicy, fast: bool, cwd: String,
             branch: Option<String>, use_worktree: bool, worktree_name: Option<String>,
-            base_ref: Option<String>, is_new_session: bool, canvas_context: Option<crate::canvas::CanvasFocus>,
+            base_ref: Option<String>, is_new_session: bool,
         ) => crate::send_msg(
             &session_id, &prompt, attachment_paths, harness, model, effort,
             permission_mode, fast, &cwd, branch.as_deref(), use_worktree,
-            worktree_name.as_deref(), base_ref.as_deref(), is_new_session, canvas_context, sink,
+            worktree_name.as_deref(), base_ref.as_deref(), is_new_session, sink,
         ).await;
         interrupt_session(session_id: String) => crate::interrupt_session(&session_id, sink).await;
         list_work_recovery(session_id: Option<String>) => crate::recovery::list_work_recovery(session_id).await;
@@ -1595,29 +1568,6 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         };
         delete_draft(id: String) => crate::drafts::delete_draft(id).await;
         read_doc(path: String) => crate::docs::read_doc(path).await;
-        list_canvases(project_path: Option<String>) => crate::canvas::list_canvases(project_path).await;
-        canvas_project_tokens(project_path: String, session_id: Option<String>) => crate::canvas::canvas_project_tokens(project_path, session_id).await;
-        read_canvas(id: String) => crate::canvas::read_canvas(id).await;
-        create_canvas(project_path: String, name: String) => crate::canvas::create_canvas(sink.clone(), project_path, name).await;
-        update_canvas(id: String, revision: u64, edit: crate::canvas::CanvasEdit, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::update_canvas(sink.clone(), id, revision, edit, author).await;
-        duplicate_canvas(id: String, revision: u64, name: String) => crate::canvas::duplicate_canvas(sink.clone(), id, revision, name).await;
-        duplicate_canvas_frame(id: String, revision: u64, frame_id: String, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::duplicate_canvas_frame(sink.clone(), id, revision, frame_id, author).await;
-        paste_canvas_layers(id: String, revision: u64, parent: String, after: Option<String>, source: crate::canvas::CanvasLayerSource) => crate::canvas::paste_canvas_layers(sink.clone(), id, revision, parent, after, source).await;
-        delete_canvas(id: String, revision: u64) => crate::canvas::delete_canvas(sink.clone(), id, revision).await;
-        canvas_history(id: String) => crate::canvas::canvas_history(id).await;
-        read_canvas_version(id: String, version: u64) => crate::canvas::read_canvas_version(id, version).await;
-        restore_canvas_version(id: String, revision: u64, version: u64, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::restore_canvas_version(sink.clone(), id, revision, version, author).await;
-        recover_canvas(id: String) => crate::canvas::recover_canvas(sink.clone(), id).await;
-        prepare_canvas_frame_edit(id: String, revision: u64, frame_id: String) => crate::canvas::prepare_canvas_frame_edit(id, revision, frame_id).await;
-        reconcile_canvas(id: String) => crate::canvas::reconcile_canvas(sink.clone(), id).await;
-        write_canvas_asset(id: String, revision: u64, upload: crate::canvas::CanvasAssetUpload, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::write_canvas_asset(sink.clone(), id, revision, upload, author).await;
-        read_canvas_asset(id: String, asset_id: String, version: Option<u64>) => crate::canvas::read_canvas_asset(id, asset_id, version).await;
-        canvas_editors() => ok(crate::canvas::canvas_editors().await);
-        capture_canvas_selection(project_path: String, id: String, revision: u64, picks: Vec<crate::canvas::CanvasPick>) => crate::canvas::capture_canvas_selection(project_path, id, revision, picks).await;
-        canvas_reference_status(reference: crate::canvas::CanvasReference) => ok(crate::canvas::canvas_reference_status(reference).await);
-        canvas_undo_state(id: String) => crate::canvas::canvas_undo_state(id).await;
-        canvas_undo(id: String, revision: u64, redo: bool) => Box::pin(crate::canvas::canvas_undo(sink.clone(), id, revision, redo)).await;
-        watch_canvases(scope: String, ids: Vec<String>) => crate::canvas::watch_canvases(scope, ids).await;
         list_pages(query: Option<String>, project_path: Option<String>, trashed: Option<bool>) => crate::pages::list_pages(query, project_path, trashed).await;
         read_page(id: String) => crate::pages::read_page(id).await;
         list_linear_documents(query: Option<String>, after: Option<String>) => crate::pages_sync::list_linear_documents(query, after).await;
@@ -1953,18 +1903,6 @@ mod tests {
         assert!(live.queued.is_empty());
     }
 
-    #[test]
-    fn reconnect_keeps_each_previews_latest_state() {
-        let mut live = Live::default();
-        live.note("preview_changed", &json!({ "sessionId": "a", "status": "starting" }));
-        live.note("preview_changed", &json!({ "sessionId": "b", "status": "running" }));
-        live.note("preview_changed", &json!({ "sessionId": "a", "status": "failed" }));
-        let states = live.payload()["previews"].as_array().unwrap().clone();
-        assert_eq!(states.len(), 2);
-        assert!(states.iter().any(|s| s["sessionId"] == "a" && s["status"] == "failed"));
-        assert!(states.iter().any(|s| s["sessionId"] == "b" && s["status"] == "running"));
-    }
-
     #[tokio::test]
     async fn files_are_served_from_the_two_directories_alone() {
         let home = std::env::temp_dir().join(format!("carbon-serve-test-{}", uuid::Uuid::new_v4()));
@@ -2082,22 +2020,4 @@ mod tests {
         let err = dispatch("stop_task", json!({ "sessionId": 1 }), sink).await.unwrap_err();
         assert!(err.as_str().unwrap().starts_with("invalid arguments to stop_task"));
     }
-}
-
-/// A preview URL carries a document capability instead of the server's general credential.
-async fn canvas_preview(stream: TcpStream) -> Result<()> {
-    use tokio::io::AsyncWriteExt;
-    let (head, reader) = read_head(stream).await?;
-    let mut stream = reader.into_inner().into_inner();
-    let key = head.target.strip_prefix("/canvas-preview/").unwrap_or("");
-    let body = crate::canvas::preview_document(key).await;
-    let (status, body) = match body {
-        Some(body) => ("200 OK", body),
-        None => ("404 Not Found", String::new()),
-    };
-    let header = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Security-Policy: sandbox allow-scripts\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
-    stream.write_all(header.as_bytes()).await?;
-    stream.write_all(body.as_bytes()).await?;
-    stream.shutdown().await.ok();
-    Ok(())
 }

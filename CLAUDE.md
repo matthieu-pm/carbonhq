@@ -238,8 +238,6 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 
 [profiles.html](apps/desktop/demo/profiles.html) mounts profile settings and the footer switcher with saved demo profiles, for icon and color selection, keyboard access and overflow at different sidebar widths.
 
-[preview.html](apps/desktop/demo/preview.html) mounts the managed preview control against a throwaway `carbon-serve`, using `server` and `token` query parameters. It runs real dev commands and shows the resulting app in an iframe so setup, logs, failure and stop can be checked without starting the desktop app.
-
 [main-font.html](apps/desktop/demo/main-font.html) mounts the real font picker beside interface, chat and code samples. Its **Run keyboard checks** button verifies IME confirmation, WebKit's composition Enter, unmatched searches and keyboard selection.
 
 [font-sizes.html](apps/desktop/demo/font-sizes.html) mounts the UI and code font size rows above chrome, chat, a raw `text-sm` button, tool output, an Edit diff and the virtualized Files view. Its **Run size check** reads every computed size back at two non-default pairs and checks the Files view's row pitch matches its line height.
@@ -332,7 +330,6 @@ Detail per subsystem lives in [apps/desktop/docs/](apps/desktop/docs/). **Read t
 - [repo-and-files-views.md](apps/desktop/docs/repo-and-files-views.md) — Diff view tab and Files view: tree, viewer, tabs, open-in.
 - [spaces.md](apps/desktop/docs/spaces.md) — Profiles (formerly Spaces): project tags, switching, notifications per profile.
 - [pages.md](apps/desktop/docs/pages.md) — Spaces and Markdown Pages: storage, editor, agent commands, history, attachments and Linear sync.
-- [canvas.md](apps/desktop/docs/canvas.md) — Canvas file format, shared storage, revisions, recovery, images and content-file reconciliation.
 - [issues.md](apps/desktop/docs/issues.md) — Linear + GitHub issues: credentials, tags and links, caching, uploads, issues page.
 - [file-opening.md](apps/desktop/docs/file-opening.md) — Open-in button, app detection, file links in the transcript.
 - [transcription.md](apps/desktop/docs/transcription.md) — Local dictation: engine, models, capture, streaming decode, mute, UI.

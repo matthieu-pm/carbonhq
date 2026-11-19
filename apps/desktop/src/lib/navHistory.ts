@@ -3,7 +3,7 @@
 
 import type { SettingsTab } from "@/components/SettingsPage";
 
-type PagePlace = { page: "tasks" | "issues" | "spaces" | "canvas"; sessionId: string | null };
+type PagePlace = { page: "tasks" | "issues" | "spaces"; sessionId: string | null };
 export type Place = PagePlace | { page: "settings"; tab: SettingsTab; returnTo: PagePlace };
 
 export type NavHistory = { stack: Place[]; index: number };

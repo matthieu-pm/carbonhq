@@ -322,13 +322,7 @@ pub async fn call(saved: &Saved, cmd: &str, args: Value) -> Result<Value, String
         }
         Err(format!("{} closed the connection before it answered", saved.name))
     };
-    let preview = args.get("line").and_then(Value::as_str)
-        .and_then(|line| serde_json::from_str::<carbon_proto::Envelope>(line).ok())
-        .is_some_and(|envelope| envelope.request.waits_for_preview());
-    let limit = if cmd == "orchestrate" && preview {
-        Duration::from_secs(carbon_proto::PREVIEW_WAIT_SECS + 45)
-    } else { CALL };
-    let answered = tokio::time::timeout(limit, answer)
+    let answered = tokio::time::timeout(CALL, answer)
         .await
         .unwrap_or_else(|_| Err(format!("{} did not answer in time", saved.name)));
     ws.close(None).await.ok();

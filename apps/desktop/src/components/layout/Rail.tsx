@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CircleDot, Frame } from "lucide-react";
+import { CircleDot } from "lucide-react";
 
 import { FilesGlyph18, House3Glyph18 } from "@/components/icons/nucleo";
 
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 /// off first, since the rail is drawn whatever else is open.
 export const RAIL_W = 52;
 
-export type RailPlace = "home" | "spaces" | "issues" | "canvas" | "settings";
+export type RailPlace = "home" | "spaces" | "issues" | "settings";
 
 /// The always-on column at the window's left edge: where you are, and the
 /// app-wide controls that belong to no list. Sits on the frame, under the
@@ -24,8 +24,6 @@ export default function Rail({
   onHome,
   onSpaces,
   onIssues,
-  canvas = false,
-  onCanvas,
   onHomeHover,
   peeks,
   onSpacesHover,
@@ -39,8 +37,6 @@ export default function Rail({
   onHome: () => void;
   onSpaces: () => void;
   onIssues: () => void;
-  canvas?: boolean;
-  onCanvas?: () => void;
   /// Hovering Home peeks the task sidebar where it is not docked; `false` on
   /// leave, so the card can close once the pointer is in neither.
   onHomeHover: (over: boolean) => void;
@@ -76,7 +72,6 @@ export default function Rail({
       <RailButton label="Issues" shortcut="issues.open" current={place === "issues"} onClick={onIssues}>
         <CircleDot />
       </RailButton>
-      {canvas && onCanvas && <RailButton label="Canvas" shortcut="canvas.open" current={place === "canvas"} onClick={onCanvas}><Frame /></RailButton>}
       <div className="flex-1" />
       <div className="flex flex-col items-center gap-1">{footer}</div>
     </nav>
