@@ -15,6 +15,8 @@ const LINKS = [
   { label: "Changelog", href: "/changelog" },
   { label: "llms.txt", href: "/llms.txt" },
   { label: "GitHub", href: REPO, out: true },
+  { label: "X", href: "https://x.com/carbonhq_", out: true },
+  { label: "LinkedIn", href: "https://www.linkedin.com/company/carbonhq-global/", out: true },
 ];
 
 /// The last blue band: the closing line, both ways in, and the footer.
