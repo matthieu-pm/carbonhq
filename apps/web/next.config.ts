@@ -13,6 +13,7 @@ if (!DOCS_ORIGIN) console.warn("DOCS_ORIGIN is unset: /docs will 404 on this bui
 
 const config: NextConfig = {
   reactStrictMode: true,
+  experimental: { agentUpgrade: "security" },
   // In a workspace, Next traces from whichever lockfile it finds first and
   // guesses wrong; the desktop app's own tree is not this site's root.
   outputFileTracingRoot: path.join(import.meta.dirname, "../.."),

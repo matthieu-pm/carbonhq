@@ -27,27 +27,27 @@ export function Faq() {
 const FAQ: [string, string][] = [
   [
     "What is Carbon?",
-    "Carbon is one Mac app for every coding agent. Run them on your Mac or on your other machines.",
+    "Carbon is a Mac app for working with coding agents. Give each agent a task, follow several sessions at once, and review code changes beside the conversation.",
   ],
   [
     "Is Carbon free?",
-    "Yes. Carbon is free and open source under Apache 2.0.",
+    "Yes. Carbon is free and open source under the Apache 2.0 license. Any subscription or API charges come from the providers you use.",
   ],
   [
     "Which agents does Carbon support?",
-    "Carbon supports Claude Code, Codex, pi, fx and Grok Build.",
+    "Carbon works with Claude Code, Codex, pi, fx, and Grok Build. In Settings → Agents, you can also add agents that support the Agent Client Protocol (ACP).",
   ],
   [
     "Is Carbon safe to use with my Claude subscription?",
-    "Yes. Carbon runs Anthropic's own Claude Code CLI so it works within their terms.",
+    "Carbon runs Anthropic’s official Claude Code CLI. If your plan includes Claude Code, sign in to the CLI with your Claude account. Your usual plan limits apply.",
   ],
   [
     "Does Carbon send my code off my machine?",
-    "No. Carbon keeps your data on your machine. Your agents talk to their own providers, as usual.",
+    "Your project lives on the Mac or server where you run the session. An agent using a cloud model can send prompts and relevant code to its provider. Carbon’s usage analytics exclude both.",
   ],
   [
     "Does Carbon run on Linux?",
-    "Yes, as a server. Your agents run on Linux, and you drive them from the Carbon app on your Mac.",
+    "Yes. Connect a Linux server over SSH from the Mac app. Your agents run on the server and can keep working when you close your laptop.",
   ],
 ];
 
