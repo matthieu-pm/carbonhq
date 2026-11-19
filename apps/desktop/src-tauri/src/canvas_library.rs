@@ -176,8 +176,18 @@ fn relocate(from: PathBuf, to: PathBuf, name: String) -> Result<String> {
     Ok(name)
 }
 
+/// The directory inode survives a document replacement and is shared by servers editing this checkout.
+#[cfg(unix)]
+fn lock_library(root: &Path) -> Result<File> {
+    let file = File::open(root)?;
+    file.lock()?;
+    Ok(file)
+}
+
 fn apply(project: &Path, action: Action) -> Result<String> {
     let root = directory(project, "canvases", true)?;
+    #[cfg(unix)]
+    let _checkout = lock_library(&root)?;
     match action {
         Action::Create { folder } => {
             let dir = folder_path(&root, &folder, false)?;
@@ -268,9 +278,111 @@ pub(crate) async fn change(project_path: String, action: Action) -> Result<Strin
     .context("Canvas update stopped")??)
 }
 
+fn document_path(project: &Path, folder: &str, name: &str) -> Result<PathBuf> {
+    check_name(name)?;
+    let root = directory(project, "canvases", false)?;
+    let path = folder_path(&root, folder, false)?.join(format!("{name}{EXT}"));
+    ensure!(path.symlink_metadata()?.is_file(), "Canvas is unavailable");
+    Ok(path)
+}
+
+/// Read a canvas from the attached project, including files created by the library alone.
+pub(crate) async fn read(
+    project_path: String,
+    folder: String,
+    name: String,
+) -> Result<String, crate::Fail> {
+    let project = attached(project_path).await?;
+    Ok(
+        tokio::fs::read_to_string(document_path(&project, &folder, &name)?)
+            .await
+            .context("Could not read canvas")?,
+    )
+}
+
+/// Compare the last read under the same lock as archive and move.
+fn save_document(
+    project: &Path,
+    folder: &str,
+    name: &str,
+    previous: &str,
+    content: &str,
+) -> Result<()> {
+    #[cfg(unix)]
+    let _checkout = lock_library(&directory(project, "canvases", false)?)?;
+    let path = document_path(project, folder, name)?;
+    ensure!(
+        fs::read_to_string(&path)? == previous,
+        "Canvas changed on disk. Reload the latest version before saving."
+    );
+    let data: serde_json::Value = serde_json::from_str(content)?;
+    ensure!(
+        data["version"] == 1 && data["elements"].is_array(),
+        "Invalid canvas document"
+    );
+    let tmp = path.with_file_name(format!(".{}.tmp", uuid::Uuid::new_v4()));
+    let mut file = File::create_new(&tmp)?;
+    let result = (|| {
+        file.set_permissions(path.metadata()?.permissions())?;
+        file.write_all(content.as_bytes())?;
+        drop(file);
+        fs::rename(&tmp, &path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    Ok(result?)
+}
+
+/// Replace a canvas only while its source revision is still current.
+pub(crate) async fn save(
+    project_path: String,
+    folder: String,
+    name: String,
+    previous: String,
+    content: String,
+) -> Result<(), crate::Fail> {
+    let project = attached(project_path).await?;
+    Ok(tokio::task::spawn_blocking(move || {
+        let _guard = WRITES.blocking_lock();
+        save_document(&project, &folder, &name, &previous, &content)
+    })
+    .await
+    .context("Canvas save stopped")??)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_edits_cannot_overwrite_or_recreate_a_moved_canvas() -> Result<()> {
+        let project = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&project)?;
+        let name = apply(
+            &project,
+            Action::Create {
+                folder: String::new(),
+            },
+        )?;
+        let path = document_path(&project, "", &name)?;
+        let original = fs::read_to_string(&path)?;
+        let edited = r##"{"version":1,"elements":[],"pages":[{"background":"#abcdef"}]}"##;
+        save_document(&project, "", &name, &original, edited)?;
+        assert!(save_document(&project, "", &name, &original, &original).is_err());
+        assert_eq!(fs::read_to_string(&path)?, edited);
+        apply(
+            &project,
+            Action::Archive {
+                folder: String::new(),
+                name: name.clone(),
+            },
+        )?;
+        assert!(save_document(&project, "", &name, edited, &original).is_err());
+        assert!(!path.exists());
+        fs::remove_dir_all(&project)?;
+        Ok(())
+    }
 
     #[test]
     fn created_files_survive_move_archive_restore_and_a_fresh_scan() -> Result<()> {

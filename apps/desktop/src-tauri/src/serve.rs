@@ -1547,6 +1547,8 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         warm_file_index(cwd: String) => files::warm_file_index(cwd).await;
         search_files(cwd: String, query: String, limit: usize) => files::search_files(cwd, query, limit).await;
         canvas_library(project_path: String) => crate::canvas_library::list(project_path).await;
+        read_canvas_document(project_path: String, folder: String, name: String) => crate::canvas_library::read(project_path, folder, name).await;
+        save_canvas_document(project_path: String, folder: String, name: String, previous: String, content: String) => crate::canvas_library::save(project_path, folder, name, previous, content).await;
         change_canvas_library(project_path: String, action: crate::canvas_library::Action) => crate::canvas_library::change(project_path, action).await;
         list_dir(cwd: String, dir: String) => files::list_dir(cwd, dir).await;
         read_file(path: String) => read_file(&path).await;
