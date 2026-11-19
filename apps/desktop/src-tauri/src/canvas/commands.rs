@@ -92,6 +92,24 @@ pub async fn duplicate_canvas_frame(
     Ok(canvas)
 }
 
+/// Paste a frozen selection and its assets as one revision on the owning server.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn paste_canvas_layers(
+    sink: Sink,
+    id: String,
+    revision: u64,
+    parent: String,
+    after: Option<String>,
+    source: CanvasLayerSource,
+) -> Result<CanvasLayerPaste, String> {
+    let result = Store::open()
+        .await?
+        .paste_layers(&id, revision, &parent, after.as_deref(), source)
+        .await?;
+    announce(&sink, &result.canvas);
+    Ok(result)
+}
+
 /// Permanent deletion removes the file's content, assets and history after recording a tombstone.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn delete_canvas(sink: Sink, id: String, revision: u64) -> Result<(), String> {

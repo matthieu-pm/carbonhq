@@ -45,6 +45,7 @@
   font-size: 12px; line-height: 16px; color: var(--muted-foreground); pointer-events: none; cursor: default;
 }
 .canvas-frame-label:is([data-selected="true"], [aria-selected="true"], [aria-current="true"]) { color: var(--accent-mention); }
+.canvas-frame-label[data-canvas-frame-label] { pointer-events: auto; cursor: grab; }
 
 /* Drawn outside the zoomed layer in screen pixels, so the stroke keeps one
    weight at every zoom. Inert: every click passes through to the board. */
@@ -54,4 +55,23 @@
 .canvas-selection > [data-label] {
   position: absolute; bottom: 100%; left: -2px; margin-bottom: 2px; padding: 0 4px; border-radius: 3px; white-space: nowrap;
   font-size: 10px; line-height: 16px; font-weight: 500; background: var(--accent-mention); color: var(--background);
+}
+
+.canvas-resize-handle {
+  position: absolute; right: -11px; bottom: -11px; width: 20px; height: 20px;
+  display: grid; place-items: center; pointer-events: auto; cursor: nwse-resize;
+}
+.canvas-resize-handle::after {
+  content: ""; width: 8px; height: 8px; border: 1px solid var(--accent-mention);
+  background: var(--background); border-radius: 2px;
+}
+.canvas-board[data-tool="hand"] :is(.canvas-frame-label, .canvas-resize-handle) { cursor: grab; }
+.canvas-insertion {
+  position: absolute; z-index: 2; min-width: 2px; min-height: 2px;
+  pointer-events: none; transform: translate(-1px, -1px); background: var(--accent-mention);
+}
+.canvas-inline-text {
+  position: absolute; z-index: 3; padding: 3px 5px; resize: none; user-select: text;
+  max-width: calc(100% - 16px); border: 1px solid var(--accent-mention); border-radius: 4px;
+  outline: none; background: var(--popover); color: var(--popover-foreground);
 }

@@ -121,7 +121,7 @@ async fn inspect_node(
                 clearTimeout(timer);
                 if(event.data.error){{reject(new Error(event.data.error));return;}}
                 const boxes=event.data.boxes;
-                const frameBox={{id:frame.id,x:0,y:0,width:frame.geometry.width,height:frame.geometry.height,styles:{{}}}};
+                const frameBox={{id:frame.id,x:0,y:0,width:frame.geometry.width,height:frame.geometry.height,styles:boxes.find(b=>b.id===frame.id)?.styles??{{}}}};
                 const fallback={};
                 const shot={};
                 let box=target===frame.id?frameBox:boxes.find(b=>b.id===target);

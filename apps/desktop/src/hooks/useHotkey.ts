@@ -38,6 +38,8 @@ type HotkeyOptions = {
   /// A binding that claims both takes that away for nothing, since a Mac user
   /// presses ⌘.
   platformOnly?: boolean;
+  /// A view may claim its shortcut only from a specific region.
+  when?: (event: KeyboardEvent) => boolean;
 };
 
 /// Chords that still fire while the shell is suspended: they act on the app as
@@ -91,7 +93,7 @@ const UNBOUND = { key: "", meta: false, shift: false, alt: false, code: undefine
 export function useHotkey(
   id: ShortcutId,
   handler: () => void,
-  { enabled = true, platformOnly = false, skipInTextField = false, page = false }: HotkeyOptions = {},
+  { enabled = true, platformOnly = false, skipInTextField = false, page = false, when }: HotkeyOptions = {},
 ) {
   // An unbound row answers no chord, and the listener is left unregistered for
   // the same reason `enabled: false` does: this claims every chord it matches,
@@ -128,6 +130,7 @@ export function useHotkey(
       if (e.altKey !== alt) return;
 
       if (skipInTextField && isTextField(e.target)) return;
+      if (when && !when(e)) return;
 
       // Claim the chord before the webview's default — Cmd+B is bold in a
       // contenteditable and would otherwise fire both.
@@ -137,7 +140,7 @@ export function useHotkey(
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [id, key, meta, shift, alt, code, enabled, platformOnly, skipInTextField, page]);
+  }, [id, key, meta, shift, alt, code, enabled, platformOnly, skipInTextField, page, when]);
 }
 
 /// Binds a modifier set over a run of digits — one listener for a whole row of

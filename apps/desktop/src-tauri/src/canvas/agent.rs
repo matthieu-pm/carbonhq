@@ -478,7 +478,7 @@ pub async fn request(request: CanvasRequest, sink: &Sink) -> Result<Value, Strin
                 None
             };
             return Ok(envelope(
-                json!({"nodeId":node,"frameId":frame.id,"markup":markup(nodes),"css":frame.content.css,"tokens":canvas.tokens,"tokenReferences":super::tokens::links(nodes),"tokenSource":super::tokens::source(&frame.content),"computed":measured}),
+                json!({"nodeId":node,"frameId":frame.id,"markup":markup(nodes),"css":frame.content.css,"bodyStyles":frame.content.extra.get("bodyStyles"),"tokens":canvas.tokens,"tokenReferences":super::tokens::links(nodes),"tokenSource":super::tokens::source(&frame.content),"computed":measured}),
             ));
         }
         Action::Shot { node } => {

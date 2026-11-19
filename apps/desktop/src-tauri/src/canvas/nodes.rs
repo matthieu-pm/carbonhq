@@ -70,7 +70,7 @@ pub(super) fn frame_for<'a>(canvas: &'a Canvas, id: &str) -> Result<&'a CanvasFr
         .ok_or_else(|| format!("No frame or layer {id} in this canvas."))
 }
 
-fn children<'a>(canvas: &'a mut Canvas, id: &str) -> Result<&'a mut Vec<CanvasNode>, String> {
+pub(super) fn children<'a>(canvas: &'a mut Canvas, id: &str) -> Result<&'a mut Vec<CanvasNode>, String> {
     for frame in &mut canvas.frames {
         if frame.id == id {
             return Ok(&mut frame.content.nodes);

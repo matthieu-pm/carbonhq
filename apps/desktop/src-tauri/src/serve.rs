@@ -1602,6 +1602,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         update_canvas(id: String, revision: u64, edit: crate::canvas::CanvasEdit, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::update_canvas(sink.clone(), id, revision, edit, author).await;
         duplicate_canvas(id: String, revision: u64, name: String) => crate::canvas::duplicate_canvas(sink.clone(), id, revision, name).await;
         duplicate_canvas_frame(id: String, revision: u64, frame_id: String, author: Option<crate::canvas::CanvasAuthor>) => crate::canvas::duplicate_canvas_frame(sink.clone(), id, revision, frame_id, author).await;
+        paste_canvas_layers(id: String, revision: u64, parent: String, after: Option<String>, source: crate::canvas::CanvasLayerSource) => crate::canvas::paste_canvas_layers(sink.clone(), id, revision, parent, after, source).await;
         delete_canvas(id: String, revision: u64) => crate::canvas::delete_canvas(sink.clone(), id, revision).await;
         canvas_history(id: String) => crate::canvas::canvas_history(id).await;
         read_canvas_version(id: String, version: u64) => crate::canvas::read_canvas_version(id, version).await;

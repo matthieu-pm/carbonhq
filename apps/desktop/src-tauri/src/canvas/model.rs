@@ -189,6 +189,22 @@ pub struct CanvasEdit {
     pub tokens: Option<BTreeMap<String, String>>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLayerSource {
+    pub id: String,
+    pub revision: u64,
+    pub layers: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLayerPaste {
+    pub canvas: Canvas,
+    pub frame_id: String,
+    pub node_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "events.ts")]
@@ -320,13 +336,7 @@ pub(super) fn validate(canvas: &Canvas) -> Result<(), String> {
 /// Canonical image URLs must agree with the explicit file-owned asset references.
 fn validate_asset_urls(content: &CanvasContent) -> Result<(), String> {
     fn check(value: &str, assets: &[String]) -> Result<(), String> {
-        for suffix in value.split("carbon-canvas-asset://").skip(1) {
-            let id = suffix
-                .split(|c: char| {
-                    c.is_whitespace() || matches!(c, '\'' | '"' | ')' | ';' | '<' | '>')
-                })
-                .next()
-                .unwrap_or_default();
+        for id in asset_urls(value) {
             if !assets.iter().any(|a| a == id) {
                 return Err(
                     "Image URLs must reference an image declared in the frame's assetIds.".into(),
@@ -353,7 +363,42 @@ fn validate_asset_urls(content: &CanvasContent) -> Result<(), String> {
         Ok(())
     }
     check(&content.css, &content.asset_ids)?;
+    if let Some(styles) = content.extra.get("bodyStyles").and_then(Value::as_object) {
+        for value in styles.values().filter_map(Value::as_str) {
+            check(value, &content.asset_ids)?;
+        }
+    }
     nodes(&content.nodes, &content.asset_ids)
+}
+
+pub(super) fn asset_urls(value: &str) -> impl Iterator<Item = &str> {
+    value.split("carbon-canvas-asset://").skip(1).map(|suffix| {
+        suffix
+            .split(|c: char| c.is_whitespace() || matches!(c, '\'' | '"' | ')' | ';' | '<' | '>'))
+            .next()
+            .unwrap_or_default()
+    })
+}
+
+pub(super) fn layer_asset_ids(node: &CanvasNode, ids: &mut BTreeSet<String>) {
+    if let CanvasNode::Element {
+        attributes,
+        styles,
+        children,
+        ..
+    } = node
+    {
+        ids.extend(
+            attributes
+                .values()
+                .chain(styles.values())
+                .flat_map(|value| asset_urls(value))
+                .map(str::to_owned),
+        );
+        for child in children {
+            layer_asset_ids(child, ids);
+        }
+    }
 }
 
 fn unique(id: &str, ids: &mut BTreeSet<String>) -> Result<(), String> {

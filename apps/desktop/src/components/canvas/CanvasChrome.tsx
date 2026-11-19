@@ -412,6 +412,7 @@ function FileTabs({
       ref={list}
       role="tablist"
       aria-label="Canvas files"
+      data-canvas-files
       onKeyDown={onKeyDown}
       className="flex min-w-0 shrink items-center gap-0.5 overflow-x-auto [scrollbar-width:none]"
     >
