@@ -72,7 +72,7 @@ export function parseChangelog(md: string, mediaBase = MEDIA_BASE): Release[] {
         version,
         date: rest.find((r) => /^\d{4}-\d{2}-\d{2}$/.test(r)) ?? null,
         notify: rest.includes("notify"),
-        beta: version.includes("-"),
+        beta: version.includes("-") || rest.includes("beta"),
         sections: [],
       });
     } else if (line.startsWith("### ")) {

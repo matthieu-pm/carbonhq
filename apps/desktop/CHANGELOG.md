@@ -12,7 +12,7 @@ reads:
 - `## <version> · <date> · notify` — date is `YYYY-MM-DD`. `notify` raises a
   card in the app for people who update to it; leave it off and the release is
   listed quietly. Date a beta when it is published so it appears on the website;
-  undated betas stay in the app's beta channel.
+  undated betas stay in the app's beta channel. Add `· beta` for a prerelease with a plain version number.
 - `## Unreleased` holds changes made after the latest installer was built. It
   stays out of the website and app feed until those changes have a release.
 - `### New`, `### Improved`, `### Fixed`. Any other heading reaches GitHub
@@ -22,7 +22,7 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
-## 0.31.0 · 2026-11-19
+## 0.31.0 · 2026-11-19 · beta
 
 ### Improved
 
