@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -36,6 +36,8 @@ import { relativeTime } from "@/lib/format";
 import { projectLabel } from "@/lib/servers";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/types/events";
+
+const CanvasEditor = lazy(() => import("./CanvasEditor").then(module => ({ default: module.CanvasEditor })));
 
 type Library = ReturnType<typeof useCanvasLibrary>;
 type Location = { project: string; folder: string };
@@ -258,7 +260,7 @@ export function CanvasLibrary({
   const title = archived ? "Archive" : basename(scope.folder) || "Dashboard";
   return (
     <main aria-label="Design workspace" className="flex min-h-0 min-w-0 flex-1">
-      {!collapsed && (
+      {!collapsed && !library.active && (
         <DockedSidebarFrame>
           <aside
             aria-label="Canvas library navigation"
@@ -292,13 +294,11 @@ export function CanvasLibrary({
         </DockedSidebarFrame>
       )}
       {library.active ? (
-        <section aria-label={`Canvas: ${library.active.name}`} className="min-w-0 flex-1 bg-background">
-          {error && !creation && !moving && (
-            <p role="alert" className="p-3 text-ui text-destructive">
-              {error}
-            </p>
-          )}
-        </section>
+        <Suspense fallback={<p role="status" className="m-4 text-ui">Opening canvas…</p>}>
+          <CanvasEditor key={canvasKey(library.active)} file={library.active} projects={projects}
+            collapsed={collapsed} sidebarStyle={style} resizeHandle={handle}
+            libraryError={creation || moving ? "" : error} />
+        </Suspense>
       ) : (
         <section className="content-backdrop library-pane flex min-w-0 flex-1 flex-col overflow-hidden pt-8">
           <div className="shrink-0 px-(--library-header-inset)">
