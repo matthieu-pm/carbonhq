@@ -49,6 +49,39 @@ export type Layer = {
 };
 export type Page = { id: string; name: string; background: string; opacity?: string };
 export type Document = { version: 1; pages: Page[]; elements: Layer[]; tokens: Token[] };
+const styleKeys = new Set([
+  "width",
+  "height",
+  "rotate",
+  "opacity",
+  "borderRadius",
+  "borderTopLeftRadius",
+  "borderTopRightRadius",
+  "borderBottomLeftRadius",
+  "borderBottomRightRadius",
+  "mixBlendMode",
+  "overflow",
+  "display",
+  "flexDirection",
+  "alignItems",
+  "justifyContent",
+  "flexWrap",
+  "gap",
+  "padding",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "letterSpacing",
+  "textAlign",
+  "fontStyle",
+  "textDecoration",
+  "textTransform",
+]);
+const embeddedImage = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
+export function localCssValue(value: string) {
+  return !/[\\]|\/\*|(?:url|src|image|image-set|paint|element|var|attr)\s*\(/i.test(value);
+}
 export const uid = () => crypto.randomUUID();
 export const filterDefaults: Record<string, string> = {
   blur: "4px",
@@ -111,7 +144,8 @@ export function newEffect(kind: EffectKind): Effect {
 }
 export function newLayer(kind: LayerKind, page: string, parent: string | null, x: number, y: number): Layer {
   const fill = newEffect("Fill");
-  fill.fields.color = kind === "Text" ? "#202020" : kind === "Frame" ? "#ffffff" : "#b9b9be";
+  fill.fields.color =
+    kind === "Text" ? (parent ? "#202020" : "#fafafa") : kind === "Frame" ? "#ffffff" : "#b9b9be";
   return {
     id: uid(),
     page,
@@ -163,9 +197,20 @@ export function readDocument(raw: string): Document {
     effectTypes.includes(e.kind) &&
     typeof e.enabled === "boolean" &&
     strings(e.fields) &&
+    Object.entries(e.fields).every(([key, value]) =>
+      key === "image" ? !value || embeddedImage.test(value) : localCssValue(value),
+    ) &&
     (e.stops === undefined ||
       (Array.isArray(e.stops) &&
-        e.stops.every((s) => s && validId(s.id) && typeof s.color === "string" && typeof s.at === "string") &&
+        e.stops.every(
+          (s) =>
+            s &&
+            validId(s.id) &&
+            typeof s.color === "string" &&
+            typeof s.at === "string" &&
+            localCssValue(s.color) &&
+            localCssValue(s.at),
+        ) &&
         unique(e.stops)));
   if (
     !Array.isArray(doc.pages) ||
@@ -177,7 +222,8 @@ export function readDocument(raw: string): Document {
         validId(p.id) &&
         typeof p.name === "string" &&
         typeof p.background === "string" &&
-        (p.opacity === undefined || typeof p.opacity === "string"),
+        localCssValue(p.background) &&
+        (p.opacity === undefined || (typeof p.opacity === "string" && localCssValue(p.opacity))),
     ) ||
     !doc.tokens.every(
       (t: Token) =>
@@ -185,18 +231,21 @@ export function readDocument(raw: string): Document {
         validId(t.id) &&
         Object.hasOwn(tokenDefaults, t.kind) &&
         typeof t.value === "string" &&
+        localCssValue(t.value) &&
         typeof t.name === "string",
     ) ||
     !doc.elements.every(
       (l: Layer) =>
         l &&
         validId(l.id) &&
+        (l.parent === null || validId(l.parent)) &&
         typeof l.name === "string" &&
         typeof l.text === "string" &&
         Number.isFinite(l.x) &&
         Number.isFinite(l.y) &&
         ["Frame", "Rectangle", "Text"].includes(l.kind) &&
         strings(l.style) &&
+        Object.entries(l.style).every(([key, value]) => styleKeys.has(key) && localCssValue(value)) &&
         Array.isArray(l.effects) &&
         l.effects.every(validEffect) &&
         unique(l.effects),
@@ -230,7 +279,10 @@ export function percent(value: string) {
 }
 export function layerAppearance(layer: Layer, tokens: Token[]): CSSProperties {
   const css = Object.fromEntries(
-    Object.entries(layer.style).map(([k, v]) => [k, resolve(v, tokens)]),
+    Object.entries(layer.style).map(([k, v]) => [
+      k === "borderRadius" ? "--ce-layer-radius" : k,
+      resolve(v, tokens),
+    ]),
   ) as CSSProperties;
   const fills: string[] = [],
     shadows: string[] = [],
@@ -250,7 +302,7 @@ export function layerAppearance(layer: Layer, tokens: Token[]): CSSProperties {
             paint(f.end) + " " + (f.endAt || "100%"),
           ].join(", ");
           if (f.type === "Image") {
-            if (/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(f.image)) {
+            if (f.image?.startsWith("data:image/")) {
               const image = 'url("' + f.image + '")';
               const source =
                 opacity === "100%"
@@ -279,7 +331,7 @@ export function layerAppearance(layer: Layer, tokens: Token[]): CSSProperties {
       case "Border": {
         const stroke = `${f.width} ${f.style} ${f.color}`;
         for (const side of ["Top", "Right", "Bottom", "Left"] as const)
-          if (!f.sides || f.sides === "All" || f.sides === side) css[`border${side}`] = stroke;
+          if (!f.sides || f.sides === "All" || f.sides === side) css[`border${side}`] ??= stroke;
         break;
       }
       case "Outline":

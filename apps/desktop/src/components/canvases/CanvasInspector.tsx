@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { blendModes, resolve, type Document, type Layer, type Page, type TokenKind } from "./document";
+import {
+  blendModes,
+  resolve,
+  type Document,
+  type Effect,
+  type Layer,
+  type Page,
+  type TokenKind,
+} from "./document";
 import { Choice, Field } from "./EditorControls";
 import { LayerEffects } from "./LayerEffects";
 import type { Change } from "./CanvasTheme";
@@ -139,7 +147,13 @@ export function CanvasInspector({
             ))}
           {field("width", "W", ["Container", "Breakpoint", "Spacing"], "px")}
           {field("height", "H", ["Container", "Spacing"], "px")}
-          {field("rotate", "Rotation", [], "deg")}
+          <Field
+            label="Rotation"
+            value={layer.style.rotate ?? "0deg"}
+            unit="deg"
+            valid={(v) => /^[-+]?(?:\d+\.?\d*|\.\d+)(deg|grad|rad|turn)$/.test(v)}
+            onChange={(v) => style("rotate", v)}
+          />
         </div>
         {layer.kind === "Frame" && (
           <label className="ce-check">
@@ -232,6 +246,13 @@ export function CanvasInspector({
   );
 }
 
+function paintKeys(effect: Effect) {
+  if (!effect.enabled || !effect.fields.color) return [];
+  if (effect.kind !== "Fill" || effect.fields.type === "Solid") return ["color"];
+  if (effect.fields.type === "Image") return [];
+  return ["color", "end"];
+}
+
 function SelectionColors({ doc, layer, change }: { doc: Document; layer: Layer; change: Change }) {
   const ids = new Set([layer.id]);
   const visit = (id: string) => {
@@ -244,11 +265,9 @@ function SelectionColors({ doc, layer, change }: { doc: Document; layer: Layer; 
   const colors = new Set<string>();
   for (const l of doc.elements.filter((l) => ids.has(l.id)))
     for (const e of l.effects) {
-      if (e.enabled && e.fields.color) colors.add(e.fields.color);
-      if (e.enabled && e.kind === "Fill" && ["Linear", "Radial", "Conic"].includes(e.fields.type)) {
-        colors.add(e.fields.end);
-        e.stops?.forEach((s) => colors.add(s.color));
-      }
+      const keys = paintKeys(e);
+      for (const key of keys) if (e.fields[key]) colors.add(e.fields[key]);
+      if (keys.includes("end")) e.stops?.forEach((s) => colors.add(s.color));
     }
   if (!colors.size) return null;
   return (
@@ -271,12 +290,16 @@ function SelectionColors({ doc, layer, change }: { doc: Document; layer: Layer; 
                   : {
                       ...l,
                       effects: l.effects.map((e) => {
+                        const keys = paintKeys(e);
+                        if (!keys.length) return e;
                         const fields = { ...e.fields };
-                        for (const key of ["color", "end"]) if (fields[key] === value) fields[key] = next;
+                        for (const key of keys) if (fields[key] === value) fields[key] = next;
                         return {
                           ...e,
                           fields,
-                          stops: e.stops?.map((s) => (s.color === value ? { ...s, color: next } : s)),
+                          stops: keys.includes("end")
+                            ? e.stops?.map((s) => (s.color === value ? { ...s, color: next } : s))
+                            : e.stops,
                         };
                       }),
                     },

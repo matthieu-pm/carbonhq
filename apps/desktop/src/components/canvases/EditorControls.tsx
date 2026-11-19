@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Link2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { resolve, type Token, type TokenKind } from "./document";
+import { localCssValue, resolve, type Token, type TokenKind } from "./document";
+import { normalizeToken } from "./importTokens";
 
 export function ToolButton({
   label,
@@ -100,9 +101,10 @@ export function Field({
         onBlur={() => {
           if (draft === null) return;
           let v = draft.trim();
-          if (unit && /^-?(?:\d+\.?\d*|\.\d+)$/.test(v)) v += unit;
+          if (kinds.includes("Opacity")) v = normalizeToken("Opacity", v);
+          else if (unit && /^-?(?:\d+\.?\d*|\.\d+)$/.test(v)) v += unit;
           if (color && /^[0-9a-f]{3,4}$|^[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(v)) v = "#" + v;
-          if (v && (!valid || valid(v))) onChange(v);
+          if (v && (!valid || (localCssValue(v) && valid(v)))) onChange(v);
           setDraft(null);
         }}
         onKeyDown={(e) => {

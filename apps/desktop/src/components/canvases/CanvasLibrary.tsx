@@ -296,7 +296,8 @@ export function CanvasLibrary({
       {library.active ? (
         <Suspense fallback={<p role="status" className="m-4 text-ui">Opening canvas…</p>}>
           <CanvasEditor key={canvasKey(library.active)} file={library.active} projects={projects}
-            collapsed={collapsed} sidebarStyle={style} resizeHandle={handle} />
+            collapsed={collapsed} sidebarStyle={style} resizeHandle={handle}
+            libraryError={creation || moving ? "" : error} />
         </Suspense>
       ) : (
         <section className="content-backdrop library-pane flex min-w-0 flex-1 flex-col overflow-hidden pt-8">

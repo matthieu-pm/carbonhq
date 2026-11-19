@@ -3,14 +3,20 @@ import { canvasKey, type CanvasFile } from "@/hooks/useCanvasLibrary";
 import { invoke } from "@/lib/transport";
 import { readDocument, type Document } from "./document";
 
-type Snapshot = { doc: Document | null; error: string; saving: boolean };
+type Snapshot = { doc: Document | null; error: string; saving: boolean; conflict: boolean };
 const open = new Map<string, CanvasSession>();
 
-class CanvasSession {
-  private snapshot: Snapshot = { doc: null, error: "", saving: false };
+export class CanvasSession {
+  private snapshot: Snapshot = { doc: null, error: "", saving: false, conflict: false };
   private listeners = new Set<() => void>();
   private saved = "";
-  private latest = "";
+  private persisted: Document | null = null;
+  private conflictRevision: string | null = null;
+  private timer?: ReturnType<typeof setTimeout>;
+  private group: string | Element | null = null;
+  private input: Element | null = null;
+  private groupedAt = 0;
+  private refreshing = false;
   private writing = false;
   private history: Document[] = [];
   private future: Document[] = [];
@@ -21,7 +27,10 @@ class CanvasSession {
     this.listeners.add(fn);
     return () => {
       this.listeners.delete(fn);
-      queueMicrotask(() => this.release());
+      queueMicrotask(() => {
+        if (!this.listeners.size && this.timer) void this.flush();
+        this.release();
+      });
     };
   };
   private release() {
@@ -30,7 +39,7 @@ class CanvasSession {
       !this.listeners.size &&
       !this.loading &&
       !this.writing &&
-      this.latest === this.saved &&
+      this.snapshot.doc === this.persisted &&
       open.get(key) === this
     )
       open.delete(key);
@@ -39,58 +48,119 @@ class CanvasSession {
     this.snapshot = { ...this.snapshot, ...change };
     this.listeners.forEach((fn) => fn());
   }
-  async load() {
-    if (this.loading || this.writing) return;
-    this.loading = true;
+  private args() {
     const { project: projectPath, folder, name } = this.file;
+    return { projectPath, folder, name };
+  }
+  async load(refresh = false) {
+    if (this.loading || this.writing) return;
+    const before = this.snapshot.doc;
+    if (refresh) {
+      if (this.refreshing || before !== this.persisted || this.snapshot.conflict) return;
+      this.refreshing = true;
+    } else this.loading = true;
     try {
-      const raw = await invoke<string>("read_canvas_document", { projectPath, folder, name });
+      const raw = await invoke<string>("read_canvas_document", this.args());
+      if (
+        refresh &&
+        (this.loading || this.writing || before !== this.snapshot.doc || before !== this.persisted)
+      )
+        return;
+      if (refresh && before && raw === this.saved) {
+        this.update({ error: "" });
+        return;
+      }
       const doc = readDocument(raw);
-      this.saved = this.latest = raw;
+      this.persisted = doc;
+      this.saved = raw;
       this.history = [];
       this.future = [];
-      this.update({ doc, error: "" });
+      this.group = null;
+      this.conflictRevision = null;
+      this.update({ doc, error: "", conflict: false, saving: false });
     } catch (err) {
-      this.update({ error: String(err) });
+      if (!refresh || before === this.snapshot.doc) this.update({ error: String(err) });
     } finally {
-      this.loading = false;
+      if (refresh) this.refreshing = false;
+      else this.loading = false;
       this.release();
     }
   }
-  change = (apply: (doc: Document) => Document) => {
+  groupInput(input: Element) {
+    this.input = input;
+    queueMicrotask(() => {
+      if (this.input === input) this.input = null;
+    });
+  }
+  change = (apply: (doc: Document) => Document, group?: string | Element) => {
     const old = this.snapshot.doc;
     if (!old || this.loading) return;
     const doc = apply(old);
     if (old === doc) return;
-    this.history.push(old);
-    if (this.history.length > 80) this.history.shift();
+    const key = group ?? this.input;
+    const now = Date.now();
+    if (!key || key !== this.group || now - this.groupedAt > 500) {
+      this.history.push(old);
+      if (this.history.length > 80) this.history.shift();
+    }
+    this.group = key;
+    this.groupedAt = now;
     this.future = [];
     this.replace(doc);
   };
   travel(redo: boolean) {
+    if (this.loading) return;
     const next = (redo ? this.future : this.history).pop();
     if (!next || !this.snapshot.doc) return;
+    this.group = null;
     (redo ? this.history : this.future).push(this.snapshot.doc);
     this.replace(next);
   }
   private replace(doc: Document) {
-    this.latest = JSON.stringify(doc, null, 2) + "\n";
-    this.update({ doc });
-    void this.flush();
+    clearTimeout(this.timer);
+    this.update({ doc, saving: !this.snapshot.conflict });
+    if (!this.snapshot.conflict) this.timer = setTimeout(() => void this.flush(), 250);
+  }
+  async keepMine() {
+    if (this.writing || this.loading || !this.snapshot.conflict) return;
+    if (this.conflictRevision === null) {
+      this.loading = true;
+      try {
+        this.conflictRevision = await invoke<string>("read_canvas_document", this.args());
+      } catch (err) {
+        this.update({ error: String(err) });
+        return;
+      } finally {
+        this.loading = false;
+      }
+    }
+    this.saved = this.conflictRevision;
+    this.persisted = null;
+    this.conflictRevision = null;
+    this.update({ conflict: false });
+    await this.flush();
   }
   async flush() {
-    if (this.writing || this.latest === this.saved) return;
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    if (this.writing || this.loading || this.snapshot.conflict) return;
     this.writing = true;
     this.update({ saving: true, error: "" });
-    const { project: projectPath, folder, name } = this.file;
     try {
-      while (this.latest !== this.saved) {
-        const content = this.latest;
-        await invoke("save_canvas_document", { projectPath, folder, name, previous: this.saved, content });
+      while (this.snapshot.doc && this.snapshot.doc !== this.persisted) {
+        const doc = this.snapshot.doc;
+        const content = JSON.stringify(doc, null, 2) + "\n";
+        await invoke("save_canvas_document", { ...this.args(), previous: this.saved, content });
         this.saved = content;
+        this.persisted = doc;
       }
     } catch (err) {
-      this.update({ error: String(err) });
+      const error = String(err);
+      if (error.includes("Canvas changed on disk")) {
+        this.conflictRevision = null;
+        this.update({ error, conflict: true });
+        this.conflictRevision = await invoke<string>("read_canvas_document", this.args()).catch(() => null);
+      } else this.update({ error });
     } finally {
       this.writing = false;
       this.update({ saving: false });
@@ -109,7 +179,17 @@ export function useCanvasDocument(file: CanvasFile) {
   });
   const snapshot = useSyncExternalStore(session.subscribe, session.get);
   useEffect(() => {
-    if (!session.get().doc) void session.load();
+    void session.load(!!session.get().doc);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void session.load(true);
+      else if (session.get().saving) void session.flush();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [session]);
   return { ...snapshot, session };
 }

@@ -41,6 +41,20 @@ function EffectFields({
     />
   );
   const color = (key = "color", label = "Color") => field(key, label, "Color", "", "color");
+  const shadowLength = (key: string, label: string) => (
+    <Field
+      label={label}
+      unit="px"
+      value={f[key]}
+      valid={(value) =>
+        CSS.supports(
+          "box-shadow",
+          ["x", "y", "blur", "spread"].map((k) => (k === key ? value : "0px")).join(" "),
+        )
+      }
+      onChange={(value) => apply({ [key]: value })}
+    />
+  );
   if (e.kind === "Fill")
     return (
       <>
@@ -195,10 +209,10 @@ function EffectFields({
     return (
       <>
         <div className="ce-grid">
-          {field("x", "X", undefined, "px", "left")}
-          {field("y", "Y", undefined, "px", "top")}
-          {field("blur", "Blur", undefined, "px", "width")}
-          {field("spread", "Spread", undefined, "px", "left")}
+          {shadowLength("x", "X")}
+          {shadowLength("y", "Y")}
+          {shadowLength("blur", "Blur")}
+          {shadowLength("spread", "Spread")}
         </div>
         {color()}
       </>

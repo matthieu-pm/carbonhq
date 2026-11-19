@@ -50,14 +50,16 @@ export function CanvasEditor({
   collapsed,
   sidebarStyle,
   resizeHandle,
+  libraryError,
 }: {
   file: CanvasFile;
   projects: Project[];
   collapsed: boolean;
   sidebarStyle: CSSProperties;
   resizeHandle: ReactNode;
+  libraryError: string;
 }) {
-  const { doc, error, saving, session } = useCanvasDocument(file);
+  const { doc, error, saving, conflict, session } = useCanvasDocument(file);
   const [mode, setMode] = useState<"Design" | "Theme">("Design");
   const [tool, setTool] = useState<Tool>("Select");
   const [pageId, setPageId] = useState("");
@@ -175,7 +177,8 @@ export function CanvasEditor({
       e.preventDefault();
       return;
     }
-    if (selected && ["Delete", "Backspace"].includes(e.key)) {
+    const editingLayers = mode === "Design" && !!target.closest('.ce-board, nav[aria-label="Layers"]');
+    if (editingLayers && selected && ["Delete", "Backspace"].includes(e.key)) {
       e.preventDefault();
       const ids = new Set<string>();
       const take = (id: string) => {
@@ -189,22 +192,27 @@ export function CanvasEditor({
     if (
       selected &&
       ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key) &&
-      !target.closest("button")
+      editingLayers &&
+      !target.closest("button") &&
+      !layers.some((l) => l.id === selected.parent && l.style.display === "flex")
     ) {
       const n = e.shiftKey ? 10 : 1;
       e.preventDefault();
-      session.change((d) => ({
-        ...d,
-        elements: d.elements.map((l) =>
-          l.id !== selected.id
-            ? l
-            : {
-                ...l,
-                x: l.x + (e.key === "ArrowLeft" ? -n : e.key === "ArrowRight" ? n : 0),
-                y: l.y + (e.key === "ArrowUp" ? -n : e.key === "ArrowDown" ? n : 0),
-              },
-        ),
-      }));
+      session.change(
+        (d) => ({
+          ...d,
+          elements: d.elements.map((l) =>
+            l.id !== selected.id
+              ? l
+              : {
+                  ...l,
+                  x: l.x + (e.key === "ArrowLeft" ? -n : e.key === "ArrowRight" ? n : 0),
+                  y: l.y + (e.key === "ArrowUp" ? -n : e.key === "ArrowDown" ? n : 0),
+                },
+          ),
+        }),
+        "nudge:" + selected.id,
+      );
     }
   }
   return (
@@ -214,6 +222,10 @@ export function CanvasEditor({
       tabIndex={-1}
       ref={root}
       onKeyDown={keys}
+      onInputCapture={(e) => {
+        const input = e.target as Element;
+        if (input.matches("textarea,input[type=color]")) session.groupInput(input);
+      }}
     >
       {!collapsed && (
         <DockedSidebarFrame>
@@ -361,11 +373,20 @@ export function CanvasEditor({
                 </DropdownMenuContent>
               </DropdownMenu>
             </header>
+            {libraryError && (
+              <p className="ce-notice" role="alert">
+                {libraryError}
+              </p>
+            )}
             {error && (
               <div role="alert" className="ce-notice">
                 {error}
-                <Button size="sm" onClick={() => void session.flush()}>
-                  Retry save
+                <Button
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => void (conflict ? session.keepMine() : session.flush())}
+                >
+                  {conflict ? "Keep my edits" : "Retry save"}
                 </Button>
                 <Button
                   size="sm"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { importTokens } from "./importTokens";
+import { importTokens, normalizeToken } from "./importTokens";
 import { layerAppearance, newEffect, newLayer, readDocument, removeToken, type Token } from "./document";
 
 describe("project canvas documents", () => {
@@ -88,5 +88,37 @@ describe("project canvas documents", () => {
       ["gutter", "Spacing", "16px"],
       ["color-accent", "Color", "#123abc"],
     ]);
+  });
+  it("uses the top enabled border for each side", () => {
+    const layer = newLayer("Frame", "page-1", null, 0, 0);
+    const top = newEffect("Border");
+    top.fields.sides = "Top";
+    top.fields.width = "4px";
+    layer.effects = [top, newEffect("Border")];
+    expect(layerAppearance(layer, []).borderTop).toBe("4px solid #222222");
+    expect(layerAppearance(layer, []).borderBottom).toBe("1px solid #222222");
+    top.enabled = false;
+    expect(layerAppearance(layer, []).borderTop).toBe("1px solid #222222");
+  });
+  it("accepts embedded raster fills and restricts styles to canvas properties and local values", () => {
+    const layer = newLayer("Frame", "page-1", null, 0, 0);
+    const canvas = () => JSON.stringify({ ...readDocument(legacy), elements: [layer] });
+    layer.effects[0].fields.image = "data:image/png;base64,AAAA";
+    expect(() => readDocument(canvas())).not.toThrow();
+    layer.style.position = "fixed";
+    expect(() => readDocument(canvas())).toThrow();
+    delete layer.style.position;
+    layer.effects[0].fields.image = "https://example.com/image.png";
+    expect(() => readDocument(canvas())).toThrow();
+    delete layer.effects[0].fields.image;
+    layer.effects[0].fields.color = "var(--primary)";
+    expect(() => readDocument(canvas())).toThrow();
+  });
+  it("imports self-contained values and resolves whole-token aliases", () => {
+    const tokens = importTokens(
+      "--color-ink: #334455; --color-title: var(--color-ink); --radius-sm: calc(var(--radius) - 4px);",
+    );
+    expect(tokens.map((t) => t.value)).toEqual(["#334455", "#334455"]);
+    expect(["0.5", "50", "50%"].map((v) => normalizeToken("Opacity", v))).toEqual(["50%", "50%", "50%"]);
   });
 });

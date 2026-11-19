@@ -1,5 +1,5 @@
 import { parse } from "yaml";
-import { uid, type Token, type TokenKind } from "./document";
+import { localCssValue, uid, type Token, type TokenKind } from "./document";
 
 const groups: Record<string, TokenKind> = {
   colors: "Color",
@@ -98,7 +98,11 @@ export function importTokens(markdown: string): Token[] {
   const tokens: Token[] = [];
   for (const [key, entry] of entries) {
     const value = valueOf(key, new Set());
-    if (value && (typeof CSS === "undefined" || CSS.supports(tokenProperty[entry.kind], value)))
+    if (
+      value &&
+      localCssValue(value) &&
+      (typeof CSS === "undefined" || CSS.supports(tokenProperty[entry.kind], value))
+    )
       tokens.push({ id: uid(), name: entry.name, kind: entry.kind, value });
   }
   return tokens;

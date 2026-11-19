@@ -39,9 +39,12 @@ function vector(p: Point, degrees: number): Point {
     s = Math.sin(rad);
   return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
 }
-function degrees(value: string) {
+function degrees(value = "0deg") {
   const n = parseFloat(value) || 0;
-  return value.endsWith("turn") ? n * 360 : value.endsWith("rad") ? (n * 180) / Math.PI : n;
+  if (value.endsWith("turn")) return n * 360;
+  if (value.endsWith("grad")) return n * 0.9;
+  if (value.endsWith("rad")) return (n * 180) / Math.PI;
+  return n;
 }
 export function CanvasBoard({
   doc,
@@ -223,6 +226,17 @@ export function CanvasBoard({
         Math.round(g.local.x + (sized ? Math.min(0, g.delta.x) : 0)),
         Math.round(g.local.y + (sized ? Math.min(0, g.delta.y) : 0)),
       );
+      if (tool === "Text" && !g.parent) {
+        const sample = document.createElement("canvas").getContext("2d");
+        if (sample) {
+          sample.fillStyle = "#282828";
+          sample.fillRect(0, 0, 1, 1);
+          sample.fillStyle = getComputedStyle(e.currentTarget).backgroundColor;
+          sample.fillRect(0, 0, 1, 1);
+          const [r, g, b] = sample.getImageData(0, 0, 1, 1).data;
+          l.effects[0].fields.color = 0.2126 * r + 0.7152 * g + 0.0722 * b > 140 ? "#202020" : "#fafafa";
+        }
+      }
       if (sized) {
         l.style.width = Math.max(1, Math.abs(g.delta.x)) + "px";
         l.style.height = Math.max(1, Math.abs(g.delta.y)) + "px";

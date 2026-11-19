@@ -525,3 +525,6 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 3px;
 }
+.ce-world [data-layer] {
+  border-radius: var(--ce-layer-radius, 0px);
+}
