@@ -22,6 +22,17 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.31.0 · 2026-11-19
+
+### Improved
+
+- **Agent setup.** The bundled CLI lists available harnesses, models and controls.
+- **Session recovery.** Interrupted turns retain their outcome. Reconnecting to a large conversation restores recent activity with bounded memory use.
+
+### Changes since beta.7
+
+- Managed Preview and browser Inspect are no longer available in this build. The built-in browser and Spaces remain available.
+
 ## 0.30.0-beta.7 · 2026-11-16 · notify
 
 ### New
