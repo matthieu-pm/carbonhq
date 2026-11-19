@@ -1,15 +1,15 @@
 {
-  "version": "0.30.0-beta.7",
-  "notes": "### New\n\n- **Managed previews.** Start and stop a task's development server from Carbon,\n  then open its preview in the built-in browser.\n- **Browser Inspect.** Select elements in the browser and add them to the\n  conversation as context for an agent.\n\n### Improved\n\n- **Agent connections.** Coding agents share Carbon's MCP connections and login\n  state. The CLI reports available harnesses, models and controls.\n- **Carbon identity.** Updated logo and macOS app icon.\n\n### Fixed\n\n- Sending or creating a task can safely retry without duplicating it.\n- Agent messages survive a restart, and delegated work returns its completion\n  result to the parent task.\n- Interrupted turns keep their outcome after restart. Reconnecting large\n  conversations uses bounded replay and memory.\n\n### Release scope\n\n- Carbon Canvas remains disabled. Spaces stays available.\n\nThis beta is ad-hoc signed and not notarized. The in-app updater archive is signed with Carbon\u2019s existing update key.\n",
-  "pub_date": "2026-11-16T21:04:55.218155Z",
+  "version": "0.31.0",
+  "notes": "### Improved\n\n- **Agent setup.** The bundled CLI lists available harnesses, models and controls.\n- **Session recovery.** Interrupted turns retain their outcome. Reconnecting to a large conversation restores recent activity with bounded memory use.\n\n### Changes since beta.7\n\n- Managed Preview and browser Inspect are no longer available in this build. The built-in browser and Spaces remain available.\n\nThis macOS prerelease is ad hoc signed and has not been notarized by Apple. The updater archive is signed with Carbon’s existing update key.\n",
+  "pub_date": "2026-11-19T02:01:56.829960Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmdMVExRVXNtK3BuT1RxdE5hRFllSnBzWW5rS0lqOFNLZ3hndVNkNTVkOEowSmRZT2REMm1SbGJvTW1QS1VUcFVPZ2VVN1BLQWQ2cENqZFBJMGdZRlEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0ODYzMDY3CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMwLjAtYmV0YS43ClRacy92dTF0dmV4Y0hYRnJnM3hzK2F1NTQySTBDZzEyenVvVWx1U1RLVzQzc25nRXhpMWFaWlhlZDNhcHByS1h1Y1pPUzZWLzVhb0Q1MkxXUU82Y0J3PT0K",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.30.0-beta.7/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnBleU9tTnBUQzdGUFJhV2RxRnRSNmRTVTdTeHV1VjNoVW1YZ0dQR2lrKy9zOVFjSzh6KzFWTkZZd04zUGRxV2VYK0RDaDdmSjRIeFNzakJ2QjJ4TUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDUzMzE3CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjAKSHFrTVFjV1V5UENNSVFvMTJBQWdFRWVyOGhwWlphQW5aNUl0WTRNeTZhQ2F4TEpkZTlkc0xhajNRc3pwZEhMVGMyNzdaUUdISHhOTkdvVk9oTENKQUE9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.0/Carbon_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmdMVExRVXNtK3BuT1RxdE5hRFllSnBzWW5rS0lqOFNLZ3hndVNkNTVkOEowSmRZT2REMm1SbGJvTW1QS1VUcFVPZ2VVN1BLQWQ2cENqZFBJMGdZRlEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0ODYzMDY3CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMwLjAtYmV0YS43ClRacy92dTF0dmV4Y0hYRnJnM3hzK2F1NTQySTBDZzEyenVvVWx1U1RLVzQzc25nRXhpMWFaWlhlZDNhcHByS1h1Y1pPUzZWLzVhb0Q1MkxXUU82Y0J3PT0K",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.30.0-beta.7/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnBleU9tTnBUQzdGUFJhV2RxRnRSNmRTVTdTeHV1VjNoVW1YZ0dQR2lrKy9zOVFjSzh6KzFWTkZZd04zUGRxV2VYK0RDaDdmSjRIeFNzakJ2QjJ4TUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDUzMzE3CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjAKSHFrTVFjV1V5UENNSVFvMTJBQWdFRWVyOGhwWlphQW5aNUl0WTRNeTZhQ2F4TEpkZTlkc0xhajNRc3pwZEhMVGMyNzdaUUdISHhOTkdvVk9oTENKQUE9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.0/Carbon_universal.app.tar.gz"
     }
   }
 }
