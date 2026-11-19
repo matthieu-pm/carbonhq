@@ -343,7 +343,7 @@ impl<'i> RuleBodyItemParser<'i, (), ()> for Declarations<'_> {
     }
 }
 
-fn used_names(value: &str) -> Vec<String> {
+pub(super) fn used_names(value: &str) -> Vec<String> {
     fn walk<'i>(
         input: &mut Parser<'i, '_>,
         names: &mut BTreeSet<String>,

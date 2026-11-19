@@ -65,6 +65,134 @@ fn frame() -> CanvasFrame {
 }
 
 #[tokio::test]
+async fn cross_file_paste_freezes_the_source_and_owns_its_assets_and_tokens() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let source = fixture.populated().await;
+    let destination = fixture.populated().await;
+    let image = id();
+    let uploaded = store
+        .upload(
+            &source.id,
+            source.revision,
+            CanvasAssetUpload {
+                asset_id: image.clone(),
+                name: "pixel.png".into(),
+                offset: 0,
+                data: PNG.into(),
+                complete: true,
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap()
+        .canvas
+        .unwrap();
+    let mut frames = uploaded.frames.clone();
+    let layer = &mut frames[0].content.nodes[0];
+    let layer_id = super::nodes::node_id(layer).to_string();
+    let CanvasNode::Element { styles, extra, .. } = layer else {
+        unreachable!()
+    };
+    styles.insert(
+        "background-image".into(),
+        format!("url('carbon-canvas-asset://{image}')"),
+    );
+    extra.insert("tokenReferences".into(), json!({"background":["--brand"]}));
+    frames[0].content.asset_ids.push(image.clone());
+    let copy = store
+        .edit(
+            &source.id,
+            uploaded.revision,
+            CanvasEdit {
+                frames: Some(frames),
+                tokens: Some(BTreeMap::from([
+                    ("--brand".into(), "var(--yellow)".into()),
+                    ("--yellow".into(), "yellow".into()),
+                ])),
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let edited = store
+        .edit(
+            &source.id,
+            copy.revision,
+            CanvasEdit {
+                frames: Some(vec![]),
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let clipboard = || CanvasLayerSource {
+        id: source.id.clone(),
+        revision: copy.revision,
+        layers: vec![layer_id.clone()],
+    };
+    let target = &destination.frames[0].id;
+    assert!(store
+        .paste_layers(
+            &destination.id,
+            destination.revision - 1,
+            target,
+            None,
+            clipboard()
+        )
+        .await
+        .is_err());
+    let pasted = store
+        .paste_layers(
+            &destination.id,
+            destination.revision,
+            target,
+            None,
+            clipboard(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(pasted.node_ids, vec![layer_id]);
+    assert_eq!(pasted.canvas.revision, destination.revision + 1);
+    assert_eq!(pasted.canvas.frames[0].content.nodes.len(), 2);
+    assert_eq!(pasted.canvas.tokens, copy.tokens);
+
+    store.delete(&source.id, edited.revision).await.unwrap();
+    assert_eq!(
+        store
+            .read_asset(&destination.id, &image, None)
+            .await
+            .unwrap()
+            .data,
+        PNG
+    );
+    let (undone, conflicts) = store
+        .undo(&destination.id, pasted.canvas.revision, None, false)
+        .await
+        .unwrap();
+    assert!(conflicts.is_empty());
+    assert_eq!(undone.frames, destination.frames);
+    assert!(undone.assets.is_empty());
+    assert!(undone.tokens.is_empty());
+    let (redone, conflicts) = store
+        .undo(&destination.id, undone.revision, None, true)
+        .await
+        .unwrap();
+    assert!(conflicts.is_empty());
+    assert_eq!(redone.frames, pasted.canvas.frames);
+    assert_eq!(
+        store
+            .read_asset(&destination.id, &image, None)
+            .await
+            .unwrap()
+            .data,
+        PNG
+    );
+}
+
+#[tokio::test]
 async fn restoring_identical_design_keeps_existing_undo_and_redo_steps() {
     let fixture = Fixture::new();
     let original = fixture.canvas().await;

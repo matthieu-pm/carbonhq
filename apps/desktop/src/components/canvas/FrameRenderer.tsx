@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { frameDocument, frameMarkup, previewKey, PREVIEW_BUDGET, type CanvasAssetSource, type FramePreview, type LayerBox } from "@/lib/canvasBoard";
 import { invoke, serverOfPath } from "@/lib/transport";
 import type { Canvas, CanvasAssetData, CanvasFrame } from "@/types/events";
+import type { CanvasEditIntent } from "@/lib/canvasEditing";
 
 async function assetsFor(source: CanvasAssetSource, signal: AbortSignal): Promise<Record<string, string>> {
   const assets: Record<string, string> = {};
@@ -21,6 +22,27 @@ async function assetsFor(source: CanvasAssetSource, signal: AbortSignal): Promis
 export async function resolvePreviewMarkup(preview: FramePreview, signal: AbortSignal): Promise<string> {
   const assets = await assetsFor(preview.assets, signal);
   return preview.markup.replace(/carbon-canvas-asset:\/\/([a-zA-Z0-9-]+)/g, (_, id: string) => assets[id] ?? "data:,");
+}
+
+export function GestureFrame({ preview, edit }: { preview: FramePreview; edit: CanvasEditIntent }) {
+  const iframe = useRef<HTMLIFrameElement>(null);
+  const token = useRef(crypto.randomUUID()).current;
+  const [source, setSource] = useState("");
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void resolvePreviewMarkup(preview, controller.signal).then(markup => {
+      if (!controller.signal.aborted) setSource(frameDocument(markup, token, false, undefined, undefined, undefined, true));
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [preview, token]);
+  useEffect(() => {
+    if (!ready || edit.kind === "frames") return;
+    const frame = requestAnimationFrame(() => iframe.current?.contentWindow?.postMessage({ canvasEdit: token, edit }, "*"));
+    return () => cancelAnimationFrame(frame);
+  }, [edit, ready, token]);
+  return source ? <iframe ref={iframe} title="Editing frame" tabIndex={-1} aria-hidden sandbox="allow-scripts" scrolling="no" srcDoc={source}
+    onLoad={() => setReady(true)} className="pointer-events-none absolute inset-0 block size-full border-0 bg-white" style={{ visibility: ready ? "visible" : "hidden" }} /> : null;
 }
 
 async function rasterize(html: string, width: number, height: number, maxSize: number): Promise<{ url: string; bytes: number }> {

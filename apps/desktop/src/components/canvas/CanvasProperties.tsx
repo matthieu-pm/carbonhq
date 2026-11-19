@@ -1,6 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { frameStyles, type CanvasEditIntent } from "@/lib/canvasEditing";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { invoke } from "@/lib/transport";
 import type { BrowserCaptureDetails, CanvasAssetData, CanvasFrame, CanvasNode, CanvasTokenCatalog, CanvasTokenSource } from "@/types/events";
@@ -10,22 +12,8 @@ type Field = [label: string, value: string];
 type CapturedTokenSource = { checkout: CanvasTokenSource | null; theme: string[] };
 type CapturedTokenLink = { names: string[]; value: string; unavailableAtCapture?: string[] };
 
-/// Read-only properties of the one picked frame or layer.
-///
-/// Every value is the frame's own computed style as the renderer measured it,
-/// passed in as `box`. Nothing is defaulted: a property the browser reports as
-/// its initial value (no gap, no fill, square corners) is left out rather than
-/// shown as a zero, and with no measurement yet the panel shows the frame's
-/// stored geometry and the layer's authored styles, labelled as such.
 export default function CanvasProperties({
-  frame,
-  node,
-  box,
-  count,
-  canvasId,
-  owner,
-  catalog,
-  tokenError,
+  frame, node, box, count, canvasId, owner, catalog, tokenError, tokens, revision, busy, onEdit,
 }: {
   frame: CanvasFrame | null;
   node: CanvasNode | null;
@@ -35,6 +23,10 @@ export default function CanvasProperties({
   owner?: string;
   catalog?: CanvasTokenCatalog | null;
   tokenError?: boolean;
+  tokens?: Record<string, string>;
+  revision?: number;
+  busy?: boolean;
+  onEdit?(edit: CanvasEditIntent, revision: number): void;
 }) {
   if (count > 1) {
     return <Empty title={`${count} selected`} detail="Select one frame or layer to see its properties." />;
@@ -47,35 +39,37 @@ export default function CanvasProperties({
   const kind = node ? (node.kind === "text" ? "Text" : `<${node.tag}>`) : "Frame";
   const styles = box?.styles ?? {};
 
-  const geometry: Field[] = node
-    ? box ? [["Size", size(box.width, box.height)], ["Position", `${num(box.x)}, ${num(box.y)}`]] : []
-    : [["Size", size(frame.geometry.width, frame.geometry.height)], ["Position", `${num(frame.geometry.x)}, ${num(frame.geometry.y)}`]];
-
-  const layout = box ? compact([
-    ["Display", layoutLabel(styles)],
-    ["Positioning", styles.position === "static" ? "" : styles.position ?? ""],
-    ["Align", flexOrGrid(styles) ? alignLabel(styles) : ""],
-    ["Gap", meaningful(styles.gap, ["normal", "0px"])],
-    ["Padding", sides(styles, "padding")],
-    ["Margin", sides(styles, "margin")],
-  ]) : [];
-
-  const appearance = box ? compact([
-    ["Fill", meaningful(styles["background-color"], ["rgba(0, 0, 0, 0)", "transparent"])],
-    ["Image", meaningful(styles["background-image"], ["none"])],
-    ["Radius", meaningful(styles["border-radius"], ["0px"])],
-  ]) : [];
-
-  const hasText = box ? box.text.trim().length > 0 : false;
-  const text = box && hasText ? compact([
-    ["Font", firstFamily(styles["font-family"])],
-    ["Size", styles["font-size"] ? `${styles["font-size"]} / ${styles["line-height"] ?? "normal"}` : ""],
-    ["Weight", styles["font-weight"] ?? ""],
-    ["Tracking", meaningful(styles["letter-spacing"], ["normal", "0px"])],
-    ["Colour", styles.color ?? ""],
-  ]) : [];
-
-  const authored = !box && node?.kind === "element" ? Object.entries(node.styles) as Field[] : [];
+  const authored = node?.kind === "element" ? node.styles : node ? {} : frameStyles(frame);
+  const computed: Record<string, string> = { ...styles, padding: sides(styles, "padding") };
+  const options = new Map(catalog?.tokens.map(token => [token.name, token.value]));
+  for (const [key, value] of Object.entries(tokens ?? {})) options.set(key, value);
+  const enabled = !busy && revision !== undefined && !!onEdit;
+  const scope = `${frame.id}:${node?.id ?? ""}`;
+  const field = (property: string, label: string) => <PropertyInput
+    key={`${scope}:${property}`} label={label} revision={revision} disabled={!enabled}
+    value={authored[property] ?? computed[property] ?? ""}
+    options={[...options].filter(([name, value]) => /^--[\w-]+$/.test(name) && CSS.supports(property, value))}
+    normalize={(value) => {
+      const linked = options.get(value);
+      if (linked && /^--[\w-]+$/.test(value) && CSS.supports(property, linked)) return `var(${value}, ${linked})`;
+      const css = /^-?(?:\d+|\d*\.\d+)$/.test(value) && ["width", "height", "padding", "gap", "border-radius", "font-size", "letter-spacing"].includes(property) ? `${value}px` : value;
+      return css && !/[;{}]|url\s*\(/i.test(css) && CSS.supports(property, css) ? css : null;
+    }}
+    onCommit={(value, basis) => onEdit?.({
+      kind: "style", frameId: frame.id, nodeId: node?.id ?? null, label: `Change ${label.toLowerCase()}`,
+      styles: { ...(node && ["width", "height"].includes(property) && styles.display === "inline" && { display: "inline-block" }), [property]: value },
+    }, basis)}
+  />;
+  const geometry = (axis: "x" | "y" | "width" | "height", label: string) => <PropertyInput
+    key={`${scope}:${axis}`} label={label} revision={revision} disabled={!enabled} value={num(frame.geometry[axis])}
+    normalize={(value) => {
+      const number = Number(value);
+      if (!value || !Number.isFinite(number)) return null;
+      if (axis === "x" || axis === "y") return String(number);
+      return Number.isInteger(number) && number >= 1 && number <= 10_000 ? String(number) : null;
+    }}
+    onCommit={(value, basis) => onEdit?.({ kind: "frames", geometry: { [frame.id]: { [axis]: Number(value) } }, label: `Change frame ${label.toLowerCase()}` }, basis)}
+  />;
   const blank = !node && frame.content.nodes.length === 0;
   const capture = (frame as CanvasFrame & { capture?: BrowserCaptureDetails }).capture;
 
@@ -89,16 +83,22 @@ export default function CanvasProperties({
       </header>
 
       {capture && canvasId && <CaptureProperties key={capture.originalAssetId} capture={capture} canvasId={canvasId} owner={owner} />}
-      <Section title="Geometry" fields={geometry} />
-      <Section title="Layout" fields={layout} />
-      <Section title="Appearance" fields={appearance} />
-      <TokenProperties frame={frame} node={node} box={box} catalog={catalog} tokenError={tokenError} />
-      <Section title="Text" fields={text}>
-        {box && hasText && node && (node.kind === "text" || node.children.every((child) => child.kind === "text")) && (
-          <p className="line-clamp-4 rounded-lg bg-surface-well px-2 py-1.5 text-xs break-words whitespace-pre-wrap">{box.text.trim()}</p>
-        )}
+      <Section title="Geometry" fields={node && box ? [["Position", `${num(box.x)}, ${num(box.y)}`]] : []}>
+        {node ? <>{field("width", "Width")}{field("height", "Height")}</> : <>{geometry("width", "Width")}{geometry("height", "Height")}{geometry("x", "X")}{geometry("y", "Y")}</>}
       </Section>
-      <Section title="Authored styles" fields={authored} />
+      <Section title="Layout" fields={box ? compact([
+        ["Display", layoutLabel(styles)], ["Align", flexOrGrid(styles) ? alignLabel(styles) : ""],
+      ]) : []}>
+        {field("padding", "Padding")}{field("gap", "Gap")}
+      </Section>
+      <Section title="Appearance" fields={box ? compact([["Image", meaningful(styles["background-image"], ["none"])]]) : []}>
+        {field("background-color", "Fill")}{field("border-radius", "Radius")}{field("border", "Border")}
+      </Section>
+      <TokenProperties frame={frame} node={node} box={box} catalog={catalog} tokenError={tokenError} />
+      <Section title="Text" fields={[]}>
+        {field("font-family", "Font")}{field("font-size", "Font size")}{field("font-weight", "Weight")}
+        {field("line-height", "Line height")}{field("letter-spacing", "Tracking")}{field("text-align", "Alignment")}{field("color", "Colour")}
+      </Section>
 
       {blank && <Note>This frame is blank.</Note>}
       {node && !box && <Note>Computed values appear once the frame has rendered.</Note>}
@@ -106,10 +106,51 @@ export default function CanvasProperties({
   );
 }
 
+function PropertyInput({ label, value, revision, disabled, options = [], normalize, onCommit }: {
+  label: string;
+  value: string;
+  revision?: number;
+  disabled: boolean;
+  options?: [string, string][];
+  normalize(value: string): string | null;
+  onCommit(value: string, revision: number): void;
+}) {
+  const listId = useId();
+  const basis = useRef<{ revision: number; value: string } | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [invalid, setInvalid] = useState(false);
+  return <div className="flex min-w-0 items-center gap-2 py-0.5">
+    <label className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="w-20 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <Input className="h-7 px-2 font-mono text-xs md:text-xs" type="text" value={draft ?? value} disabled={disabled} aria-invalid={invalid}
+        aria-label={label} list={options.length ? listId : undefined} spellCheck={false}
+        onFocus={() => { if (revision !== undefined) basis.current = { revision, value }; }}
+        onChange={(event) => { setDraft(event.target.value); setInvalid(false); }}
+        onBlur={() => {
+          const start = basis.current;
+          basis.current = null;
+          if (!start || draft === null || draft.trim() === start.value) { setDraft(null); return; }
+          const next = normalize(draft.trim());
+          if (next === null) { setInvalid(true); return; }
+          setDraft(null);
+          if (next !== start.value) onCommit(next, start.revision);
+        }}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Escape") { event.stopPropagation(); basis.current = null; setDraft(null); setInvalid(false); event.currentTarget.blur(); }
+          if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
+        }}
+      />
+    </label>
+    {options.length > 0 && <datalist id={listId}>{options.map(([key, fallback]) => <option key={key} value={key}>{fallback}</option>)}</datalist>}
+    {invalid && <span role="status" className="text-xs text-destructive">Invalid value</span>}
+  </div>;
+}
+
 function TokenProperties({ frame, node, box, catalog, tokenError }: { frame: CanvasFrame; node: CanvasNode | null; box: Box | null; catalog?: CanvasTokenCatalog | null; tokenError?: boolean }) {
   const source = (frame.content as { tokenSource?: CapturedTokenSource }).tokenSource;
   const capture = (frame as { capture?: BrowserCaptureDetails }).capture;
-  const authored = node?.kind === "element" ? node.styles : {};
+  const authored = node?.kind === "element" ? node.styles : node ? {} : frameStyles(frame);
   const references = (node as { tokenReferences?: Record<string, CapturedTokenLink | string[]> } | null)?.tokenReferences;
   const captured = references && typeof references === "object" && !Array.isArray(references) ? references : null;
   const properties = [...new Set([...Object.keys(authored), ...Object.keys(captured ?? {})])];
@@ -258,10 +299,6 @@ function sides(styles: Record<string, string>, prop: "padding" | "margin"): stri
   if (t === r && r === b && b === l) return t;
   if (t === b && r === l) return `${t} ${r}`;
   return `${t} ${r} ${b} ${l}`;
-}
-
-function firstFamily(value: string | undefined): string {
-  return value?.split(",")[0]?.trim().replace(/^["']|["']$/g, "") ?? "";
 }
 
 function isColour(value: string): boolean {

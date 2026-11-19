@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -774,6 +774,111 @@ impl Store {
         super::undo::record(&before, &mut canvas)?;
         self.commit(&canvas, Some(head), None).await?;
         Ok(canvas)
+    }
+
+    /// The guarded commit publishes copies and their file-owned assets together.
+    pub(super) async fn paste_layers(
+        &self,
+        id: &str,
+        revision: u64,
+        parent: &str,
+        after: Option<&str>,
+        source: CanvasLayerSource,
+    ) -> Result<CanvasLayerPaste, String> {
+        use super::nodes;
+
+        if source.layers.is_empty() || source.layers.len() > 100_000 {
+            return Err("Choose layers to paste.".into());
+        }
+        let _guard = self.lock().await?;
+        let head = self.head(id).await?;
+        let mut canvas = self.read(id).await?;
+        check_revision(&canvas, revision)?;
+        let before = canvas.clone();
+        let original = self
+            .history(&source.id, Some(source.revision))
+            .await?
+            .remove(0);
+        let frame_id = nodes::frame_for(&canvas, parent)?.id.clone();
+        let mut layers = Vec::new();
+        let mut assets = BTreeSet::new();
+        let mut seen = BTreeSet::new();
+        let mut mapping = BTreeMap::new();
+        for layer in source.layers.iter().filter(|layer| seen.insert(*layer)) {
+            let frame = nodes::frame_for(&original, layer)?;
+            let mut node = nodes::find(&frame.content.nodes, layer)
+                .ok_or("Only layers can be pasted here.")?
+                .clone();
+            layer_asset_ids(&node, &mut assets);
+            nodes::reidentify(&mut node, &mut mapping);
+            layers.push(node);
+        }
+        let mut use_tokens = super::tokens::names(&layers);
+        while let Some(name) = use_tokens.pop() {
+            let Some(value) = original.tokens.get(&name) else {
+                continue;
+            };
+            if let std::collections::btree_map::Entry::Vacant(entry) = canvas.tokens.entry(name) {
+                entry.insert(value.clone());
+                use_tokens.extend(super::tokens::used_names(value));
+                assets.extend(asset_urls(value).map(str::to_owned));
+            }
+        }
+        let node_ids = layers
+            .iter()
+            .map(|node| nodes::node_id(node).to_owned())
+            .collect();
+        let children = nodes::children(&mut canvas, parent)?;
+        let index = match after {
+            Some(anchor) => {
+                children
+                    .iter()
+                    .position(|node| nodes::node_id(node) == anchor)
+                    .ok_or("The paste target changed. Select a layer to try again.")?
+                    + 1
+            }
+            None => children.len(),
+        };
+        children.splice(index..index, layers);
+        for asset_id in assets {
+            let asset = original
+                .assets
+                .iter()
+                .find(|asset| asset.id == asset_id)
+                .ok_or("A copied layer refers to a missing asset.")?;
+            if let Some(existing) = canvas.assets.iter().find(|item| item.id == asset.id) {
+                if existing.hash != asset.hash {
+                    return Err("A copied asset conflicts with an existing Canvas asset.".into());
+                }
+            } else {
+                let bytes = self.asset_bytes(&original.id, asset).await?;
+                self.put_asset(id, &asset.hash, &bytes).await?;
+                canvas.assets.push(asset.clone());
+            }
+            let frame = canvas
+                .frames
+                .iter_mut()
+                .find(|frame| frame.id == frame_id)
+                .unwrap();
+            if !frame.content.asset_ids.contains(&asset_id) {
+                frame.content.asset_ids.push(asset_id);
+            }
+        }
+        advance(
+            &mut canvas,
+            CanvasAuthor {
+                label: Some("Paste layers".into()),
+                ..Default::default()
+            },
+            None,
+        )?;
+        super::undo::record(&before, &mut canvas)?;
+        self.commit(&canvas, Some(head), None).await?;
+        Ok(CanvasLayerPaste {
+            canvas,
+            frame_id,
+            node_ids,
+        })
     }
 
     /// A tombstone removes visibility before deleting the file-owned content and assets.

@@ -4,11 +4,17 @@ CBN-80 supplies the file format and server API. CBN-81 adds the Canvas rail page
 
 ## Canvas page
 
-Open Canvas from the rail or with Cmd-Option-C (Ctrl-Alt-C outside macOS). Choose a project and a canvas file tab. New canvas creates a named file; New frame adds a blank Desktop (1440 × 900), Mobile (390 × 844), or custom frame. Custom dimensions are whole pixels from 1 to 10,000. File renaming is supported; frame and layer editing remain separate work.
+Open Canvas from the rail or with Cmd-Option-C (Ctrl-Alt-C outside macOS). Choose a project and a canvas file tab. New canvas creates a named file. New frame adds a blank Desktop (1440 × 900), Mobile (390 × 844), or custom frame. Custom dimensions are whole pixels from 1 to 10,000.
 
 Scroll to pan. Pinch or Cmd/Ctrl-scroll to zoom around the pointer. The Hand tool or Space-drag pans; the Select tool drags a selection marquee. Shift-click adds or removes frames and layers. Click a frame once to select it and again to pick a layer. Arrow keys navigate the board and layers tree; Enter enters a frame and Escape leaves a layer selection. Fit all is Shift-1, fit selection Shift-2, and actual size Shift-0. All three shortcuts are in the shortcuts registry. Camera position and the last open file are remembered locally per canvas/project.
 
-The layers tree, board outlines and read-only Properties share stable frame/layer IDs. Properties reports the renderer's measured bounds and computed styles. Chat uses Carbon's real transcript and composer, with a session picker and New session action. It keeps the current session when it belongs to the project, otherwise restores that project's remembered session or most recent available session.
+The layers tree, board outlines and Properties share stable frame and layer IDs. Drag a frame or its name to move it. Drag the bottom-right handle on a selected frame or layer to resize it. A layer in normal flow, flex, or grid reorders among its siblings. Hold Option or Alt when starting a drag to offset a layer while keeping its layout slot. On positioned layers, dragging offsets the layer directly.
+
+Double-click text to edit it on the board. Enter saves the edit, Shift-Enter inserts a line break, and Escape cancels. The board toolbar adds frames and text. Properties edits frame coordinates and dimensions, layer sizes, layout spacing, fill, radius, border, and typography. Type a CSS value or choose a compatible token by name. The chosen token keeps its fallback value in the Canvas file.
+
+The board edit menu duplicates or deletes the selection and copies or pastes layers. Copy and paste carry layers, inline styles, tokens, and referenced assets between canvases on the same server. A pasted layer follows the selected layer or goes at the end of the selected frame. The destination frame's stylesheet applies. Pasted and duplicated layers get new IDs. Completed edits enter the shared Undo and Redo history.
+
+Chat uses Carbon's real transcript and composer, with a session picker and New session action. It keeps the current session when it belongs to the project, otherwise restores that project's remembered session or most recent available session.
 
 ## Project tokens
 

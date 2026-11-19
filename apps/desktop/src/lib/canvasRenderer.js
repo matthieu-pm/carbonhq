@@ -48,14 +48,16 @@ export function frameMarkup(frame, tokens, assets) {
 	};
 	const vars = Object.entries(tokens).filter(([key]) => /^--[\w-]+$/.test(key)).map(([key, value]) => `${key}:${resolve(value)}`).join(";");
 	const css = `:root{${vars}}html{width:100%;height:100%}body{margin:0;min-height:100%;font-family:system-ui,sans-serif}*{box-sizing:border-box}\n${resolve(frame.content.css)}`;
-	return `<style>${css.replace(/<\/style/gi, "<\\/style")}</style></head><body>${frame.content.nodes.map(render).join("")}</body>`;
+	const bodyStyles = Object.entries(frame.content.bodyStyles ?? {}).filter(([key, value]) => /^[a-zA-Z][a-zA-Z-]*$/.test(key) && typeof value === "string");
+	const body = bodyStyles.map(([key, value]) => `${key}:${resolve(value)}`).join(";");
+	return `<style>${css.replace(/<\/style/gi, "<\\/style")}</style></head><body data-canvas-frame="${escape(frame.id)}" style="${escape(body)}">${frame.content.nodes.map(render).join("")}</body>`;
 }
 /// One bounded capture is enough for an overview; zoom never resizes its CSS viewport.
-export function frameDocument(markup, token, capture, viewport, point, detail) {
-	const script = `(${frameBridge.toString()})(${JSON.stringify(token)},${capture},${JSON.stringify(viewport ?? null)},${JSON.stringify(point ?? null)},${JSON.stringify(detail ?? null)})`;
+export function frameDocument(markup, token, capture, viewport, point, detail, editing = false) {
+	const script = `(${frameBridge.toString()})(${JSON.stringify(token)},${capture},${JSON.stringify(viewport ?? null)},${JSON.stringify(point ?? null)},${JSON.stringify(detail ?? null)},${editing})`;
 	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; script-src 'nonce-${token}'; base-uri 'none'; form-action 'none'">${markup}<script nonce="${token}">${script}<\/script></html>`;
 }
-function frameBridge(token, capture, viewport, point, detail) {
+function frameBridge(token, capture, viewport, point, detail, editing) {
 	const send = (value) => parent.postMessage({
 		canvasToken: token,
 		...value
@@ -64,6 +66,54 @@ function frameBridge(token, capture, viewport, point, detail) {
 	document.addEventListener("click", (e) => {
 		if (e.target.closest("a")) e.preventDefault();
 	});
+	if (editing) {
+		const freeze = document.createElement("style");
+		freeze.textContent = "*,*::before,*::after{animation:none!important;transition:none!important}";
+		document.head.append(freeze);
+		let revert;
+		window.addEventListener("message", (event) => {
+			if (event.source !== parent || event.data?.canvasEdit !== token) return;
+			revert?.();
+			revert = undefined;
+			const edit = event.data.edit;
+			if (!edit?.nodeId) return;
+			const element = document.querySelector(`[data-canvas-id="${CSS.escape(edit.nodeId)}"]`);
+			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT);
+			let marker;
+			if (!element) {
+				for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+					if (node.data === `canvas-text:${edit.nodeId}`) { marker = node; break; }
+				}
+			}
+			if (edit.kind === "style") {
+				if (element) {
+					const inline = element.getAttribute("style");
+					revert = () => { if (inline === null) element.removeAttribute("style"); else element.setAttribute("style", inline); };
+					for (const [key, value] of Object.entries(edit.styles)) element.style.setProperty(key, value);
+				} else if (marker?.nextSibling?.nodeType === Node.TEXT_NODE) {
+					const text = marker.nextSibling;
+					const span = document.createElement("span");
+					marker.after(span);
+					span.append(text);
+					for (const [key, value] of Object.entries(edit.styles)) span.style.setProperty(key, value);
+					revert = () => span.replaceWith(text);
+				}
+			}
+			if (edit.kind === "reorder") {
+				const first = element ?? marker;
+				if (!first?.parentNode) return;
+				const container = first.parentNode;
+				const siblings = [...container.childNodes].filter(node => node !== first &&
+					(node.nodeType === Node.ELEMENT_NODE && node.hasAttribute("data-canvas-id") ||
+					 node.nodeType === Node.COMMENT_NODE && node.data.startsWith("canvas-text:")));
+				const nodes = marker?.nextSibling?.nodeType === Node.TEXT_NODE ? [marker, marker.nextSibling] : [first];
+				const anchor = nodes.at(-1).nextSibling;
+				for (const node of nodes) container.insertBefore(node, siblings[edit.index] ?? null);
+				revert = () => { for (const node of nodes) container.insertBefore(node, anchor); };
+			}
+		});
+		return;
+	}
 	if (!capture) return;
 	const hostReady = new Promise((resolve) => {
 		const receive = (event) => {
@@ -80,8 +130,13 @@ function frameBridge(token, capture, viewport, point, detail) {
 		"display",
 		"visibility",
 		"position",
+		"width",
+		"height",
+		"translate",
 		"z-index",
 		"flex-direction",
+		"grid-auto-flow",
+		"direction",
 		"align-items",
 		"justify-content",
 		"gap",
@@ -97,11 +152,13 @@ function frameBridge(token, capture, viewport, point, detail) {
 		"background-image",
 		"color",
 		"border-radius",
+		"border",
 		"font-family",
 		"font-size",
 		"font-weight",
 		"line-height",
-		"letter-spacing"
+		"letter-spacing",
+		"text-align"
 	];
 	const collect = async () => {
 		if (document.readyState !== "complete") await new Promise((resolve) => window.addEventListener("load", resolve, { once: true }));
@@ -134,9 +191,9 @@ function frameBridge(token, capture, viewport, point, detail) {
 		}
 		const boxes = [];
 		const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
-		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		for (let node = document.body; node; node = walker.nextNode()) {
 			const element = node.nodeType === 1 ? node : node.parentElement;
-			const id = node.nodeType === 1 ? element?.getAttribute("data-canvas-id") : node.textContent?.startsWith("canvas-text:") ? node.textContent.slice(12) : null;
+			const id = node === document.body ? node.getAttribute("data-canvas-frame") : node.nodeType === 1 ? element?.getAttribute("data-canvas-id") : node.textContent?.startsWith("canvas-text:") ? node.textContent.slice(12) : null;
 			if (!id || !element) continue;
 			let rect = element.getBoundingClientRect();
 			if (node.nodeType === 8 && node.nextSibling?.nodeType === 3) {
@@ -152,7 +209,7 @@ function frameBridge(token, capture, viewport, point, detail) {
 				width: rect.width,
 				height: rect.height,
 				styles: Object.fromEntries((detail === id ? [...styles] : properties).map((p) => [p, styles.getPropertyValue(p)])),
-				text: (node.nodeType === 8 ? node.nextSibling?.textContent : element.textContent)?.slice(0, 4e3) ?? ""
+				text: node === document.body ? "" : (node.nodeType === 8 ? node.nextSibling?.textContent : element.textContent)?.slice(0, 4e3) ?? ""
 			});
 		}
 		const html = document.documentElement.cloneNode(true);

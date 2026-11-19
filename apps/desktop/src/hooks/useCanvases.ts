@@ -113,10 +113,23 @@ export function useCanvases(projectPath: string | null, active: boolean) {
     finally { writing.current = false; setBusy(false); }
   };
   const create = (name: string) => projectPath ? mutate(() => invoke<Canvas>("create_canvas", { projectPath, name }, owner)) : Promise.resolve(null);
-  const edit = (patch: Partial<CanvasEdit>) => {
+  const edit = (patch: Partial<CanvasEdit>, label?: string, basis?: number) => {
     const doc = current.current.canvas;
     if (!doc || doc.id !== fileId) return Promise.resolve(null);
-    return mutate(() => invoke<Canvas>("update_canvas", { id: doc.id, revision: doc.revision, edit: patch }, owner));
+    return mutate(() => invoke<Canvas>("update_canvas", { id: doc.id, revision: basis ?? doc.revision, edit: patch, author: label ? { label } : undefined }, owner));
+  };
+  const pasteLayers = async (parent: string, after: string | null, source: { id: string; revision: number; layers: string[] }) => {
+    const doc = current.current.canvas;
+    if (!doc || doc.id !== fileId) return null;
+    let selection: { frameId: string; nodeIds: string[] } | null = null;
+    const saved = await mutate(async () => {
+      const result = await invoke<{ canvas: Canvas; frameId: string; nodeIds: string[] }>("paste_canvas_layers", {
+        id: doc.id, revision: doc.revision, parent, after, source,
+      }, owner);
+      selection = result;
+      return result.canvas;
+    });
+    return saved && selection ? { canvas: saved, selection: selection as { frameId: string; nodeIds: string[] } } : null;
   };
   useEffect(() => {
     if (!active || !canvas) { setUndoState({ canUndo: false, canRedo: false, undoLabel: null, redoLabel: null }); return; }
@@ -145,5 +158,5 @@ export function useCanvases(projectPath: string | null, active: boolean) {
     await refresh();
     if (current.current.projectPath === projectPath && current.current.active && current.current.fileId) await read(current.current.fileId, true);
   };
-  return { files: loadedProject.current === projectPath ? files : [], fileId, select: setFileId, canvas: canvas?.id === fileId && loadedProject.current === projectPath ? canvas : null, loading, busy, error: notice ?? error, refresh: reload, create, edit, undo, undoState, owner };
+  return { files: loadedProject.current === projectPath ? files : [], fileId, select: setFileId, canvas: canvas?.id === fileId && loadedProject.current === projectPath ? canvas : null, loading, busy, error: notice ?? error, refresh: reload, create, edit, pasteLayers, setError, undo, undoState, owner };
 }

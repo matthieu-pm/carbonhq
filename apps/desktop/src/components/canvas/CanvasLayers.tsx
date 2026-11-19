@@ -148,6 +148,7 @@ export default function CanvasLayers({
       role="tree"
       aria-label="Layers"
       aria-multiselectable="true"
+      data-canvas-selection
       onKeyDown={onKeyDown}
       className="flex flex-col gap-px text-ui outline-none"
     >
