@@ -186,16 +186,26 @@
   color: var(--muted-foreground);
   margin-bottom: 5px;
 }
-.ce-rail {
+.ce-stage {
+  position: relative;
   display: flex;
-  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.ce-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
   align-items: center;
-  gap: 4px;
-  width: 41px;
-  flex-shrink: 0;
-  padding-top: 5px;
-  border-right: 1px solid var(--hairline);
-  background: var(--background);
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-surface);
+  backdrop-filter: blur(24px);
   z-index: 1;
 }
 .ce-icon {
@@ -222,16 +232,29 @@
   opacity: 0.4;
   cursor: default;
 }
-.ce-rail .ce-icon {
+.ce-toolbar .ce-icon {
   width: 32px;
   height: 32px;
 }
-.ce-rail .ce-icon svg {
-  width: 19px;
-  height: 19px;
+.ce-toolbar .ce-icon svg {
+  width: 18px;
+  height: 18px;
 }
-.ce-rail .ce-icon:nth-child(3) {
-  margin-top: 9px;
+/* The thumb is the card colour in light mode, which is the bar's own, so the pick reads as a recess. */
+.ce-toolbar .ce-icon[aria-pressed="true"] {
+  background: var(--surface-well);
+}
+/* Splits navigation tools (Select, Hand) from drawing tools. */
+.ce-toolbar .ce-icon:nth-child(3) {
+  margin-left: 13px;
+  position: relative;
+}
+.ce-toolbar .ce-icon:nth-child(3)::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  height: 16px;
+  border-left: 1px solid var(--hairline);
 }
 .ce-board {
   position: relative;
@@ -510,9 +533,6 @@
   }
   .ce-grid {
     grid-template-columns: 1fr;
-  }
-  .ce-rail {
-    width: 33px;
   }
 }
 

@@ -331,29 +331,31 @@ export function CanvasEditor({
       )}
       {doc && page ? (
         <>
-          <div className="ce-rail" role="toolbar" aria-label="Canvas tools">
-            {tools.map(({ name, key, icon: Icon }) => (
-              <ToolButton
-                key={name}
-                label={name + " (" + key + ")"}
-                active={tool === name}
-                onClick={() => setTool(name)}
-              >
-                <Icon />
-              </ToolButton>
-            ))}
+          <div className="ce-stage">
+            <CanvasBoard
+              doc={doc}
+              page={page}
+              tool={tool}
+              setTool={setTool}
+              selected={selected}
+              select={pick}
+              view={view}
+              setView={setView}
+              change={session.change}
+            />
+            <div className="ce-toolbar" role="toolbar" aria-label="Canvas tools">
+              {tools.map(({ name, key, icon: Icon }) => (
+                <ToolButton
+                  key={name}
+                  label={name + " (" + key + ")"}
+                  active={tool === name}
+                  onClick={() => setTool(name)}
+                >
+                  <Icon />
+                </ToolButton>
+              ))}
+            </div>
           </div>
-          <CanvasBoard
-            doc={doc}
-            page={page}
-            tool={tool}
-            setTool={setTool}
-            selected={selected}
-            select={pick}
-            view={view}
-            setView={setView}
-            change={session.change}
-          />
           <aside className="ce-inspector" aria-label="Canvas inspector">
             <header className="ce-inspector-head">
               <span aria-live="polite">{saving ? "Saving…" : ""}</span>
