@@ -1,9 +1,6 @@
 name: Release
 
-# A tag is the whole trigger, and its shape picks the channel: `v0.3.0` is
-# stable, `v0.3.0-beta.1` is beta. Semver's own prerelease rule is what makes
-# that work end to end — the updater compares versions, and `0.3.0-beta.1` is
-# older than `0.3.0`, so a beta user lands on the stable release when it ships.
+# A prerelease suffix or an explicit beta marker in the changelog selects beta.
 on:
   push:
     tags:
@@ -53,7 +50,8 @@ jobs:
 
       - id: channel
         run: |
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+          heading=$(awk -F ' · ' -v version="## ${GITHUB_REF_NAME#v}" '$1 == version {print; exit}' apps/desktop/CHANGELOG.md)
+          if [[ "${GITHUB_REF_NAME}" == *-* || "$heading · " == *" · beta · "* ]]; then
             echo "channel=beta" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else

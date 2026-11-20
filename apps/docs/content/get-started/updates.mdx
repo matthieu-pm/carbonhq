@@ -5,17 +5,17 @@ sidebar:
   order: 3
 ---
 
-Carbon checks for a new version when it starts and every six hours after that. When it finds one, it downloads it in the background. You choose when to restart onto it.
+Carbon checks for a new version at launch. It checks again when you return to the window if six hours have passed since the last successful check. While Carbon stays open, it also checks hourly whether an update check is due. When it finds one, it downloads it in the background. You choose when to restart onto it.
 
 ## Install an update
 
-When an update has downloaded, the bottom of the sidebar shows **Restart to update** with the new version number. Click it. Carbon installs the update and opens again.
+A blue download button appears above usage in the navigation rail. Hover over it to see download progress. Once the download finishes, click the button to restart. Carbon installs the update and opens again.
 
 While any session is mid-turn, the button waits. It is dimmed, and hovering it says "Waiting for the running turn to finish." Restarting would cut those turns off, so it is not offered until they end.
 
 Sessions survive the restart. The background process that runs them moves onto the new version on its own, once no turn is running.
 
-If the install fails, the sidebar says "Couldn't install the update." If the update installed but Carbon could not reopen itself, it says "Update installed. Quit and open Carbon again."
+If the install fails, hover over the download button or open Settings → About to see "Couldn't install the update." If the update installed but Carbon could not reopen itself, it says "Update installed. Quit and open Carbon again."
 
 ## Check for updates by hand
 

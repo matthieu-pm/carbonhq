@@ -22,6 +22,18 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.31.1 · 2026-11-20 · beta
+
+### New
+
+- **Design workspace.** Create project canvases with frames, rectangles and text. Use the layer inspector to edit them and share styles with theme tokens.
+- **Slide decks in Spaces.** Create, edit and present slides, or export them to PowerPoint. Agents can create decks with `carbon pages create-deck`.
+- **Images in Spaces.** Browse generated images and Page attachments, upload images, and open the Page or session an image came from.
+
+### Improved
+
+- **App updates.** See download progress in the navigation rail, even with the sidebar collapsed. Carbon checks again after waking when an update check is due.
+
 ## 0.31.0 · 2026-11-19 · beta
 
 ### Improved
