@@ -7,9 +7,9 @@ import AgentIcon from "@/components/AgentIcon";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSubscriptionUsage } from "@/hooks/useSubscriptionUsage";
-import { combinedRemaining, PROVIDERS, resetLabel, subscriptionRemaining, usageColor } from "@/lib/subscriptionUsage";
+import { combinedRemaining, resetLabel, subscriptionRemaining, usageColor } from "@/lib/subscriptionUsage";
 import { cn } from "@/lib/utils";
-import type { Harness, SubscriptionUsage } from "@/types/events";
+import type { SubscriptionUsage } from "@/types/events";
 
 function UsageRing({ percent, partial, className }: { percent: number | null; partial: boolean; className?: string }) {
   return (
@@ -27,41 +27,35 @@ function UsageRing({ percent, partial, className }: { percent: number | null; pa
   );
 }
 
-function ProviderUsage({ harness, label, row, loading, failed, now }: {
-  harness: Harness; label: string; row?: SubscriptionUsage; loading: boolean; failed: boolean; now: number;
+function ProviderUsage({ row, failed, now }: {
+  row: SubscriptionUsage & { label: string }; failed: boolean; now: number;
 }) {
-  const remaining = row ? subscriptionRemaining(row, now) : null;
-  const stale = Boolean(row && !row.unavailableReason && row.windows.length && (failed || remaining === null));
+  const { harness, label } = row;
+  const stale = failed || subscriptionRemaining(row, now) === null;
   return (
     <section className="flex flex-col gap-3 px-4 py-4" aria-label={`${label} usage`}>
       <div className="flex items-center gap-2.5">
         <span aria-hidden="true"><AgentIcon harness={harness} className="size-4 text-muted-foreground" /></span>
         <span className="flex-1 text-ui font-medium">{label}</span>
-        {row?.plan && <span className="text-xs text-muted-foreground capitalize">{row.plan.replaceAll("_", " ")}</span>}
+        {row.plan && <span className="text-xs text-muted-foreground capitalize">{row.plan.replaceAll("_", " ")}</span>}
       </div>
-      {row?.windows.length ? (
-        <div className="flex flex-col gap-3">
-          {row.windows.map((window) => (
-            <div key={window.label} className={cn("flex flex-col gap-1.5", stale && "opacity-50")}>
-              <div className="flex items-baseline justify-between gap-3 text-xs">
-                <span className="text-muted-foreground">{window.label}</span>
-                <span className={cn("tabular-nums", usageColor(window.remainingPercent))}>
-                  {Math.floor(window.remainingPercent)}% remaining
-                </span>
-              </div>
-              <div role="meter" aria-label={`${label} ${window.label} remaining`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={window.remainingPercent} className="h-1.5 overflow-hidden rounded-full bg-foreground/10">
-                <div className={cn("h-full origin-left rounded-full bg-current", usageColor(window.remainingPercent))} style={{ width: `${window.remainingPercent}%` }} />
-              </div>
-              <p className="text-xs text-muted-foreground">{resetLabel(window.resetsAt, now)}</p>
+      <div className="flex flex-col gap-3">
+        {row.windows.map((window) => (
+          <div key={window.label} className={cn("flex flex-col gap-1.5", stale && "opacity-50")}>
+            <div className="flex items-baseline justify-between gap-3 text-xs">
+              <span className="text-muted-foreground">{window.label}</span>
+              <span className={cn("tabular-nums", usageColor(window.remainingPercent))}>
+                {Math.floor(window.remainingPercent)}% remaining
+              </span>
             </div>
-          ))}
-          {stale && <p className="text-xs text-accent-command">Last known usage · refresh for current limits</p>}
-        </div>
-      ) : (
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {row?.unavailableReason ?? (loading ? "Checking subscription…" : "Usage unavailable. Refresh to try again.")}
-        </p>
-      )}
+            <div role="meter" aria-label={`${label} ${window.label} remaining`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={window.remainingPercent} className="h-1.5 overflow-hidden rounded-full bg-foreground/10">
+              <div className={cn("h-full origin-left rounded-full bg-current", usageColor(window.remainingPercent))} style={{ width: `${window.remainingPercent}%` }} />
+            </div>
+            <p className="text-xs text-muted-foreground">{resetLabel(window.resetsAt, now)}</p>
+          </div>
+        ))}
+        {stale && <p className="text-xs text-accent-command">Last known usage · refresh for current limits</p>}
+      </div>
     </section>
   );
 }
@@ -74,6 +68,8 @@ export default function SubscriptionUsageButton({ onAccounts }: { onAccounts: ()
   const heading = useId();
   const { percent, count } = combinedRemaining(error ? [] : rows, now);
   const shown = percent === null ? null : Math.floor(percent);
+  const excluded = rows.length - count;
+  const partial = count > 0 && excluded > 0;
   const summary = shown === null ? "Subscription usage unavailable" : `${shown}% remaining across ${count} ${count === 1 ? "subscription" : "subscriptions"}`;
 
   return (
@@ -85,7 +81,7 @@ export default function SubscriptionUsageButton({ onAccounts }: { onAccounts: ()
               variant="ghost" size="icon" aria-label={`Subscription usage: ${summary}`}
               className={cn("size-9 transition-[color,background-color] duration-150 ease-out hover:bg-sidebar-accent/50 active:not-aria-[haspopup]:translate-y-0 dark:hover:bg-sidebar-accent/50", shown === null ? "text-muted-foreground" : usageColor(percent))}
             >
-              <UsageRing percent={percent} partial={count > 0 && count < 3} />
+              <UsageRing percent={percent} partial={partial} />
             </Button>
           </Popover.Trigger>
         </TooltipTrigger>
@@ -121,19 +117,19 @@ export default function SubscriptionUsageButton({ onAccounts }: { onAccounts: ()
               </Popover.Close>
             </div>
           </div>
-          <div className="px-4 pt-4" aria-live="polite" aria-busy={loading}>
+          <div className={cn("px-4 pt-4", !rows.length && "pb-4")} aria-live="polite" aria-busy={loading}>
             <div className="flex items-center gap-2">
-              <span className={usageColor(percent)}><UsageRing percent={percent} partial={count > 0 && count < 3} className="size-7" /></span>
+              <span className={usageColor(percent)}><UsageRing percent={percent} partial={partial} className="size-7" /></span>
               <div className="flex items-baseline gap-2">
                 <span className={cn("text-2xl font-medium tabular-nums tracking-tight", usageColor(percent))}>{shown === null ? "—" : `${shown}%`}</span>
-                <span className="text-xs text-muted-foreground">{shown === null ? "No current usage" : "combined remaining"}</span>
+                <span className="text-xs text-muted-foreground">{loading && !rows.length ? "Checking subscriptions…" : shown === null ? "No current usage" : "combined remaining"}</span>
               </div>
             </div>
-            {count > 0 && count < 3 && <p className="mt-1.5 text-xs text-accent-command">{3 - count} {count === 2 ? "subscription excluded" : "subscriptions excluded"} · usage unavailable</p>}
+            {partial && <p className="mt-1.5 text-xs text-accent-command">{excluded} {excluded === 1 ? "subscription excluded" : "subscriptions excluded"} · usage unavailable</p>}
             {error && <p role="alert" className="mt-2 text-xs text-destructive">Couldn't refresh usage. Check your connection and try again.</p>}
           </div>
           <div className="mt-1 divide-y divide-border/60">
-            {PROVIDERS.map((provider) => <ProviderUsage key={provider.harness} {...provider} row={rows.find((row) => row.harness === provider.harness)} loading={loading} failed={error} now={now} />)}
+            {rows.map((row) => <ProviderUsage key={row.harness} row={row} failed={error} now={now} />)}
           </div>
         </Popover.Content>
       </Popover.Portal>

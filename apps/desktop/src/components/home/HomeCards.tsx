@@ -24,7 +24,6 @@ import {
 } from "@/lib/home";
 import {
   combinedRemaining,
-  PROVIDERS,
   resetLabel,
   subscriptionRemaining,
   usageColor,
@@ -338,9 +337,9 @@ function UsageRecap() {
       </div>
 
       <ul className="flex flex-col gap-2">
-        {PROVIDERS.map(({ harness, label }) => {
-          const row = rows.find((r) => r.harness === harness);
-          const remaining = row && !error ? subscriptionRemaining(row, now) : null;
+        {rows.map((row) => {
+          const { harness, label } = row;
+          const remaining = error ? null : subscriptionRemaining(row, now);
           return (
             <li key={harness} className="flex flex-col gap-1">
               <div className="flex items-center gap-2 text-xs">

@@ -1,13 +1,19 @@
-import type { Harness, SubscriptionUsage } from "@/types/events";
+import type { SubscriptionUsage } from "@/types/events";
 
 export const USAGE_FRESH_MS = 2 * 60_000;
 
-/// The agents whose subscriptions report usage, in the order they are listed.
-export const PROVIDERS: { harness: Harness; label: string }[] = [
-  { harness: "codex", label: "Codex" },
-  { harness: "claude_code", label: "Claude Code" },
-  { harness: "grok", label: "Grok" },
-];
+const providerLabels: Record<string, string> = {
+  codex: "Codex",
+  claude_code: "Claude Code",
+  grok: "Grok",
+};
+
+/// A CLI can return a plan name without an account allowance. A window at 0% still counts.
+export function reportedSubscriptions(rows: SubscriptionUsage[]) {
+  return rows
+    .filter((row) => row.windows.length > 0)
+    .map((row) => ({ ...row, label: providerLabels[row.harness] ?? row.harness }));
+}
 
 /// The text colour for a remaining share: red at 10% or under, yellow at 25%.
 export function usageColor(percent: number | null): string {

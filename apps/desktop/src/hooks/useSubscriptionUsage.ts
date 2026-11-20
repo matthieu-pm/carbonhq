@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isWindowFocused, onFocusChange } from "@/lib/focus";
+import { reportedSubscriptions } from "@/lib/subscriptionUsage";
 import { invoke, LOCAL } from "@/lib/transport";
 import type { SubscriptionUsage } from "@/types/events";
 
 /// Polls account usage while visible and coalesces refreshes without touching any session state.
 export function useSubscriptionUsage() {
-  const [rows, setRows] = useState<SubscriptionUsage[]>([]);
+  const [rows, setRows] = useState<ReturnType<typeof reportedSubscriptions>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [now, setNow] = useState(Date.now);
@@ -22,7 +23,7 @@ export function useSubscriptionUsage() {
     try {
       const next = await invoke<SubscriptionUsage[]>("subscription_usage", { refresh: force }, LOCAL);
       if (mounted.current) {
-        setRows(next);
+        setRows(reportedSubscriptions(next));
         setError(false);
         lastRead.current = Date.now();
       }

@@ -9,8 +9,9 @@ project, session or remote server.
 Each subscription contributes its lowest remaining percentage across its reported
 windows. The circle shows the average of those percentages, with equal weight per
 subscription. These allowances cannot be transferred or added as token counts.
-Missing, failed, stale and reset readings are excluded, and
-the card says how many subscriptions were excluded. No readings produces a dashed
+The card and dashboard list a provider only when its CLI reports a subscription
+allowance. A plan name alone does not qualify. Stale and reset readings are
+excluded from the average. No readings produces a dashed
 ring and no percentage. A real zero remains zero.
 
 The card repeats the usage ring beside the combined percentage. Account settings

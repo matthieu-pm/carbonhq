@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { combinedRemaining, resetLabel, subscriptionRemaining, USAGE_FRESH_MS } from "@/lib/subscriptionUsage";
+import { combinedRemaining, reportedSubscriptions, resetLabel, subscriptionRemaining, USAGE_FRESH_MS } from "@/lib/subscriptionUsage";
 import type { SubscriptionUsage } from "@/types/events";
 
 const NOW = Date.parse("2026-11-04T20:00:00Z");
@@ -12,6 +12,12 @@ function row(remaining: number[], extra: Partial<SubscriptionUsage> = {}): Subsc
 }
 
 describe("subscription allowance", () => {
+  it("lists only providers reporting an allowance, including exhausted subscriptions", () => {
+    const grok = row([], { harness: "grok", plan: "SuperGrok Plus" });
+    const codex = row([0]);
+    expect(reportedSubscriptions([grok, codex])).toEqual([{ ...codex, label: "Codex" }]);
+    expect(reportedSubscriptions([grok])).toEqual([]);
+  });
   it("takes the most restrictive window once per provider before averaging", () => {
     expect(combinedRemaining([row([94]), row([68, 90]), row([58])], NOW)).toEqual({ percent: 220 / 3, count: 3 });
   });
