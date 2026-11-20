@@ -134,20 +134,24 @@ export async function refreshPageDraft(target: PageTarget) {
 /// Resolution is explicit; saving the draft still compares against the freshly read revision.
 export async function resolvePageDraft(target: PageTarget, choice: "saved" | "draft", reviewedRevision?: number) {
   const entry = documents.get(pageKey(target));
-  if (!entry) return;
+  if (!entry) return false;
   try {
     const remote = await readPage(target);
+    if ((choice === "draft" || reviewedRevision !== undefined) && remote.revision !== reviewedRevision) {
+      publish(entry, { conflict: true, error: "The document changed again. Review the latest revision before choosing." });
+      return false;
+    }
     if (choice === "saved") publish(entry, clean(remote));
     else {
-      if (remote.revision !== reviewedRevision) {
-        publish(entry, { conflict: true, error: "The saved Page changed again. Review the latest version before saving your draft." });
-        return;
-      }
       publish(entry, { base: remote, conflict: false, error: null });
       await savePageDraft(target);
     }
     persist(entry.state);
-  } catch (reason) { publish(entry, { error: String(reason) }); }
+    return !entry.state.dirty && !entry.state.error;
+  } catch (reason) {
+    publish(entry, { error: String(reason) });
+    return false;
+  }
 }
 
 export function pageDraft(target: PageTarget): PageDraft | undefined { return documents.get(pageKey(target))?.state; }

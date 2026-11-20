@@ -1,0 +1,120 @@
+/* The OpenPresentation editor in Carbon's clothes. Its stylesheet sits in
+   `@layer opf`, so these unlayered rules win at any specificity. Tokens point
+   at Carbon's own variables, which already flip with mode and palette, so the
+   chrome follows every theme with no dark block here. Only chrome is themed:
+   the slide itself is the deck's authored design and is never touched. */
+.spaces-deck,
+.spaces-deck .opf-ui {
+  --opf-ui-bg: var(--background);
+  --opf-ui-surface: var(--surface-card);
+  --opf-ui-muted: var(--accent);
+  --opf-ui-muted-2: var(--muted);
+  --opf-ui-fg: var(--foreground);
+  --opf-ui-muted-fg: var(--muted-foreground);
+  --opf-ui-accent: var(--button-primary);
+  --opf-ui-accent-fg: var(--button-primary-foreground);
+  --opf-ui-accent-strong: var(--foreground);
+  --opf-ui-border: var(--border);
+  --opf-ui-border-strong: color-mix(in oklab, var(--foreground) 24%, transparent);
+  --opf-ui-ring: var(--ring);
+  --opf-ui-danger: var(--destructive);
+  --opf-ui-success: var(--accent-add);
+  --opf-ui-code-bg: var(--surface-raised);
+  --opf-ui-code-border: var(--border);
+  --opf-ui-font: var(--font-sans);
+  --opf-ui-mono: var(--font-mono);
+  --opf-ui-radius-sm: var(--radius-sm);
+  --opf-ui-radius: var(--radius-md);
+  --opf-ui-radius-md: var(--radius-lg);
+  --opf-ui-radius-lg: var(--radius-xl);
+  --opf-ui-control-h: 28px;
+  --opf-ui-bar-bg: transparent;
+  --opf-ui-bar-border: transparent;
+  --opf-ui-bar-padding: 0;
+  --opf-ui-bar-gap: 4px;
+  --opf-ui-title-size: 14px;
+  --opf-ui-title-weight: 500;
+}
+
+.spaces-deck { position: relative; }
+.spaces-deck-editor { flex: 1; min-height: 0; overflow: hidden; }
+.spaces-deck .opf-workspace { background: transparent; }
+
+/* One row: the editor's own bar is mounted inside Carbon's document tools. */
+.spaces-deck-toolbar { flex: 1; min-width: 0; }
+.spaces-deck-toolbar .opf-tb { min-width: 0; }
+.spaces-deck .opf-title-input { padding-inline: 6px; letter-spacing: -0.005em; }
+
+/* Chrome buttons are Carbon's ghost buttons: no fill and no border until hovered. */
+.spaces-deck .opf-ws-button {
+  min-height: 28px; padding: 0 8px; border-color: transparent; border-radius: min(var(--radius-md), 12px);
+  background: transparent; color: color-mix(in oklab, var(--foreground) 80%, transparent);
+  font: 500 var(--text-ui) / var(--text-ui--line-height) var(--font-sans);
+}
+.spaces-deck .opf-ws-button:hover:not(:disabled) { background: var(--accent); color: var(--foreground); }
+.spaces-deck .opf-ws-button:disabled { opacity: 0.4; }
+
+.spaces-deck .opf-tb-more-button { width: 28px; min-width: 28px; height: 28px; padding: 0; border-color: transparent; border-radius: min(var(--radius-md), 12px); background: transparent; color: color-mix(in oklab, var(--foreground) 80%, transparent); }
+.spaces-deck .opf-tb-more-button:hover, .spaces-deck .opf-tb-more-button[aria-expanded="true"] { border-color: transparent; background: var(--accent); color: var(--foreground); }
+.spaces-deck .opf-tb-menu { left: 0; right: auto; border-color: var(--border); border-radius: var(--radius-lg); }
+.spaces-deck .opf-tb-menu-item { min-height: 28px; padding: 0 8px; border-radius: var(--radius-md); font: 400 var(--text-ui) / 1.2 var(--font-sans); }
+
+/* Undo and Redo draw Carbon's glyphs. The words stay as the accessible name. */
+.spaces-deck .opf-ws-group .opf-ws-button { width: 28px; padding: 0; font-size: 0; display: inline-grid; place-items: center; }
+.spaces-deck .opf-ws-group .opf-ws-button::before {
+  content: ""; width: 14px; height: 14px; background: currentColor;
+  -webkit-mask: var(--deck-glyph) center / contain no-repeat; mask: var(--deck-glyph) center / contain no-repeat;
+}
+.spaces-deck .opf-ws-group .opf-ws-button:first-child { --deck-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14 4 9l5-5'/%3E%3Cpath d='M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11'/%3E%3C/svg%3E"); }
+.spaces-deck .opf-ws-group .opf-ws-button:last-child { --deck-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 14 5-5-5-5'/%3E%3Cpath d='M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13'/%3E%3C/svg%3E"); }
+
+/* The view switch is Carbon's segmented control: a well with a raised thumb. */
+.spaces-deck .opf-ws-views { gap: 0; padding: 2px; border-radius: 999px; background: var(--surface-well); }
+.spaces-deck .opf-ws-views .opf-ws-button { min-height: 24px; padding: 0 10px; border-radius: 999px; color: var(--muted-foreground); }
+.spaces-deck .opf-ws-views .opf-ws-button:hover:not(:disabled) { background: transparent; color: var(--foreground); }
+.spaces-deck .opf-ws-views .opf-ws-button[aria-pressed="true"] { background: var(--surface-thumb); box-shadow: var(--shadow-button); color: var(--foreground); }
+
+/* The slide floats on a quiet canvas, so a white slide still has an edge in light mode. */
+.spaces-deck .opf-ws-stage { padding: 28px 32px 12px; }
+.spaces-deck .opf-ws-canvas { border: 1px solid var(--hairline-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-card); }
+.spaces-deck .opf-ws-dock { gap: 8px; padding: 4px 24px 16px; }
+.spaces-deck .opf-nav-counter { min-width: 56px; font: 500 12px/1 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+.spaces-deck .opf-nav-button { border-radius: min(var(--radius-md), 12px); }
+
+/* The strip: Carbon's corners, and the current slide ringed in the palette's mark. */
+.spaces-deck .opf-thumbs-frame { border-radius: var(--radius-sm); box-shadow: 0 0 0 1px var(--hairline-strong); }
+.spaces-deck .opf-thumbs-item[aria-current="true"] .opf-thumbs-frame { outline-color: var(--primary); }
+.spaces-deck .opf-thumbs-item[aria-current="true"] { color: var(--foreground); }
+.spaces-deck .opf-thumbs-index { font-family: var(--font-sans); font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+.spaces-deck .opf-thumbs-label { font-size: 11px; }
+.spaces-deck .opf-thumbs-add { border-radius: var(--radius-sm); }
+
+/* The status line repeats what the header already says; it stays for screen readers. */
+.spaces-deck .opf-ws-status { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The inspector sits in the page like Pages' outline does: no fill, a hairline toward the canvas. */
+.spaces-deck .opf-ws-side { flex-basis: 288px; border-left-color: var(--hairline); background: transparent; scrollbar-gutter: stable; }
+.spaces-deck .opf-ws-tabs { gap: 4px; min-height: 44px; padding: 0 12px; align-items: stretch; border-bottom-color: var(--hairline); }
+.spaces-deck .opf-ws-tab { padding: 0 4px; font: 500 var(--text-ui) / 1 var(--font-sans); }
+.spaces-deck .opf-ws-tab[aria-selected="true"] { border-bottom-color: var(--foreground); }
+.spaces-deck .opf-ws-tab:hover { color: var(--foreground); }
+.spaces-deck .opf-ws-panel { padding: 8px 16px 24px; }
+.spaces-deck .opf-dc-group { border-top-color: var(--hairline); }
+.spaces-deck .opf-dc-group > summary { padding: 6px 0; font: 500 12px/1.4 var(--font-sans); letter-spacing: 0; text-transform: none; }
+.spaces-deck .opf-ws-side label,
+.spaces-deck .opf-ws-side legend { font-size: 12px; color: var(--muted-foreground); }
+.spaces-deck .opf-ws-side :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), select, textarea) {
+  min-height: 28px; border-color: var(--input); border-radius: var(--radius-md); background-color: transparent;
+  font-size: var(--text-ui); color: var(--foreground);
+}
+.dark .spaces-deck .opf-ws-side :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), select, textarea) { background-color: color-mix(in oklab, var(--input) 30%, transparent); }
+.spaces-deck .opf-ws-side :is(input, select, textarea):focus-visible { border-color: var(--ring); outline: 3px solid color-mix(in oklab, var(--ring) 50%, transparent); outline-offset: 0; }
+.spaces-deck .opf-ws-side select option { background: var(--surface-card); color: var(--foreground); }
+
+/* A narrow window gives the slide the room: the inspector folds under it. */
+@container (max-width: 760px) {
+  .spaces-deck .opf-ws-body { flex-direction: column; overflow: auto; }
+  .spaces-deck .opf-ws-main { flex: 0 0 auto; min-height: 420px; }
+  .spaces-deck .opf-ws-side { flex-basis: auto; border-left: 0; border-top: 1px solid var(--hairline); overflow: visible; }
+  .spaces-deck .opf-ws-stage { padding: 16px 16px 8px; }
+}

@@ -58,7 +58,7 @@ async fn foreign_target_scans_resolve_source_relative_and_explicit_local_owners(
         .await
         .is_err());
     store
-        .create_with_id(target.clone(), "Actual target".into(), "".into(), vec![])
+        .create_with_id(target.clone(), "Actual target".into(), "".into(), vec![], None)
         .await
         .unwrap();
     let mut same_owner: Vec<_> = store

@@ -10,6 +10,7 @@ import { useSyncExternalStore } from "react";
 
 import { channel } from "@/lib/channel";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
+import type { PageBodyFormat } from "@/types/events";
 import type { ServerId } from "@/lib/transport";
 
 export const SECTION_IDS = ["all", "pages", "slides", "images", "drive", "linear", "trash"] as const;
@@ -28,7 +29,7 @@ export type SpaceView = {
 
 /// A Page shown in a tab. `title` is stored so a restored tab is named before
 /// its document has been read back; `revision` pins a cited snapshot.
-export type TabPage = { id: string; server: ServerId; revision?: number; title: string };
+export type TabPage = { id: string; server: ServerId; revision?: number; format?: PageBodyFormat; title: string };
 
 export type SpaceTab = { id: string; view: SpaceView; page: TabPage | null };
 
@@ -94,12 +95,12 @@ export function updateSpaceView(state: SpaceTabsState, id: string, patch: Partia
 }
 
 /// Renames every tab showing this Page, after a load or a saved title edit.
-export function setPageTabTitle(state: SpaceTabsState, page: Omit<TabPage, "title" | "revision">, title: string): SpaceTabsState {
+export function setPageTabTitle(state: SpaceTabsState, page: Omit<TabPage, "title" | "revision">, title: string, format?: PageBodyFormat): SpaceTabsState {
   let changed = false;
   const tabs = state.tabs.map((t) => {
-    if (!t.page || t.page.id !== page.id || t.page.server !== page.server || t.page.title === title) return t;
+    if (!t.page || t.page.id !== page.id || t.page.server !== page.server || (t.page.title === title && (!format || t.page.format === format))) return t;
     changed = true;
-    return { ...t, page: { ...t.page, title } };
+    return { ...t, page: { ...t.page, title, ...(format ? { format } : {}) } };
   });
   return changed ? { ...state, tabs } : state;
 }
@@ -152,7 +153,7 @@ export function coerceSpaceTabs(raw: unknown): SpaceTabsState {
     if (!t || typeof t !== "object" || typeof t.id !== "string" || seen.has(t.id)) continue;
     const p = t.page;
     const page: TabPage | null = p && typeof p === "object" && typeof p.id === "string" && typeof p.server === "string"
-      ? { id: p.id, server: p.server, title: typeof p.title === "string" ? p.title : "Untitled", ...(typeof p.revision === "number" ? { revision: p.revision } : {}) }
+      ? { id: p.id, server: p.server, ...(p.format === "opf" ? { format: p.format } : {}), title: typeof p.title === "string" ? p.title : "Untitled", ...(typeof p.revision === "number" ? { revision: p.revision } : {}) }
       : null;
     kept.push({ id: t.id, view: coerceView(t.view), page });
     seen.add(t.id);

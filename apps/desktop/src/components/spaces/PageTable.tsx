@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Check, Download, FileText, Loader2, MessageSquarePlus, Minus, RotateCcw, Star, Trash2, X } from "lucide-react";
+import { Check, Download, FileText, Loader2, MessageSquarePlus, Minus, Presentation, RotateCcw, Star, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import DeckCover from "./DeckCover";
 import { pageKey, readPage, startChatWithPages, type LocatedPage, type PageTarget } from "@/lib/pages";
 import { invoke, LOCAL } from "@/lib/transport";
 import { serverName } from "@/lib/servers";
@@ -9,8 +10,11 @@ import type { Project } from "@/types/events";
 
 /// The Pages list: a checkbox gutter, Name / Source / Last activity, and a bar
 /// for what a selection can do. Grid view draws cards and takes no selection.
-export default function PageTable({ pages, projects, grid, trash, active, onOpen, onChanged, onError }: {
+/// Decks draw their cover slide in cards, and in rows too where every row is a
+/// deck: a cover beside a Page's square icon would push its name out of line.
+export default function PageTable({ pages, projects, grid, trash, active, covers, onOpen, onChanged, onError }: {
   pages: LocatedPage[];
+  covers: boolean;
   projects: Project[];
   grid: boolean;
   trash: boolean;
@@ -89,8 +93,14 @@ export default function PageTable({ pages, projects, grid, trash, active, onOpen
 
   if (grid) {
     return <div className="spaces-page-grid">
-      {pages.map((page) => <button key={pageKey(page)} className="spaces-card" onClick={() => onOpen({ id: page.id, server: page.server })}>
-        <span className="flex w-full min-w-0 items-center gap-3"><PageIcon /><span className="truncate">{page.title}</span>{page.favorite && <Star className="size-3 shrink-0 fill-current text-primary" />}</span>
+      {pages.map((page) => page.format === "opf" ? <button key={pageKey(page)} className="spaces-deck-card" onClick={() => onOpen({ id: page.id, server: page.server })}>
+        <DeckCover page={page} />
+        <span className="spaces-deck-card-text">
+          <span className="flex min-w-0 items-center gap-1.5"><span className="truncate font-medium">{page.title}</span>{page.favorite && <Star className="size-3 shrink-0 fill-current text-primary" aria-label="Favorite" />}</span>
+          <span className="truncate text-xs text-muted-foreground">{[page.excerpt, relativeTime(page.modified)].filter(Boolean).join(" · ")}</span>
+        </span>
+      </button> : <button key={pageKey(page)} className="spaces-card" onClick={() => onOpen({ id: page.id, server: page.server })}>
+        <span className="flex w-full min-w-0 items-center gap-3"><PageIcon deck={false} /><span className="truncate">{page.title}</span>{page.favorite && <Star className="size-3 shrink-0 fill-current text-primary" />}</span>
         {page.excerpt && <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{page.excerpt}</p>}
         <span className="mt-auto text-xs text-muted-foreground">{relativeTime(page.modified)}</span>
       </button>)}
@@ -98,9 +108,9 @@ export default function PageTable({ pages, projects, grid, trash, active, onOpen
   }
 
   return <>
-    <div className="spaces-table" role="grid" aria-label="Pages" aria-multiselectable>
+    <div className="spaces-table" role="grid" aria-label="Documents" aria-multiselectable>
       <div className="spaces-row spaces-row-head" role="row">
-        <span className="spaces-row-check"><Checkbox checked={all ? true : selected.length > 0 ? "mixed" : false} label="Select all Pages" onToggle={toggleAll} /></span>
+        <span className="spaces-row-check"><Checkbox checked={all ? true : selected.length > 0 ? "mixed" : false} label="Select all documents" onToggle={toggleAll} /></span>
         <span className="spaces-row-body"><span role="columnheader">Name</span><span role="columnheader">Source</span><span role="columnheader">Last activity</span></span>
       </div>
       {pages.map((page, index) => {
@@ -109,7 +119,7 @@ export default function PageTable({ pages, projects, grid, trash, active, onOpen
           <span className="spaces-row-check"><Checkbox checked={isPicked} label={`Select ${page.title}`} onToggle={(range) => toggle(index, range)} /></span>
           <span className="spaces-row-body" onClick={(event) => clickRow(event, index)}>
             <span role="gridcell" className="flex min-w-0 items-center gap-3">
-              <PageIcon />
+              {covers && page.format === "opf" ? <DeckCover page={page} /> : <PageIcon deck={page.format === "opf"} />}
               <button className="truncate text-left outline-none focus-visible:underline" onClick={(event) => { event.stopPropagation(); clickRow(event, index); }}>{page.title}</button>
               {page.favorite && <Star className="size-3 shrink-0 fill-current text-primary" aria-label="Favorite" />}
             </span>
@@ -119,10 +129,10 @@ export default function PageTable({ pages, projects, grid, trash, active, onOpen
         </div>;
       })}
     </div>
-    {selected.length > 0 && <div className="spaces-selection" role="toolbar" aria-label="Selected Pages">
+    {selected.length > 0 && <div className="spaces-selection" role="toolbar" aria-label="Selected documents">
       <span className="spaces-selection-count">{selected.length} selected</span>
       {!trash && <Action busy={busy === "chat"} disabled={!!busy} variant="default" icon={<MessageSquarePlus />} onClick={startChat}>Start chat</Action>}
-      <Action busy={busy === "download"} disabled={!!busy} variant="outline" icon={<Download />} onClick={download}>Download</Action>
+      {selected.every((page) => page.format !== "opf") && <Action busy={busy === "download"} disabled={!!busy} variant="outline" icon={<Download />} onClick={download}>Download</Action>}
       {trash
         ? <Action busy={busy === "trash"} disabled={!!busy} variant="outline" icon={<RotateCcw />} onClick={moveToTrash}>Restore</Action>
         : <Action busy={busy === "trash"} disabled={!!busy} variant="destructive" icon={<Trash2 />} onClick={moveToTrash}>Delete</Action>}
@@ -131,8 +141,8 @@ export default function PageTable({ pages, projects, grid, trash, active, onOpen
   </>;
 }
 
-function PageIcon() {
-  return <span className="spaces-page-icon"><FileText /></span>;
+function PageIcon({ deck }: { deck: boolean }) {
+  return <span className="spaces-page-icon">{deck ? <Presentation /> : <FileText />}</span>;
 }
 
 function Action({ busy, disabled, variant, icon, onClick, children }: {

@@ -82,7 +82,7 @@ enum Command {
     /// Save tasks for later, list them, and start or remove them.
     #[command(subcommand, arg_required_else_help = true)]
     Draft(DraftCommand),
-    /// Search and edit Markdown Pages in Spaces.
+    /// Create and edit Pages and slide decks in Spaces.
     #[command(subcommand, arg_required_else_help = true)]
     Pages(pages::PagesCommand),
     /// Request a one-use secret hand-off through Carbon's private card.

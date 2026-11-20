@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import PageDocument from "./PageDocument";
 import PageSnapshot from "./PageSnapshot";
@@ -6,6 +6,8 @@ import { openPageDraft } from "@/hooks/usePageDocument";
 import { readPage, type LocatedPage, type Page, type PageTarget } from "@/lib/pages";
 import type { TabPage } from "@/lib/spaceTabs";
 import type { Project } from "@/types/events";
+
+const DeckDocument = lazy(() => import("./DeckDocument"));
 
 /// One Page tab: reads its document on first mount and keeps the editor
 /// mounted while hidden, so switching tabs keeps each one's place. Keyed by the
@@ -16,7 +18,7 @@ export default function PageTabBody({ page: target, shown, active, projects, vis
   active: boolean;
   projects: Project[];
   visibleProjects: string[] | null;
-  onTitle: (title: string) => void;
+  onTitle: (title: string, format?: Page["format"]) => void;
   onFlushReady: (flush: () => void) => void;
   onTrashed: () => void;
   /// The document belongs only to projects the current Profile hides.
@@ -36,7 +38,7 @@ export default function PageTabBody({ page: target, shown, active, projects, vis
       if (stopped) return;
       if (target.revision === undefined) openPageDraft(read);
       setDocument(read);
-      callbacks.current.onTitle(read.title);
+      callbacks.current.onTitle(read.title, read.format);
     }, (reason) => { if (!stopped) setError(String(reason)); });
     return () => { stopped = true; };
   // The body is keyed by the Page, so only a retry reads again.
@@ -52,6 +54,13 @@ export default function PageTabBody({ page: target, shown, active, projects, vis
 
   if (error) return <div role="alert" className="spaces-error mt-6">{error}<button onClick={() => setAttempt((n) => n + 1)}>Retry</button></div>;
   if (!document) return <div className="spaces-empty"><Loader2 className="size-5 animate-spin" /><p>Opening Page…</p></div>;
+  if (document.format === "opf") {
+    return <Suspense fallback={<div className="spaces-empty">Opening slide deck…</div>}>
+      <DeckDocument page={document} active={active && shown} snapshot={target.revision !== undefined}
+        onTitle={onTitle} onFlushReady={onFlushReady}
+        onOpenCurrent={() => onOpenCurrent({ id: document.id, server: document.server }, document.title)} />
+    </Suspense>;
+  }
   if (target.revision !== undefined) {
     return <PageSnapshot page={document} onOpenCurrent={() => onOpenCurrent({ id: document.id, server: document.server }, document.title)} />;
   }
