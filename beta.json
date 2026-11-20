@@ -1,15 +1,15 @@
 {
-  "version": "0.31.0",
-  "notes": "### Improved\n\n- **Agent setup.** The bundled CLI lists available harnesses, models and controls.\n- **Session recovery.** Interrupted turns retain their outcome. Reconnecting to a large conversation restores recent activity with bounded memory use.\n\n### Changes since beta.7\n\n- Managed Preview and browser Inspect are no longer available in this build. The built-in browser and Spaces remain available.\n\nThis macOS prerelease is ad hoc signed and has not been notarized by Apple. The updater archive is signed with Carbon’s existing update key.\n",
-  "pub_date": "2026-11-19T02:01:56.829960Z",
+  "version": "0.31.1",
+  "notes": "### New\n\n- **Design workspace.** Create project canvases with frames, rectangles and text. Use the layer inspector to edit them and share styles with theme tokens.\n- **Slide decks in Spaces.** Create, edit and present slides, or export them to PowerPoint. Agents can create decks with `carbon pages create-deck`.\n- **Images in Spaces.** Browse generated images and Page attachments, upload images, and open the Page or session an image came from.\n\n### Improved\n\n- **App updates.** See download progress in the navigation rail, even with the sidebar collapsed. Carbon checks again after waking when an update check is due.\n\nIncludes Carbon CLI 0.13.13-beta.1 and protocol v22. The macOS app is ad hoc signed and has not been notarized by Apple. The updater archive is signed with Carbon\u2019s update key.",
+  "pub_date": "2026-11-20T17:01:08.255646Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnBleU9tTnBUQzdGUFJhV2RxRnRSNmRTVTdTeHV1VjNoVW1YZ0dQR2lrKy9zOVFjSzh6KzFWTkZZd04zUGRxV2VYK0RDaDdmSjRIeFNzakJ2QjJ4TUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDUzMzE3CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjAKSHFrTVFjV1V5UENNSVFvMTJBQWdFRWVyOGhwWlphQW5aNUl0WTRNeTZhQ2F4TEpkZTlkc0xhajNRc3pwZEhMVGMyNzdaUUdISHhOTkdvVk9oTENKQUE9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.0/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWm0wWWREaEVneVBVTEhYQXlMMnR4QW1GZXNCVzBJRnVjZCsvMlFLOWtDTkZVYlQrNjd1cGhZb2xnYlBGeHNiTXkrRVhRTzBEWndFcEpweUhCUitrMmdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTk0MDI4CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjEKMUNvb2psZGlmY1ViYjhjRmJROEFwM09rWGY1UHcrMTU2QVZDWkRTZ2FrV3ZVUjdOVmFqNGtldXFOL3N5U3N6RUJyeTYrRVFBYTVibFZyaFlWbURVQnc9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.1/Carbon_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnBleU9tTnBUQzdGUFJhV2RxRnRSNmRTVTdTeHV1VjNoVW1YZ0dQR2lrKy9zOVFjSzh6KzFWTkZZd04zUGRxV2VYK0RDaDdmSjRIeFNzakJ2QjJ4TUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDUzMzE3CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjAKSHFrTVFjV1V5UENNSVFvMTJBQWdFRWVyOGhwWlphQW5aNUl0WTRNeTZhQ2F4TEpkZTlkc0xhajNRc3pwZEhMVGMyNzdaUUdISHhOTkdvVk9oTENKQUE9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.0/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWm0wWWREaEVneVBVTEhYQXlMMnR4QW1GZXNCVzBJRnVjZCsvMlFLOWtDTkZVYlQrNjd1cGhZb2xnYlBGeHNiTXkrRVhRTzBEWndFcEpweUhCUitrMmdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTk0MDI4CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjEKMUNvb2psZGlmY1ViYjhjRmJROEFwM09rWGY1UHcrMTU2QVZDWkRTZ2FrV3ZVUjdOVmFqNGtldXFOL3N5U3N6RUJyeTYrRVFBYTVibFZyaFlWbURVQnc9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.1/Carbon_universal.app.tar.gz"
     }
   }
 }
