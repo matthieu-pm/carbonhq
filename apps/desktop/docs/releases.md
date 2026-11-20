@@ -30,7 +30,7 @@ Before publishing another beta, verify first launch with an isolated `CARBON_HOM
 
 **The offer lives in the rail**, a blue download button above usage ([UpdateRailButton](../src/components/UpdateRailButton.tsx)), shown from the start of a download and clickable once ready. The rail is always drawn, so a collapsed sidebar cannot hide it. The sidebar's `UpdateRow` keeps the manual check verdicts and the two install failures, which need a sentence.
 
-**The scheduled check judges staleness off the wall clock.** It runs at launch, then an hourly tick and window focus check again once the last good check is 6h old. Timers stop while the Mac sleeps, so a bare 6h interval could go days on a laptop that sleeps most of the time. A failed check records nothing, so the next tick retries.
+**The scheduled check judges staleness off the wall clock.** It runs at launch, then an hourly tick and window focus check again once the last good check is 6h old. Timers stop while the Mac sleeps, so a bare 6h interval could go days on a laptop that sleeps most of the time. A failed check is due again an hour later, not at once, or every window focus while offline would fire another. The rail button's tooltip also carries an install failure, since the sidebar row saying it is hidden while the sidebar is collapsed.
 
 **Except when the user asks.** "Check for Updates…" is a question, so it is answered either way and both answers retire after 4s. The menu item **emit to the frontend** rather than checking in Rust, because the channel lives in frontend local storage; that also mean a manual check reuse the scheduled path and its in-flight guard. The verdict is read off `check_update` resolving with no `update_status` having arrived.
 

@@ -9,7 +9,7 @@ import UpdateRow from "@/components/UpdateRow";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import DemoThemeBar from "@/demo/ThemeBar";
-import type { ManualCheck } from "@/hooks/useUpdater";
+import { type ManualCheck, updateFailure } from "@/hooks/useUpdater";
 import type { UpdateStatus } from "@/types/events";
 import "../App.css";
 
@@ -56,7 +56,7 @@ function Demo() {
             peeks={false}
             footer={
               <>
-                <UpdateRailButton status={s.status} blocked={!!s.blocked} onInstall={() => setInstalls((n) => n + 1)} />
+                <UpdateRailButton status={s.status} blocked={!!s.blocked} failure={updateFailure(s.manual ?? "idle")} onInstall={() => setInstalls((n) => n + 1)} />
                 <SubscriptionUsageButton onAccounts={() => {}} />
                 <SettingsButton onOpen={() => {}} />
               </>

@@ -13,11 +13,15 @@ import type { UpdateStatus } from "@/types/events";
 export default function UpdateRailButton({
   status,
   blocked,
+  failure,
   onInstall,
 }: {
   status: UpdateStatus | null;
   /// A turn is in flight somewhere, and installing relaunches the app.
   blocked: boolean;
+  /// `updateFailure`'s sentence. Said here too, since the sidebar row that
+  /// also says it is gone while the sidebar is collapsed.
+  failure: string | null;
   onInstall: () => void;
 }) {
   if (!status) return null;
@@ -29,7 +33,9 @@ export default function UpdateRailButton({
     ? `Downloading v${status.version}${percent === null ? "" : ` · ${percent}%`}`
     : blocked
       ? "Waiting for the running turn to finish."
-      : `Restart to update to v${status.version}`;
+      : failure
+        ? `${failure} Click to try again.`
+        : `Restart to update to v${status.version}`;
 
   return (
     <Tooltip>

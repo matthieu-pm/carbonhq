@@ -96,9 +96,10 @@ export function useUpdater() {
   // through a ref rather than the effect being pulled apart to expose it.
   const checkRef = useRef<(byHand?: boolean) => void>(() => {});
 
-  // Wall-clock time of the last check that reached the manifest. A failed one
-  // leaves it alone, so the next tick tries again.
-  const lastChecked = useRef(0);
+  // Wall-clock time the next scheduled check is due. A failed check retries a
+  // tick later rather than at once, or every window focus while offline would
+  // fire another.
+  const nextCheckAt = useRef(0);
 
   useEffect(() => {
     const unlisten = listen<UpdateStatus>("update_status", (event) => {
@@ -118,7 +119,7 @@ export function useUpdater() {
       if (byHand) setManual("checking");
       void invoke("check_update", { channel: used })
         .then(() => {
-          lastChecked.current = Date.now();
+          nextCheckAt.current = Date.now() + CHECK_INTERVAL_MS;
           if (!byHand) return;
           // The command emits nothing and still resolves when there is nothing
           // newer, so a status that never arrived is the whole of the signal.
@@ -126,6 +127,7 @@ export function useUpdater() {
         })
         .catch((e) => {
           console.warn("[update check]", e);
+          nextCheckAt.current = Date.now() + TICK_MS;
           // Silence is right for the scheduled check — being offline is not
           // something the reader can act on — but this one was asked for, and
           // an unanswered question reads as a broken menu item.
@@ -145,7 +147,7 @@ export function useUpdater() {
     checkRef.current = check;
     check();
     const checkIfStale = () => {
-      if (Date.now() - lastChecked.current >= CHECK_INTERVAL_MS) check();
+      if (Date.now() >= nextCheckAt.current) check();
     };
     const timer = setInterval(checkIfStale, TICK_MS);
     // Coming back to the window is the moment after a wake the reader looks,
