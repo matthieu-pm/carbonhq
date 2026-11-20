@@ -5,9 +5,14 @@ import { invoke, listen } from "@/lib/transport";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import type { InstallError, UpdateChannel, UpdateStatus } from "@/types/events";
 
-// Long enough that a session left open for a week still finds an update, short
-// enough that it isn't only ever the launch check doing the work.
+// How old the last good check may get. Well under a day, so a failed check or
+// two still leaves the app checking at least daily.
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+// How often staleness is judged. Timers stop while the Mac sleeps, so a 6h
+// interval on its own could go days on a laptop that sleeps most of the time;
+// the wall clock keeps running, and a short tick compares against it.
+const TICK_MS = 60 * 60 * 1000;
 
 // Long enough to read, short enough that an answer to a question already asked
 // doesn't settle in as a second permanent row.
@@ -91,6 +96,10 @@ export function useUpdater() {
   // through a ref rather than the effect being pulled apart to expose it.
   const checkRef = useRef<(byHand?: boolean) => void>(() => {});
 
+  // Wall-clock time of the last check that reached the manifest. A failed one
+  // leaves it alone, so the next tick tries again.
+  const lastChecked = useRef(0);
+
   useEffect(() => {
     const unlisten = listen<UpdateStatus>("update_status", (event) => {
       setStatus(event.payload);
@@ -109,6 +118,7 @@ export function useUpdater() {
       if (byHand) setManual("checking");
       void invoke("check_update", { channel: used })
         .then(() => {
+          lastChecked.current = Date.now();
           if (!byHand) return;
           // The command emits nothing and still resolves when there is nothing
           // newer, so a status that never arrived is the whole of the signal.
@@ -134,13 +144,20 @@ export function useUpdater() {
 
     checkRef.current = check;
     check();
-    const timer = setInterval(() => check(), CHECK_INTERVAL_MS);
+    const checkIfStale = () => {
+      if (Date.now() - lastChecked.current >= CHECK_INTERVAL_MS) check();
+    };
+    const timer = setInterval(checkIfStale, TICK_MS);
+    // Coming back to the window is the moment after a wake the reader looks,
+    // and the tick may still be up to an hour away.
+    window.addEventListener("focus", checkIfStale);
     const unlistenMenu = listen("check_update_requested", () => check(true));
 
     return () => {
       void unlisten.then((f) => f());
       void unlistenMenu.then((f) => f());
       clearInterval(timer);
+      window.removeEventListener("focus", checkIfStale);
     };
   }, [channel]);
 

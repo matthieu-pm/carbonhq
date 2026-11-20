@@ -162,8 +162,8 @@ export default function SettingsPage({
   onPanelSideChange: (next: PanelSide) => void;
   /// Owned by `App`, because the issues page and the composer read it too.
   integrations: ReturnType<typeof useIntegrations>;
-  /// The updater's state, owned by `App` — the sidebar's own `UpdateRow` draws
-  /// the same fields, and a second copy of the hook would run its own check.
+  /// The updater's state, owned by `App` — the rail and the sidebar draw the
+  /// same fields, and a second copy of the hook would run its own check.
   updateStatus: UpdateStatus | null;
   updateManual: ManualCheck;
   /// A turn is in flight somewhere, so installing would kill a child mid-turn.
@@ -651,7 +651,7 @@ function BetaUpdatesRow({
 /// It draws whatever the updater is doing rather than only what this button
 /// started: a background check that already found something leaves the row
 /// offering the restart, which is the more useful of the two answers. A blocked
-/// install takes `UpdateRow`'s treatment exactly — `aria-disabled` and a
+/// install takes the rail button's treatment exactly — `aria-disabled` and a
 /// tooltip, never `disabled`, which fires no pointer events to open one.
 function UpdatesRow({
   status,
