@@ -70,12 +70,12 @@ describe("managed Page drafts", () => {
     expect(pageDraft(original)).toMatchObject({ dirty: false, conflict: false, base: { revision: 3 } });
   });
 
-  it("refuses to overwrite a remote revision that changed after comparison", async () => {
+  it.each(["draft", "saved"] as const)("preserves the draft when the reviewed revision changes before choosing %s", async (choice) => {
     const original = page();
     openPageDraft(original);
     editPageDraft(original, { markdown: "my draft" });
     calls.read.mockResolvedValue({ ...original, revision: 3, markdown: "unseen agent edit" });
-    await resolvePageDraft(original, "draft", 2);
+    expect(await resolvePageDraft(original, choice, 2)).toBe(false);
     expect(calls.update).not.toHaveBeenCalled();
     expect(pageDraft(original)).toMatchObject({ markdown: "my draft", conflict: true, base: { revision: 1 } });
   });

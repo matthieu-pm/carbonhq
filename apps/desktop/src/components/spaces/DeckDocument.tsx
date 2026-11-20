@@ -8,10 +8,19 @@ import "./deck.css";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { editPageDraft, markPageDraftPending, pageDraft, persistPageDraft, resolvePageDraft, savePageDraft, usePageDocument, type PageDraft } from "@/hooks/usePageDocument";
+import { editPageDraft, markPageDraftPending, pageDraft, persistPageDraft, refreshPageDraft, resolvePageDraft, savePageDraft, usePageDocument, type PageDraft } from "@/hooks/usePageDocument";
 import { uploadPageAsset, usePageAssets } from "@/hooks/usePageAssets";
 import { readPage, type LocatedPage, type Page } from "@/lib/pages";
 import { deckSlides, renderSlide, loadDeckImage, imagePreview } from "@/lib/deckPreview";
+
+import DeckCover from "./DeckCover";
+
+function commitEditor(editor: OpfEditor | null) {
+  if (!editor?.commit()) return false;
+  const field = editor.deckTitle;
+  if (field?.editing) field.saveButton.click();
+  return !field?.editing;
+}
 
 type Props = {
   page: LocatedPage<Page>;
@@ -38,6 +47,7 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
   const mount = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const handle = useRef<OpfEditor | null>(null);
+  const suspended = useRef<Pick<OpfEditor, "session" | "slideIndex" | "view"> & { source: string } | null>(null);
   const currentSource = useRef(source);
   const initial = useRef(source);
   initial.current = source;
@@ -47,6 +57,9 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
   const [exporting, setExporting] = useState(false);
   const [reviewed, setReviewed] = useState<LocatedPage<Page> | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+  const [reviewAttempt, setReviewAttempt] = useState(0);
   const { assets, error: assetError } = usePageAssets(page, active);
   const images = useRef(assets);
   images.current = assets;
@@ -81,9 +94,21 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
     setError("");
     currentSource.current = initial.current;
     let editor: OpfEditor;
+    let titleObserver: MutationObserver | undefined;
+    let canvasPending = false;
+    const finishPending = () => {
+      if (readOnly || stopped || canvasPending || editor?.deckTitle?.editing || !pageDraft(page)?.pending) return;
+      editPageDraft(page, { markdown: currentSource.current });
+      const draft = pageDraft(page);
+      if (!draft?.dirty && draft?.conflict) void refreshPageDraft(page);
+    };
     try {
+      // Full-layout OPF binds document-wide keys. Keep its session and location
+      // across tab switches while detaching those listeners from hidden editors.
+      const resume = suspended.current;
       editor = createOpfEditor(mount.current, {
-        document: JSON.parse(initial.current), catalogs: [gallery], fonts: loadPreviewFonts("/opf-fonts"),
+        ...(resume?.source === initial.current ? { session: resume.session } : { document: JSON.parse(initial.current) }),
+        view: resume?.view, slideIndex: resume?.slideIndex, catalogs: [gallery], fonts: loadPreviewFonts("/opf-fonts"),
         layout: "full", readOnly, persistence: false,
         panels: { source: false, design: true, present: true, export: false },
         // The slide row under the canvas already counts slides, and the
@@ -107,17 +132,28 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
           editPageDraft(page, { markdown, title });
         },
         on: {
-          draft: () => { if (!readOnly) markPageDraftPending(page); },
-          cancel: () => { if (!readOnly) editPageDraft(page, { markdown: currentSource.current }); },
-          save: () => { if (!readOnly) void savePageDraft(page); },
+          draft: () => { canvasPending = true; if (!readOnly) markPageDraftPending(page); },
+          commit: () => { canvasPending = false; finishPending(); },
+          cancel: () => { canvasPending = false; finishPending(); },
+          save: () => { if (!readOnly && commitEditor(editor)) { finishPending(); void savePageDraft(page); } },
         },
         onError: (reason) => { if (!stopped) setError(reason.message); },
       });
       handle.current = editor;
-      void editor.ready.then(() => { if (!stopped) setReady(true); }, (reason) => { if (!stopped) setError(String(reason)); });
+      void editor.ready.then(() => {
+        if (stopped) return;
+        const field = editor.deckTitle;
+        if (field && !readOnly) {
+          titleObserver = new MutationObserver(finishPending);
+          titleObserver.observe(field.element, { attributes: true, attributeFilter: ["data-editing"] });
+        }
+        setReady(true);
+      }, (reason) => { if (!stopped) setError(String(reason)); });
     } catch (reason) { setError(String(reason)); }
     return () => {
-      if (!readOnly && pageDraft(page)?.pending) editor?.commit();
+      if (!readOnly && pageDraft(page)?.pending && commitEditor(editor)) finishPending();
+      if (editor) suspended.current = { session: editor.session, source: currentSource.current, view: editor.view, slideIndex: editor.slideIndex };
+      titleObserver?.disconnect();
       if (!readOnly) persistPageDraft(page);
       stopped = true;
       handle.current = null;
@@ -133,7 +169,7 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
   useEffect(() => { if (!snapshot) onTitle(title); }, [title, snapshot, onTitle]);
   useEffect(() => {
     if (snapshot) return;
-    const flush = () => { handle.current?.commit(); persistPageDraft(page); void savePageDraft(page); };
+    const flush = () => { commitEditor(handle.current); persistPageDraft(page); void savePageDraft(page); };
     onFlushReady(flush);
     window.addEventListener("beforeunload", flush);
     return () => window.removeEventListener("beforeunload", flush);
@@ -141,27 +177,39 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
 
   const download = async () => {
     const editor = handle.current;
-    if (!editor || !editor.commit()) return;
+    if (!editor || !commitEditor(editor)) return;
     setExporting(true);
     setError("");
+    const document = editor.getDocument();
+    const filename = snapshot ? title : pageDraft(page)?.title ?? title;
     try {
       const { exportDeck } = await import("@/lib/deckExport");
-      await exportDeck(editor.getDocument(), title, await loadPreviewFonts("/opf-fonts"), images.current, page.server);
+      await exportDeck(document, filename, await loadPreviewFonts("/opf-fonts"), images.current, page.server);
     } catch (reason) { setError(String(reason)); }
     finally { setExporting(false); }
   };
-  const review = async () => {
-    handle.current?.commit();
-    setComparing(true);
-    try { setReviewed(await readPage(page)); }
-    catch (reason) { setError(String(reason)); }
-  };
-  const resolve = async (choice: "saved" | "draft") => {
-    if (!reviewed) return;
-    await resolvePageDraft(page, choice, reviewed.revision);
-    if (choice === "saved") setGeneration((n) => n + 1);
-    setComparing(false);
+  useEffect(() => {
+    if (!comparing) return;
+    let stopped = false;
     setReviewed(null);
+    setReviewError("");
+    readPage(page).then(
+      (saved) => { if (!stopped) setReviewed(saved); },
+      (reason) => { if (!stopped) setReviewError(String(reason)); },
+    );
+    return () => { stopped = true; };
+  }, [comparing, reviewAttempt, page.id, page.server]);
+  const resolve = async (choice: "saved" | "draft") => {
+    if (!reviewed || resolving) return;
+    setResolving(true);
+    const resolved = await resolvePageDraft(page, choice, reviewed.revision);
+    setResolving(false);
+    if (resolved) {
+      setComparing(false);
+    } else {
+      setReviewed(null);
+      setReviewError(pageDraft(page)?.error ?? "Could not resolve the conflict.");
+    }
   };
   const status = snapshot ? `Revision ${page.revision}` : draft?.conflict ? "Draft kept" : draft?.saving ? "Saving…" : draft?.dirty ? "Unsaved changes" : "Saved";
   // The shared draft queue words its conflict for Pages.
@@ -171,7 +219,9 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
         share Carbon's one row; renaming the deck takes the whole row. */}
     <div className="spaces-document-tools" data-opf-title-row>
       <Presentation className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div ref={toolbar} className="spaces-deck-toolbar" />
+      <div ref={toolbar} className="spaces-deck-toolbar" onInput={(event) => {
+        if (!readOnly && event.target === handle.current?.deckTitle?.input) markPageDraftPending(page);
+      }} />
       <div className="spaces-document-meta">
         <span role="status" className="spaces-document-status">{status}</span>
         {snapshot && <Button size="sm" variant="ghost" onClick={onOpenCurrent}>Open current deck</Button>}
@@ -182,24 +232,25 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
       </div>
     </div>
     {message && <div role="alert" className="spaces-error mt-3">{message}
-      {draft?.conflict ? <button onClick={() => void review()}>Review changes</button>
+      {draft?.conflict ? <button onClick={() => { if (commitEditor(handle.current)) setComparing(true); }}>Review changes</button>
         : <button onClick={() => { if (draft?.dirty) void savePageDraft(page); setGeneration((n) => n + 1); }}>Retry</button>}
     </div>}
     <div ref={mount} className="spaces-deck-editor" />
-    <Dialog open={comparing} onOpenChange={(open) => { setComparing(open); if (!open) setReviewed(null); }}>
+    <Dialog open={comparing} onOpenChange={(open) => { if (!resolving) setComparing(open); }}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>This deck changed elsewhere</DialogTitle>
-          <DialogDescription>Compare the saved deck with your draft. Both stay in version history after you choose.</DialogDescription>
+          <DialogDescription>Using the saved deck discards your unsaved changes. Saving your draft creates a new revision.</DialogDescription>
         </DialogHeader>
+        {reviewError && <div role="alert" className="spaces-error">{reviewError}<button onClick={() => setReviewAttempt((n) => n + 1)}>Reload saved deck</button></div>}
         <div className="deck-compare">
-          <DeckSide label={reviewed ? `Saved · revision ${reviewed.revision}` : "Saved"} source={reviewed?.markdown} other={draft?.markdown} images={previews.current} />
+          <DeckSide label={reviewed ? `Saved · revision ${reviewed.revision}` : "Saved"} saved={reviewed ?? undefined} source={reviewed?.markdown} other={draft?.markdown} images={previews.current} />
           <DeckSide label="Your draft" source={draft?.markdown} other={reviewed?.markdown} images={previews.current} />
         </div>
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setComparing(false)}>Keep editing</Button>
-          <Button variant="outline" disabled={!reviewed} onClick={() => void resolve("saved")}>Use saved deck</Button>
-          <Button disabled={!reviewed} onClick={() => void resolve("draft")}>Save my draft</Button>
+          <Button variant="ghost" disabled={resolving} onClick={() => setComparing(false)}>Keep editing</Button>
+          <Button variant="outline" disabled={!reviewed || resolving} onClick={() => void resolve("saved")}>Use saved deck</Button>
+          <Button disabled={!reviewed || resolving} onClick={() => void resolve("draft")}>Save my draft</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -208,19 +259,19 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
 
 /// One half of the conflict dialog: the cover slide, then every slide title,
 /// with the titles the other side lacks drawn in full ink.
-function DeckSide({ label, source, other, images }: { label: string; source?: string; other?: string; images: Map<string, string> }) {
+function DeckSide({ label, source, other, images, saved }: { saved?: LocatedPage<Page>; label: string; source?: string; other?: string; images: Map<string, string> }) {
   const [cover, setCover] = useState<string | null>(null);
   useEffect(() => {
     let stopped = false;
     setCover(null);
-    if (source) void renderSlide(JSON.parse(source), 0, images).then((svg) => { if (!stopped) setCover(svg); }, () => {});
+    if (source && !saved) void Promise.resolve().then(() => renderSlide(JSON.parse(source), 0, images)).then((svg) => { if (!stopped) setCover(svg); }, () => {});
     return () => { stopped = true; };
-  }, [source, images]);
+  }, [source, images, saved]);
   const titles = source ? deckSlides(source) : [];
   const theirs = other ? deckSlides(other) : [];
   return <div className="min-w-0">
     <h3 className="mb-2 text-sm font-medium">{label}</h3>
-    <div className="deck-cover" aria-hidden="true">{cover ? <img className="deck-cover-svg" src={cover} alt="" /> : source ? <Loader2 className="animate-spin" /> : <Presentation />}</div>
+    {saved ? <DeckCover page={saved} /> : <div className="deck-cover" aria-hidden="true">{cover ? <img className="deck-cover-svg" src={cover} alt="" /> : <Presentation />}</div>}
     {source ? <ol>{titles.map((title, index) => <li key={index} data-changed={theirs[index] !== title}>{title}</li>)}</ol>
       : <p className="mt-2 text-xs text-muted-foreground">Loading…</p>}
   </div>;
