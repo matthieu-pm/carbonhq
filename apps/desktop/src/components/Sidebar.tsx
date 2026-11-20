@@ -178,11 +178,7 @@ type SidebarProps = {
   /// hidden once a session exists.
   onNewSessionInProject: (projectPath: string) => void;
   updateStatus: UpdateStatus | null;
-  // Any session mid-turn, not just the open one — installing relaunches the
-  // whole app.
-  updateBlocked: boolean;
   updateManual: ManualCheck;
-  onInstallUpdate: () => void;
 };
 
 /// One drawn row: the session, how deep it sits, and the flags its connector
@@ -869,9 +865,7 @@ export default function Sidebar({
   onStepProjectFilter,
   onNewSessionInProject,
   updateStatus,
-  updateBlocked,
   updateManual,
-  onInstallUpdate,
   drafts,
   openDraftId,
   onOpenDraft,
@@ -1294,9 +1288,7 @@ export default function Sidebar({
           offer that has to still be there when the list is long. */}
       <UpdateRow
         status={updateStatus}
-        blocked={updateBlocked}
         manual={updateManual}
-        onInstall={onInstallUpdate}
       />
 
       {profiles.length > 0 && <ProfileSwitcher profiles={profiles} appearances={profileAppearances} value={space} onChange={onProfileChange} />}

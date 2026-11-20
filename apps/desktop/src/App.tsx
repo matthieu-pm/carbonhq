@@ -187,7 +187,8 @@ import type { Attachment, IssueQuery, IssueRef, SessionIndexItem, WorktreeDispos
 import { useSlashCommands } from "@/hooks/useSlashCommands";
 import { useMcpMentions } from "@/hooks/useMcpMentions";
 import { useRecorder } from "@/hooks/useTranscription";
-import { useUpdater } from "@/hooks/useUpdater";
+import { updateFailure, useUpdater } from "@/hooks/useUpdater";
+import UpdateRailButton from "@/components/UpdateRailButton";
 import { appendToDraft, onDraftWrite, readDraft, useHasDraft, writeDraft } from "@/hooks/useDraft";
 import { draftKey, useDrafts } from "@/hooks/useDrafts";
 import { issueTag, rememberIssueTitle, setIssueOpener } from "@/lib/issue";
@@ -3099,6 +3100,7 @@ function App() {
       spacesPeeks={spacesPeeks}
       footer={
         <>
+          <UpdateRailButton status={updateStatus} blocked={anyRunning} failure={updateFailure(updateManual)} onInstall={() => void installUpdate()} />
           <SubscriptionUsageButton onAccounts={() => { setSettingsTab("accounts"); setSettingsOpen(true); }} />
           <SettingsButton current={settingsOpen} onOpen={() => setSettingsOpen(true)} />
         </>
@@ -3230,9 +3232,7 @@ function App() {
             setDraftsShown(!draftsShown);
           }}
           updateStatus={updateStatus}
-          updateBlocked={anyRunning}
           updateManual={updateManual}
-          onInstallUpdate={() => void installUpdate()}
         />
       }
       header={

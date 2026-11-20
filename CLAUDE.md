@@ -236,6 +236,8 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 
 **A demo is its own page, never a flag on the real one.** An HTML page in `apps/desktop/demo/` (`demo/<question>.html`) loading its own entry from `src/demo/`, and opened at `/demo/<question>.html`. Vite's dev server serves any HTML under the package root, so it is reachable under `pnpm dev`; `vite.config.ts` names no extra `rollupOptions.input`, so `pnpm build` emits `index.html` alone. Gating on a query flag was the rejected alternative: it puts demo-only branches inside production code paths. A demo mounts the **real** components with faked inputs, and needs no test seam in `src/`: stub the Tauri bridge in the demo itself.
 
+[update-rail.html](apps/desktop/demo/update-rail.html) mounts the real rail with the blue update button above usage, and the sidebar's update row beside it, in every update state: none, downloading with and without a size, ready, blocked by a running turn, and a failed install.
+
 [profiles.html](apps/desktop/demo/profiles.html) mounts profile settings and the footer switcher with saved demo profiles, for icon and color selection, keyboard access and overflow at different sidebar widths.
 
 [main-font.html](apps/desktop/demo/main-font.html) mounts the real font picker beside interface, chat and code samples. Its **Run keyboard checks** button verifies IME confirmation, WebKit's composition Enter, unmatched searches and keyboard selection.
