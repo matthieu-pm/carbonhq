@@ -17,7 +17,6 @@ export const SECTIONS: { id: Exclude<Section, "trash">; label: string; Icon: Ico
 ];
 
 export const COMING: Partial<Record<Section, { Icon: Icon; title: string; body: string }>> = {
-  images: { Icon: Image, title: "Images are on the way", body: "Images you make or upload will gather here." },
   drive: { Icon: GoogleDriveIcon, title: "Google Drive is on the way", body: "Connect Drive to browse its documents and work on them with your agents." },
 };
 

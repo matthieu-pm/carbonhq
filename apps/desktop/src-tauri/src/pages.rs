@@ -12,6 +12,9 @@ use ts_rs::TS;
 #[path = "pages_assets.rs"]
 mod assets;
 
+#[path = "spaces_images.rs"]
+pub mod images;
+
 #[cfg(test)]
 #[path = "pages_links_tests.rs"]
 mod links_tests;
@@ -803,9 +806,9 @@ pub async fn write_page_asset(
     data: String,
     complete: bool,
 ) -> Result<PageAssetWrite, String> {
-    let progress = PagesStore::open()
-        .await?
-        .write_asset(&id, name, &asset_id, offset, data, complete)
+    let store = PagesStore::open().await?;
+    store.path(&id)?;
+    let progress = store.write_asset(&id, name, &asset_id, offset, data, complete)
         .await?;
     if progress.asset.is_some() {
         let _ = sink.emit(PAGE_ASSETS_CHANGED, serde_json::json!({ "id": id }));

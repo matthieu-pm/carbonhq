@@ -24,6 +24,10 @@ struct UploadState {
 impl PagesStore {
     pub(super) async fn list_assets(&self, id: &str) -> Result<Vec<PageAsset>, String> {
         self.read(id).await?;
+        self.stored_assets(id).await
+    }
+
+    pub(super) async fn stored_assets(&self, id: &str) -> Result<Vec<PageAsset>, String> {
         let mut entries = match fs::read_dir(self.assets.join(id)).await {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
@@ -106,7 +110,11 @@ impl PagesStore {
             .ok_or("Assets must be 20 MiB or smaller.")?;
         let _guard = WRITE_LOCK.lock().await;
         let _process = self.lock().await?;
-        if self.read(id).await?.trashed {
+        if id == super::images::UPLOADS {
+            if !mime_type(&name).starts_with("image/") {
+                return Err("Choose a PNG, JPEG, GIF or WebP image.".into());
+            }
+        } else if self.read(id).await?.trashed {
             return Err("Restore the Page before attaching a file.".into());
         }
         let dir = self.assets.join(id);

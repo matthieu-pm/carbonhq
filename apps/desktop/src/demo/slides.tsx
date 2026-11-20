@@ -125,7 +125,7 @@ function Demo() {
           <SpaceTabs state={tabs} projects={PROJECTS} active onClose={(id) => closer.current(id)} alignX={0} />
         </div>
         <div className="flex min-h-0 flex-1">
-          <SpacesView active projects={PROJECTS} visibleProjects={null} onClose={() => {}}
+          <SpacesView active onSession={() => {}} projects={PROJECTS} visibleProjects={null} onClose={() => {}}
             sidebarCollapsed={false} onExpandSidebar={() => {}} peek={false} onPeekHover={() => {}}
             onNavigate={() => {}} closeTabRef={closer} />
         </div>

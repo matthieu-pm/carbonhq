@@ -665,6 +665,13 @@ async fn read_stdout(
         if method == "hook/started" {
             block_replay(&handles, &mapper, &status, "A hook ran during this turn.").await?;
         }
+        if method == "item/completed" {
+            match crate::pages::images::capture_codex_output(&handles.session_id, &params["item"]).await {
+                Ok(true) => { let _ = handles.app.emit("space_images_changed", ()); }
+                Err(error) => eprintln!("Could not archive generated image: {error}"),
+                Ok(false) => {}
+            }
+        }
         let event = match parser::parse_notification(&method, params) {
             Ok(event) => event,
             Err(err) => {

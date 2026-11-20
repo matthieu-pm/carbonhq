@@ -90,7 +90,7 @@ function Demo() {
             <button className="rounded-md border border-border px-1 text-xs" onClick={() => setCollapsed((v) => !v)}>{collapsed ? "Open" : "Close"}</button>
             <button aria-label="Spaces" className="size-9 rounded-md bg-muted" onPointerEnter={() => collapsed && hover(true)} onPointerLeave={() => collapsed && hover(false)} />
           </div>
-          <SpacesView active projects={PROJECTS} visibleProjects={null} onClose={() => {}}
+          <SpacesView active onSession={() => {}} projects={PROJECTS} visibleProjects={null} onClose={() => {}}
             sidebarCollapsed={collapsed} onExpandSidebar={() => setCollapsed(false)} peek={peek && collapsed} onPeekHover={hover}
             onNavigate={() => setPeek(false)} closeTabRef={closer} />
         </div>

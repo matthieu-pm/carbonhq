@@ -17,7 +17,7 @@ import PageHistory from "./PageHistory";
 import PageBacklinks from "./PageBacklinks";
 import PageMentionPicker from "./PageMentionPicker";
 import PagePreview, { resolvePageImage } from "./PagePreview";
-import { uploadPageAsset, usePageAssets } from "@/hooks/usePageAssets";
+import { uploadSpaceAsset, usePageAssets } from "@/hooks/usePageAssets";
 import LinearSyncPanel from "./LinearSyncPanel";
 import DocumentOutline from "./DocumentOutline";
 
@@ -131,7 +131,7 @@ export default function PageDocument({ page, active, projects, visibleProjects, 
     setUploading(0); setActionError(null);
     try {
       for (const file of Array.from(files)) {
-        const asset = await uploadPageAsset(page, file, setUploading);
+        const asset = await uploadSpaceAsset(page, file, setUploading);
         await refreshAssets();
         const label = asset.name.replace(/[\\[\]]/g, "\\$&");
         insert(`${asset.mimeType.startsWith("image/") ? "!" : ""}[${label}](${asset.url})\n\n`);
