@@ -190,9 +190,18 @@ test("the whole crew returns at the finale checkpoint and settles into separate 
   assert.equal(game.lives, 6)
   assert.deepEqual(game.recruited, ["codex", "claude", "pi", "fx"])
   assert.ok(game.crew.every((member) => member.mode === "following"))
+  run(game, 90)
+  const onFloor = game.crew.map((member) => member.x).sort((a, b) => a - b)
+  assert.ok(onFloor.slice(1).every((x, i) => x - onFloor[i] > 20))
   approachFirstDuty(game)
   run(game, 90)
-  const positions = game.crew.map((member) => member.x).sort((a, b) => a - b)
-  assert.ok(positions.slice(1).every((x, i) => x - positions[i] > 20))
+  const ledge = game.groundedOn
+  assert.ok(ledge)
+  for (const member of game.crew) {
+    assert.equal(member.y, ledge.y)
+    assert.ok(member.x >= ledge.x && member.x <= ledge.x + ledge.w)
+  }
+  const positions = [center(game.player), ...game.crew.map((member) => member.x)].sort((a, b) => a - b)
+  assert.ok(positions.slice(1).every((x, i) => x - positions[i] > 10))
   assert.equal(game.lives, 6)
 })

@@ -1,12 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
-
-import { DownloadButton } from "@/components/DownloadButton";
-import { Newsletter } from "@/components/home/Newsletter";
+import { ClosingCards } from "@/components/home/ClosingCards";
 import { Title } from "@/components/home/Section";
 import { Stripes } from "@/components/home/Stripes";
-import { INSTALL_LINE, REPO } from "@/lib/links";
+import { REPO } from "@/lib/links";
 
 const LABEL = "font-mono text-[11px] leading-[14px] tracking-[0.06em] text-white/70 uppercase";
 
@@ -31,15 +28,7 @@ export function Closing() {
           <span className="text-white sm:block">Mix and switch freely.</span>
         </Title>
 
-        <div className="mt-10 grid divide-y divide-white/30 border-y border-white/30 bg-white/10 sm:grid-cols-2 sm:divide-x sm:divide-y-0 sm:border-x">
-          <Way label="On your Mac" title="Download the app.">
-            <DownloadButton from="cta" className="inline-flex h-10 items-center gap-2 self-start rounded-[6px] bg-white px-4 text-[14px] leading-5 font-medium text-[#0B0B0F] shadow-[inset_0_-1px_0_#4D4C4C,0_1px_2px_#00000040] transition-opacity hover:opacity-90 [&>svg]:-mt-0.5" />
-          </Way>
-          <Way label="On a server" title="Install the CLI.">
-            <CopyLine />
-          </Way>
-        </div>
-        <Newsletter />
+        <div className="mt-10"><ClosingCards /></div>
       </div>
 
       <footer className="relative mx-auto mt-[120px] flex w-full max-w-[960px] flex-col gap-4 pb-[220px] sm:flex-row sm:items-center sm:justify-between lg:mt-auto lg:pb-[276px]">
@@ -59,51 +48,6 @@ export function Closing() {
         <p className={LABEL}>Free and open source</p>
       </footer>
     </section>
-  );
-}
-
-/// One of the two ways in: a label, a line, and the thing to do at the foot.
-function Way({ label, title, children }: { label: string; title: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-[200px] min-w-0 flex-col justify-between gap-8 p-6">
-      <div className="flex flex-col gap-1.5">
-        <p className={LABEL}>{label}</p>
-        <h3 className="text-[20px] leading-[26px] tracking-[-0.02em] text-white">{title}</h3>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-/// The install line with a Copy that says when it worked. Scrolls rather than
-/// wraps, since a command broken over two lines reads as two commands.
-function CopyLine() {
-  const [copied, setCopied] = useState(false);
-  const line = useRef<HTMLSpanElement>(null);
-
-  return (
-    <div className="flex h-10 items-center gap-3 rounded-[6px] bg-[#0B0A6E] px-3.5">
-      <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[12px] leading-4 tracking-[-0.02em] whitespace-nowrap text-[#CFCFCF] [scrollbar-width:none]">
-        <span className="text-[#FFE14D] select-none">$ </span>
-        <span ref={line}>{INSTALL_LINE}</span>
-      </code>
-      <button
-        type="button"
-        onClick={() =>
-          void navigator.clipboard.writeText(INSTALL_LINE).then(
-            () => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            },
-            // Clipboard refused: select the line so ⌘C takes it instead.
-            () => line.current && window.getSelection()?.selectAllChildren(line.current),
-          )
-        }
-        className={`${LABEL} shrink-0 transition-colors hover:text-white`}
-      >
-        <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
-      </button>
-    </div>
   );
 }
 

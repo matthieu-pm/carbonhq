@@ -525,14 +525,19 @@ function door(p: Pen, exit: Game["exit"], stage: number, frame: number) {
   p(ready || frame % 100 < 57 ? lamp : "#785954", x + w - 2, y + 7, 3, 4);
 }
 
+const OPERATOR_SIZE = 46;
+
 function operator(p: Pen, player: Game["player"], frame: number) {
   const foot = player.y + player.h;
   const center = Math.round(player.x + player.w / 2);
-  const mirror: Pen = (color, x, y, w, h) => {
-    p(color, player.facing === 1 ? center + x : center - x - w, foot + y, w, h);
+  const scale = OPERATOR_SIZE / 40;
+  const s: Pen = (color, x, y, w, h = 1) => {
+    const left = Math.round((player.facing === 1 ? x : -x - w) * scale);
+    const right = Math.round((player.facing === 1 ? x + w : -x) * scale);
+    const top = Math.round(y * scale);
+    p(color, center + left, foot + top, right - left, Math.round((y + h) * scale) - top);
   };
-  const s = mirror;
-  const step = Math.abs(player.vx) > .5 ? Math.floor(frame / 4) % 4 : 0;
+  const step = Math.abs(player.vx) > .5 ? Math.floor(frame / 6) % 4 : 0;
   const bob = step % 2;
   const air = Math.abs(player.vy) > .6;
   const frontLeg = air ? 3 : [0, 2, 1, -1][step];
@@ -573,7 +578,8 @@ function operator(p: Pen, player: Game["player"], frame: number) {
   s("#934f43", 1, -22 + bob, 5, 1);
 }
 
-function bot(p: Pen, id: AgentId, x: number, y: number, step: number, working = false) {
+function bot(p: Pen, id: AgentId, x: number, y: number, step: number, mode: Game["crew"][number]["mode"] = "waiting") {
+  const working = mode === "working";
   const { light, mid, dark } = palette[id];
   const blink = step % 117 >= 111;
   const bounce = step % 24 < 12 ? 0 : 1;
@@ -637,8 +643,8 @@ function bot(p: Pen, id: AgentId, x: number, y: number, step: number, working = 
     }
     if (working) b(light, -15, -11, 4);
   } else {
-    const hover = step % 19 > 9 ? -2 : 0;
-    const t: Pen = (color, offX, offY, w, h) => b(color, offX, offY + hover - 3, w, h);
+    const lift = mode === "following" ? 3 : bounce - 3 - (step % 19 > 9 ? 2 : 0);
+    const t: Pen = (color, offX, offY, w, h) => p(color, x + offX, y + offY + lift, w, h);
     t(INK, -12, -21, 24, 12);
     t(INK, -9, -24, 18, 18);
     t(mid, -8, -23, 16, 15);
@@ -670,13 +676,47 @@ function tag(p: Pen, id: AgentId, x: number, y: number, frame: number) {
   p(palette[id].light, x - 1, top + 17, 3);
 }
 
+const characterRow = { operator: 0, codex: 1, claude: 2, pi: 3, fx: 4 } as const;
+const runCycle = [1, 0, 2, 0];
+let characters: HTMLImageElement | undefined;
+
+function characterSheet() {
+  if (!characters) {
+    characters = new Image();
+    characters.src = "/game/characters.webp";
+  }
+  return characters;
+}
+
+// All poses share a foot anchor at (64, 122) in their 128px cell.
+function drawCharacter(ctx: CanvasRenderingContext2D, sheet: HTMLImageElement, id: keyof typeof characterRow,
+  pose: number, center: number, feet: number, size: number, facing = 1, height = size) {
+  ctx.save();
+  ctx.translate(Math.round(center), Math.round(feet));
+  ctx.scale(facing, 1);
+  ctx.drawImage(sheet, pose * 128, characterRow[id] * 128, 128, 128,
+    -Math.round(size / 2), -Math.round(height * 122 / 128), size, height);
+  ctx.restore();
+}
+
 export function drawPortrait(canvas: HTMLCanvasElement, id: AgentId) {
-  canvas.width = 40;
-  canvas.height = 36;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-
-  bot(rectangles(ctx), id, 20, 34, 0);
+  const sheet = characterSheet();
+  const paint = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawCharacter(ctx, sheet, id, 0, 64, id === "claude" ? 115 : 106, 128);
+  };
+  if (sheet.complete && sheet.naturalWidth) {
+    paint();
+  } else {
+    ctx.save();
+    ctx.scale(3, 3);
+    bot(rectangles(ctx), id, 21, 35, 0);
+    ctx.restore();
+    sheet.addEventListener("load", paint, { once: true });
+    return () => sheet.removeEventListener("load", paint);
+  }
 }
 
 function rectangles(ctx: CanvasRenderingContext2D, cameraX = 0, cameraY = 0): Pen {
@@ -765,12 +805,40 @@ export function drawWorld(canvas: HTMLCanvasElement, game: Game, reducedMotion: 
   door(p, game.exit, game.stageIndex, ambientFrame);
   for (const duty of game.duties) station(p, duty, ambientFrame);
 
+  const sheet = characterSheet();
+  const ready = sheet.complete && sheet.naturalWidth > 0;
+  const player = game.player;
   for (const member of game.crew) {
     const waiting = member.mode === "waiting";
     const working = member.mode === "working";
-    const step = waiting ? ambientFrame % 120 : ambientFrame;
-    bot(p, member.id, Math.round(member.x), Math.round(member.y), step, working);
+    const phase = ambientFrame + characterRow[member.id] * 7;
+    if (ready) {
+      const moving = member.mode === "following" && player.vx !== 0;
+      const flying = member.id === "fx";
+      let pose = 0;
+      if (working) pose = 3;
+      else if ((moving || flying) && !reducedMotion) pose = 1 + Math.floor(phase / 9) % 2;
+
+      let facing = player.facing;
+      if (waiting) facing = playerCenter < member.x ? -1 : 1;
+      if (working) facing = 1;
+      const hover = flying && member.mode !== "following" ? 3 + (reducedMotion ? 0 : Math.round(2 * Math.sin(phase / 8))) : 0;
+      const settle = !reducedMotion && !flying && !moving && Math.sin(phase / 14) > 0.4 ? 1 : 0;
+      drawCharacter(ctx, sheet, member.id, pose, member.x - cameraX, member.y - cameraY - hover, 42, facing, 42 - settle);
+    } else {
+      bot(p, member.id, Math.round(member.x), Math.round(member.y), ambientFrame, member.mode);
+    }
     if (waiting) tag(p, member.id, member.x, member.y, ambientFrame);
   }
-  operator(p, game.player, game.frame);
+  if (ready) {
+    let pose = 0;
+    if (!game.groundedOn) pose = 3;
+    else if (player.vx) pose = runCycle[Math.floor(game.frame / 6) % runCycle.length];
+    const breath = !reducedMotion && game.groundedOn && !player.vx && game.frame % 100 > 64 ? 1 : 0;
+    const feet = player.y + player.h;
+    if (game.groundedOn) p("#353941", playerCenter - 10, feet + 1, 20, 2);
+    drawCharacter(ctx, sheet, "operator", pose, playerCenter - cameraX, feet - cameraY, OPERATOR_SIZE, player.facing, OPERATOR_SIZE - breath);
+  } else {
+    operator(p, player, game.frame);
+  }
 }

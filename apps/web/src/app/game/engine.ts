@@ -1,9 +1,9 @@
 export const WIDTH = 480
 export const VIEW_HEIGHT = 450
 
-const GRAVITY = 0.43
-const JUMP_SPEED = 10.2
-const RUN_SPEED = 4.3
+const GRAVITY = 0.39
+const JUMP_SPEED = 9.1
+const RUN_SPEED = 3.6
 const PLAYER_WIDTH = 24
 const PLAYER_HEIGHT = 32
 const WORK_TIME = 38
@@ -62,7 +62,7 @@ export type Game = {
   jumpHeld: boolean
   useHeld: boolean
   noticeUntil: number
-  trail: { x: number; y: number }[]
+  trail: { x: number; y: number; platform: Platform | null }[]
 }
 
 export const AGENT_NAMES: Record<AgentId, string> = {
@@ -315,9 +315,23 @@ function movePlayer(game: Game, input: Input) {
   }
 }
 
+// Grounded samples use platform-local x so riders follow a lift or shuttle as it moves.
+function followOnPlatform(crew: Crew, platform: Platform, localX: number, facing: number, index: number, count: number) {
+  const inset = 9
+  const gap = Math.min(22, (platform.w - 2 * inset) / count)
+  const span = gap * count
+  const start = clamp(localX - (facing === 1 ? span : 0), inset, platform.w - inset - span)
+  const leader = clamp(Math.round((localX - start) / gap), 0, count)
+  const slot = (leader - facing * (index + 1) + count + 1) % (count + 1)
+  const target = platform.x + start + slot * gap
+  crew.x = clamp(crew.x + (target - crew.x) * 0.22, platform.x + inset, platform.x + platform.w - inset)
+  crew.y = platform.y
+}
+
 function updateCrew(game: Game) {
   const { player } = game
-  game.trail.push({ x: player.x + player.w / 2, y: player.y + player.h })
+  const center = player.x + player.w / 2
+  game.trail.push({ x: center - (game.groundedOn?.x ?? 0), y: player.y + player.h, platform: game.groundedOn })
   if (game.trail.length > 48) game.trail.shift()
   for (const [index, crew] of game.crew.entries()) {
     if (crew.mode === "waiting") {
@@ -329,13 +343,14 @@ function updateCrew(game: Game) {
     }
     const trail = game.trail[Math.max(0, game.trail.length - 1 - (index + 1) * 10)]
     const duty = crew.mode === "working" ? game.duties.find((item) => item.agent === crew.id) : undefined
-    const spacing = (index + 1) * 22
-    const facingSpace = player.facing === 1 ? trail.x - 12 : WIDTH - trail.x - 12
-    const side = facingSpace >= spacing ? -player.facing : player.facing
-    const targetX = duty?.workX ?? clamp(trail.x + spacing * side, 12, WIDTH - 12)
-    const targetY = duty?.workY ?? trail.y - 5
-    crew.x += (targetX - crew.x) * 0.22
-    crew.y += (targetY - crew.y) * 0.22
+    if (!duty && trail.platform) {
+      followOnPlatform(crew, trail.platform, trail.x, player.facing, index, game.crew.length)
+    } else {
+      const targetX = duty?.workX ?? trail.x
+      const targetY = duty?.workY ?? trail.y
+      crew.x += (targetX - crew.x) * 0.22
+      crew.y += (targetY - crew.y) * 0.22
+    }
   }
 }
 

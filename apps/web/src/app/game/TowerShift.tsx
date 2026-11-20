@@ -2,7 +2,8 @@
 
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Copy, Maximize, Minimize, Flag, Gamepad2, Heart, Play, RadioTower, RotateCcw, UsersRound, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Newsletter } from "@/components/home/Newsletter";
+import { ClosingCards } from "@/components/home/ClosingCards";
+import { Stripes } from "@/components/home/Stripes";
 import { SITE } from "@/lib/links";
 import { playCue, type Cue } from "./audio";
 import { AGENT_NAMES, STAGES, type AgentId } from "./engine";
@@ -20,8 +21,8 @@ const abilities: Record<AgentId, string> = {
 
 function Portrait({ id }: { id: AgentId }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => { if (ref.current) drawPortrait(ref.current, id); }, [id]);
-  return <canvas ref={ref} width={40} height={36} className={s.portrait} aria-hidden="true" />;
+  useEffect(() => { if (ref.current) return drawPortrait(ref.current, id); }, [id]);
+  return <canvas ref={ref} width={128} height={128} className={s.portrait} aria-hidden="true" />;
 }
 
 function CrewRoster() {
@@ -159,7 +160,10 @@ export function TowerShift() {
             <Instructions back={backToTitle} start={start} /><CrewRoster />
           </div> : result && <div className={s.endSheet}>
             <Results result={result} replay={start} />
-            <section className={s.news} aria-label="Subscribe to the Carbon newsletter"><Newsletter /></section>
+            <footer data-scheme="dark" className="relative min-w-0 bg-[#1612F8]">
+              <Stripes />
+              <ClosingCards />
+            </footer>
           </div>}
         </div>}
       </div>}
