@@ -24,6 +24,13 @@ static WRITE_LOCK: Mutex<()> = Mutex::const_new(());
 pub const PAGES_CHANGED: &str = "pages_changed";
 pub const PAGE_ASSETS_CHANGED: &str = "page_assets_changed";
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "events.ts")]
+pub enum PageBodyFormat {
+    Opf,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "events.ts")]
@@ -50,6 +57,9 @@ pub struct PageAssetWrite {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "events.ts")]
 pub struct Page {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub format: Option<PageBodyFormat>,
     pub id: String,
     pub title: String,
     pub markdown: String,
@@ -66,6 +76,9 @@ pub struct Page {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "events.ts")]
 pub struct PageSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub format: Option<PageBodyFormat>,
     pub id: String,
     pub title: String,
     pub project_paths: Vec<String>,
@@ -81,6 +94,7 @@ pub struct PageSummary {
 impl From<&Page> for PageSummary {
     fn from(page: &Page) -> Self {
         Self {
+            format: page.format,
             id: page.id.clone(),
             title: page.title.clone(),
             project_paths: page.project_paths.clone(),
@@ -89,14 +103,21 @@ impl From<&Page> for PageSummary {
             modified: page.modified.clone(),
             trashed: page.trashed,
             favorite: page.favorite,
-            excerpt: page
-                .markdown
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .chars()
-                .take(180)
-                .collect(),
+            excerpt: if page.format.is_some() {
+                serde_json::from_str::<serde_json::Value>(&page.markdown)
+                    .ok()
+                    .and_then(|deck| deck.get("slides")?.as_array().map(Vec::len))
+                    .map(|n| format!("{n} slide{}", if n == 1 { "" } else { "s" }))
+                    .unwrap_or_default()
+            } else {
+                page.markdown
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .chars()
+                    .take(180)
+                    .collect()
+            },
         }
     }
 }
@@ -113,6 +134,8 @@ struct Edit {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Metadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    format: Option<PageBodyFormat>,
     id: String,
     title: String,
     project_paths: Vec<String>,
@@ -126,6 +149,7 @@ struct Metadata {
 impl Page {
     fn encode(&self) -> Result<String, String> {
         let metadata = Metadata {
+            format: self.format,
             id: self.id.clone(),
             title: self.title.clone(),
             project_paths: self.project_paths.clone(),
@@ -145,6 +169,7 @@ impl Page {
         let metadata: Metadata =
             serde_yaml_ng::from_str(header).map_err(|e| format!("Invalid Page metadata: {e}"))?;
         Ok(Self {
+            format: metadata.format,
             id: metadata.id,
             title: metadata.title,
             markdown: markdown.to_string(),
@@ -428,8 +453,14 @@ impl PagesStore {
         markdown: String,
         projects: Vec<String>,
     ) -> Result<Page, String> {
-        self.create_with_id(uuid::Uuid::now_v7().to_string(), title, markdown, projects)
-            .await
+        self.create_with_id(
+            uuid::Uuid::now_v7().to_string(),
+            title,
+            markdown,
+            projects,
+            None,
+        )
+        .await
     }
 
     async fn create_with_id(
@@ -438,6 +469,7 @@ impl PagesStore {
         title: String,
         markdown: String,
         projects: Vec<String>,
+        format: Option<PageBodyFormat>,
     ) -> Result<Page, String> {
         let path = self.path(&id)?;
         let _guard = WRITE_LOCK.lock().await;
@@ -448,7 +480,8 @@ impl PagesStore {
             Err(e) => return Err(e.to_string()),
         }
         let now = now_rfc3339();
-        let page = Page {
+        let mut page = Page {
+            format,
             id,
             title: title.trim().to_string(),
             markdown,
@@ -459,6 +492,7 @@ impl PagesStore {
             trashed: false,
             favorite: false,
         };
+        reconcile_deck(&mut page, true)?;
         self.save(&page).await?;
         Ok(page)
     }
@@ -468,6 +502,7 @@ impl PagesStore {
         let _process = self.lock().await?;
         let mut page = self.read(id).await?;
         check_revision(&page, revision)?;
+        let explicit_title = edit.title.is_some();
         if let Some(title) = edit.title {
             page.title = title.trim().to_string();
         }
@@ -488,9 +523,39 @@ impl PagesStore {
             .checked_add(1)
             .ok_or("Page revision limit reached.")?;
         page.modified = now_rfc3339();
+        reconcile_deck(&mut page, explicit_title)?;
         self.save(&page).await?;
         Ok(page)
     }
+}
+
+/// Keep the library title and the editor's deck name in sync across CLI and canvas edits.
+fn reconcile_deck(page: &mut Page, explicit_title: bool) -> Result<(), String> {
+    if page.format.is_none() {
+        return Ok(());
+    }
+    let mut deck: serde_json::Value = serde_json::from_str(&page.markdown)
+        .map_err(|e| format!("Invalid slide deck JSON: {e}"))?;
+    let slides = deck
+        .get("slides")
+        .and_then(|value| value.as_array())
+        .ok_or("A slide deck needs a slides array.")?;
+    if slides.is_empty() || slides.iter().any(|slide| !slide.is_object()) {
+        return Err(
+            "A slide deck needs at least one slide and each slide must be an object.".into(),
+        );
+    }
+    let name = deck.get("name").and_then(|value| value.as_str());
+    if !explicit_title {
+        if let Some(name) = name.filter(|name| !name.trim().is_empty()) {
+            page.title = name.trim().to_string();
+        }
+    }
+    if name != Some(page.title.as_str()) {
+        deck["name"] = page.title.clone().into();
+        page.markdown = deck.to_string();
+    }
+    Ok(())
 }
 
 fn check_revision(page: &Page, revision: u64) -> Result<(), String> {
@@ -531,7 +596,12 @@ fn validate(page: &Page) -> Result<(), String> {
         return Err("Give the Page a title of 1–240 characters.".into());
     }
     if page.markdown.len() > MAX_MARKDOWN {
-        return Err("Page Markdown must be 256 KiB or smaller.".into());
+        return Err(if page.format.is_some() {
+            "Slide deck JSON must be 256 KiB or smaller. Store images as attachments."
+        } else {
+            "Page Markdown must be 256 KiB or smaller."
+        }
+        .into());
     }
     if page
         .markdown
@@ -586,6 +656,27 @@ pub async fn create_page(
     Ok(page)
 }
 
+/// Stores OPF in the same revision history used by the editor and agents.
+pub async fn create_slide_deck(
+    sink: Sink,
+    title: String,
+    markdown: String,
+    project_paths: Vec<String>,
+) -> Result<Page, String> {
+    let page = PagesStore::open()
+        .await?
+        .create_with_id(
+            uuid::Uuid::now_v7().to_string(),
+            title,
+            markdown,
+            project_paths,
+            Some(PageBodyFormat::Opf),
+        )
+        .await?;
+    announce(&sink, &page);
+    Ok(page)
+}
+
 /// Imports reserve a stable ID first, so a retry must never replace an existing document.
 pub(crate) async fn create_linked_page(
     sink: Sink,
@@ -596,7 +687,7 @@ pub(crate) async fn create_linked_page(
 ) -> Result<Page, String> {
     let page = PagesStore::open()
         .await?
-        .create_with_id(id, title, markdown, project_paths)
+        .create_with_id(id, title, markdown, project_paths, None)
         .await?;
     announce(&sink, &page);
     Ok(page)
@@ -794,6 +885,13 @@ pub async fn request(
             revision,
             version,
         } => serde_json::to_value(restore_page_version(sink.clone(), id, revision, version).await?),
+        PageRequest::CreateDeck {
+            title,
+            markdown,
+            project_paths,
+        } => serde_json::to_value(
+            create_slide_deck(sink.clone(), title, markdown, project_paths).await?,
+        ),
         PageRequest::Create {
             title,
             markdown,
@@ -889,6 +987,58 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+        fs::remove_dir_all(store.root.parent().unwrap())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn deck_edits_preserve_kind_and_reject_invalid_or_stale_bodies() {
+        let store = store();
+        let page = store
+            .create_with_id(
+                uuid::Uuid::now_v7().to_string(),
+                "Pilot".into(),
+                r#"{"slides":[{"title":"Opening"}]}"#.into(),
+                vec![],
+                Some(PageBodyFormat::Opf),
+            )
+            .await
+            .unwrap();
+        let second = store
+            .edit(
+                &page.id,
+                1,
+                Edit {
+                    markdown: Some(
+                        r#"{"name":"Pilot update","slides":[{"title":"Decision"}]}"#.into(),
+                    ),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.title, "Pilot update");
+        assert!(store.edit(&page.id, 1, Edit::default()).await.is_err());
+        assert!(store
+            .edit(
+                &page.id,
+                2,
+                Edit {
+                    markdown: Some("{}".into()),
+                    ..Default::default()
+                }
+            )
+            .await
+            .is_err());
+        let current = store.read(&page.id).await.unwrap();
+        assert_eq!(current.revision, 2);
+        assert!(current.format.is_some());
+        assert_eq!(PageSummary::from(&current).excerpt, "1 slide");
+        assert_eq!(
+            store.read_version(&page.id, 1).await.unwrap().title,
+            "Pilot"
+        );
         fs::remove_dir_all(store.root.parent().unwrap())
             .await
             .unwrap();
@@ -1086,11 +1236,17 @@ mod tests {
         let store = store();
         let id = uuid::Uuid::now_v7().to_string();
         let original = store
-            .create_with_id(id.clone(), "Imported".into(), "Original".into(), vec![])
+            .create_with_id(
+                id.clone(),
+                "Imported".into(),
+                "Original".into(),
+                vec![],
+                None,
+            )
             .await
             .unwrap();
         let error = store
-            .create_with_id(id.clone(), "Retry".into(), "Overwrite".into(), vec![])
+            .create_with_id(id.clone(), "Retry".into(), "Overwrite".into(), vec![], None)
             .await
             .unwrap_err();
         assert_eq!(error, "Page already exists.");
@@ -1099,7 +1255,13 @@ mod tests {
         assert_eq!(current.markdown, original.markdown);
         assert_eq!(current.revision, 1);
         assert!(store
-            .create_with_id("../escape".into(), "Invalid".into(), "".into(), vec![])
+            .create_with_id(
+                "../escape".into(),
+                "Invalid".into(),
+                "".into(),
+                vec![],
+                None
+            )
             .await
             .is_err());
         assert_eq!(store.history(&id).await.unwrap().len(), 1);

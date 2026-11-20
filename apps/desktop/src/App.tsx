@@ -2207,9 +2207,9 @@ function App() {
   // The current composer's identity selects the prompt that receives the reference.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerKey, activeServer, pagesEnabled]);
-  const startChatWithPages = (pages: LocatedPage<Page>[]) => goToSession(() => {
+  const startChatWithPages = (pages: LocatedPage<Page>[], instruction?: string) => goToSession(() => {
     handleNewSession();
-    appendToDraft(null, pages.map((page) => pagePromptContext(page, activeServer)).join("\n\n"));
+    appendToDraft(null, [instruction, ...pages.map((page) => pagePromptContext(page, activeServer))].filter(Boolean).join("\n\n"));
     focusComposerEnd();
   });
   useEffect(() => {

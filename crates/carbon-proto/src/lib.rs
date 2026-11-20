@@ -55,7 +55,8 @@ use std::path::PathBuf;
 /// v19 adds opt-in delegated tasks and immutable completion results.
 /// v20 adds discovery and creation receipts with effective configuration.
 /// v21 adds explicit interruption recovery and deduplicated continuation.
-pub const PROTOCOL_VERSION: u32 = 21;
+/// v22 adds agent-created OPF decks in Spaces.
+pub const PROTOCOL_VERSION: u32 = 22;
 
 /// The oldest envelope the app still answers. Rises only when a shape is
 /// *renamed*, never for an addition: v4 renamed `LinkIssues.identifiers` to
@@ -143,6 +144,7 @@ impl Request {
             | Request::ListShares(_) => 10,
             Request::SetRemoteAccess(_) => 11,
             Request::WriteIssue(_) => 13,
+            Request::Pages(PageRequest::CreateDeck { .. }) => 22,
             Request::Pages(_) => 14,
             Request::Secret(_) => 15,
             // v12 is when the wrapper itself arrived. A newer request inside it
@@ -246,6 +248,7 @@ pub enum PageRequest {
     History { id: String },
     ReadVersion { id: String, version: u64 },
     RestoreVersion { id: String, revision: u64, version: u64 },
+    CreateDeck { title: String, markdown: String, #[serde(default)] project_paths: Vec<String> },
     Create { title: String, markdown: String, #[serde(default)] project_paths: Vec<String> },
     Update { id: String, revision: u64, title: Option<String>, markdown: Option<String>, project_paths: Option<Vec<String>>, favorite: Option<bool> },
     Patch { id: String, revision: u64, old_text: String, new_text: String },
@@ -1480,6 +1483,7 @@ mod tests {
             .chain(&servers)
             .chain(&sessions)
             .chain([&remote, &elsewhere, &write, &pages, &secret])
+            .chain([&Request::Pages(PageRequest::CreateDeck { title: "Deck".into(), markdown: "{}".into(), project_paths: vec![] })])
             .chain(&keyed)
             .chain([&Request::Task(TaskRequest::Status { task_id: "task".into() })])
             .chain([&Request::Recovery(RecoveryRequest::List { session_id: None })])

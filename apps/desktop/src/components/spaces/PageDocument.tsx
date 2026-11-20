@@ -1,12 +1,12 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, Code2, Eye, FileText, Folder, History, Loader2, Link2, ListTree, MessageSquarePlus, MoreHorizontal, PanelTop, Paperclip, SlidersHorizontal, Star, Trash2, Undo2, type LucideIcon } from "lucide-react";
+import { Check, Code2, Eye, FileText, Folder, History, Loader2, Link2, ListTree, MessageSquarePlus, MoreHorizontal, PanelTop, Presentation, Paperclip, SlidersHorizontal, Star, Trash2, Undo2, type LucideIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useHotkey } from "@/hooks/useHotkey";
 import { editPageDraft, markPageDraftPending, pageDraft, persistPageDraft, refreshPageDraft, resolvePageDraft, savePageDraft, usePageDocument } from "@/hooks/usePageDocument";
-import { openPage, pageUrl, referencePageInTask, readPage, type LocatedPage, type Page } from "@/lib/pages";
+import { openPage, pageUrl, referencePageInTask, startChatWithPages, readPage, type LocatedPage, type Page } from "@/lib/pages";
 import { richMarkdownReason } from "@/lib/pageMarkdown";
 import { invoke, serverOfPath } from "@/lib/transport";
 import { serverName } from "@/lib/servers";
@@ -139,10 +139,13 @@ export default function PageDocument({ page, active, projects, visibleProjects, 
     } catch (reason) { setActionError(String(reason)); }
     finally { setUploading(null); if (fileInput.current) fileInput.current.value = ""; }
   };
-  const referenceInTask = async () => {
+  const referenceInTask = async (makeDeck = false) => {
     await save();
     const current = pageDraft(page);
-    if (current && !current.dirty && !current.conflict && !current.saving) referencePageInTask(current.base);
+    if (current && !current.dirty && !current.conflict && !current.saving) {
+      if (makeDeck) startChatWithPages([current.base], "Create a slide deck from this Page. Write OpenPresentation JSON, then save it in Carbon Spaces with `carbon pages create-deck --title <title> --file <deck.json>`.");
+      else referencePageInTask(current.base);
+    }
     else setActionError("Save or resolve this Page before referencing it in a task.");
   };
 
@@ -193,6 +196,7 @@ export default function PageDocument({ page, active, projects, visibleProjects, 
         <DropdownMenuItem disabled={draft.base.trashed} onSelect={() => setLinkPickerOpen(true)}><Link2 />Link another Page</DropdownMenuItem>
         <DropdownMenuItem disabled={draft.base.trashed || uploading !== null} onSelect={() => fileInput.current?.click()}><Paperclip />Attach files…</DropdownMenuItem>
         <DropdownMenuItem disabled={draft.base.trashed} onSelect={() => void referenceInTask()}><MessageSquarePlus />Use in task</DropdownMenuItem>
+        <DropdownMenuItem disabled={draft.base.trashed} onSelect={() => void referenceInTask(true)}><Presentation />Create slides with agent</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuCheckboxItem checked={mode === "rich"} disabled={!!reason || draft.base.trashed} onCheckedChange={() => switchMode("rich")}>Edit document</DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem checked={mode === "source"} onCheckedChange={() => switchMode("source")}><Code2 />Markdown source</DropdownMenuCheckboxItem>

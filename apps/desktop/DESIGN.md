@@ -348,3 +348,15 @@ Component shared with `UserMessage` for `Avatar`'s reason: index meaning one pic
 ## Profile icons
 
 Profiles switch directly from a row of filled icons below the session list. All Profiles leads in neutral ink; each profile keeps its chosen color. Selected fill follows the sidebar rows. The footer is a carousel between persistent chevrons. Each chevron switches to the previous or next profile, wrapping through All Profiles too. The icon strip moves only far enough to keep the selected profile visible, with faded edges where more icons are hidden. Pointer steps scroll smoothly; wraparound, keyboard picks and reduced motion move immediately. Settings opens the same icon and preset-color picker from each profile icon, including the new-profile field. Profile colors use the vivid crew and subagent avatar hues, with darker orange, green, teal and blue in light mode to keep small glyphs legible. Graphite follows the theme’s muted ink.
+
+## Slides in Spaces
+
+**The OpenPresentation editor wears Carbon's tokens, and the slide wears its own.** [deck.css](src/components/spaces/deck.css) points every `--opf-ui-*` token at a Carbon variable, so the chrome follows mode and palette with no dark block of its own. The library's stylesheet sits in `@layer opf`, which is why unlayered rules there win without `!important`. Only chrome is themed. The canvas, the strip, covers and the presenter draw the deck's authored theme untouched, since a deck is judged by how it will look on someone else's screen.
+
+**One row, not two.** The editor's bar mounts inside Carbon's document tools through `slots.toolbar`, so title, Undo, Redo and the view switch share the row with status, Export and Present. Two stacked bars was the first version. The bar's counter and Design quick menu are left out: the slide row under the canvas counts slides, and the inspector is the Design panel. `more` stays, or a narrow window drops the view switch with no way back to it. The row carries `data-opf-title-row`, so renaming a deck takes the whole row, as the editor intends.
+
+**The slide floats on the page, with an edge in both modes.** A hairline plus `--shadow-card`, because a white slide on a light page had no edge at all. The inspector takes no fill and a hairline toward the canvas, like the Pages outline. Below about 760px of pane it folds under the slide rather than squeezing it.
+
+**Covers in cards everywhere, in rows only under Slides.** A cover is 16:9, and beside a Page's square icon it pushes the name out of line, so a mixed list keeps icons. Deck cards keep a Page card's frame for the same reason in a mixed grid. Covers draw when they scroll into view and are cached by revision, so an entry is never stale, only unreachable.
+
+**The sorter keeps the editor's own layout.** Its drag reordering is built around a vertical list; a grid would look better and reorder wrongly.

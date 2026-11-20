@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useState } from "react";
-import { ChevronDown, FileText, LayoutGrid, List, Loader2, Plus } from "lucide-react";
+import { ChevronDown, FileText, LayoutGrid, List, Loader2, Plus, Presentation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import LinearIcon from "@/components/LinearIcon";
@@ -30,7 +30,7 @@ export default function ListTabBody({ tab, shown, active, projects, visibleProje
   creating: boolean;
   onView: (patch: Partial<SpaceView>) => void;
   onOpen: (target: PageTarget, title: string) => void;
-  onCreate: (server?: ServerId) => void;
+  onCreate: (server?: ServerId, deck?: boolean) => void;
   onImport: () => void;
 }) {
   const { section, filter, project, query, grid } = tab.view;
@@ -46,14 +46,17 @@ export default function ListTabBody({ tab, shown, active, projects, visibleProje
     const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
     return pages
       .filter((p) => visibleProjects === null || p.projectPaths.length === 0 || p.projectPaths.some((path) => visibleProjects.includes(path)))
+      .filter((p) => section === "slides" ? p.format === "opf" : section !== "pages" || p.format !== "opf")
       .filter((p) => p.trashed === trash && (!project || p.projectPaths.includes(project)) &&
         (trash || filter !== "favorites" || p.favorite) && (trash || filter !== "recent" || p.modified >= weekAgo))
       .sort((a, b) => b.modified.localeCompare(a.modified));
-  }, [pages, visibleProjects, trash, filter, project]);
+  }, [pages, visibleProjects, trash, filter, project, section]);
 
   const coming = COMING[section];
   const listsPages = !coming && section !== "linear";
-  const emptyTitle = query ? "No Pages found" : trash ? "Trash is empty" : filter === "favorites" ? "Keep your favorite Pages close" : filter === "recent" ? "Nothing edited this week" : "A place for your ideas";
+  const slides = section === "slides";
+  const EmptyIcon = slides ? Presentation : FileText;
+  const emptyTitle = slides ? (query || filter !== "all" ? "No matching decks" : "No slide decks yet") : query ? "No Pages found" : trash ? "Trash is empty" : filter === "favorites" ? "Keep your favorite Pages close" : filter === "recent" ? "Nothing edited this week" : "A place for your ideas";
   const open = (target: PageTarget) => {
     const found = pages.find((p) => pageKey(p) === pageKey(target));
     onOpen(target, found?.title ?? "Untitled");
@@ -67,8 +70,9 @@ export default function ListTabBody({ tab, shown, active, projects, visibleProje
           <DropdownMenuTrigger asChild><Button size="sm" disabled={creating}><Plus />Create<ChevronDown /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => onCreate()}><FileText />New Page</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onCreate(undefined, true)}><Presentation />New slide deck</DropdownMenuItem>
             <DropdownMenuItem onSelect={onImport}><LinearIcon />Import from Linear</DropdownMenuItem>
-            {servers.filter((s) => s.status === "connected").map((s) => <DropdownMenuItem key={s.id} onSelect={() => onCreate(s.id)}>New Page on {s.name}</DropdownMenuItem>)}
+            {servers.filter((s) => s.status === "connected").map((s) => <DropdownMenuItem key={s.id} onSelect={() => onCreate(s.id, slides)}>{slides ? "New slide deck" : "New Page"} on {s.name}</DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -80,7 +84,7 @@ export default function ListTabBody({ tab, shown, active, projects, visibleProje
       <div className="spaces-list-tools">
         {/* The issues page's scope chips and its two-way control, so the two
             pages' toolbars read as one kind of row. */}
-        {!trash && <div className="flex items-center gap-1.5" role="tablist" aria-label="Page filters">
+        {!trash && <div className="flex items-center gap-1.5" role="tablist" aria-label="Document filters">
           {(["all", "favorites", "recent"] as const).map((id) => <button key={id} type="button" role="tab" aria-selected={filter === id}
             className={cn("shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-ui transition-colors",
               filter === id ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-muted-foreground hover:text-foreground")}
@@ -89,8 +93,8 @@ export default function ListTabBody({ tab, shown, active, projects, visibleProje
         <Segmented value={grid ? "grid" : "list"} label="Layout" className="ml-auto" onPick={(layout) => onView({ grid: layout === "grid" })}
           options={[{ value: "list", label: "List view", content: <List className="size-3.5" /> }, { value: "grid", label: "Grid view", content: <LayoutGrid className="size-3.5" /> }]} />
       </div>
-      {loading ? <div className="spaces-empty"><Loader2 className="size-5 animate-spin" /><p>Loading Pages…</p></div> : listed.length === 0 ? <div className="spaces-empty"><FileText className="size-8 text-muted-foreground/60" /><h3>{emptyTitle}</h3><p>{query ? "Try another title or a phrase from the document." : "Write a Page, link it to your projects, and work on it with your agents."}</p>{!query && !trash && <Button size="sm" onClick={() => onCreate()}><Plus />Create a Page</Button>}</div>
-        : <PageTable key={`${section}:${filter}:${project ?? ""}`} pages={listed} projects={projects} grid={grid} trash={trash} active={live}
+      {loading ? <div className="spaces-empty"><Loader2 className="size-5 animate-spin" /><p>Loading documents…</p></div> : listed.length === 0 ? <div className="spaces-empty"><EmptyIcon className="size-8 text-muted-foreground/60" /><h3>{emptyTitle}</h3><p>{query ? "Try another title or a phrase from the document." : slides ? "Create a deck here or ask an agent to make one from a Page." : "Write a Page, link it to your projects, and work on it with your agents."}</p>{!query && !trash && <Button size="sm" onClick={() => onCreate(undefined, slides)}><Plus />{slides ? "Create a deck" : "Create a Page"}</Button>}</div>
+        : <PageTable key={`${section}:${filter}:${project ?? ""}`} pages={listed} projects={projects} grid={grid} trash={trash} active={live} covers={slides}
             onOpen={open} onChanged={() => void refresh()} onError={setActionError} />}
     </>}
   </>;

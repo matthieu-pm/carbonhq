@@ -1130,6 +1130,7 @@ mod tests {
                 return Err("Page already exists".into());
             }
             let page = Page {
+                format: None,
                 id: id.into(),
                 title: title.into(),
                 markdown: markdown.into(),
@@ -1814,6 +1815,7 @@ mod tests {
         let body = "\\\"\n".repeat((256 * 1024) / 3);
         let remote = remote(&body, "r2");
         let page = Page {
+            format: None,
             id: uuid::Uuid::now_v7().to_string(),
             title: "Title".into(),
             markdown: body.clone(),

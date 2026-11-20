@@ -39,6 +39,8 @@ pub enum PagesCommand {
     UnlinkLinear(Revision),
     /// Create one Markdown document, optionally linked to several projects.
     Create(Create),
+    /// Save an OpenPresentation JSON deck in Spaces. Omit --file for a blank slide.
+    CreateDeck(Create),
     /// Update a Page against the revision returned by read.
     Update(Update),
     /// Replace one unique, exact text selection against a known revision.
@@ -150,7 +152,7 @@ pub struct RestoreVersion {
 pub struct Create {
     #[arg(long)]
     title: String,
-    /// UTF-8 Markdown file, or - for stdin. Omit for an empty Page.
+    /// UTF-8 source file, or - for stdin. Use OPF JSON for create-deck.
     #[arg(long)]
     file: Option<PathBuf>,
     /// Absolute project path on the owning server. Repeat for several projects.
@@ -165,7 +167,7 @@ pub struct Update {
     revision: u64,
     #[arg(long)]
     title: Option<String>,
-    /// UTF-8 Markdown file, or - for stdin. Omit to keep the body.
+    /// UTF-8 Markdown or deck JSON, or - for stdin. Omit to keep the body.
     #[arg(long)]
     file: Option<PathBuf>,
     /// Replace all project links. Repeat for several; --clear-projects removes all.
@@ -260,6 +262,12 @@ pub fn run(command: PagesCommand) -> Result<(), String> {
             id: args.id,
             revision: args.revision,
             version: args.version,
+        },
+        PagesCommand::CreateDeck(args) => PageRequest::CreateDeck {
+            markdown: args.file.map(read_markdown).transpose()?.unwrap_or_else(||
+                serde_json::json!({"name": args.title, "slides": [{"title": "Title slide"}]}).to_string()),
+            title: args.title,
+            project_paths: args.projects,
         },
         PagesCommand::Create(args) => PageRequest::Create {
             title: args.title,

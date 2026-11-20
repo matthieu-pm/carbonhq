@@ -1016,6 +1016,7 @@ pub fn run() {
             // webview's asset protocol, which only this process can widen.
             files::read_file,
             markdown_export::save_markdown_files,
+            markdown_export::save_powerpoint_file,
             browser_open,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_tabs,

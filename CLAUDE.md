@@ -240,6 +240,8 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 
 [main-font.html](apps/desktop/demo/main-font.html) mounts the real font picker beside interface, chat and code samples. Its **Run keyboard checks** button verifies IME confirmation, WebKit's composition Enter, unmatched searches and keyboard selection.
 
+[slides.html](apps/desktop/demo/slides.html) mounts Spaces with three decks in different authored themes and the deck editor around them. Saves land in memory, and **Agent edit** writes a revision behind the editor, so an edit made just before it reaches the conflict dialog. Covers draw on scroll into view, so a hidden browser tab (the session browser) shows the glyph until IntersectionObserver fires.
+
 [font-sizes.html](apps/desktop/demo/font-sizes.html) mounts the UI and code font size rows above chrome, chat, a raw `text-sm` button, tool output, an Edit diff and the virtualized Files view. Its **Run size check** reads every computed size back at two non-default pairs and checks the Files view's row pitch matches its line height.
 
 **Every demo's `<html>` carries `data-demo`**, or it cannot scroll: the app pins `html`, `body` and `#root` to the window with overflow hidden, since it owns every scroll container, and [App.css](apps/desktop/src/App.css) gives page scroll back only to that attribute.

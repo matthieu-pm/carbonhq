@@ -319,6 +319,7 @@ carbon pages list
 carbon pages search "release plan" --project /absolute/project/path
 carbon pages read <page-id>                  # JSON, including revision
 carbon pages read <page-id> --markdown       # Markdown body alone
+carbon pages create-deck --title "Pilot briefing" --file deck.opf.json
 carbon pages create --title "Release plan" --file plan.md --project /absolute/project/path
 carbon pages update <page-id> --revision 1 --file updated.md
 carbon pages patch <page-id> --revision 2 --old-text "old sentence" --new-text "new sentence"
@@ -333,6 +334,12 @@ carbon pages assets <page-id>
 carbon pages backlinks <page-id>
 carbon --machine vps pages list
 ```
+
+To create slides, read the cited source Page, then write OpenPresentation JSON such as
+`{"name":"Pilot briefing","slides":[{"id":"opening","title":"Pilot results"},{"id":"next","title":"Next steps","items":["Run a second pilot"]}]}`.
+Use `create-deck` to save it to Spaces. Keep slide IDs stable during revisions and use
+`pages update --revision` to write the revised JSON. Store images with `pages attach`
+and use the returned asset URL in the deck. Spaces offers Present and Export PowerPoint.
 
 Read before editing and pass the returned `revision`. A conflict means another
 writer changed the Page: read again, reconcile that change, and retry against the

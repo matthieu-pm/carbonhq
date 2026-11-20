@@ -172,6 +172,7 @@ export const APP_COMMANDS = new Set([
   "paste_attachments",
   "read_file",
   "save_markdown_files",
+  "save_powerpoint_file",
   "browser_open",
   "browser_tabs",
   "browser_history",
