@@ -152,7 +152,7 @@
   .primary:hover { background: #ffd09d; }
   .sound:hover, .expand:hover, .iconButton:hover, .padKey:hover { background: #374450; }
 }
-@media (pointer: coarse), (max-width: 740px) {
+@media (any-pointer: coarse), (max-width: 740px) {
   .touchKeys { display: flex; }
   .desktopKeys { display: none; }
   .crewButton kbd { display: none; }

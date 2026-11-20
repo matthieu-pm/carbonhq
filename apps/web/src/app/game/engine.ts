@@ -65,7 +65,7 @@ export type Game = {
   trail: { x: number; y: number }[]
 }
 
-const AGENT_NAMES: Record<AgentId, string> = {
+export const AGENT_NAMES: Record<AgentId, string> = {
   codex: "Codex",
   claude: "Claude Code",
   pi: "Pi",

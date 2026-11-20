@@ -262,8 +262,7 @@ function antenna(p: Pen, x: number, y: number, frame: number, tall = 111) {
   }
 }
 
-function backdrop(p: Pen, game: Game, cameraY: number, height: number) {
-  const stage = game.stageIndex;
+function backdrop(p: Pen, stage: number, cameraY: number, height: number, frame: number) {
   const wall = ["#554249", "#37404a", "#36494b", "#41424e"][stage];
   const mortar = ["#493943", "#2d3640", "#2b3d45", "#353744"][stage];
   const stone = ["#61494c", "#43505a", "#425558", "#4a4957"][stage];
@@ -321,7 +320,7 @@ function backdrop(p: Pen, game: Game, cameraY: number, height: number) {
       const shelfX = row % 2 ? x : 264;
       p("#313841", shelfX, floor + 127, x + 64 - shelfX, 6);
       p("#727470", shelfX, floor + 127, x + 64 - shelfX);
-      machine(p, x, floor + 127, "#789981", game.frame);
+      machine(p, x, floor + 127, "#789981", frame);
     } else if (stage === 2) {
       const x = row % 2 ? 315 : 99;
       const shelfX = row % 2 ? x - 3 : 86;
@@ -332,7 +331,7 @@ function backdrop(p: Pen, game: Game, cameraY: number, height: number) {
       p("#7c8074", x + 11, floor + 47, 50, 3);
       p("#3a4952", x + 13, floor + 49, 48, 2);
     } else {
-      antenna(p, row % 2 ? 343 : 102, floor + 127, game.frame, 94 + row % 2 * 18);
+      antenna(p, row % 2 ? 343 : 102, floor + 127, frame, 94 + row % 2 * 18);
     }
   }
 }
@@ -695,10 +694,10 @@ function rectangles(ctx: CanvasRenderingContext2D, cameraX = 0, cameraY = 0): Pe
 
 const sceneryLayers = new WeakMap<HTMLCanvasElement, { canvas: HTMLCanvasElement; key: string }>();
 
-function scenery(ctx: CanvasRenderingContext2D, game: Game, cameraX: number, cameraY: number) {
+function scenery(ctx: CanvasRenderingContext2D, stage: number, cameraX: number, cameraY: number, frame: number, reducedMotion: boolean) {
   const { canvas } = ctx;
   const { width, height } = canvas;
-  const key = [width, height, cameraX, cameraY, game.stageIndex, Math.floor(game.frame / 6)].join("/");
+  const key = [width, height, cameraX, cameraY, stage, Math.floor(frame / 6), reducedMotion].join("/");
   let layer = sceneryLayers.get(canvas);
   if (!layer) {
     layer = { canvas: canvas.ownerDocument.createElement("canvas"), key: "" };
@@ -710,16 +709,17 @@ function scenery(ctx: CanvasRenderingContext2D, game: Game, cameraX: number, cam
     const layerCtx = layer.canvas.getContext("2d", { alpha: false });
     if (!layerCtx) return;
 
-    sky(layerCtx, rectangles(layerCtx), cameraX, cameraY, width, height, game.stageIndex, game.frame);
-    const p = rectangles(layerCtx, cameraX, cameraY);
-    borderingTowers(p, cameraX, cameraY, width, height, game.frame);
-    backdrop(p, game, cameraY, height);
+    const skyX = reducedMotion ? Math.round((WIDTH - width) / 2) : cameraX;
+    const skyY = reducedMotion ? 0 : cameraY;
+    sky(layerCtx, rectangles(layerCtx), skyX, skyY, width, height, stage, frame);
+    borderingTowers(rectangles(layerCtx, skyX, skyY), skyX, skyY, width, height, frame);
+    backdrop(rectangles(layerCtx, cameraX, cameraY), stage, cameraY, height, frame);
     layer.key = key;
   }
   ctx.drawImage(layer.canvas, 0, 0);
 }
 
-export function drawWorld(canvas: HTMLCanvasElement, game: Game) {
+export function drawWorld(canvas: HTMLCanvasElement, game: Game, reducedMotion: boolean) {
   const height = VIEW_HEIGHT;
   const displayHeight = canvas.clientHeight || height;
   const displayWidth = canvas.clientWidth || WIDTH;
@@ -743,7 +743,8 @@ export function drawWorld(canvas: HTMLCanvasElement, game: Game) {
   const cameraY = Math.round(Math.min(headLimit, Math.max(game.cameraY, Math.min(dockView, game.cameraY + safeInset))));
   const p = rectangles(ctx, cameraX, cameraY);
 
-  scenery(ctx, game, cameraX, cameraY);
+  const ambientFrame = reducedMotion ? 0 : game.frame;
+  scenery(ctx, game.stageIndex, cameraX, cameraY, ambientFrame, reducedMotion);
   const signX = 189;
   const signY = stage.height - 115;
   p("#282b37", signX, signY, 102, 26);
@@ -761,15 +762,15 @@ export function drawWorld(canvas: HTMLCanvasElement, game: Game) {
   }
   for (const surface of game.platforms) platform(p, surface);
   for (const obstacle of game.hazards) hazard(p, obstacle, game.frame);
-  door(p, game.exit, game.stageIndex, game.frame);
-  for (const duty of game.duties) station(p, duty, game.frame);
+  door(p, game.exit, game.stageIndex, ambientFrame);
+  for (const duty of game.duties) station(p, duty, ambientFrame);
 
   for (const member of game.crew) {
     const waiting = member.mode === "waiting";
     const working = member.mode === "working";
-    const step = waiting ? game.frame % 120 : game.frame;
+    const step = waiting ? ambientFrame % 120 : ambientFrame;
     bot(p, member.id, Math.round(member.x), Math.round(member.y), step, working);
-    if (waiting) tag(p, member.id, member.x, member.y, game.frame);
+    if (waiting) tag(p, member.id, member.x, member.y, ambientFrame);
   }
   operator(p, game.player, game.frame);
 }

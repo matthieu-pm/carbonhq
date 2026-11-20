@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, ArrowUp, Flag, Heart, Pause, Play, RadioTower, U
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createGame, getContextHint, getSnapshot, stepGame, type Input } from "./engine";
 import { drawWorld } from "./render";
+import { RunClock } from "./run-clock";
 import type { Cue } from "./audio";
 import s from "./game.module.css";
 
@@ -14,14 +15,15 @@ export function formatTime(seconds: number) {
 }
 
 const keys: Record<string, keyof Input | undefined> = {
-  ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right",
-  Space: "jump", ArrowUp: "jump", KeyW: "jump", KeyE: "use",
+  arrowleft: "left", a: "left", arrowright: "right", d: "right",
+  " ": "jump", arrowup: "jump", w: "jump", e: "use",
 };
 
 export function Playfield({ onEnd, onTitle, cue, settings }: {
   onEnd: (result: RunResult) => void; onTitle: () => void; cue: (kind: Cue) => void; settings?: ReactNode;
 }) {
   const [game] = useState(createGame);
+  const [runClock] = useState(() => new RunClock());
   const [hud, setHud] = useState(() => getSnapshot(game));
   const [seconds, setSeconds] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -29,6 +31,7 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
   const focusOnPause = useRef(false);
   const resumeButton = useRef<HTMLButtonElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const reducedMotion = useRef(false);
   const group = useRef<HTMLDivElement>(null);
   const inputs = useRef(new Map<string, keyof Input>());
   const taps = useRef<Input>({});
@@ -40,6 +43,7 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
   }, []);
   const pause = useCallback((moveFocus = false) => {
     if (pauseFlag.current) return;
+    runClock.pause(performance.now());
     pauseFlag.current = true;
     focusOnPause.current = moveFocus;
     inputs.current.clear();
@@ -47,7 +51,7 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
     game.jumpHeld = false;
     game.useHeld = false;
     setPaused(true);
-  }, [game]);
+  }, [game, runClock]);
   const resume = useCallback(() => {
     pauseFlag.current = false;
     setPaused(false);
@@ -63,15 +67,15 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
         if (!event.repeat) { if (pauseFlag.current) resume(); else pause(true); }
         return;
       }
-      const action = keys[event.code];
+      const action = keys[event.key.toLowerCase()] ?? keys[event.code.replace(/^Key/, "").toLowerCase()];
       if (!inGame || !action || pauseFlag.current) return;
       if (event.code === "Space" && event.target instanceof HTMLButtonElement) return;
       event.preventDefault();
       if (event.repeat) return;
       canvas.current?.focus({ preventScroll: true });
-      hold(event.code, action);
+      hold(event.code || event.key, action);
     }
-    function up(event: KeyboardEvent) { inputs.current.delete(event.code); }
+    function up(event: KeyboardEvent) { inputs.current.delete(event.code || event.key); }
     function autoPause() { pause(); }
     function outsideFocus(event: FocusEvent) {
       if (event.target instanceof Node && !group.current?.contains(event.target)) autoPause();
@@ -97,20 +101,32 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
 
   useEffect(() => {
     const surface = canvas.current!;
-    const observer = new ResizeObserver(() => drawWorld(surface, game));
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const draw = () => drawWorld(surface, game, reducedMotion.current);
+    function syncMotion() {
+      reducedMotion.current = media.matches;
+      draw();
+    }
+    syncMotion();
+    media.addEventListener("change", syncMotion);
+    const observer = new ResizeObserver(draw);
     observer.observe(surface);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      media.removeEventListener("change", syncMotion);
+    };
   }, [game]);
 
   useEffect(() => {
-    if (paused) return;
+    if (paused || pauseFlag.current) return;
+    runClock.start(performance.now());
     const surface = canvas.current!;
     const clock = 1000 / 60;
     let last: number | null = null;
     let lag = 0;
     let animation = 0;
     let prev = getSnapshot(game);
-    let prevSecond = Math.floor(game.frame / 60);
+    let prevSecond = -1;
 
     function frame(now: number) {
       if (pauseFlag.current) return;
@@ -136,8 +152,8 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
         }
         lag -= clock;
       }
-      drawWorld(surface, game);
-      const elapsed = Math.floor(game.frame / 60);
+      const elapsed = runClock.seconds(performance.now());
+      drawWorld(surface, game, reducedMotion.current);
       if (elapsed !== prevSecond) { prevSecond = elapsed; setSeconds(elapsed); }
       if (game.status !== "playing") {
         onEnd({ status: game.status, stageIndex: game.stageIndex, recruited: game.recruited.length, seconds: elapsed });
@@ -146,8 +162,11 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
       animation = requestAnimationFrame(frame);
     }
     animation = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(animation);
-  }, [game, cue, onEnd, paused]);
+    return () => {
+      cancelAnimationFrame(animation);
+      runClock.pause(performance.now());
+    };
+  }, [game, cue, onEnd, paused, runClock]);
 
   function direction(event: ReactPointerEvent<HTMLButtonElement>, action: "left" | "right") {
     if (event.button !== 0) return;

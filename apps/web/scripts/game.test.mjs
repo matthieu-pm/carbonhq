@@ -1,6 +1,21 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { createGame, getSnapshot, STAGES, stepGame } from "../src/app/game/engine.ts"
+import { RunClock } from "../src/app/game/run-clock.ts"
+
+test("finish time counts slow frames, excludes pauses, and keeps partial seconds across resumes", () => {
+  const clock = new RunClock()
+  clock.start(500)
+  for (let now = 700; now <= 10_500; now += 200) {
+    assert.equal(clock.seconds(now), Math.floor((now - 500) / 1000))
+  }
+  clock.pause(11_250)
+  clock.pause(13_000)
+  assert.equal(clock.seconds(20_000), 10)
+  clock.start(20_000)
+  clock.start(20_200)
+  assert.equal(clock.seconds(20_250), 11)
+})
 
 const center = (rect) => rect.x + rect.w / 2
 const feet = (game) => game.player.y + game.player.h

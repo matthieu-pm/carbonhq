@@ -5,18 +5,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Newsletter } from "@/components/home/Newsletter";
 import { SITE } from "@/lib/links";
 import { playCue, type Cue } from "./audio";
-import type { AgentId } from "./engine";
+import { AGENT_NAMES, STAGES, type AgentId } from "./engine";
 import { drawPortrait } from "./render";
 import { preloadVictoryScene, VictorySequence } from "./VictorySequence";
 import { Playfield, type RunResult, formatTime } from "./Playfield";
 import s from "./game.module.css";
 
-const crew: { id: AgentId; name: string; ability: string; floor: string }[] = [
-  { id: "codex", name: "Codex", ability: "Repairs broken bridges.", floor: "Loading Dock" },
-  { id: "claude", name: "Claude Code", ability: "Holds pressure plates.", floor: "Machine Room" },
-  { id: "pi", name: "Pi", ability: "Cuts power to fans.", floor: "Cooling Stack" },
-  { id: "fx", name: "Fx", ability: "Powers moving platforms.", floor: "Antenna Deck" },
-];
+const abilities: Record<AgentId, string> = {
+  codex: "Repairs broken bridges.",
+  claude: "Holds pressure plates.",
+  pi: "Cuts power to fans.",
+  fx: "Powers moving platforms.",
+};
 
 function Portrait({ id }: { id: AgentId }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -28,10 +28,13 @@ function CrewRoster() {
   return <section className={s.roster} aria-labelledby="crew-heading">
     <div className={s.sectionHeading}><h2 id="crew-heading">Meet your crew</h2></div>
     <ol className={s.cards}>
-      {crew.map((agent, index) => <li key={agent.id} data-agent={agent.id}>
-        <div className={s.avatar}><Portrait id={agent.id} /></div>
-        <div><p className={s.floorNumber}>Floor 0{index + 1}</p><h3>{agent.name}</h3><p className={s.ability}>{agent.ability}</p></div>
-      </li>)}
+      {STAGES.map((stage, index) => {
+        const recruit = stage.duties[0].agent;
+        return <li key={recruit} data-agent={recruit}>
+          <div className={s.avatar}><Portrait id={recruit} /></div>
+          <div><p className={s.floorNumber}>Floor 0{index + 1}</p><h3>{AGENT_NAMES[recruit]}</h3><p className={s.ability}>{abilities[recruit]}</p></div>
+        </li>;
+      })}
     </ol>
   </section>;
 }
@@ -69,7 +72,7 @@ function Results({ result, replay }: { result: RunResult; replay: () => void }) 
   return <div className={s.results}>
     <p className={s.signal}><RadioTower size={14} /> {won ? "Signal restored" : "Signal offline"}</p>
     <h2 tabIndex={-1} ref={title}>{won ? "Tower online." : "Shift over."}</h2>
-    <p>{won ? "Your crew brought the rooftop antenna back online." : `Your last checkpoint was the ${crew[result.stageIndex].floor}. The tower is ready for another run.`}</p>
+    <p>{won ? "Your crew brought the rooftop antenna back online." : `Your last checkpoint was the ${STAGES[result.stageIndex].name}. The tower is ready for another run.`}</p>
     <div className={s.stats}><span><strong>{result.stageIndex + 1}/4</strong> Floor reached</span><span><strong>{result.recruited}/4</strong> Crew</span><span><strong>{time}</strong> Run time</span></div>
     <button type="button" className={s.primary} onClick={replay}><RotateCcw size={16} /> Play again</button>
     <div className={s.share}><span>Share your run</span>
