@@ -1581,6 +1581,8 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         sync_linear_page(id: String, revision: u64, resolution: Option<String>, expected_remote_updated_at: Option<String>) => crate::pages_sync::sync_linear_page(sink.clone(), id, revision, resolution, expected_remote_updated_at).await;
         unlink_linear_page(id: String, revision: u64) => crate::pages_sync::unlink_linear_page(id, revision).await;
         page_backlinks(id: String, owner: Option<String>, source_owner: Option<String>) => crate::pages::page_backlinks(id, owner, source_owner).await;
+        write_space_image(name: String, asset_id: String, offset: u64, data: String, complete: bool) => crate::pages::images::write_space_image(sink.clone(), name, asset_id, offset, data, complete).await;
+        list_space_images() => crate::pages::images::list_space_images().await;
         list_page_assets(id: String) => crate::pages::list_page_assets(id).await;
         write_page_asset(id: String, name: String, asset_id: String, offset: u64, data: String, complete: bool) => crate::pages::write_page_asset(sink.clone(), id, name, asset_id, offset, data, complete).await;
         page_history(id: String) => crate::pages::page_history(id).await;

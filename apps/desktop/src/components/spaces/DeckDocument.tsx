@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { editPageDraft, markPageDraftPending, pageDraft, persistPageDraft, refreshPageDraft, resolvePageDraft, savePageDraft, usePageDocument, type PageDraft } from "@/hooks/usePageDocument";
-import { uploadPageAsset, usePageAssets } from "@/hooks/usePageAssets";
+import { uploadSpaceAsset, usePageAssets } from "@/hooks/usePageAssets";
 import { readPage, type LocatedPage, type Page } from "@/lib/pages";
 import { deckSlides, renderSlide, loadDeckImage, imagePreview } from "@/lib/deckPreview";
 
@@ -118,7 +118,7 @@ function DeckView({ page, active, snapshot, draft, onOpenCurrent, onTitle, onFlu
         imageResolver: (src) => src ? previews.current.get(src) : undefined,
         onAddAsset: async ({ file }) => {
           if (!(file instanceof File)) throw new Error("Choose an image file.");
-          const asset = await uploadPageAsset(page, file, () => {});
+          const asset = await uploadSpaceAsset(page, file, () => {});
           previews.current.set(asset.url, await imagePreview(file, asset));
           images.current = [...images.current, asset];
           return asset.url;

@@ -2301,7 +2301,7 @@ pub async fn copy_session_log(from: &str, to: &str, from_cwd: &str) -> Result<Ve
     let attachments = get_home_app_dir().await?.join("attachments");
     let from_dir = attachments.join(from);
     let to_dir = attachments.join(to);
-    copy_dir(&from_dir, &to_dir).await?;
+    copy_dir(&from_dir, &to_dir, true).await?;
 
     repoint_events(&mut events, to, &from_dir, &to_dir, from_cwd);
 
@@ -2358,7 +2358,7 @@ fn repoint_events(
 
 /// Best-effort recursive copy. A missing source is the ordinary case — most
 /// sessions attach no images — so it is not an error.
-async fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+async fn copy_dir(from: &Path, to: &Path, session_root: bool) -> Result<()> {
     let mut entries = match fs::read_dir(from).await {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -2368,9 +2368,13 @@ async fn copy_dir(from: &Path, to: &Path) -> Result<()> {
     fs::create_dir_all(to).await?;
 
     while let Some(entry) = entries.next_entry().await? {
+        // The gallery archive belongs to the session that generated it. Transcript attachments still follow the fork.
+        if session_root && entry.file_name() == "generated" {
+            continue;
+        }
         let target = to.join(entry.file_name());
         if entry.file_type().await?.is_dir() {
-            Box::pin(copy_dir(&entry.path(), &target)).await?;
+            Box::pin(copy_dir(&entry.path(), &target, false)).await?;
         } else {
             fs::copy(entry.path(), target).await?;
         }
@@ -3290,6 +3294,20 @@ mod tests {
             fork_title(&fork_title("Add PR panel")),
             "Add PR panel (fork)"
         );
+    }
+
+    #[tokio::test]
+    async fn a_fork_copies_chat_attachments_and_leaves_gallery_outputs_with_their_creator() {
+        let root = std::env::temp_dir().join(format!("carbon-fork-gallery-{}", Uuid::new_v4()));
+        let parent = root.join("parent");
+        let fork = root.join("fork");
+        fs::create_dir_all(parent.join("generated")).await.unwrap();
+        fs::write(parent.join("reference.png"), b"reference").await.unwrap();
+        fs::write(parent.join("generated/poster.png"), b"poster").await.unwrap();
+        copy_dir(&parent, &fork, true).await.unwrap();
+        assert_eq!(fs::read(fork.join("reference.png")).await.unwrap(), b"reference");
+        assert!(!fork.join("generated").exists());
+        fs::remove_dir_all(root).await.unwrap();
     }
 
     /// A fork's log has to stand on its own. Both rewrites are about outliving

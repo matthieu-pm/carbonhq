@@ -30,12 +30,14 @@ import { LOCAL, serverOfPath, type ServerId } from "@/lib/transport";
 import { projectLabel } from "@/lib/servers";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/types/events";
+import ImagesGallery from "./ImagesGallery";
 import "./spaces.css";
 
 /// Spaces fills the shell's sheet beside the rail, its own sidebar included,
 /// while the task shell keeps its place hidden underneath. The body is one
 /// pane per tab (`lib/spaceTabs`); the sidebar acts on the lit one.
-export default function SpacesView({ active, projects, visibleProjects, request, createSerial = 0, sidebarCollapsed = false, onExpandSidebar, peek = false, onPeekHover, onNavigate, onDockedWidth, closeTabRef, onClose }: {
+export default function SpacesView({ active, projects, visibleProjects, request, createSerial = 0, sidebarCollapsed = false, onExpandSidebar, peek = false, onPeekHover, onNavigate, onDockedWidth, closeTabRef, onSession, onClose }: {
+  onSession: (id: string) => void;
   active: boolean;
   projects: Project[];
   visibleProjects: string[] | null;
@@ -178,7 +180,7 @@ export default function SpacesView({ active, projects, visibleProjects, request,
         {searchOpen || view.query
           ? <div className="spaces-nav spaces-search-field group mb-3">
               <Search />
-              <input ref={search} autoFocus={searchOpen} value={view.query} placeholder="Search" aria-label={view.section === "linear" ? "Search Linear documents" : view.section === "slides" ? "Search slide decks" : "Search documents"}
+              <input ref={search} autoFocus={searchOpen} value={view.query} placeholder="Search" aria-label={view.section === "images" ? "Search images" : view.section === "linear" ? "Search Linear documents" : view.section === "slides" ? "Search slide decks" : "Search documents"}
                 onChange={(e) => changeQuery(e.target.value)}
                 onKeyDown={(e) => { if (e.key !== "Escape") return; e.preventDefault(); closeSearch(); }}
                 onBlur={() => { if (!view.query) setSearchOpen(false); }} />
@@ -224,6 +226,8 @@ export default function SpacesView({ active, projects, visibleProjects, request,
                   onTrashed={() => closeTab(tab.id)}
                   onHidden={() => navigate(tab.id, {})}
                   onOpenCurrent={openTab} />
+              : tab.view.section === "images" ? <ImagesGallery active={active && shown} query={tab.view.query} visibleProjects={visibleProjects}
+                  onPage={openTab} onSession={onSession} />
               : <ListTabBody tab={tab} shown={shown} active={active} projects={projects} visibleProjects={visibleProjects} creating={creating}
                   onView={(patch) => editSpaceTabs((s) => updateSpaceView(s, tab.id, patch))}
                   onOpen={openTab} onCreate={(server, deck) => void create(server, deck)} onImport={() => setImportOpen(true)} />}

@@ -529,19 +529,27 @@ impl Mapper {
             ThreadItem::McpToolCall {
                 id,
                 status,
-                result,
+                tool,
+                mut result,
                 error,
                 ..
             } => {
+                let is_error = status != ItemStatus::Completed || error.is_some()
+                    || result.as_ref().and_then(|r| r["isError"].as_bool()) == Some(true);
+                let images = if !is_error && crate::pages::images::generation_tool(&tool) {
+                    generated_mcp_images(result.as_mut())
+                } else {
+                    Vec::new()
+                };
                 let mut out = vec![self.event(AgentEventPayload::ToolCallCompleted {
                     call_id: id,
                     result: ToolResult {
                         text: mcp_text(result.as_ref(), error.as_ref()),
-                        is_error: status != ItemStatus::Completed || error.is_some(),
+                        is_error,
                         structured: result,
                         exit_code: None,
                         duration_ms: None,
-                        images: Vec::new(),
+                        images,
                     },
                 })];
                 out.push(self.event(AgentEventPayload::ModelRequestStarted));
@@ -1004,6 +1012,39 @@ pub(super) fn skill_name(command: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Move generated MCP image bytes onto the same archive path as native tool results.
+fn generated_mcp_images(result: Option<&mut serde_json::Value>) -> Vec<ImageRef> {
+    let Some(blocks) = result
+        .and_then(|r| r.get_mut("content"))
+        .and_then(|c| c.as_array_mut())
+    else {
+        return Vec::new();
+    };
+    blocks
+        .iter_mut()
+        .filter_map(|block| {
+            if block["type"] != "image" {
+                return None;
+            }
+            let mime = block["mimeType"].as_str()?.to_owned();
+            if !matches!(
+                mime.as_str(),
+                "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+            ) {
+                return None;
+            }
+            let serde_json::Value::String(data) = block.as_object_mut()?.remove("data")? else {
+                return None;
+            };
+            Some(ImageRef {
+                path: None,
+                url: Some(format!("data:{mime};base64,{data}")),
+                mime_type: Some(mime),
+            })
+        })
+        .collect()
+}
+
 /// An MCP result flattened to the text the expander draws.
 ///
 /// The server's own `content` blocks where there are any, its error otherwise.
@@ -1100,6 +1141,39 @@ mod tests {
 
     fn map_one(m: &mut Mapper, method: &str, params: serde_json::Value) -> Vec<AgentEvent> {
         m.map(parse_notification(method, params).expect("should parse"))
+    }
+
+    #[test]
+    fn only_successful_generation_tools_archive_mcp_image_results() {
+        let mut mapper = mapper();
+        for (tool, failed, expected) in [
+            ("generate_image", false, 1),
+            ("read_media_file", false, 0),
+            ("generate_image", true, 0),
+        ] {
+            let events = map_one(
+                &mut mapper,
+                "item/completed",
+                json!({
+                    "threadId":"t", "turnId":"u", "item":{"type":"mcpToolCall","id":"c","server":"art",
+                    "tool":tool,"status":"completed","result":{"isError":failed,"content":[
+                        {"type":"image","mimeType":"image/png","data":"cG9zdGVy"}]}}
+                }),
+            );
+            let AgentEventPayload::ToolCallCompleted { result, .. } = &events[0].payload else {
+                panic!("expected tool result");
+            };
+            assert_eq!(result.images.len(), expected);
+            if expected == 1 {
+                assert_eq!(
+                    result.images[0].url.as_deref(),
+                    Some("data:image/png;base64,cG9zdGVy")
+                );
+                assert!(result.structured.as_ref().unwrap()["content"][0]
+                    .get("data")
+                    .is_none());
+            }
+        }
     }
 
     /// Codex echoes the prompt back as an item. Carbon already minted its own

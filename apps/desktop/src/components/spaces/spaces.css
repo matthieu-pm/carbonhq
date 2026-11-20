@@ -100,3 +100,13 @@
 .deck-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .deck-compare ol { margin-top: 8px; max-height: 180px; overflow: auto; font-size: 12px; color: var(--muted-foreground); list-style: decimal inside; }
 .deck-compare li[data-changed="true"] { color: var(--foreground); }
+
+.spaces-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(175px, 100%), 1fr));
+  align-content: start;
+  gap: 24px 16px;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--library-content-inset) 64px;
+}

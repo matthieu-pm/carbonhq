@@ -24,12 +24,21 @@ struct UploadState {
 impl PagesStore {
     pub(super) async fn list_assets(&self, id: &str) -> Result<Vec<PageAsset>, String> {
         self.read(id).await?;
+        let mut assets = Vec::new();
+        for asset_id in self.asset_ids(id).await? {
+            assets.push(self.read_asset(id, &asset_id).await?);
+        }
+        assets.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+        Ok(assets)
+    }
+
+    pub(super) async fn asset_ids(&self, id: &str) -> Result<Vec<String>, String> {
         let mut entries = match fs::read_dir(self.assets.join(id)).await {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
             Err(e) => return Err(e.to_string()),
         };
-        let mut assets = Vec::new();
+        let mut ids = Vec::new();
         while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
@@ -41,13 +50,12 @@ impl PagesStore {
             if valid_id(asset_id).is_err() {
                 continue;
             }
-            assets.push(self.read_asset(id, asset_id).await?);
+            ids.push(asset_id.to_owned());
         }
-        assets.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-        Ok(assets)
+        Ok(ids)
     }
 
-    async fn read_asset(&self, id: &str, asset_id: &str) -> Result<PageAsset, String> {
+    pub(super) async fn read_asset(&self, id: &str, asset_id: &str) -> Result<PageAsset, String> {
         let manifest = self.assets.join(id).join(format!("{asset_id}.json"));
         let bytes = crate::docs::read_file_capped(&manifest.to_string_lossy(), 16 * 1024).await?;
         let mut asset: PageAsset = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
@@ -106,7 +114,11 @@ impl PagesStore {
             .ok_or("Assets must be 20 MiB or smaller.")?;
         let _guard = WRITE_LOCK.lock().await;
         let _process = self.lock().await?;
-        if self.read(id).await?.trashed {
+        if id == super::images::UPLOADS {
+            if !mime_type(&name).starts_with("image/") {
+                return Err("Choose a PNG, JPEG, GIF or WebP image.".into());
+            }
+        } else if self.read(id).await?.trashed {
             return Err("Restore the Page before attaching a file.".into());
         }
         let dir = self.assets.join(id);
@@ -206,6 +218,24 @@ impl PagesStore {
             if end != written {
                 return Err("The final chunk must end at the uploaded length.".into());
             }
+            if id == super::images::UPLOADS {
+                file.seek(SeekFrom::Start(0))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let mut header = [0u8; 12];
+                let len = written.min(header.len() as u64) as usize;
+                file.read_exact(&mut header[..len])
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if !matches_image_header(&header[..len], mime_type(&name)) {
+                    drop(file);
+                    fs::remove_file(&staging).await.map_err(|e| e.to_string())?;
+                    fs::remove_file(&state_path)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    return Err("The file contents do not match its image format.".into());
+                }
+            }
             file.sync_all().await.map_err(|e| e.to_string())?;
             drop(file);
             fs::rename(&staging, &finished)
@@ -235,6 +265,16 @@ impl PagesStore {
             written: size,
             asset: Some(asset),
         })
+    }
+}
+
+fn matches_image_header(bytes: &[u8], mime: &str) -> bool {
+    match mime {
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
+        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        "image/webp" => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"),
+        _ => false,
     }
 }
 
