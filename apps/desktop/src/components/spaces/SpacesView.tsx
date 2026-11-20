@@ -1,6 +1,6 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileText, Folder, Plus, Search, Trash2 } from "lucide-react";
+import { FileText, Folder, Plus, Presentation, Search, Trash2 } from "lucide-react";
 import ShortcutKeys from "@/components/ShortcutKeys";
 import { SIDEBAR_TOKENS } from "@/components/layout/AppShell";
 import { RAIL_W } from "@/components/layout/Rail";
@@ -12,7 +12,7 @@ import LinearImportDialog from "./LinearImportDialog";
 import { SECTIONS } from "./sections";
 import { useHotkey } from "@/hooks/useHotkey";
 import { usePages } from "@/hooks/usePages";
-import { createPage, locatePage, ownerProjects, pageKey, type PageTarget } from "@/lib/pages";
+import { createDeck, createPage, locatePage, ownerProjects, pageKey, type PageTarget } from "@/lib/pages";
 import {
   activeSpaceTab,
   closeSpaceTab,
@@ -125,12 +125,12 @@ export default function SpacesView({ active, projects, visibleProjects, request,
     editSpaceTabs((s) => closeSpaceTab(s, id));
   };
   if (closeTabRef) closeTabRef.current = closeTab;
-  const create = async (server: ServerId = view.project ? serverOfPath(view.project) : LOCAL) => {
+  const create = async (server: ServerId = view.project ? serverOfPath(view.project) : LOCAL, deck = false) => {
     if (creating) return;
     setCreating(true);
     setCreateError(null);
     try {
-      const created = await createPage(server, view.project && serverOfPath(view.project) === server ? [view.project] : []);
+      const created = await (deck ? createDeck : createPage)(server, view.project && serverOfPath(view.project) === server ? [view.project] : []);
       openTab({ id: created.id, server: created.server }, created.title);
     } catch (reason) { setCreateError(String(reason)); }
     finally { setCreating(false); }
@@ -172,11 +172,13 @@ export default function SpacesView({ active, projects, visibleProjects, request,
   const listCurrent = (match: boolean) => (!current.page && match ? "page" : undefined);
   const sidebar = (
       <aside className="spaces-sidebar">
-        <button className="spaces-nav" onClick={nav(() => void create())} disabled={creating}><Plus />New Page<ShortcutKeys ids={["page.new"]} className="ml-auto" /></button>
+        <button className="spaces-nav" onClick={nav(() => void create(undefined, view.section === "slides"))} disabled={creating}>
+          <Plus />{view.section === "slides" ? "New slide deck" : <>New Page<ShortcutKeys ids={["page.new"]} className="ml-auto" /></>}
+        </button>
         {searchOpen || view.query
           ? <div className="spaces-nav spaces-search-field group mb-3">
               <Search />
-              <input ref={search} autoFocus={searchOpen} value={view.query} placeholder="Search" aria-label={view.section === "linear" ? "Search Linear documents" : "Search Pages"}
+              <input ref={search} autoFocus={searchOpen} value={view.query} placeholder="Search" aria-label={view.section === "linear" ? "Search Linear documents" : view.section === "slides" ? "Search slide decks" : "Search documents"}
                 onChange={(e) => changeQuery(e.target.value)}
                 onKeyDown={(e) => { if (e.key !== "Escape") return; e.preventDefault(); closeSearch(); }}
                 onBlur={() => { if (!view.query) setSearchOpen(false); }} />
@@ -186,7 +188,7 @@ export default function SpacesView({ active, projects, visibleProjects, request,
           : <button className="spaces-nav mb-3" onClick={nav(() => { onExpandSidebar?.(); setSearchOpen(true); })}><Search />Search<ShortcutKeys ids={["search"]} className="ml-auto" /></button>}
         {SECTIONS.map(({ id, label, Icon }) => <button key={id} className="spaces-nav" aria-current={listCurrent(view.section === id && !view.project)} onClick={nav(() => chooseSection(id))}><Icon />{label}</button>)}
         <div className="spaces-section-label">Recents</div>
-        {recents.map((recent) => <button key={pageKey(recent)} className="spaces-nav" aria-current={current.page && current.page.revision === undefined && pageKey(current.page) === pageKey(recent) ? "page" : undefined} onClick={nav(() => openTab({ id: recent.id, server: recent.server }, recent.title))}><FileText /><span className="truncate">{recent.title}</span></button>)}
+        {recents.map((recent) => <button key={pageKey(recent)} className="spaces-nav" aria-current={current.page && current.page.revision === undefined && pageKey(current.page) === pageKey(recent) ? "page" : undefined} onClick={nav(() => openTab({ id: recent.id, server: recent.server }, recent.title))}>{recent.format === "opf" ? <Presentation /> : <FileText />}<span className="truncate">{recent.title}</span></button>)}
         {recents.length === 0 && <p className="px-2 text-xs text-muted-foreground">Your recent Pages appear here.</p>}
         <div className="spaces-section-label">Projects</div>
         <div className="min-h-0 flex-1 overflow-auto">
@@ -217,14 +219,14 @@ export default function SpacesView({ active, projects, visibleProjects, request,
           return <div key={page ? `${tab.id}:${pageKey(page)}:${page.revision ?? ""}` : `${tab.id}:list`} className={cn("min-h-0 min-w-0 flex-1 flex-col", shown ? "flex" : "hidden")}>
             {page
               ? <PageTabBody page={page} shown={shown} active={active} projects={availableProjects} visibleProjects={visibleProjects}
-                  onTitle={(title) => editSpaceTabs((s) => setPageTabTitle(s, page, title))}
+                  onTitle={(title, format) => editSpaceTabs((s) => setPageTabTitle(s, page, title, format))}
                   onFlushReady={(fn) => { flushers.current.set(tab.id, fn); }}
                   onTrashed={() => closeTab(tab.id)}
                   onHidden={() => navigate(tab.id, {})}
                   onOpenCurrent={openTab} />
               : <ListTabBody tab={tab} shown={shown} active={active} projects={projects} visibleProjects={visibleProjects} creating={creating}
                   onView={(patch) => editSpaceTabs((s) => updateSpaceView(s, tab.id, patch))}
-                  onOpen={openTab} onCreate={(server) => void create(server)} onImport={() => setImportOpen(true)} />}
+                  onOpen={openTab} onCreate={(server, deck) => void create(server, deck)} onImport={() => setImportOpen(true)} />}
           </div>;
         })}
       </main>

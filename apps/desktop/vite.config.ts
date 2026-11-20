@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { cpSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { configDefaults, defineConfig, type Plugin } from "vitest/config";
+import { copyPreviewFonts } from "@openpresentation/opf-render/preview-fonts-node";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -68,7 +69,13 @@ function devBranch(): string | null {
 
 // https://vite.dev/config/
 export default defineConfig(async ({ command }) => ({
-  plugins: [react(), tailwindcss(), fileIcons()],
+  plugins: [react(), tailwindcss(), fileIcons(), {
+    name: "carbon-slide-fonts",
+    configResolved() {
+      copyPreviewFonts({ outDir: url("./public/opf-fonts"), cwd: url(".") });
+      cpSync(url("./node_modules/@openpresentation/opf-editor/LICENSE"), url("./public/opf-fonts/OpenPresentation-LICENSE.txt"));
+    },
+  }],
 
   // Concurrent dev servers must not replace the optimized modules another
   // still serves; a lazy import then fails with "Outdated Optimize Dep".

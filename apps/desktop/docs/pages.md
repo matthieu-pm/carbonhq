@@ -1,6 +1,6 @@
 # Spaces and Markdown Pages
 
-Spaces is the document workspace on Cmd+P, opened from the rail. It fills the shell's sheet, its own sidebar included, beside the shared rail. Pages are Markdown documents. Profiles is the previous Spaces feature; its serialized project field and local storage keys keep their old spellings so no migration can lose grouping settings.
+Spaces is the document workspace on Cmd+P, opened from the rail. It fills the shell's sheet, its own sidebar included, beside the shared rail. Pages are Markdown documents. Slide decks store OpenPresentation JSON in the same revisioned document store. Profiles is the previous Spaces feature; its serialized project field and local storage keys keep their old spellings so no migration can lose grouping settings.
 
 ## Availability
 
@@ -8,7 +8,7 @@ Spaces and Pages are available in beta.5, including on profiles saved by earlier
 
 ## Sidebar and table
 
-The sidebar lists All, Pages, Slides, Images, Google Drive and Linear, then Recents, Projects and Trash. All and Pages show the same list until a second kind exists. Slides, Images and Google Drive are empty states. Linear reads the workspace's documents live from Linear; opening one imports it as a synced Page, which is idempotent. Favorites and Recently edited (the last seven days) are tabs above the table. ⌘⇧P creates a Page from anywhere, opening Spaces first; it took the chord from the composer's next-project step, now ⌘⌥P.
+The sidebar lists All, Pages, Slides, Images, Google Drive and Linear, then Recents, Projects and Trash. All shows Pages and slide decks. Pages and Slides each filter by document format. Images and Google Drive are empty states. Linear reads the workspace's documents live from Linear; opening one imports it as a synced Page, which is idempotent. Favorites and Recently edited (the last seven days) are tabs above the table. ⌘⇧P creates a Page from anywhere, opening Spaces first; it took the chord from the composer's next-project step, now ⌘⌥P.
 
 The sidebar shares the task sidebar's width (`ade.sidebarWidth`, synced live between the two) and its collapse switch. Wherever it is not docked on screen, hovering the rail's Spaces button floats it as a card, drawn into `.app-shell` through a portal since the Spaces page itself is hidden there; a row used from the card opens Spaces.
 

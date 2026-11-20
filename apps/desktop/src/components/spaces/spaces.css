@@ -83,3 +83,20 @@
   .spaces-document-meta { padding-left: 4px; }
   .spaces-document-content { padding: 36px 24px 80px; }
 }
+
+/* Library covers: the cover slide at 16:9, or the deck glyph while it draws. */
+.deck-cover { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--radius-md); background: var(--muted); box-shadow: 0 0 0 1px var(--hairline-strong); color: var(--muted-foreground); }
+.deck-cover > svg { width: 18px; height: 18px; stroke-width: 1.5; }
+.deck-cover-svg { display: block; width: 100%; height: 100%; }
+.spaces-row .deck-cover { width: 57px; flex-shrink: 0; border-radius: var(--radius-sm); }
+.spaces-row .deck-cover > svg { width: 14px; height: 14px; }
+/* A Page card's frame, so a mixed grid lines up; the cover takes its top. */
+.spaces-deck-card { display: flex; flex-direction: column; gap: 12px; padding: 8px 8px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); text-align: left; cursor: pointer; font-size: 13px; }
+.spaces-deck-card:hover { background: var(--accent); }
+.spaces-deck-card .deck-cover { width: 100%; border-radius: calc(var(--radius-lg) - 4px); }
+.spaces-deck-card-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 0 10px; }
+
+/* Conflict review: the two covers side by side, then the slide titles. */
+.deck-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.deck-compare ol { margin-top: 8px; max-height: 180px; overflow: auto; font-size: 12px; color: var(--muted-foreground); list-style: decimal inside; }
+.deck-compare li[data-changed="true"] { color: var(--foreground); }

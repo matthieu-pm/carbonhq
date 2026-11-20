@@ -49,6 +49,30 @@ pub async fn save_markdown_files(
     .map_err(|e| e.to_string())?
 }
 
+/// The native save sheet chooses the destination for PowerPoint exports.
+#[tauri::command]
+pub async fn save_powerpoint_file(
+    app: tauri::AppHandle,
+    title: String,
+    data: String,
+) -> Result<(), String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    tokio::task::spawn_blocking(move || {
+        let Some(picked) = app.dialog().file()
+            .set_file_name(format!("{}.pptx", file_name(&title)))
+            .add_filter("PowerPoint", &["pptx"])
+            .blocking_save_file()
+        else {
+            return Ok(());
+        };
+        let bytes = STANDARD.decode(data).map_err(|e| e.to_string())?;
+        let path = picked.into_path().map_err(|e| e.to_string())?;
+        std::fs::write(path, bytes).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// A title as a file name: path separators and control characters out, and
 /// never empty or hidden.
 fn file_name(title: &str) -> String {

@@ -42,6 +42,14 @@ export async function createPage(server = LOCAL, projectPaths: string[] = []): P
   }, server), server);
 }
 
+export async function createDeck(server = LOCAL, projectPaths: string[] = []): Promise<LocatedPage<Page>> {
+  const title = "Untitled deck";
+  return locatePage(await invoke<Page>("create_slide_deck", {
+    title, markdown: JSON.stringify({ name: title, slides: [{ id: crypto.randomUUID(), title: "Title slide" }] }),
+    projectPaths: ownerProjects(projectPaths, server),
+  }, server), server);
+}
+
 type PageOpener = (page: PageTarget) => void;
 let opener: PageOpener | null = null;
 export function setPageOpener(next: PageOpener | null) { opener = next; }
@@ -51,7 +59,7 @@ let useInTask: ((page: LocatedPage<Page>) => void) | null = null;
 export function setPageTaskHandler(next: typeof useInTask) { useInTask = next; }
 export function referencePageInTask(page: LocatedPage<Page>) { useInTask?.(page); }
 
-let chatWithPages: ((pages: LocatedPage<Page>[]) => void) | null = null;
+let chatWithPages: ((pages: LocatedPage<Page>[], instruction?: string) => void) | null = null;
 export function setPageChatHandler(next: typeof chatWithPages) { chatWithPages = next; }
 /// Opens a new task whose prompt cites each Page, the way "Use in task" cites one.
-export function startChatWithPages(pages: LocatedPage<Page>[]) { chatWithPages?.(pages); }
+export function startChatWithPages(pages: LocatedPage<Page>[], instruction?: string) { chatWithPages?.(pages, instruction); }

@@ -5,7 +5,7 @@ sidebar:
   order: 9
 ---
 
-`carbon pages` reads and edits the Markdown documents in **Spaces**. Pages belong to their server, independently of sessions and worktrees. Linking a Page to several projects gives each project access to the same document. You do not need a calling session.
+`carbon pages` reads and edits Pages and slide decks in **Spaces**. Pages belong to their server, independently of sessions and worktrees. Linking a Page to several projects gives each project access to the same document. You do not need a calling session.
 
 ## Find and read Pages
 
@@ -36,6 +36,18 @@ carbon pages create --title "Release plan" --file plan.md \
 ```
 
 `--title` is required. Omit `--file` for an empty Page, or use `--file -` to read UTF-8 Markdown from standard input. Repeat `--project` to link several projects; omit it for a Page with no project links. A new Page starts at revision 1.
+
+## Create a slide deck
+
+Save OpenPresentation JSON as a deck in Spaces with `create-deck`. A minimal file contains `{"name":"Pilot briefing","slides":[{"id":"intro","title":"Pilot results"}]}`.
+
+```bash
+carbon pages create-deck --title "Pilot briefing" --file deck.opf.json
+carbon pages read <deck-id> --markdown
+carbon pages update <deck-id> --revision 1 --file revised.opf.json
+```
+
+Omit the file to start with one title slide. The read command prints the deck's JSON body. Deck bodies share the 256 KiB document limit. Attach larger images with `pages attach` and use their Carbon asset URLs in the deck.
 
 ## Edit a Page
 

@@ -6,8 +6,7 @@ import type { Project } from "@/types/events";
 
 type Icon = LucideIcon | typeof LinearIcon;
 
-/// What the sidebar picks. Slides, Images and Google Drive hold nothing yet and
-/// say so; All and Pages are the same list until a second kind exists.
+/// The document kinds and connected sources in the Spaces sidebar.
 export const SECTIONS: { id: Exclude<Section, "trash">; label: string; Icon: Icon }[] = [
   { id: "all", label: "All", Icon: Columns3 },
   { id: "pages", label: "Pages", Icon: FileText },
@@ -18,7 +17,6 @@ export const SECTIONS: { id: Exclude<Section, "trash">; label: string; Icon: Ico
 ];
 
 export const COMING: Partial<Record<Section, { Icon: Icon; title: string; body: string }>> = {
-  slides: { Icon: Presentation, title: "Slides are on the way", body: "Decks you make with your agents will live here, beside your Pages." },
   images: { Icon: Image, title: "Images are on the way", body: "Images you make or upload will gather here." },
   drive: { Icon: GoogleDriveIcon, title: "Google Drive is on the way", body: "Connect Drive to browse its documents and work on them with your agents." },
 };
@@ -33,7 +31,7 @@ export function spaceTabTitle(tab: SpaceTab, projects: Project[]): string {
 }
 
 export function spaceTabIcon(tab: SpaceTab): Icon {
-  if (tab.page) return FileText;
+  if (tab.page) return tab.page.format === "opf" ? Presentation : FileText;
   if (tab.view.project) return Folder;
   if (tab.view.section === "trash") return Trash2;
   return SECTIONS.find((s) => s.id === tab.view.section)?.Icon ?? Columns3;

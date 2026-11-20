@@ -1586,6 +1586,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         page_history(id: String) => crate::pages::page_history(id).await;
         read_page_version(id: String, version: u64) => crate::pages::read_page_version(id, version).await;
         restore_page_version(id: String, revision: u64, version: u64) => crate::pages::restore_page_version(sink.clone(), id, revision, version).await;
+        create_slide_deck(title: String, markdown: String, project_paths: Vec<String>) => crate::pages::create_slide_deck(sink.clone(), title, markdown, project_paths).await;
         create_page(title: String, markdown: String, project_paths: Vec<String>) => crate::pages::create_page(sink.clone(), title, markdown, project_paths).await;
         update_page(id: String, revision: u64, title: Option<String>, markdown: Option<String>, project_paths: Option<Vec<String>>, favorite: Option<bool>) => crate::pages::update_page(sink.clone(), id, revision, title, markdown, project_paths, favorite).await;
         set_page_trashed(id: String, revision: u64, trashed: bool) => crate::pages::set_page_trashed(sink.clone(), id, revision, trashed).await;

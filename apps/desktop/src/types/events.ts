@@ -1476,13 +1476,15 @@ model: string, inputTokens: number | null, outputTokens: number | null, cachedIn
  */
 contextWindow: number | null, maxOutputTokens: number | null, };
 
-export type Page = { id: string, title: string, markdown: string, projectPaths: Array<string>, revision: number, created: string, modified: string, trashed: boolean, favorite: boolean, };
+export type Page = { format?: PageBodyFormat, id: string, title: string, markdown: string, projectPaths: Array<string>, revision: number, created: string, modified: string, trashed: boolean, favorite: boolean, };
 
 export type PageAsset = { id: string, name: string, path: string, mimeType: string, size: number, url: string, };
 
 export type PageAssetWrite = { written: number, asset: PageAsset | null, };
 
-export type PageSummary = { id: string, title: string, projectPaths: Array<string>, revision: number, created: string, modified: string, trashed: boolean, favorite: boolean, excerpt: string, };
+export type PageBodyFormat = "opf";
+
+export type PageSummary = { format?: PageBodyFormat, id: string, title: string, projectPaths: Array<string>, revision: number, created: string, modified: string, trashed: boolean, favorite: boolean, excerpt: string, };
 
 export type PageSyncConflict = { baseTitle: string, localRevision: number, remote: LinearDocumentSummary, remotePreview: string, remoteBytes: number, };
 
