@@ -224,6 +224,7 @@ mod tests {
     #[test]
     fn effects_unknown_events_and_queued_prompts_fail_closed() {
         for payload in [
+            json!({"type":"replay_unsafe", "reason":"The agent used image generation."}),
             json!({"type":"file_edits","callId":null,"edits":[]}),
             json!({"type":"future_effect"}),
             json!({"type":"context_compaction_started"}),

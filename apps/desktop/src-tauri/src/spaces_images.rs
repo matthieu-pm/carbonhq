@@ -3,7 +3,8 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::{self, BufRead},
+    io::{self, BufRead, Seek, SeekFrom},
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{LazyLock, Mutex},
     time::SystemTime,
@@ -21,7 +22,8 @@ use crate::{
 
 pub(super) const UPLOADS: &str = "gallery";
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export, export_to = "events.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceImage {
     name: String,
@@ -41,78 +43,162 @@ fn modified(path: &Path) -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
+const GENERATOR_TOOLS: [&str; 4] = [
+    "imagegen",
+    "generate_image",
+    "generate_images",
+    "image_generation",
+];
+
 /// Matches the generator itself, including Claude Code’s MCP-qualified spelling.
 pub(crate) fn generation_tool(name: &str) -> bool {
-    matches!(
-        name.rsplit("__").next(),
-        Some("imagegen" | "generate_image" | "generate_images" | "image_generation")
-    )
+    name.rsplit("__")
+        .next()
+        .is_some_and(|tool| GENERATOR_TOOLS.contains(&tool))
+}
+
+#[derive(Clone)]
+struct ToolImage {
+    event_id: String,
+    index: usize,
+    path: PathBuf,
 }
 
 struct CachedOutputs {
-    length: u64,
+    inode: (u64, u64),
+    offset: u64,
     modified: SystemTime,
-    paths: Vec<PathBuf>,
+    pending: HashSet<String>,
+    images: Vec<ToolImage>,
 }
 
 static OUTPUTS: LazyLock<Mutex<HashMap<PathBuf, CachedOutputs>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// Earlier logs also contain image reads and chat inputs. Only a successful generation call owns an output.
-fn tool_outputs(log: &Path, attachments: &Path) -> io::Result<Vec<PathBuf>> {
-    let file = fs::File::open(log)?;
-    let meta = file.metadata()?;
-    let stamp = meta.modified()?;
-    if let Some(cached) = OUTPUTS.lock().unwrap().get(log) {
-        if cached.length == meta.len() && cached.modified == stamp {
-            return Ok(cached.paths.clone());
-        }
+/// Old MCP results kept the bytes inline. Only recover blocks from a matched, successful generator call.
+fn archived_result(
+    event_id: &str,
+    result: crate::events::ToolResult,
+    dir: &Path,
+) -> io::Result<Vec<ToolImage>> {
+    if result.is_error
+        || result
+            .structured
+            .as_ref()
+            .is_some_and(|s| s["isError"] == true)
+    {
+        return Ok(Vec::new());
     }
-    let mut pending = HashSet::new();
-    let mut paths = Vec::new();
-    let mut reader = io::BufReader::new(file);
-    let mut line = String::new();
-    while reader.read_line(&mut line)? > 0 {
-        let started = line.contains("\"tool_call_started\"")
-            && (line.contains("imagegen")
-                || line.contains("generate_image")
-                || line.contains("image_generation"));
-        if started || (!pending.is_empty() && line.contains("\"tool_call_completed\"")) {
-            if let Ok(event) = serde_json::from_str::<AgentEvent>(&line) {
-                match event.payload {
-                    AgentEventPayload::ToolCallStarted { call_id, name, .. }
-                        if generation_tool(&name) =>
-                    {
-                        pending.insert(call_id);
-                    }
-                    AgentEventPayload::ToolCallCompleted { call_id, result }
-                        if pending.remove(&call_id) && !result.is_error =>
-                    {
-                        paths.extend(
-                            result
-                                .images
-                                .into_iter()
-                                .filter_map(|image| image.path.map(PathBuf::from))
-                                .filter(|path| {
-                                    path.parent() == Some(attachments) && path.is_file()
-                                }),
-                        );
-                    }
-                    _ => {}
+    let mut paths: Vec<PathBuf> = result
+        .images
+        .into_iter()
+        .filter_map(|image| image.path.map(PathBuf::from))
+        .filter(|path| path.parent() == Some(dir))
+        .collect();
+    if paths.is_empty() {
+        if let (Ok(id), Some(blocks)) = (
+            uuid::Uuid::parse_str(event_id),
+            result
+                .structured
+                .as_ref()
+                .and_then(|r| r["content"].as_array()),
+        ) {
+            for (index, block) in blocks.iter().enumerate() {
+                if block["type"] != "image" {
+                    continue;
                 }
+                let ext = match block["mimeType"].as_str() {
+                    Some("image/png") => "png",
+                    Some("image/jpeg") => "jpg",
+                    Some("image/webp") => "webp",
+                    Some("image/gif") => "gif",
+                    _ => continue,
+                };
+                let Some(encoded) = block["data"].as_str() else {
+                    continue;
+                };
+                let path = dir.join(format!("{id}-{index}.{ext}"));
+                if !path.is_file() {
+                    let Ok(bytes) = STANDARD.decode(encoded) else {
+                        continue;
+                    };
+                    fs::create_dir_all(dir)?;
+                    crate::store::write_private_atomic(&path, &bytes)?;
+                }
+                paths.push(path);
             }
         }
-        line.clear();
     }
-    OUTPUTS.lock().unwrap().insert(
-        log.to_owned(),
-        CachedOutputs {
-            length: meta.len(),
-            modified: stamp,
-            paths: paths.clone(),
-        },
-    );
-    Ok(paths)
+    Ok(paths
+        .into_iter()
+        .enumerate()
+        .map(|(index, path)| ToolImage {
+            event_id: event_id.into(),
+            index,
+            path,
+        })
+        .collect())
+}
+
+/// Sessions append to their log. Keep unfinished calls and resume at the last complete line.
+fn tool_outputs(log: &Path, attachments: &Path) -> io::Result<Vec<ToolImage>> {
+    let file = match fs::File::open(log) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(e),
+    };
+    let meta = file.metadata()?;
+    let stamp = meta.modified()?;
+    let inode = (meta.dev(), meta.ino());
+    let empty = || CachedOutputs {
+        inode,
+        modified: stamp,
+        offset: 0,
+        pending: HashSet::new(),
+        images: Vec::new(),
+    };
+    let mut cache = OUTPUTS.lock().unwrap();
+    let state = cache.entry(log.to_owned()).or_insert_with(empty);
+    if state.inode != inode
+        || meta.len() < state.offset
+        || (meta.len() == state.offset && stamp != state.modified)
+    {
+        *state = empty();
+    }
+    if state.offset < meta.len() {
+        let mut reader = io::BufReader::new(file);
+        reader.seek(SeekFrom::Start(state.offset))?;
+        let mut line = String::new();
+        while reader.read_line(&mut line)? > 0 && line.ends_with('\n') {
+            if (line.contains("\"tool_call_started\"")
+                && GENERATOR_TOOLS.iter().any(|name| line.contains(name)))
+                || (!state.pending.is_empty() && line.contains("\"tool_call_completed\""))
+            {
+                if let Ok(event) = serde_json::from_str::<AgentEvent>(&line) {
+                    match event.payload {
+                        AgentEventPayload::ToolCallStarted { call_id, name, .. }
+                            if generation_tool(&name) =>
+                        {
+                            state.pending.insert(call_id);
+                        }
+                        AgentEventPayload::ToolCallCompleted { call_id, result }
+                            if state.pending.contains(&call_id) =>
+                        {
+                            state
+                                .images
+                                .extend(archived_result(&event.id, result, attachments)?);
+                            state.pending.remove(&call_id);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            state.offset += line.len() as u64;
+            line.clear();
+        }
+    }
+    state.modified = stamp;
+    Ok(state.images.clone())
 }
 
 fn files(dir: &Path) -> io::Result<Vec<fs::DirEntry>> {
@@ -157,14 +243,18 @@ fn codex_outputs(source: Option<&Path>, archived: &Path) -> io::Result<Vec<PathB
         .collect())
 }
 
+/// Both Codex protocols report native image generation as an effectful item.
+pub(crate) fn is_native_generation(item: &serde_json::Value) -> bool {
+    item["type"] == "imageGeneration"
+        || (item["type"] == "extension" && item["kind"] == "image_gen.generation")
+}
+
 /// A generator can return bytes before the agent moves the file into its project.
 pub(crate) async fn capture_codex_output(
     session_id: &str,
     item: &serde_json::Value,
 ) -> Result<bool, String> {
-    if item["type"] != "imageGeneration"
-        && !(item["type"] == "extension" && item["kind"] == "image_gen.generation")
-    {
+    if !is_native_generation(item) {
         return Ok(false);
     }
     if item["status"] != "completed" {
@@ -214,9 +304,12 @@ pub(crate) async fn capture_codex_output(
 fn session_images(
     home: &Path,
     generated: Option<&Path>,
-    sessions: Vec<SessionIndexItem>,
-) -> io::Result<Vec<SpaceImage>> {
-    let mut rows = Vec::new();
+    mut sessions: Vec<SessionIndexItem>,
+) -> ImageListing {
+    let mut listing = ImageListing::default();
+    let mut seen = HashSet::new();
+    // Forks retain the original event IDs. Prefer the earliest surviving session that owns the output.
+    sessions.sort_by(|a, b| a.created.cmp(&b.created));
     for session in sessions {
         if uuid::Uuid::parse_str(&session.session_id).is_err() {
             continue;
@@ -227,28 +320,30 @@ fn session_images(
             let source = session
                 .thread_id
                 .as_deref()
+                .filter(|_| session.fork_from.is_none())
                 .and_then(|s| uuid::Uuid::parse_str(s).ok())
                 .and_then(|thread| generated.map(|root| root.join(thread.to_string())));
-            paths.extend(codex_outputs(
+            if let Some(outputs) = listing.available(codex_outputs(
                 source.as_deref(),
                 &attachments.join("generated"),
-            )?);
+            )) {
+                paths.extend(outputs);
+            }
         }
-        if files(&attachments)?
-            .iter()
-            .any(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        {
-            let log = home
-                .join("sessions")
-                .join(format!("{}.jsonl", session.session_id));
-            if log.is_file() {
-                paths.extend(tool_outputs(&log, &attachments)?);
+        let log = home
+            .join("sessions")
+            .join(format!("{}.jsonl", session.session_id));
+        if let Some(outputs) = listing.available(tool_outputs(&log, &attachments)) {
+            for image in outputs {
+                if image.path.is_file() && seen.insert((image.event_id, image.index)) {
+                    paths.push(image.path);
+                }
             }
         }
         paths.sort();
         paths.dedup();
         for path in paths {
-            rows.push(SpaceImage {
+            listing.images.push(SpaceImage {
                 name: path
                     .file_name()
                     .unwrap_or_default()
@@ -263,7 +358,7 @@ fn session_images(
             });
         }
     }
-    Ok(rows)
+    listing
 }
 
 /// Standalone uploads use the same chunk and retry contract as Page attachments.
@@ -285,47 +380,92 @@ pub async fn write_space_image(
     Ok(progress)
 }
 
+#[derive(Default, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "events.ts")]
+pub struct ImageListing {
+    images: Vec<SpaceImage>,
+    unavailable: usize,
+}
+
+impl ImageListing {
+    fn available<T, E: std::fmt::Display>(&mut self, result: Result<T, E>) -> Option<T> {
+        result
+            .map_err(|error| {
+                self.unavailable += 1;
+                eprintln!("Could not read a gallery source: {error}");
+            })
+            .ok()
+    }
+
+    async fn add_uploads(&mut self, store: &PagesStore) {
+        let Some(entries) = self.available(files(&store.assets)) else {
+            return;
+        };
+        for entry in entries {
+            if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+                continue;
+            }
+            let owner = entry.file_name().to_string_lossy().into_owned();
+            let page = if owner == UPLOADS {
+                None
+            } else {
+                if uuid::Uuid::parse_str(&owner).is_err() {
+                    continue;
+                }
+                let Some(page) = self.available(store.read(&owner).await) else {
+                    continue;
+                };
+                if page.trashed {
+                    continue;
+                }
+                Some(page)
+            };
+            let Some(ids) = self.available(store.asset_ids(&owner).await) else {
+                continue;
+            };
+            for id in ids {
+                let Some(asset) = self.available(store.read_asset(&owner, &id).await) else {
+                    continue;
+                };
+                if asset.mime_type.starts_with("image/") {
+                    self.images.push(SpaceImage {
+                        name: asset.name,
+                        modified: modified(Path::new(&asset.path)),
+                        path: asset.path.into(),
+                        project_paths: page
+                            .as_ref()
+                            .map(|p| p.project_paths.clone())
+                            .unwrap_or_default(),
+                        source_title: page.as_ref().map(|p| p.title.clone()).unwrap_or_default(),
+                        page_id: page.as_ref().map(|p| p.id.clone()),
+                        session_id: None,
+                    });
+                }
+            }
+        }
+    }
+}
+
 /// Resolves each row on its owning server so previews use the existing attachment route.
-pub async fn list_space_images() -> Result<Vec<SpaceImage>, String> {
+pub async fn list_space_images() -> Result<ImageListing, String> {
     let store = PagesStore::open().await?;
     let home = crate::store::get_home_app_dir()
-        .await
-        .map_err(|e| e.to_string())?;
-    let sessions = crate::store::read_index()
         .await
         .map_err(|e| e.to_string())?;
     let generated = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::home_dir().map(|home| home.join(".codex")))
         .map(|home| home.join("generated_images"));
-    let mut rows =
-        tokio::task::spawn_blocking(move || session_images(&home, generated.as_deref(), sessions))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
-    let mut owners = vec![(UPLOADS.to_string(), None)];
-    for page in store.list(None, None, false).await? {
-        owners.push((page.id.clone(), Some(page)));
+    let mut listing = ImageListing::default();
+    if let Some(sessions) = listing.available(crate::store::read_index().await) {
+        listing = tokio::task::spawn_blocking(move || {
+            session_images(&home, generated.as_deref(), sessions)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
     }
-    for (owner, page) in owners {
-        for asset in store.stored_assets(&owner).await? {
-            if asset.mime_type.starts_with("image/") {
-                rows.push(SpaceImage {
-                    name: asset.name,
-                    modified: modified(Path::new(&asset.path)),
-                    path: asset.path.into(),
-                    project_paths: page
-                        .as_ref()
-                        .map(|p| p.project_paths.clone())
-                        .unwrap_or_default(),
-                    source_title: page.as_ref().map(|p| p.title.clone()).unwrap_or_default(),
-                    page_id: page.as_ref().map(|p| p.id.clone()),
-                    session_id: None,
-                });
-            }
-        }
-    }
-    Ok(rows)
+    listing.add_uploads(&store).await;
+    Ok(listing)
 }
 
 #[cfg(test)]
@@ -360,9 +500,151 @@ mod tests {
         let lines: Vec<_> = events.into_iter().enumerate().map(|(seq, payload)| json!({
             "id":seq.to_string(),"sessionId":"s","harness":"codex","seq":seq,"ts":"","payload":payload
         }).to_string()).collect();
-        fs::write(&log, lines.join("\n")).unwrap();
-        assert_eq!(tool_outputs(&log, &dir).unwrap(), vec![poster]);
+        fs::write(&log, format!("{}\n", lines.join("\n"))).unwrap();
+        assert_eq!(
+            tool_outputs(&log, &dir)
+                .unwrap()
+                .into_iter()
+                .map(|i| i.path)
+                .collect::<Vec<_>>(),
+            vec![poster]
+        );
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn restores_inline_generation_history_once_across_forks() {
+        use crate::{events::ApprovalPolicy, models::ModelId};
+        let home = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let logs = home.join("sessions");
+        fs::create_dir_all(&logs).unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut parent = SessionIndexItem::new(
+            &id,
+            Harness::Codex,
+            "/p",
+            "/p",
+            None,
+            None,
+            "Poster",
+            ModelId::new("codex"),
+            None,
+            ApprovalPolicy::Auto,
+            false,
+            None,
+        );
+        parent.created = "2026-01-01".into();
+        let thread = uuid::Uuid::new_v4().to_string();
+        parent.thread_id = Some(thread.clone());
+        let mut fork = parent.fork(&uuid::Uuid::new_v4().to_string(), None);
+        fork.thread_id = parent.thread_id.clone();
+        let native = home.join("codex").join(thread);
+        fs::create_dir_all(&native).unwrap();
+        fs::write(native.join("native.png"), b"native").unwrap();
+        let index = vec![fork.clone(), parent.clone()];
+        let payloads = [
+            json!({"type":"tool_call_started","callId":"g","name":"generate_image","toolType":"mcp","input":{}}),
+            json!({"type":"tool_call_completed","callId":"g","result":{"text":"","structured":{"content":[
+                {"type":"image","mimeType":"image/png","data":STANDARD.encode(b"poster")}]}}}),
+        ];
+        let events: Vec<_> = payloads
+            .iter()
+            .enumerate()
+            .map(|(seq, payload)| {
+                json!({"id": uuid::Uuid::new_v4().to_string(),
+            "sessionId":id,"seq":seq,"harness":"codex","ts":"","payload":payload})
+                .to_string()
+            })
+            .collect();
+        let log = logs.join(format!("{id}.jsonl"));
+        fs::write(&log, format!("{}\n", events[0])).unwrap();
+        let list = || session_images(&home, Some(&home.join("codex")), index.clone());
+        assert_eq!(list().images.len(), 1);
+        use std::io::Write;
+        writeln!(
+            fs::OpenOptions::new().append(true).open(&log).unwrap(),
+            "{}",
+            events[1]
+        )
+        .unwrap();
+        fs::write(
+            logs.join(format!("{}.jsonl", fork.session_id)),
+            format!("{}\n", events.join("\n").replace(&id, &fork.session_id)),
+        )
+        .unwrap();
+        let listing = list();
+        assert_eq!(listing.unavailable, 0);
+        assert_eq!(listing.images.len(), 2);
+        assert!(listing
+            .images
+            .iter()
+            .all(|row| row.session_id.as_deref() == Some(id.as_str())));
+        assert!(listing
+            .images
+            .iter()
+            .any(|row| fs::read(&row.path).unwrap() == b"poster"));
+        assert_eq!(list().images.len(), 2);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[tokio::test]
+    async fn missing_page_asset_preserves_other_images() {
+        let home = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let store = PagesStore {
+            root: home.join("pages"),
+            assets: home.join("attachments/pages"),
+        };
+        let page = store
+            .create("Brief".into(), String::new(), vec![])
+            .await
+            .unwrap();
+        for (owner, name) in [
+            (page.id.as_str(), "reference.pdf"),
+            (page.id.as_str(), "cover.png"),
+            (UPLOADS, "upload.png"),
+        ] {
+            let asset = store
+                .write_asset(
+                    owner,
+                    name.into(),
+                    &uuid::Uuid::new_v4().to_string(),
+                    0,
+                    STANDARD.encode(b"\x89PNG\r\n\x1a\n"),
+                    true,
+                )
+                .await
+                .unwrap()
+                .asset
+                .unwrap();
+            if name.ends_with(".pdf") {
+                fs::remove_file(asset.path).unwrap();
+            }
+        }
+        let invalid = store
+            .write_asset(
+                UPLOADS,
+                "empty.png".into(),
+                &uuid::Uuid::new_v4().to_string(),
+                0,
+                String::new(),
+                true,
+            )
+            .await;
+        assert!(invalid.is_err());
+        let mut listing = ImageListing::default();
+        listing.add_uploads(&store).await;
+        assert_eq!(listing.unavailable, 1);
+        assert_eq!(listing.images.len(), 2);
+        assert!(listing
+            .images
+            .iter()
+            .any(|row| row.page_id.as_deref() == Some(page.id.as_str())));
+        assert!(listing
+            .images
+            .iter()
+            .any(|row| row.name == "upload.png" && row.page_id.is_none()));
+        assert!(store.list_assets(&page.id).await.is_err());
+        fs::remove_dir_all(home).unwrap();
     }
 
     #[tokio::test]

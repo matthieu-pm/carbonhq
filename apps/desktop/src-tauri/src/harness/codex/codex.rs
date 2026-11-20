@@ -665,6 +665,11 @@ async fn read_stdout(
         if method == "hook/started" {
             block_replay(&handles, &mapper, &status, "A hook ran during this turn.").await?;
         }
+        if matches!(method.as_str(), "item/started" | "item/completed")
+            && crate::pages::images::is_native_generation(&params["item"])
+        {
+            block_replay(&handles, &mapper, &status, "The agent used image generation.").await?;
+        }
         if method == "item/completed" {
             match crate::pages::images::capture_codex_output(&handles.session_id, &params["item"]).await {
                 Ok(true) => { let _ = handles.app.emit("space_images_changed", ()); }

@@ -3126,7 +3126,7 @@ function App() {
         </MountOnce>
         {pagesEnabled && (
         <MountOnce when={spacesOpen || spacesPeek}>
-          <SpacesView onSession={(id) => goToSession(() => void handleSelectSessionIndexItem(id))} active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest} createSerial={pageCreateSerial}
+          <SpacesView onSession={(id) => goToSession(() => void selectAndLeaveCrew(id))} active={spacesOpen && !settingsOpen} projects={projects} request={pageRequest} createSerial={pageCreateSerial}
             sidebarCollapsed={collapsed} onExpandSidebar={() => setCollapsed(false)}
             peek={spacesPeek && spacesPeeks} onPeekHover={hoverSpacesPeek}
             onNavigate={() => { window.clearTimeout(spacesPeekTimer.current); setSpacesPeek(false); openSpaces(); }}

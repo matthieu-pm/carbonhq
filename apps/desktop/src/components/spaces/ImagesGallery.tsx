@@ -7,17 +7,8 @@ import { uploadSpaceAsset } from "@/hooks/usePageAssets";
 import type { PageTarget } from "@/lib/pages";
 import { useServers } from "@/lib/servers";
 import { fileSrc, invoke, listen, LOCAL, noteSession, qualify, type ServerId } from "@/lib/transport";
-import type { AgentEvent } from "@/types/events";
+import type { AgentEvent, ImageListing, SpaceImage } from "@/types/events";
 
-type SpaceImage = {
-  name: string;
-  path: string;
-  modified: number;
-  projectPaths: string[];
-  sourceTitle: string;
-  pageId: string | null;
-  sessionId: string | null;
-};
 type LocatedImage = SpaceImage & { server: ServerId };
 
 export default function ImagesGallery({ active, query, visibleProjects, onPage, onSession }: {
@@ -41,12 +32,15 @@ export default function ImagesGallery({ active, query, visibleProjects, onPage, 
   const refresh = useCallback(async () => {
     const seq = ++generation.current;
     const results = await Promise.allSettled(owners.map(async (server) => {
-      const rows = await invoke<SpaceImage[]>("list_space_images", {}, server);
-      return rows.map((row) => ({ ...row, server }));
+      const { images, unavailable } = await invoke<ImageListing>("list_space_images", {}, server);
+      return { images: images.map((row) => ({ ...row, server })), unavailable };
     }));
     if (seq !== generation.current) return;
-    setImages(results.flatMap((r) => r.status === "fulfilled" ? r.value : []).sort((a, b) => b.modified - a.modified));
-    setReadError(results.flatMap((r, i) => r.status === "rejected" ? [`${owners[i]}: ${String(r.reason)}`] : []).join(" · "));
+    setImages(results.flatMap((r) => r.status === "fulfilled" ? r.value.images : []).sort((a, b) => b.modified - a.modified));
+    setReadError(results.flatMap((r, i) => {
+      if (r.status === "rejected") return [`${owners[i]}: ${String(r.reason)}`];
+      return r.value.unavailable ? ["Some image sources could not be read."] : [];
+    }).join(" · "));
     setLoading(false);
   }, [owners]);
 
@@ -107,7 +101,7 @@ export default function ImagesGallery({ active, query, visibleProjects, onPage, 
     {readError && <div role="alert" className="spaces-error">{readError}<button onClick={() => void refresh()}>Retry</button></div>}
     {uploadError && <div role="alert" className="spaces-error">{uploadError}</div>}
     {loading ? <div role="status" className="spaces-empty"><Loader2 className="size-5 animate-spin" /><p>Loading images…</p></div>
-      : listed.length === 0 ? <div className="spaces-empty"><ImageIcon className="size-8 text-muted-foreground/60" />
+      : listed.length === 0 && readError ? null : listed.length === 0 ? <div className="spaces-empty"><ImageIcon className="size-8 text-muted-foreground/60" />
           <h3>{query ? "No matching images" : "No images yet"}</h3>
           <p>{query ? "Try an image name, Page title, or session title." : "Generate an image in a session or upload one here or in a Page."}</p></div>
       : <div className="spaces-images-grid">

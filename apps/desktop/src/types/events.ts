@@ -853,6 +853,8 @@ path: string | null, };
  */
 export type Harness = "claude_code" | "codex" | "pi" | "fx" | "grok" | `acp:${string}`;
 
+export type ImageListing = { images: Array<SpaceImage>, unavailable: number, };
+
 export type ImageRef = { path: string | null, url: string | null, mimeType: string | null, };
 
 /**
@@ -2353,6 +2355,8 @@ argumentHint: string,
  * Other names that reach the same command. Absent on most.
  */
 aliases: Array<string>, };
+
+export type SpaceImage = { name: string, path: string, modified: number, projectPaths: Array<string>, sourceTitle: string, pageId: string | null, sessionId: string | null, };
 
 export type Stage = "connecting" | "finding" | "starting";
 
