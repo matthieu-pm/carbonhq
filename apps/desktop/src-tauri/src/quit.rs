@@ -153,6 +153,9 @@ pub fn request<R: Runtime>(app: &AppHandle<R>) {
 #[tauri::command]
 pub async fn confirm_quit<R: Runtime>(app: AppHandle<R>, stop_sessions: bool) {
     if stop_sessions {
+        if let Err(e) = crate::terminal_client::quit_completely().await {
+            eprintln!("[quit] could not stop remote terminals: {e:#}");
+        }
         if let Err(e) = crate::launchd::stop().await {
             eprintln!("[quit] could not stop the server: {e:#}");
         }

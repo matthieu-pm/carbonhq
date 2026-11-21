@@ -55,7 +55,7 @@ export default function QuitDialog() {
         <AlertDialogHeader>
           <AlertDialogTitle>Quit Carbon?</AlertDialogTitle>
           <AlertDialogDescription>
-            Sessions keep running in the background. Quit completely stops them too.
+            Sessions and terminals keep running in the background. Quit completely stops local sessions and your terminal tabs.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {/* Stopping every session is the rare choice, so it is a quiet ghost

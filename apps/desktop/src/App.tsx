@@ -1,9 +1,10 @@
-import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { CircleDashed, ExternalLink, Plus } from "lucide-react";
-import PrStateIcon from "@/components/PrStateIcon";
+import { ExternalLink, FileDiff, Minimize2, Plus } from "lucide-react";
+import { SessionToolBody, SessionToolIcon } from "@/components/layout/SessionToolTab";
+import { EMPTY_DOCK, dockTab, closeDockTab, expandTab, isTerminalView, terminalView, terminalLabel, reconcileTerminals, type TerminalView, type TerminalTab, type SessionDock } from "@/lib/sessionDock";
 
 import { Button } from "@/components/ui/button";
 import SubscriptionUsageButton from "@/components/SubscriptionUsageButton";
@@ -23,11 +24,13 @@ import MorePanel from "@/components/MorePanel";
 import PinnedSummary, { PinnedSummaryToggle } from "@/components/PinnedSummary";
 import { summarySources } from "@/lib/pinnedSummary";
 import { usePinnedSummary } from "@/hooks/usePinnedSummary";
+import { TerminalOutline18 } from "@/components/icons/nucleo/TerminalOutline18";
 import PlanPanel from "@/components/PlanPanel";
 
 // Nothing here is on first paint, so each is its own chunk, fetched the first
 // time its view opens (`MountOnce`) rather than parsed on every launch.
-const ChangesPanel = lazy(() => import("@/components/ChangesPanel"));
+import type { TerminalControls } from "@/components/terminal/TerminalPane";
+const TerminalPane = lazy(() => import("@/components/terminal/TerminalPane"));
 const ChangesView = lazy(() => import("@/components/changes/ChangesView"));
 const FilesView = lazy(() => import("@/components/files/FilesView"));
 const DocsPanel = lazy(() => import("@/components/DocsPanel"));
@@ -74,6 +77,7 @@ import { handoffActions } from "@/lib/handoff";
 import { prTabVisible, usePullRequest } from "@/hooks/usePullRequest";
 import RightPanel, {
   MountOnce,
+  PANEL_LABELS,
   PanelActions,
   PanelToggle,
   TabBody,
@@ -138,8 +142,7 @@ import { lockedMidTurn } from "@/lib/liveControls";
 import { nextEffort } from "@/components/composer/ModelSelector";
 import { nextHarness } from "@/lib/model";
 import { cycledModels } from "@/lib/starredModels";
-import ViewTabs, { closeActiveTab, ItemTab, type ViewTab } from "@/components/layout/ViewTabs";
-import ShortcutKeys from "@/components/ShortcutKeys";
+import ViewTabs, { closeActiveTab, type ViewTab } from "@/components/layout/ViewTabs";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { attachmentKey, clearAttachments, pickAttachments, restoreAttachments } from "@/hooks/useAttachments";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
@@ -199,7 +202,7 @@ import { focusComposer, focusComposerEnd } from "@/lib/composerFocus";
 import { changeRange, lastToolResult } from "@/lib/changes";
 import { usePlan } from "@/lib/plan";
 import { currentTodos, startsNewList, type Todo } from "@/lib/todos";
-import { prBadgeCount, sessionBranch } from "@/lib/pr";
+import { sessionBranch } from "@/lib/pr";
 import { crewAnchor, crewRows, crewSeen, inSidebar, withHiddenAsks } from "@/lib/crew";
 import { panelMove } from "@/lib/sidebarAuto";
 import { playCelebration, playNotification } from "@/lib/sound";
@@ -586,6 +589,11 @@ function App() {
   // context for one session rather than a standing preference, and reopening
   // the app onto a repo view for every session would be wrong more often than
   // right.
+  const [docks, setDocks] = useState<Record<string, SessionDock>>({});
+  const dock = (selectedSessionId && docks[selectedSessionId]) || EMPTY_DOCK;
+  const changeDock = useCallback((update: (d: SessionDock) => SessionDock, id = selectedSessionId) => {
+    if (id) setDocks((all) => ({ ...all, [id]: update(all[id] ?? EMPTY_DOCK) }));
+  }, [selectedSessionId]);
   const [viewTabs, setViewTabs] = useState<Record<string, ViewTab>>({});
   // Whether the issues page is what the main column is showing. Not a session
   // and not a per-session tab, so it is neither in `viewTabs` nor in the
@@ -595,6 +603,7 @@ function App() {
   const [codingSpacesOpen, setSpacesOpen] = useState(false);
   const [designPlace, setDesignPlace] = useState<"home" | "spaces" | "issues">("home");
   const [canvasAttach, setCanvasAttach] = useState<{ onPicked?: (path: string) => void } | null>(null);
+  const [canvasControlsOpen, setCanvasControlsOpen] = useLocalStorage("carbon.canvas.controlsOpen", true);
   const [canvasHomeVisit, setCanvasHomeVisit] = useState(0);
   const issuesOpen = designOpen ? designPlace === "issues" : codingIssuesOpen;
   const spacesOpen = designOpen ? designPlace === "spaces" : codingSpacesOpen;
@@ -716,6 +725,9 @@ function App() {
   // a session.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const canvasLibrary = useCanvasLibrary(spaceProjects, canvasHome && !settingsOpen);
+  const canvasEditorOpen = canvasHome && !settingsOpen && !!canvasLibrary.active;
+  const toggleCanvasControls = () => setCanvasControlsOpen((open) => !open);
+  useHotkey("panel.toggle", toggleCanvasControls, { enabled: canvasEditorOpen, page: true });
   const openCanvasHome = () => {
     setDesignPlace("home");
     setCanvasHomeVisit((n) => n + 1);
@@ -970,50 +982,6 @@ function App() {
   // Selecting a member is what activates a group; the selected session is the
   // focused pane, so every control that serves one session keeps doing so.
   const activeGroup = groupOf(spaceGroups, selectedSessionId);
-  // The pane's open flag and tab pick are held per session, like `viewTabs`
-  // above and for the same reason: app-wide, a pane opened on one session's
-  // PR sat blank beside the next session, which had none, and was gone again
-  // on the way back. New Task has no session pane to restore.
-  //
-  // The open flag alone is keyed by the *group* while the session sits in one.
-  // The pane stands beside the whole grid, and the selected session is
-  // whichever pane has focus, so a per-session flag snapped it open and shut
-  // as focus moved between panes. Open is a question about the column's
-  // layout; the tab is a question about the focused session's content, and
-  // so stays with the session. The two keys hand state across: a group
-  // forming takes the focused session's flag, and every write lands on both,
-  // so a group dissolving leaves each session holding the last state it saw.
-  //
-  // The pick's `null` is "never picked", and it is the whole of the default-tab
-  // rule: seeding `"changes"` would make a fresh session indistinguishable from
-  // one where the reader chose Changes, so an open PR could never lead — see
-  // `activeTab`.
-  const [panelOpens, setPanelOpens] = useState<Record<string, boolean>>({});
-  const [panelTabs, setPanelTabs] = useState<Record<string, PanelTab | null>>({});
-  const openKey = useCallback(
-    (id: string) => {
-      const group = groupOf(spaceGroups, id);
-      return group ? `group:${group.id}` : id;
-    },
-    [spaceGroups],
-  );
-  useEffect(() => {
-    if (!activeGroup || !selectedSessionId) return;
-    const key = `group:${activeGroup.id}`;
-    setPanelOpens((prev) =>
-      key in prev ? prev : { ...prev, [key]: prev[selectedSessionId] ?? false },
-    );
-  }, [activeGroup, selectedSessionId]);
-  const panelTab = selectedSessionId ? panelTabs[selectedSessionId] ?? null : null;
-  // Both take the session because one caller opens a session and its pane in
-  // the same breath, before the selection has moved.
-  const setPanelTab = useCallback(
-    (tab: PanelTab | null, id = selectedSessionId) => {
-      if (id) setPanelTabs((prev) => ({ ...prev, [id]: tab }));
-    },
-    [selectedSessionId],
-  );
-
   const memberKey = activeGroup ? members(activeGroup).join("\n") : "";
   const paneColumns = useMemo(
     () =>
@@ -1088,62 +1056,17 @@ function App() {
   const crewDrawn = crewAvailable && !crewHidden && summaryShown;
   const sidebarDrawn = usePaneWidth("sidebar");
 
-  // **Whose preference the right pane follows.** A split group is one
-  // arrangement and answers under the group's id; the crew is the same shape —
-  // selecting a row moves the composer and not the arrangement — so it answers
-  // under the anchor. Keyed on the row instead, clicking down a crew of six
-  // opened and shut the pane row by row out of whatever each session last
-  // remembered from being read on its own, which reads as the panel flickering
-  // rather than as a preference being honoured. Reached from the sidebar or a
-  // chord the crew is down and the session answers for itself again, which is
-  // the same rule seen from the other side.
-  const panelKey = crewUp && crewAnchorId ? crewAnchorId : selectedSessionId && openKey(selectedSessionId);
-  // The bare session id stands in for a group key the seeding effect below has
-  // not filled yet, or a session reads shut for the commit before it lands.
-  // Not offered to the crew: its key is a plain session id already, so falling
-  // through there would read the *row's* own flag — the very thing this is
-  // keyed away from.
-  const panelOpen = panelKey
-    ? (panelOpens[panelKey] ??
-      (!crewUp && selectedSessionId ? panelOpens[selectedSessionId] : undefined) ??
-      false)
-    : false;
-  const setPanelOpen = useCallback(
-    (open: boolean | ((prev: boolean) => boolean), id?: string | null) => {
-      // A caller naming a session means that one — it is opening a session and
-      // its pane in the same breath, before the selection has moved — where the
-      // default is the arrangement already on screen.
-      const key = id ? openKey(id) : panelKey;
-      if (!key) return;
-      setPanelOpens((prev) => {
-        const next = typeof open === "function" ? open(prev[key] ?? false) : open;
-        return id ? { ...prev, [key]: next, [id]: next } : { ...prev, [key]: next };
-      });
-    },
-    [panelKey, openKey],
-  );
-
-  /// Opens the pane onto one tab. The pick moves as well as the pane opening:
-  /// `activeTab` honours a standing pick over the derived default, so opening
-  /// alone lands wherever the reader last left it.
-  const showPanel = useCallback(
-    (tab: PanelTab, id?: string | null) => {
-      setPanelTab(tab, id ?? undefined);
-      setPanelOpen(true, id);
-    },
-    [setPanelTab, setPanelOpen],
-  );
-
-  /// Whether the right pane is actually on screen, as against whether the
-  /// reader has asked for it.
-  ///
-  /// Two different questions, and conflating them was a bug worth naming: the
-  /// issues page fills the main column, so a pane left open beside it went on
-  /// describing the session the reader had *left* — its changes, its pull
-  /// request, its issue — with nothing on screen to say whose they were. The
-  /// preference is kept, so coming back restores the pane exactly as it was;
-  /// everything that draws or reads reads this instead.
-  const panelShown = panelOpen && !issuesOpen && !designOpen;
+  const sessionToolsVisible = !issuesOpen && !designOpen && !settingsOpen && !spacesOpen;
+  const panelShown = sessionToolsVisible && !!dock.active;
+  const visibleTool = (tab: PanelTab) => sessionToolsVisible && (dock.active === tab || viewTab === tab);
+  const showPanel = useCallback((tab: PanelTab, id = selectedSessionId) => {
+    if (!id) return;
+    if (docks[id]?.full.includes(tab)) {
+      setViewTabs((prev) => ({ ...prev, [id]: tab }));
+    } else {
+      changeDock((d) => dockTab(d, tab), id);
+    }
+  }, [docks, selectedSessionId, changeDock]);
   const mainGroup = crewUp ? null : activeGroup;
   useChatColumnFloor(!mainGroup);
 
@@ -1420,28 +1343,15 @@ function App() {
   }, [hiddenParentId, loadedParent]);
   const hiddenParent =
     loadedParent ?? (fetchedParent?.sessionId === hiddenParentId ? fetchedParent : undefined);
-  // "The PR tab is on screen", read off the *pick* rather than off `activeTab`,
-  // which cannot exist yet — it is derived from this hook's own answer. An
-  // unset pick counts, since the derived default is the PR tab whenever there
-  // is an open one. The one case the two disagree is a session whose only PRs
-  // are merged: the pick is unset, the default resolves to Changes, and this
-  // reads true — harmless, because a merged PR never settles and the poll is
-  // gated on that too.
   const sources = useMemo(() => summarySources(selectedSession?.events ?? []), [selectedSession?.events]);
   const pullRequests = usePullRequest(
     selectedSession?.cwd ?? "",
     prBranch,
-    summaryShown || (panelShown && (panelTab === "pr" || panelTab === null)),
+    summaryShown || visibleTool("pr"),
     // A pull request appearing is the moment the session stops being about the
     // turn and starts being about landing, so the pane opens onto it rather
     // than waiting to be asked. Fires at most once per PR — see `onOpened`.
     //
-    // It moves the pick as well as opening the pane, and has to: `activeTab`
-    // honours a standing pick over the derived default, and the pick is written
-    // by the app itself — `handleTogglePanel` stores "changes" every time the
-    // pane is opened onto a turn that touched files. So opening alone landed on
-    // Changes for anyone who had ever used ⌘E, which is everyone.
-    // A fresh closure each render is fine: the hook holds it in a ref.
     () => showPanel("pr"),
     // A merge or a reopen changes what the sidebar's mark should say, and that
     // mark comes from a different read with a two-minute freshness window — so
@@ -1453,10 +1363,6 @@ function App() {
     // what is visible then. See the hook.
     () => prMarks.refreshAfterWrite(),
   );
-  // A draft counts: GitHub reports one as `OPEN` with `isDraft` set, and a
-  // draft is still the point at which the work stops being about this turn.
-  const openPrsHere = pullRequests.prs.filter((pr) => pr.state === "OPEN");
-  const hasOpenPr = openPrsHere.length > 0;
   // The sidebar already knows whether this branch has a pull request, and the
   // panel's own read takes the better part of a second to agree — during which
   // `prs` is empty, the tab is not in the row, and a pane opened onto the PR tab
@@ -1467,25 +1373,14 @@ function App() {
   // the panel by the one git reports — and the window closes either way.
   const markHere = prMarks.prFor(selectedSession?.projectPath ?? "", prBranch);
   const hasPrTab =
-    prTabVisible(pullRequests.prs, pullRequests.error) || (pullRequests.loading && !!markHere);
-
-  // Where the pane lands with nothing picked. An open pull request wins over
-  // anything the last turn did: changes describe one turn and are superseded by
-  // the next, where a PR is the state of the work.
-  const defaultTab: PanelTab = hasOpenPr && hasPrTab ? "pr" : "changes";
-
-  // Read off the *pick*, not off `activeTab`, which is derived below from the
-  // tab row this feeds. An unset pick does not count here, unlike the PR tab's:
-  // the derived default is never the issue tab, so nothing is being read unless
-  // the reader asked for it.
-  const activeTabIsIssue = panelTab === "issue";
+    prTabVisible(pullRequests.prs, pullRequests.error) || !!markHere;
 
   // Straight off the index entry, which is where a link lives — so the tab is
   // there the moment a prompt tags one, with no read to wait on.
   const sessionIssues = selectedSession?.issues ?? [];
   const hasIssueTab = sessionIssues.length > 0;
 
-  const issueData = useSessionIssues(sessionIssues, panelShown && activeTabIsIssue);
+  const issueData = useSessionIssues(sessionIssues, visibleTool("issue"));
 
   // Read here rather than in the panel, for the PR tab's reason: the row has to
   // know whether the tab exists before that tab has ever been drawn.
@@ -1555,48 +1450,33 @@ function App() {
     if (!browserWanted) return;
     if (browserWanted !== selectedSessionId) return setBrowserWanted(null);
     if (!browserTabs?.some((tab) => tab.active)) return;
-    setViewTabs((prev) => ({ ...prev, [browserWanted]: "browser" }));
+    showPanel("browser", browserWanted);
     setBrowserWanted(null);
-  }, [browserWanted, browserTabs, selectedSessionId]);
-  // The main column's Browser view is the panel's browser expanded. Arriving
-  // on it closes the pane, whatever tab the pane was on: the reader came for
-  // the full width. ⌘E brings it back beside the page, and leaving gives back
-  // a pane the arrival took — the sidebar's rule, under its own switch.
+  }, [browserWanted, browserTabs, selectedSessionId, showPanel]);
   const fullBrowserOpen = !designOpen && !issuesOpen && viewTab === "browser";
   const lastViewTab = useRef(viewTab);
   // The pane's claims, one per pane key, since the pane is per session — see
   // [panelMove](./lib/sidebarAuto.ts) for why one claim was not enough.
-  const panelHidForBrowser = useRef(new Set<string>());
-  const lastPanelKey = useRef(panelKey);
+  const hiddenSideTabs = useRef(new Map<string, NonNullable<SessionDock["active"]>>());
+  const lastDockSession = useRef(selectedSessionId);
   useEffect(() => {
-    const was = lastViewTab.current;
+    const from = lastViewTab.current;
     lastViewTab.current = viewTab;
-    const keyMoved = lastPanelKey.current !== panelKey;
-    lastPanelKey.current = panelKey;
-    if (!panelKey) return;
-
-    const move = panelMove({
-      from: was,
-      to: viewTab,
-      keyMoved,
-      enabled: autoHidePanel,
-      open: panelOpen,
-      claimed: panelHidForBrowser.current.has(panelKey),
-    });
-    if (move === "hide") panelHidForBrowser.current.add(panelKey);
-    else if (move === "restore") panelHidForBrowser.current.delete(panelKey);
-    if (move) setPanelOpen(move === "restore");
-  }, [viewTab, setPanelOpen, panelOpen, panelKey, autoHidePanel]);
-  const expandBrowser = () => {
-    if (!pendingBrowserTab && !browserTabs?.some((tab) => tab.active)) {
-      setPendingTab(browserSessionId, true);
+    const keyMoved = lastDockSession.current !== selectedSessionId;
+    lastDockSession.current = selectedSessionId;
+    if (!selectedSessionId) return;
+    const previous = hiddenSideTabs.current.get(selectedSessionId);
+    const move = panelMove({ from, to: viewTab, keyMoved, enabled: autoHidePanel,
+      open: !!dock.active, claimed: !!previous });
+    if (move === "hide" && dock.active) {
+      hiddenSideTabs.current.set(selectedSessionId, dock.active);
+      changeDock((d) => ({ ...d, active: null }));
+    } else if (move === "restore" && previous) {
+      hiddenSideTabs.current.delete(selectedSessionId);
+      changeDock((d) => d.active || !(previous === "terminal" ? d.terminals : d.side.includes(previous))
+        ? d : { ...d, active: previous });
     }
-    setViewTab("browser");
-  };
-  const collapseBrowser = () => {
-    setViewTab("chat");
-    showPanel("browser");
-  };
+  }, [viewTab, selectedSessionId, dock.active, autoHidePanel, changeDock]);
 
   // A live background task counts even where no run is built for it yet, and a
   // task list counts on its own — the tab is a catch-all, so any one of its
@@ -1615,41 +1495,23 @@ function App() {
     plan: hasPlanTab,
   });
 
-  // One rule, read rather than written back: an explicit pick wins wherever it
-  // still names a tab this session draws, and otherwise the derived default
-  // stands in. Not written back, so switching to a session without a PR keeps
-  // the reader's pick for when they switch to one that has it.
-  const activeTab: PanelTab = panelTab && tabs.includes(panelTab) ? panelTab : defaultTab;
+  useEffect(() => {
+    if (!selectedSession || selectedSession.sessionId !== selectedSessionId) return;
+    const removed = [...dock.side, ...dock.full].filter((tab) =>
+      (tab === "docs" && !hasDocsTab) || (tab === "issue" && !hasIssueTab));
+    if (!removed.length) return;
+    changeDock((d) => removed.reduce(closeDockTab, d));
+    if (removed.some((tab) => tab === viewTab)) setViewTab("chat");
+  }, [selectedSessionId, selectedSession, dock, hasDocsTab, hasIssueTab, viewTab, changeDock]);
 
   // The attachment grid reads the session's whole log, but a transcript drawn
   // as a crew strip never pages past its tail — so the More tab pages in the
   // rest itself while it is on screen. The main column's transcript already
   // does, and `loadOlder` runs one read per session for the two of them.
-  const pagedForMore = panelShown && activeTab === "more" ? selectedSession : null;
+  const pagedForMore = visibleTool("more") ? selectedSession : null;
   useEffect(() => {
     if (pagedForMore?.olderBefore != null) loadOlder(pagedForMore.sessionId);
   }, [pagedForMore?.sessionId, pagedForMore?.olderBefore]);
-
-  // Drops the Browser view's claim, `toggleSidebar`'s reason: a pane moved by
-  // hand is the reader's.
-  const togglePanel = () => {
-    if (!panelKey) return;
-    panelHidForBrowser.current.delete(panelKey);
-    setPanelOpen((prev) => !prev);
-  };
-
-  // Moves along the visible row, wrapping. Off `tabs` rather than `PANEL_TABS`,
-  // so a session with no PR tab cycles through two and never lands on one that
-  // isn't drawn.
-  // With the pane shut, the Browser view's strip is the only row of tabs on
-  // screen, so ⌘⇧[ ] means that one rather than nothing.
-  const stepTab = (delta: number) => {
-    // A shut pane opens on its first tab, so the chord alone gets the reader
-    // moving; ⌘E is what shuts it again.
-    if (!panelShown) return issuesOpen || !shownSession ? undefined : showPanel(tabs[0]);
-    const from = tabs.indexOf(activeTab);
-    setPanelTab(tabs[(from + delta + tabs.length) % tabs.length]);
-  };
 
   // Opens the tab without touching the selection, so a run the reader already
   // had expanded is still expanded when they come back to it.
@@ -1745,7 +1607,7 @@ function App() {
   // so this cannot eat an edit, and a doc whose first read is still out is
   // skipped, which is what stops opening the tab reading the same file twice.
   const shownDoc =
-    panelShown && activeTab === "docs" ? `${selectedSessionId}\n${activeDocPath}` : null;
+    visibleTool("docs") ? `${selectedSessionId}\n${activeDocPath}` : null;
   useEffect(() => {
     if (shownDoc) refreshActiveDoc(selectedSessionId);
   }, [shownDoc]);
@@ -1783,7 +1645,7 @@ function App() {
     baseline,
     head,
     writeRevision,
-    summaryShown || (panelShown && activeTab === "changes"),
+    summaryShown || visibleTool("changes"),
     busy,
   );
   // A turn that has written nothing yet shows the last turn that did, so
@@ -1800,7 +1662,7 @@ function App() {
     previous?.baseline ?? null,
     previous?.head ?? null,
     turnRevision,
-    (summaryShown || (panelShown && activeTab === "changes")) && currentEmpty,
+    (summaryShown || visibleTool("changes")) && currentEmpty,
     false,
   );
   // A failed read keeps its own range, so its error isn't hidden.
@@ -1809,6 +1671,7 @@ function App() {
 
   // One button, so the tab decides what it re-reads. Subagents has nothing to
   // fetch, so it gets none rather than a button that does nothing.
+  const activeTab = dock.active ?? viewTab;
   const panelRefresh =
     activeTab === "changes"
       ? { onRefresh: changesData.refresh, loading: changesData.loading }
@@ -1822,27 +1685,6 @@ function App() {
                 loading: activeDoc?.body.status === "loading",
               }
             : null;
-
-  // The PR tab names its pull request, merged too: its glyph, or the
-  // checks spinner while they run, and its number. Read off the sidebar's mark,
-  // which its own poll keeps current, so this costs no `gh` call; the panel's
-  // read polls only while its tab is open. Several live PRs keep the count.
-  const prFace =
-    markHere && !prBadgeCount(pullRequests.prs)
-      ? {
-          icon:
-            markHere.state === "OPEN" && markHere.checksState === "RUNNING" ? (
-              <CircleDashed
-                className="size-3.5 shrink-0 animate-spin text-accent-command [animation-duration:3s]"
-                strokeWidth={1.5}
-                aria-label="Checks running"
-              />
-            ) : (
-              <PrStateIcon pr={markHere} />
-            ),
-          label: `#${markHere.number}`,
-        }
-      : null;
 
   // Same order the sidebar draws, so the walk matches the list even when the
   // sidebar is collapsed and there is nothing on screen to follow — project
@@ -2068,10 +1910,6 @@ function App() {
   // is already open leaves the list unchanged and still has to bring the pane
   // forward.
   //
-  // The pick moves as well as the pane, and has to, for the same reason
-  // `usePullRequest`'s `onOpened` writes one: `activeTab` honours a standing
-  // pick over the derived default, and `handleTogglePanel` stores "changes"
-  // every time the pane opens onto a turn that touched files.
   const lastOpened = useRef(docsOpened);
   useEffect(() => {
     if (docsOpened === lastOpened.current) return;
@@ -2110,7 +1948,7 @@ function App() {
   }, [designOpen]);
 
   // A link in the transcript opens as a new tab in the session's browser and
-  // flips the main column to the Browser view, leaving the side panel alone.
+  // opens its Browser tab where the reader last put it.
   // ⌘-click, or no session to hold one, goes to the system browser.
   useEffect(() => {
     setLinkOpener((url, { external }) => {
@@ -2787,7 +2625,7 @@ function App() {
   const fileShown = !issuesOpen && viewTab === "files" && !!activeFile;
   const issueTabClosable = issuesOpen && !spacesOpen && issueTabs.tabs.length > 1;
   const rowTabOnScreen =
-    fullBrowserOpen || (!issuesOpen && !!selectedSessionId && (viewTab === "files" || viewTab === "changes"));
+    fullBrowserOpen || (!issuesOpen && !!selectedSessionId && viewTab !== "chat");
   const closeTabOrPane = () => {
     if (issueTabClosable) return editIssueTabs((s) => closeIssueTab(s, s.active));
     // The row's own close, so the chord lands where the cross would — and
@@ -2797,7 +2635,7 @@ function App() {
     if (fileShown && activeFile) return closeFile(selectedSessionId, activeFile);
     if (fullBrowserOpen) return closeBrowserTab();
     if (gridShown) return closeSessionPane(selectedSessionId);
-    if (panelShown && activeTab === "browser") closeBrowserTab();
+    if (visibleTool("browser")) closeBrowserTab();
   };
   // Bound only where it has something to close: `useHotkey` claims every chord
   // it matches, and a ⌘W that eats the key and does nothing is worse than one
@@ -2806,32 +2644,18 @@ function App() {
     issueTabClosable ||
     rowTabOnScreen ||
     fileShown ||
-    ((fullBrowserOpen || (panelShown && activeTab === "browser")) &&
+    ((fullBrowserOpen || visibleTool("browser")) &&
       (pendingBrowserTab || !!hasBrowserTabs)) ||
     gridShown;
   useHotkey("tab.close", closeTabOrPane, { enabled: hasCloseTarget });
   // ⌘E for the right pane against ⌘B for the left.
   //
-  // Bound to the raw toggle rather than to `handleTogglePanel`, deliberately:
-  // that one picks a tab on the way open, which is right for a button the
-  // reader aimed at and wrong for a chord that draws nothing and so promises
-  // nothing. Off on the issues page, whose own binding opens and shuts the
-  // issue pane — only the list knows which row to put back.
-  useHotkey("panel.toggle", togglePanel, { enabled: !!selectedSessionId && !issuesOpen });
-  // ⌘⌥E, the side beside ⌘E's visibility. Moves a hidden pane too: the pick
-  // is a preference, and it lands wherever the pane next opens.
-  useHotkey("panel.side", () => setPanelSide((s) => (s === "left" ? "right" : "left")));
+  useHotkey("panel.side", () => setPanelSide((s) => s === "left" ? "right" : "left"), { enabled: issuesOpen });
   // Bound only where a crew could be drawn, since `useHotkey` claims a chord it
   // is listening for — unbound elsewhere, ⌘⇧C stays free for whatever the
   // reader rebinds onto it rather than being swallowed by a column that has
   // nowhere to appear.
   useHotkey("crew.toggle", toggleCrew, { enabled: crewAvailable });
-  // ⌘⇧[ / ⌘⇧] — the browser and editor chord for stepping through tabs, so it
-  // arrives already known. The shift layout reaches `key`, so the character is
-  // `{` rather than `[`; the physical key rides along for the engines that
-  // report the unshifted one — see `code`.
-  useHotkey("panel.tab.prev", () => stepTab(-1), { enabled: !!selectedSessionId && !issuesOpen });
-  useHotkey("panel.tab.next", () => stepTab(1), { enabled: !!selectedSessionId && !issuesOpen });
   // ⌘R re-reads whatever the panel is showing — the same one button in the tab
   // row, so the chord means "refresh this" and never "refresh a specific
   // thing". `panelRefresh` is null on Subagents, which has nothing to fetch,
@@ -2845,7 +2669,7 @@ function App() {
   //
   // The browser reloads its page. A press inside the page never gets here —
   // Chromium has the key, and cef.rs reloads there.
-  const browserShown = fullBrowserOpen || (panelShown && activeTab === "browser");
+  const browserShown = fullBrowserOpen || visibleTool("browser");
   useHotkey("panel.refresh", () => {
     // "Re-read what I am looking at", the same rule the session case follows:
     // the pane wins where one is open, and the list has it otherwise.
@@ -2856,7 +2680,7 @@ function App() {
       }
       return;
     }
-    if (panelShown) panelRefresh?.onRefresh();
+    panelRefresh?.onRefresh();
   });
   // ⌘⇧← / ⌘⇧→ step the browser's strip, clamped like every other subtab row.
   // The pending tab sits at the end of it, which is where the strip draws it.
@@ -2878,12 +2702,12 @@ function App() {
   // `useHotkey` claims every chord it matches, and ⌘S is the browser's own save
   // — left bound everywhere it would eat the key from nothing at all.
   useHotkey("doc.save", () => saveActiveDoc(selectedSessionId), {
-    enabled: panelShown && activeTab === "docs",
+    enabled: visibleTool("docs"),
   });
   // The same ⌘S on any composer, wherever the docs tab is not the one taking it.
   // Off Chat the composer is hidden, so there is nothing on screen to save.
   useHotkey("composer.draft", () => void saveAsDraft(), {
-    enabled: !issuesOpen && viewTab === "chat" && !(panelShown && activeTab === "docs"),
+    enabled: !issuesOpen && viewTab === "chat" && !visibleTool("docs"),
   });
   // ⌘1–⌘9 live in `ViewTabs`, which is drawn only where there is a row to
   // switch, so the issues page and a new task need no guard of their own.
@@ -3011,6 +2835,57 @@ function App() {
   // empty pane until it lands rather than a different screen.
   const shownSession =
     selectedSession ?? sessionIndexItems.find((i) => i.sessionId === selectedSessionId) ?? null;
+  const terminalSession = !designOpen && !issuesOpen && !spacesOpen && !settingsOpen ? shownSession?.sessionId : null;
+  const [sideRail, setSideRail] = useState<HTMLDivElement | null>(null);
+  const [sideHost, setSideHost] = useState<HTMLDivElement | null>(null);
+  const showTerminal = () => changeDock((d) => ({ ...d, terminals: true, active: "terminal" }));
+  const terminalControls = useRef<TerminalControls>(null);
+  const [fullTerminalHost, setFullTerminalHost] = useState<HTMLDivElement | null>(null);
+  const fullTerminal = dock.fullTerminals.find((tab) => terminalView(tab.id) === viewTab);
+  const expandTerminal = (tab: TerminalTab, hasSideShells: boolean) => {
+    changeDock((d) => ({
+      ...d, terminals: hasSideShells, active: null,
+      fullTerminals: [...d.fullTerminals.filter((t) => t.id !== tab.id), tab],
+    }));
+    setViewTab(terminalView(tab.id));
+  };
+  const hideDock = () => changeDock((d) => ({ ...d, active: null }));
+  useHotkey("panel.toggle", () => {
+    if (dock.active) hideDock();
+    else if (dock.side.length) showPanel(dock.side[dock.side.length - 1]);
+    else if (dock.terminals) showTerminal();
+    else showPanel("changes");
+  }, { enabled: !!terminalSession });
+  const toggleTerminal = () => {
+    if (dock.active === "terminal") hideDock();
+    else if (fullTerminal && !dock.terminals) setViewTab("chat");
+    else if (dock.terminals || !dock.fullTerminals.length) showTerminal();
+    else setViewTab(terminalView(dock.fullTerminals[dock.fullTerminals.length - 1].id));
+  };
+  const expandView = (tab: PanelTab) => {
+    changeDock((d) => expandTab(d, tab));
+    if (tab === "browser" && !pendingBrowserTab && !browserTabs?.some((p) => p.active)) {
+      setPendingTab(browserSessionId, true);
+    }
+    setViewTab(tab);
+  };
+  const returnToSide = (tab: PanelTab | TerminalView) => {
+    if (isTerminalView(tab)) {
+      if (!fullTerminal) return;
+      terminalControls.current?.selectSide(fullTerminal.id);
+      changeDock((d) => ({
+        ...d, active: "terminal", terminals: true,
+        fullTerminals: d.fullTerminals.filter((t) => t.id !== fullTerminal.id),
+      }));
+    } else {
+      changeDock((d) => dockTab(d, tab));
+    }
+    setViewTab("chat");
+  };
+  const closeView = (tab: PanelTab) => changeDock((d) => closeDockTab(d, tab));
+  const changesVisible = visibleTool("changes");
+  const fullTool = viewTab !== "chat" && viewTab !== "files" ? viewTab : null;
+  useHotkey("terminal.toggle", toggleTerminal, { enabled: !!terminalSession, platformOnly: true });
   // Off the index, never the snapshot: `session_changed` writes only there.
   const selectedItem = sessionIndexItems.find((i) => i.sessionId === selectedSessionId);
 
@@ -3033,6 +2908,15 @@ function App() {
         ? shownSession.title
         : `${basename(shownSession.projectPath)} / ${shownSession.title}`
     : "New Task";
+  const toolBodies = shownSession && {
+    more: <MorePanel todos={sessionTodos} live={busy} media={sessionAttachments} sessionId={shownSession.sessionId}
+      subagents={{ runs: subagents, selectedId: selectedSubagentId, resultByCallId,
+        live: busy || backgroundTasks.length > 0, onSelect: setSelectedSubagentId, onStopTask: handleStopTask }} />,
+    pr: <PrPanel branch={prBranch} cwd={shownSession.cwd} {...pullRequests} />,
+    docs: <DocsPanel sessionId={selectedSessionId} active={visibleTool("docs")} />,
+    plan: <PlanPanel sessionId={selectedSessionId} />,
+    issue: <IssuePanel sessionId={selectedSessionId} issues={sessionIssues} onUnlink={unlinkIssue} {...issueData} />,
+  };
   const summaryCard = shownSession && (
     <PinnedSummary
       key={summaryId}
@@ -3062,8 +2946,11 @@ function App() {
       sources={sources}
       context={contextUsage}
       open={summary.open}
-      docked={summary.docks && !panelShown}
-      onOpen={(tab) => { summary.closePopover(); showPanel(tab); }}
+      docked={summary.docks}
+      onOpen={(tab) => {
+        summary.closePopover();
+        showPanel(tab);
+      }}
       onManageSources={serverOfPath(shownSession.cwd) === LOCAL ? () => { summary.closePopover(); setSettingsTab("mcp"); setSettingsOpen(true); } : undefined}
       onHide={() => summary.setOpen(false)}
     />
@@ -3123,6 +3010,7 @@ function App() {
         <MountOnce when={canvasHome}>
           <div className={cn("min-w-0 flex-1", canvasHome ? "flex" : "hidden")}>
             <CanvasLibrary key={canvasHomeVisit} library={canvasLibrary} projects={spaceProjects} collapsed={collapsed}
+              controlsOpen={canvasControlsOpen}
               visible={canvasHome && !settingsOpen} onSidebarWidth={setCanvasSidebarWidth} onAttach={(onPicked) => setCanvasAttach({ onPicked })} />
           </div>
         </MountOnce>
@@ -3151,9 +3039,9 @@ function App() {
         />
       }
       panelLeft={panelSide === "left"}
-      panelOpen={issuesOpen ? !!pickedIssue : panelShown}
+      panelOpen={issuesOpen && !!pickedIssue}
       summaryLayoutRef={summary.ref}
-      summaryDocked={summary.docks && !panelShown}
+      summaryDocked={summary.docks}
       summary={summary.mode === "pinned" && !issuesOpen && viewTab === "chat" ? summaryCard : null}
       summaryOpen={summaryShown}
       summaryKey={summaryId ?? undefined}
@@ -3236,7 +3124,8 @@ function App() {
         />
       }
       header={
-        <WindowToolbar fullscreen={fullscreen}>
+        <div className="flex">
+        <WindowToolbar fullscreen={fullscreen} className={cn("min-w-0 flex-1", dock.active && "@container/main-rail")}>
           {/* Always here, open or shut: the sidebar sits under this row now,
               so the toggle no longer has a strip of its own to live in. */}
           <div className="flex shrink-0 items-center">
@@ -3250,7 +3139,7 @@ function App() {
               row before them. */}
           {/* Spaces draws its own sidebar, so its edge is `spacesDrawn`. */}
           <div
-            className={cn("flex shrink-0 items-center gap-2", separatorX > 0 && "absolute z-10 -translate-x-full")}
+            className={cn("workspace-position flex shrink-0 items-center gap-2", separatorX > 0 && "absolute z-10 -translate-x-full")}
             style={separatorRight ? { left: separatorRight } : undefined}
           >
             <WorkspaceSwitch value={workspace} onChange={(next) => { setPeek(false); setSpacesPeek(false); setWorkspace(next); }} />
@@ -3277,6 +3166,13 @@ function App() {
             sessionId={browserSessionId}
             title={viewTitle}
             repoTabs={!!shownSession}
+            fullTools={dock.full}
+            fullTerminals={dock.fullTerminals}
+            addTerminal={() => terminalControls.current?.addFull()}
+            closeTerminal={(id) => terminalControls.current?.close(id)}
+            availableTools={tabs}
+            openTool={showPanel}
+            closeTool={closeView}
             rename={
               mainGroup || !shownSession
                 ? undefined
@@ -3303,6 +3199,36 @@ function App() {
           <IssueTabs state={issueTabs} visible={issuesOpen && !spacesOpen && !settingsOpen}
             alignX={tabsStart} />
 
+          {terminalSession && fullTool && (
+            <Button variant="ghost" size="sm" onClick={() => returnToSide(fullTool)}><Minimize2 />Exit full view</Button>
+          )}
+          {terminalSession && (
+            <div role="group" aria-label="Session tools" className="flex shrink-0 items-center gap-0.5">
+              <HeaderIconButton label="Changes" expanded={changesVisible} onClick={() => showPanel("changes")}>
+                <FileDiff className="size-4" />
+              </HeaderIconButton>
+              <HeaderIconButton label="Terminal" shortcut="terminal.toggle" expanded={dock.active === "terminal" || !!fullTerminal} onClick={toggleTerminal}>
+                <TerminalOutline18 className="size-4" />
+              </HeaderIconButton>
+              {tabs.filter((tab) => tab !== "changes").map((tab) => (
+                <HeaderIconButton
+                  key={tab}
+                  label={PANEL_LABELS[tab]}
+                  expanded={visibleTool(tab)}
+                  onClick={() => showPanel(tab)}
+                >
+                  <SessionToolIcon tab={tab} className="size-4" />
+                </HeaderIconButton>
+              ))}
+            </div>
+          )}
+          {canvasEditorOpen && (
+            <PanelToggle
+              label={canvasControlsOpen ? "Hide canvas controls" : "Show canvas controls"}
+              expanded={canvasControlsOpen}
+              onToggle={toggleCanvasControls}
+            />
+          )}
           {spacesOpen || canvasHome ? null : issuesOpen
             ? (
                 <>
@@ -3325,42 +3251,42 @@ function App() {
                   <PanelActions
                     // In the Files view alone: the file on screen, or the
                     // session's directory where no file is open.
-                    cwd={viewTab === "files" ? shownSession.cwd : null}
+                    refresh={panelRefresh}
+                    cwd={viewTab === "files" || panelShown || fullTool ? shownSession.cwd : null}
                     file={fileShown ? openFiles.find((f) => f.path === activeFile) : undefined}
                   />
                   {viewTab === "chat" && <PinnedSummaryToggle
+                    className="-ml-1.5"
                     open={summaryShown}
                     onToggle={summary.toggle}
                     popover={summary.mode === "popover" ? summaryCard : undefined}
                     onOpenChange={summary.setOpen}
                     boundary={summary.canvas}
                   />}
-                  {/* A pull request, open or merged, stands in for the toggle and opens
-                      the pane on itself; the pane's own tabs are inside it. */}
-                  {prFace ? (
-                    <ItemTab
-                      icon={prFace.icon}
-                      label={prFace.label}
-                      active={panelShown}
-                      onPick={() => {
-                        if (!panelShown) setPanelTab("pr");
-                        togglePanel();
-                      }}
-                      fixed
-                      hint={
-                        <>
-                          Toggle panel
-                          <ShortcutKeys ids={["panel.toggle"]} />
-                        </>
-                      }
-                    />
-                  ) : (
-                    <PanelToggle onToggle={togglePanel} />
-                  )}
                 </>
               ) : null}
         </WindowToolbar>
+        {terminalSession && dock.active && (
+          <div ref={setSideRail} className="mr-2 flex shrink-0 items-center" data-tauri-drag-region="deep" />
+        )}
+        </div>
       }
+      terminal={terminalSession && (dock.active || dock.fullTerminals.length > 0) && <Suspense fallback={null}>
+        <TerminalPane key={terminalSession} sessionId={terminalSession} hide={hideDock}
+          sideOpen={!!dock.active} fullHost={fullTerminalHost} fullId={fullTerminal?.id}
+          fullTabs={dock.fullTerminals} controls={terminalControls} expandTerminal={expandTerminal}
+          rail={sideRail} contentHost={setSideHost} views={dock.side}
+          selectedView={dock.active === "terminal" ? null : dock.active} terminals={dock.terminals}
+          showView={showPanel} expandView={expandView} closeView={closeView}
+          showTerminal={showTerminal} onTerminalList={(tabs) => {
+            changeDock((d) => reconcileTerminals(d, tabs));
+            setViewTabs((prev) => {
+              const current = prev[terminalSession];
+              if (!current || !isTerminalView(current) || tabs.some((tab) => terminalView(tab.id) === current)) return prev;
+              return { ...prev, [terminalSession]: "chat" };
+            });
+          }} />
+      </Suspense>}
       panel={
         // The pane describes whatever the main column is showing. On the issues
         // page that is an issue and never a session — which is the whole reason
@@ -3419,96 +3345,6 @@ function App() {
                 details={pickedIssueData.details}
                 loading={pickedIssueData.loading}
                 unavailable={pickedIssueData.unavailable}
-              />
-              </MountOnce>
-            </TabBody>
-          </RightPanel>
-        ) : shownSession ? (
-          // Closing the panel or switching tabs only hides the mounted bodies.
-          <RightPanel
-            side={panelSide}
-            open={panelShown}
-            tab={activeTab}
-            onTabChange={setPanelTab}
-            tabs={tabs}
-            widthKey={browserSessionId}
-            refresh={panelRefresh}
-            cwd={shownSession.cwd}
-          >
-            <TabBody active={activeTab === "browser"}>
-              <MountOnce when={panelShown && activeTab === "browser"}>
-              <BrowserPane
-                sessionId={browserSessionId}
-                active={panelShown && activeTab === "browser"}
-                mode="panel"
-                fullOpen={fullBrowserOpen}
-                onExpand={expandBrowser}
-                onCollapse={collapseBrowser}
-              />
-              </MountOnce>
-            </TabBody>
-            <TabBody active={activeTab === "changes"}>
-              <MountOnce when={panelShown && activeTab === "changes"}>
-              <ChangesPanel
-                cwd={shownSession.cwd}
-                baseline={baseline}
-                onOpenRepo={() => setViewTab("changes")}
-                {...shownChanges}
-              />
-              </MountOnce>
-            </TabBody>
-            <TabBody active={activeTab === "more"}>
-              <MorePanel
-                todos={sessionTodos}
-                live={busy}
-                media={sessionAttachments}
-                sessionId={shownSession.sessionId}
-                subagents={{
-                  runs: subagents,
-                  selectedId: selectedSubagentId,
-                  resultByCallId,
-                  live: busy || backgroundTasks.length > 0,
-                  onSelect: setSelectedSubagentId,
-                  onStopTask: handleStopTask,
-                }}
-              />
-            </TabBody>
-            <TabBody active={hasPrTab && activeTab === "pr"}>
-              <MountOnce when={panelShown && hasPrTab && activeTab === "pr"}>
-              <PrPanel
-                branch={prBranch}
-                cwd={shownSession.cwd}
-                {...pullRequests}
-                // Pinned at the press: with no pick the default follows an
-                // *open* PR, so a merge would flip the pane to Changes under
-                // the reader waiting to see it land.
-                act={(number, action) => {
-                  setPanelTab("pr");
-                  return pullRequests.act(number, action);
-                }}
-              />
-              </MountOnce>
-            </TabBody>
-            <TabBody active={hasDocsTab && activeTab === "docs"}>
-              {/* On having docs rather than on being shown: its watcher is
-                  what flags a doc changed on disk, open tab or not. */}
-              <MountOnce when={hasDocsTab}>
-              <DocsPanel
-                sessionId={selectedSessionId}
-                active={panelShown && activeTab === "docs" && viewTab === "chat"}
-              />
-              </MountOnce>
-            </TabBody>
-            <TabBody active={hasPlanTab && activeTab === "plan"}>
-              <PlanPanel sessionId={selectedSessionId} />
-            </TabBody>
-            <TabBody active={hasIssueTab && activeTab === "issue"}>
-              <MountOnce when={panelShown && hasIssueTab && activeTab === "issue"}>
-              <IssuePanel
-                sessionId={selectedSessionId}
-                issues={sessionIssues}
-                onUnlink={unlinkIssue}
-                {...issueData}
               />
               </MountOnce>
             </TabBody>
@@ -3810,16 +3646,35 @@ function App() {
       )}
       </TabBody>
 
+      {fullTerminal && terminalSession && <div ref={setFullTerminalHost} aria-label={terminalLabel(fullTerminal)}
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background" />}
+      {shownSession && <>
+        {dock.side.includes("browser") && (
+          <SessionToolBody side={dock.active === "browser" ? sideHost : null} full={false}>
+            <Suspense fallback={null}><BrowserPane sessionId={browserSessionId}
+              active={sessionToolsVisible && dock.active === "browser" && !fullBrowserOpen} mode="panel" /></Suspense>
+          </SessionToolBody>
+        )}
+        {[...dock.side, ...dock.full].map((tab) => {
+          if (tab === "changes" || tab === "browser") return null;
+          return <SessionToolBody key={shownSession.sessionId + "/" + tab}
+            side={dock.active === tab ? sideHost : null} full={sessionToolsVisible && viewTab === tab}>
+            <Suspense fallback={null}>{toolBodies && toolBodies[tab]}</Suspense>
+          </SessionToolBody>;
+        })}
+      </>}
       {selectedSession && (
         // Keyed by session so the selection, the sub-tab and the commit box
         // reset with it. Cheap to remount: the reads behind it are cached by
         // tree id at module level and survive the unmount.
         <TabBody active={!issuesOpen && viewTab === "changes"}>
-          <MountOnce when={!issuesOpen && viewTab === "changes"}>
+          <MountOnce when={changesVisible}>
           <ChangesView
             key={selectedSession.sessionId}
             cwd={selectedSession.cwd}
-            active={!issuesOpen && viewTab === "changes"}
+            active={changesVisible}
+            sideHost={dock.active === "changes" ? sideHost : null}
+            latest={shownChanges}
             revision={turnRevision}
             writeRevision={writeRevision}
             busy={busy}
@@ -3834,7 +3689,6 @@ function App() {
             sessionId={browserSessionId}
             active={fullBrowserOpen}
             mode="full"
-            onCollapse={selectedSessionId ? collapseBrowser : undefined}
           />
         </MountOnce>
       </TabBody>

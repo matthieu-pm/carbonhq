@@ -149,6 +149,7 @@ export function CanvasLibrary({
   library,
   projects,
   collapsed,
+  controlsOpen,
   visible,
   onAttach,
   onSidebarWidth,
@@ -156,6 +157,7 @@ export function CanvasLibrary({
   library: Library;
   projects: Project[];
   collapsed: boolean;
+  controlsOpen: boolean;
   visible: boolean;
   onAttach: (onPicked?: (path: string) => void) => void;
   onSidebarWidth: (width: number) => void;
@@ -296,7 +298,7 @@ export function CanvasLibrary({
       {library.active ? (
         <Suspense fallback={<p role="status" className="m-4 text-ui">Opening canvas…</p>}>
           <CanvasEditor key={canvasKey(library.active)} file={library.active} projects={projects}
-            collapsed={collapsed} sidebarStyle={style} resizeHandle={handle}
+            collapsed={collapsed} controlsOpen={controlsOpen} sidebarStyle={style} resizeHandle={handle}
             libraryError={creation || moving ? "" : error} />
         </Suspense>
       ) : (

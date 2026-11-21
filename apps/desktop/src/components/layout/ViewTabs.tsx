@@ -1,7 +1,11 @@
+import { PANEL_LABELS, PANEL_TABS, type PanelTab } from "@/components/RightPanel";
+import { SessionToolIcon } from "@/components/layout/SessionToolTab";
 import {
   ChatBubbleOvalLeftIcon,
-  DocumentPlusIcon,
+
 } from "@heroicons/react/16/solid";
+import { terminalView, terminalLabel, isTerminalView, type TerminalTab, type TerminalView } from "@/lib/sessionDock";
+import { TerminalOutline18 } from "@/components/icons/nucleo/TerminalOutline18";
 import { Folder, Plus, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 
@@ -54,9 +58,9 @@ import BranchButton from "@/components/layout/BranchButton";
 import { cn } from "@/lib/utils";
 
 /// Which view fills the main column.
-export const VIEW_TABS = ["chat", "browser", "changes", "files"] as const;
+export const VIEW_TABS = ["chat", "files", ...PANEL_TABS] as const;
 
-export type ViewTab = (typeof VIEW_TABS)[number];
+export type ViewTab = (typeof VIEW_TABS)[number] | TerminalView;
 
 /// The pointer crosses this row on its way to everything below it, so a
 /// tooltip waits for a hover that means it — the crew's own delay.
@@ -80,12 +84,7 @@ export function closeActiveTab(): boolean {
   return closeActive?.() ?? false;
 }
 
-/// Which of Diff and Files the reader has put in a session's row. Both start
-/// out, unlike the browser: + adds them, their cross takes them away again.
-type Added = { changes: boolean; files: boolean };
-const NONE: Added = { changes: false, files: false };
-// ponytail: same bargain as `orders`.
-const added = new Map<string, Added>();
+const fileTabs = new Set<string>();
 
 /// Solid marks, the way a page's favicon is a filled mark rather than a line
 /// drawing, in the muted grey every icon here takes.
@@ -131,6 +130,7 @@ export default function ViewTabs({
   rename,
   working = false,
   repoTabs = true,
+  fullTools, availableTools, openTool, closeTool, fullTerminals, closeTerminal, addTerminal,
 }: {
   active?: boolean;
   /// Mid-turn: off Chat, the chat tab's icon says so, since the transcript
@@ -139,6 +139,13 @@ export default function ViewTabs({
   sessionId: string;
   /// Diff and Files become available once the task has a working directory.
   repoTabs?: boolean;
+  fullTools: PanelTab[];
+  fullTerminals: TerminalTab[];
+  closeTerminal: (id: string) => void;
+  addTerminal: () => void;
+  availableTools: readonly PanelTab[];
+  openTool: (tab: PanelTab) => void;
+  closeTool: (tab: PanelTab) => void;
   /// The session's own title and how to change it; absent where the chat
   /// stands for a group rather than one session.
   rename?: Rename;
@@ -153,9 +160,14 @@ export default function ViewTabs({
   onChange: (tab: ViewTab) => void;
 }) {
   const loadedPages = useBrowserTabs(sessionId);
-  const pages = loadedPages ?? [];
+  const fullBrowser = fullTools.includes("browser");
+  const showPages = !repoTabs || fullBrowser || tab === "browser";
+  const pages = showPages ? loadedPages ?? [] : [];
   const pending = usePendingTab(sessionId);
   const blanks = useBlankTabs(sessionId);
+  useLayoutEffect(() => {
+    if (fullBrowser && loadedPages?.length === 0 && blanks.ids.length === 0) closeTool("browser");
+  }, [fullBrowser, loadedPages, blanks.ids.length, closeTool]);
   const parkedPages = useParkedTabs(sessionId);
   // The agent's next verb goes to whichever page is active, so the reader
   // cannot move it mid-recording — the panel strip's own rule.
@@ -168,19 +180,20 @@ export default function ViewTabs({
   // The view on screen always has its tab, however it was reached — the Diff
   // button in the panel, a file link in the chat — so the row never shows a
   // view with nothing lit for it.
-  const shown: Added = {
-    changes: repoTabs && ((added.get(sessionId) ?? NONE).changes || tab === "changes"),
-    files: repoTabs && ((added.get(sessionId) ?? NONE).files || tab === "files"),
-  };
-  added.set(sessionId, shown);
-  const setShown = (kind: keyof Added, on: boolean) => {
-    if (!on) pushClosedTab(sessionId, { key: kind });
-    added.set(sessionId, { ...(added.get(sessionId) ?? NONE), [kind]: on });
+  const filesShown = repoTabs && (fileTabs.has(sessionId) || tab === "files");
+  if (filesShown) fileTabs.add(sessionId);
+  const setFilesShown = (on: boolean) => {
+    if (on) fileTabs.add(sessionId);
+    else {
+      pushClosedTab(sessionId, { key: "files" });
+      fileTabs.delete(sessionId);
+    }
     bump();
   };
   const newTab = () => {
     if (recording) return;
-    onChange("browser");
+    if (repoTabs) openTool("browser");
+    else onChange("browser");
     setPendingTab(sessionId, true);
   };
   // From anywhere, whatever else is open: the chord every browser gives it.
@@ -200,19 +213,24 @@ export default function ViewTabs({
       pick: () => onChange("chat"),
       rename,
     },
-    ...(shown.changes
-      ? [
-          {
-            key: "changes",
-            icon: <DocumentPlusIcon className={MARK} />,
-            label: "Diff",
-            active: tab === "changes",
-            pick: () => onChange("changes"),
-            close: () => setShown("changes", false),
-            fixed: true,
-          },
-        ]
-      : []),
+    ...fullTools.filter((view) => view !== "browser").map((view) => ({
+      key: view,
+      icon: <SessionToolIcon tab={view} />,
+      label: PANEL_LABELS[view],
+      active: tab === view,
+      pick: () => onChange(view),
+      close: () => { pushClosedTab(sessionId, { key: view }); closeTool(view); },
+      fixed: true,
+    })),
+    ...fullTerminals.map((shell) => ({
+      key: terminalView(shell.id),
+      icon: <TerminalOutline18 className="size-3.5 shrink-0" />,
+      label: terminalLabel(shell),
+      active: tab === terminalView(shell.id),
+      pick: () => onChange(terminalView(shell.id)),
+      close: () => closeTerminal(shell.id),
+      fixed: true,
+    })),
     ...pages.map((page) => ({
       key: `page:${page.id}`,
       icon: <Favicon tab={page} />,
@@ -234,7 +252,7 @@ export default function ViewTabs({
           }
         : undefined,
     })),
-    ...blanks.ids.map((id) => ({
+    ...(showPages ? blanks.ids : []).map((id) => ({
       key: `blank:${id}`,
       icon: parkedPages[id] ? <Favicon tab={parkedPages[id]} /> : <GlobeFilledIcon className={MARK} />,
       label: parkedPages[id] ? parkedPages[id].title || hostOf(parkedPages[id].url) : "New tab",
@@ -246,7 +264,7 @@ export default function ViewTabs({
       },
       close: () => closeBlankTab(sessionId, id),
     })),
-    ...(files.length === 0 && shown.files
+    ...(files.length === 0 && filesShown
       ? [
           {
             key: "files",
@@ -254,7 +272,7 @@ export default function ViewTabs({
             label: "Files",
             active: tab === "files",
             pick: () => onChange("files"),
-            close: () => setShown("files", false),
+            close: () => setFilesShown(false),
             fixed: true,
           },
         ]
@@ -302,7 +320,7 @@ export default function ViewTabs({
   const lone = drag.shown.length === 1;
   const align = {
     marginLeft:
-      alignX > 0 ? `max(-0.25rem, calc(${alignX}px - 0.25rem - var(--tabs-lead)))` : "-0.25rem",
+      alignX > 0 ? `var(--view-tabs-inset, max(-0.25rem, calc(${alignX}px - 0.25rem - var(--tabs-lead))))` : "-0.25rem",
     // AppShell transitions this only when toggling the sidebar, so a drag never trails the pointer.
   };
 
@@ -347,7 +365,10 @@ export default function ViewTabs({
     const entry = popClosedTab(sessionId);
     if (!entry) return;
     let key = entry.key;
-    if (key === "changes" || key === "files") setShown(key, true);
+    const tool = availableTools.find((view) => view === key);
+    if (tool) return openTool(tool);
+    if (PANEL_TABS.some((view) => view === key)) return;
+    if (key === "files") setFilesShown(true);
     else if (key.startsWith("file:")) reopenFile(sessionId, key.slice("file:".length));
     else key = `blank:${addBlankTab(sessionId, entry.page)}`;
     if (entry.at !== undefined) {
@@ -389,25 +410,17 @@ export default function ViewTabs({
     };
   });
 
-  // What + can still add. With Diff and Files both in the row it is a plain
-  // new-tab button, the one thing left to offer.
   const offer = [
-    repoTabs && !shown.changes && {
-      key: "changes",
-      icon: <DocumentPlusIcon className={MARK} />,
-      label: "Diff",
-      add: () => {
-        setShown("changes", true);
-        onChange("changes");
-      },
-    },
-    repoTabs && !shown.files &&
+    ...(repoTabs ? availableTools.filter((view) => view !== "browser" && !fullTools.includes(view)).map((view) => ({
+      key: view, label: PANEL_LABELS[view], icon: <SessionToolIcon tab={view} />, add: () => openTool(view),
+    })) : []),
+    repoTabs && !filesShown &&
       files.length === 0 && {
         key: "files",
         icon: FOLDER,
         label: "Files",
         add: () => {
-          setShown("files", true);
+          setFilesShown(true);
           onChange("files");
         },
       },
@@ -453,7 +466,16 @@ export default function ViewTabs({
       ))}
       {/* Last, after every tab, where a browser keeps it. Past the items, so
           the drag hook leaves it alone. */}
-      {offer.length > 0 ? (
+      {isTerminalView(tab) ? (
+        <Tooltip delayDuration={TIP_DELAY}>
+          <TooltipTrigger asChild>
+            <button type="button" aria-label="New terminal" onClick={addTerminal} className={plusClass}>
+              <Plus className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">New terminal</TooltipContent>
+        </Tooltip>
+      ) : offer.length > 0 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" aria-label="Add a tab" className={plusClass}>
@@ -467,7 +489,7 @@ export default function ViewTabs({
                 {o.label}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuItem disabled={recording} onSelect={newTab}>
+            <DropdownMenuItem disabled={recording} onSelect={repoTabs ? () => openTool("browser") : newTab}>
               <GlobeFilledIcon className={MARK} />
               Browser
               <ShortcutKeys ids={["browser.newTab"]} className="ml-auto shrink-0 pl-4" />

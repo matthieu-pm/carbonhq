@@ -113,10 +113,11 @@ pub(crate) fn descendants(root: u32) -> HashSet<u32> {
 ///
 /// [`Session::kill_tree`]: crate::session::Session::kill_tree
 pub(crate) async fn kill_descendants(root: u32) {
-    let tree = tokio::task::spawn_blocking(move || descendants(root))
-        .await
-        .unwrap_or_default();
-    for pid in tree.into_iter().filter(|&p| p != root) {
+    let _ = tokio::task::spawn_blocking(move || kill_descendants_blocking(root)).await;
+}
+
+pub(crate) fn kill_descendants_blocking(root: u32) {
+    for pid in descendants(root).into_iter().filter(|&p| p != root) {
         // ponytail: a process group set at spawn would make this one signal
         // with no walk; four spawn sites to change if this bites.
         unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };

@@ -40,7 +40,7 @@ tokio = { version = "1", features = ["full"] }
 # `v7` for session ids, which want to sort by creation. `v4` for the analytics
 # install id, which wants to say nothing at all — v7 embeds the moment it was
 # minted. See analytics.rs.
-uuid = { version = "1.16", features = ["v4", "v7"] }
+uuid = { version = "1.16", features = ["v4", "v7", "serde"] }
 # Generates the TS mirror of the event model; `cargo test` writes ../src/types/.
 # Serde aliases, catch-alls and custom conversions are handled by Rust, not ts-rs.
 ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
@@ -121,6 +121,7 @@ flate2 = { version = "1", optional = true }
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 serde_yaml_ng = "0.10"
 pulldown-cmark = { version = "0.13", default-features = false }
+portable-pty = "0.9.0"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 rustix = { version = "1", features = ["fs"] }

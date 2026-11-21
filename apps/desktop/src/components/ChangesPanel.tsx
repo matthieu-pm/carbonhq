@@ -17,7 +17,7 @@ type ChangesPanelProps = ReturnType<typeof useChanges> & {
   cwd: string;
   /// The tree id to diff against, or null when the session recorded none.
   baseline: string | null;
-  /// Opens the main column's Diff view — the empty state's way out, since the
+  /// Opens the repository Changes tab — the empty state's way out, since the
   /// question a reader asks of an empty turn is what the repository holds.
   onOpenRepo: () => void;
 };
@@ -101,7 +101,7 @@ function NoChanges({ onOpenRepo }: { onOpenRepo: () => void }) {
             part of the label, and the button already says what it does. */}
         <div className="flex flex-wrap items-center justify-center gap-2">
           <Button variant="outline" size="sm" onClick={onOpenRepo}>
-            Open Diff view
+            Open repository changes
           </Button>
         </div>
       </div>

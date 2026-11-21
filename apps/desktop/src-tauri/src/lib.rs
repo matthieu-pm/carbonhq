@@ -103,6 +103,9 @@ pub mod settings;
 pub mod sink;
 pub mod skills;
 pub mod store;
+mod terminal;
+#[cfg(feature = "desktop")]
+mod terminal_client;
 pub mod title;
 #[cfg(feature = "desktop")]
 #[path = "transcription/transcription.rs"]

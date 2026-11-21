@@ -1554,6 +1554,17 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         read_file(path: String) => read_file(&path).await;
         // Servers listening on *this* machine, which is the one a forwarded
         // port reaches.
+        terminal_open(owner: uuid::Uuid, session_id: String, id: uuid::Uuid, additional: bool) =>
+            crate::terminal::open(owner, session_id, id, additional).await;
+        terminal_read(owner: uuid::Uuid, session_id: String, id: uuid::Uuid, offset: u64, wait: bool) =>
+            crate::terminal::read(owner, &session_id, id, offset, wait).await;
+        terminal_write(owner: uuid::Uuid, session_id: String, id: uuid::Uuid, data: String) =>
+            crate::terminal::write(owner, &session_id, id, data).await;
+        terminal_resize(owner: uuid::Uuid, session_id: String, id: uuid::Uuid, cols: u16, rows: u16) =>
+            crate::terminal::resize(owner, &session_id, id, cols, rows);
+        terminal_close(owner: uuid::Uuid, session_id: String, id: uuid::Uuid) =>
+            crate::terminal::close(move |t| t.owner == owner && t.session == session_id && t.id == id).await;
+        terminal_close_owner(owner: uuid::Uuid) => crate::terminal::close(move |t| t.owner == owner).await;
         list_local_servers(session_id: String) => crate::local_servers::list_local_servers(session_id).await;
         share_port(session_id: String, port: u16) => crate::share::share_port(session_id, port).await;
         stop_share(session_id: String, port: u16) => ok(crate::share::stop_share(session_id, port));

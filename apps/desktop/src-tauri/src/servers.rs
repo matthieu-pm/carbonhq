@@ -610,6 +610,7 @@ async fn serve(id: &str, ws: Socket) {
     announce();
     // This Mac's server is loopback, which cannot die silently.
     let remote = id != LOCAL;
+    if remote { tokio::spawn(crate::terminal_client::cleanup(id.to_owned())); }
     let writer = tokio::spawn(async move {
         let mut ping = tokio::time::interval(PING);
         loop {
@@ -986,6 +987,11 @@ pub async fn server_invoke(server: String, cmd: String, args: Value) -> Result<V
         {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+    }
+    let mut args = args;
+    if cmd.starts_with("terminal_") && cmd != "terminal_close_owner" {
+        let owner = crate::terminal_client::owner(&server).await.map_err(|e| json!(e.to_string()))?;
+        args.as_object_mut().ok_or_else(|| json!("invalid terminal arguments"))?.insert("owner".into(), json!(owner));
     }
     let counts = server != LOCAL && cmd == "send_msg";
     // The server skips both for this app, which reports them instead. Only

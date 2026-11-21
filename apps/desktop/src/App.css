@@ -1593,3 +1593,13 @@ body.session-drag * {
 @media (max-width: 720px) {
   .library-pane { --library-content-inset: 12px; --library-header-inset: 20px; }
 }
+
+@container main-rail (max-width: 650px) {
+  [role="tablist"] {
+    --view-tabs-inset: -0.25rem;
+  }
+  .workspace-position {
+    position: static;
+    translate: none;
+  }
+}
