@@ -47,7 +47,17 @@ export type Layer = {
   style: Record<string, string>;
   effects: Effect[];
 };
-export type Page = { id: string; name: string; background: string; opacity?: string };
+export type InkPoint = [number, number];
+export type Stroke = { id: string; points: InkPoint[] };
+export type CommentPin = { id: string; x: number; y: number; text: string };
+export type Page = {
+  id: string;
+  name: string;
+  background: string;
+  opacity?: string;
+  strokes?: Stroke[];
+  comments?: CommentPin[];
+};
 export type Document = { version: 1; pages: Page[]; elements: Layer[]; tokens: Token[] };
 const styleKeys = new Set([
   "width",
@@ -223,6 +233,11 @@ export function readDocument(raw: string): Document {
         typeof p.name === "string" &&
         typeof p.background === "string" &&
         localCssValue(p.background) &&
+        (p.strokes === undefined || (Array.isArray(p.strokes) && p.strokes.every(s =>
+          s && validId(s.id) && Array.isArray(s.points) && s.points.length > 0 &&
+          s.points.every(pt => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite))) && unique(p.strokes))) &&
+        (p.comments === undefined || (Array.isArray(p.comments) && p.comments.every(c =>
+          c && validId(c.id) && Number.isFinite(c.x) && Number.isFinite(c.y) && typeof c.text === "string") && unique(p.comments))) &&
         (p.opacity === undefined || (typeof p.opacity === "string" && localCssValue(p.opacity))),
     ) ||
     !doc.tokens.every(

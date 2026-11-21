@@ -113,6 +113,23 @@
 .ce-row {
   padding: 2px 12px 2px 20px;
 }
+.ce-pages-header,
+.ce-pages > .ce-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) 24px;
+  column-gap: 7px;
+  padding-inline: 10px;
+}
+.ce-pages-header > .ce-pages-heading {
+  display: grid;
+  grid-column: span 2;
+  grid-template-columns: subgrid;
+  column-gap: inherit;
+}
+.ce-pages-heading svg,
+.ce-pages > .ce-row svg {
+  justify-self: center;
+}
 .ce-row > span {
   flex: 1;
 }
@@ -557,3 +574,56 @@
 .ce-world [data-layer] {
   border-radius: var(--ce-layer-radius, 0px);
 }
+
+.ce-markup, .ce-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.ce-markup[data-drawing="true"] {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.ce-comment-pin, .ce-comment-box {
+  pointer-events: auto;
+  position: absolute;
+  box-shadow: var(--shadow-card);
+}
+.ce-comment-pin {
+  transform: translateY(-100%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  background: #168bf0;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ce-comment-box {
+  width: min(290px, calc(100% - 8px));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  padding: 6px 8px;
+  border: 1px solid #168bf0;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  color: var(--foreground);
+  cursor: default;
+}
+.ce-comment-box input { flex: 1; min-width: 0; padding: 4px; outline: none; }
+.ce-comment-box button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: white;
+  background: #168bf0;
+}
+.ce-comment-box button:disabled { background: var(--muted); color: var(--muted-foreground); }
+.ce-comment-box small { width: 100%; padding-inline: 4px; color: var(--muted-foreground); }
+.ce-comment-box p { overflow-wrap: anywhere; max-height: 8rem; overflow: auto; }

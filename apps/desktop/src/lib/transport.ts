@@ -93,6 +93,7 @@ const QUALIFIED = new Set([
   "retag_space",
   "list_session_index_items",
   "session_index_item",
+  "canvas_snapshot",
   "detach_session",
   "remove_session_worktree",
   "set_session_flags",
