@@ -130,7 +130,7 @@ export default function ViewTabs({
   rename,
   working = false,
   repoTabs = true,
-  fullTools, availableTools, openTool, closeTool, fullTerminals, closeTerminal, addTerminal,
+  fullTools, availableTools, openTool, restoreTool, closeTool, fullTerminals, closeTerminal, addTerminal,
 }: {
   active?: boolean;
   /// Mid-turn: off Chat, the chat tab's icon says so, since the transcript
@@ -145,6 +145,7 @@ export default function ViewTabs({
   addTerminal: () => void;
   availableTools: readonly PanelTab[];
   openTool: (tab: PanelTab) => void;
+  restoreTool: (tab: PanelTab) => void;
   closeTool: (tab: PanelTab) => void;
   /// The session's own title and how to change it; absent where the chat
   /// stands for a group rather than one session.
@@ -366,11 +367,17 @@ export default function ViewTabs({
     if (!entry) return;
     let key = entry.key;
     const tool = availableTools.find((view) => view === key);
-    if (tool) return openTool(tool);
-    if (PANEL_TABS.some((view) => view === key)) return;
-    if (key === "files") setFilesShown(true);
+    if (tool) restoreTool(tool);
+    else if (PANEL_TABS.some((view) => view === key)) return;
+    else if (key === "files") setFilesShown(true);
     else if (key.startsWith("file:")) reopenFile(sessionId, key.slice("file:".length));
-    else key = `blank:${addBlankTab(sessionId, entry.page)}`;
+    else {
+      key = `blank:${addBlankTab(sessionId, entry.page)}`;
+      if (repoTabs && !fullBrowser) {
+        if (entry.at !== undefined) restoreTool("browser");
+        else openTool("browser");
+      }
+    }
     if (entry.at !== undefined) {
       orders.set(sessionId, moveKey(orders.get(sessionId) ?? order, key, entry.at));
     }

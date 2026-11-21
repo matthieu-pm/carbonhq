@@ -69,6 +69,14 @@ describe("invoke", () => {
     expect((calls[1].args as { server: string }).server).toBe("vps1");
   });
 
+  it("sends pasted Carbon URLs verbatim to the terminal's session server", async () => {
+    await invoke("send_msg", { sessionId: "shell", cwd: "carbon://host/project" });
+    const args = { sessionId: "shell", id: "tab", data: "carbon://other/path" };
+    await invoke("terminal_write", args);
+    expect(calls[1].args).toEqual({ server: "host", cmd: "terminal_write", args });
+    expect(serverOfSession("shell")).toBe("host");
+  });
+
   it("keeps a Mac-side command local whatever session it names", async () => {
     await invoke("notify_session", { sessionId: "s1" });
     expect(calls[0].cmd).toBe("notify_session");

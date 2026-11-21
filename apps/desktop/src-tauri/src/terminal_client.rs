@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OnceCell};
 use uuid::Uuid;
@@ -33,6 +33,24 @@ async fn registry() -> Result<&'static Registry> {
 }
 
 impl Registry {
+    async fn endpoint(&self, server: &str) -> Result<String> {
+        let key = crate::servers::terminal_endpoint(server).context("Server no longer exists.")?;
+        if key != server {
+            let mut owners = self.owners.lock().await;
+            if owners.active.contains_key(server) || owners.pending.contains_key(server) {
+                let mut next = owners.clone();
+                if let Some(owner) = next.active.remove(server) {
+                    next.active.insert(key.clone(), owner);
+                }
+                if let Some(old) = next.pending.remove(server) {
+                    next.pending.entry(key.clone()).or_default().extend(old);
+                }
+                self.save(&mut owners, next).await?;
+            }
+        }
+        Ok(key)
+    }
+
     async fn save(&self, current: &mut Owners, next: Owners) -> Result<()> {
         crate::store::write_atomic(&self.path, serde_json::to_vec(&next)?).await?;
         *current = next;
@@ -42,13 +60,14 @@ impl Registry {
 
 pub(crate) async fn owner(server: &str) -> Result<Uuid> {
     let registry = registry().await?;
+    let key = registry.endpoint(server).await?;
     let mut owners = registry.owners.lock().await;
-    if let Some(owner) = owners.active.get(server) {
+    if let Some(owner) = owners.active.get(&key) {
         return Ok(*owner);
     }
     let id = Uuid::new_v4();
     let mut next = owners.clone();
-    next.active.insert(server.into(), id);
+    next.active.insert(key, id);
     registry.save(&mut owners, next).await?;
     Ok(id)
 }
@@ -56,12 +75,13 @@ pub(crate) async fn owner(server: &str) -> Result<Uuid> {
 /// A disconnected server receives the same idempotent close when it returns.
 pub(crate) async fn cleanup(server: String) -> Result<()> {
     let registry = registry().await?;
+    let key = registry.endpoint(&server).await?;
     let pending = registry
         .owners
         .lock()
         .await
         .pending
-        .get(&server)
+        .get(&key)
         .cloned()
         .unwrap_or_default();
     for owner in pending {
@@ -81,10 +101,10 @@ pub(crate) async fn cleanup(server: String) -> Result<()> {
         }
         let mut owners = registry.owners.lock().await;
         let mut next = owners.clone();
-        if let Some(ids) = next.pending.get_mut(&server) {
+        if let Some(ids) = next.pending.get_mut(&key) {
             ids.retain(|id| *id != owner);
             if ids.is_empty() {
-                next.pending.remove(&server);
+                next.pending.remove(&key);
             }
         }
         registry.save(&mut owners, next).await?;
@@ -94,7 +114,7 @@ pub(crate) async fn cleanup(server: String) -> Result<()> {
 
 pub(crate) async fn quit_completely() -> Result<()> {
     let registry = registry().await?;
-    let servers = {
+    {
         let mut owners = registry.owners.lock().await;
         if owners.active.is_empty() && owners.pending.is_empty() {
             return Ok(());
@@ -105,11 +125,10 @@ pub(crate) async fn quit_completely() -> Result<()> {
                 next.pending.entry(server).or_default().push(owner);
             }
         }
-        let servers: Vec<_> = next.pending.keys().cloned().collect();
         registry.save(&mut owners, next).await?;
-        servers
-    };
-    let cleanups = futures_util::future::join_all(servers.into_iter().map(cleanup));
+    }
+    let servers = crate::servers::list_servers().into_iter().filter(|s| s.id != crate::servers::LOCAL);
+    let cleanups = futures_util::future::join_all(servers.map(|s| cleanup(s.id)));
     let _ = tokio::time::timeout(Duration::from_secs(3), cleanups).await;
     Ok(())
 }
@@ -117,7 +136,7 @@ pub(crate) async fn quit_completely() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::servers::{add_server, list_servers, server_invoke, set_server_on, ServerStatus};
+    use crate::servers::{add_server, list_servers, remove_server, server_invoke, ServerStatus};
     use serde_json::json;
 
     /// CARBON_TEST_TERMINAL_HOME names a disposable live server with one coding session.
@@ -136,15 +155,15 @@ mod tests {
         let port = std::fs::read_to_string(fixture.join("serve-port")).unwrap();
         let url = format!("ws://127.0.0.1:{}", port.lines().next().unwrap());
         crate::servers::start(crate::sink::Sink::new(|_, _| {})).await;
-        let server = add_server(url, token, Some("Terminal test".into()))
+        let server = add_server(url.clone(), token.clone(), Some("Terminal test".into()))
             .await
             .unwrap()
             .id;
-        let connected = || async {
+        let connected = |id: String| async move {
             tokio::time::timeout(Duration::from_secs(10), async {
                 while !list_servers()
                     .iter()
-                    .any(|s| s.id == server && s.status == ServerStatus::Connected)
+                    .any(|s| s.id == id && s.status == ServerStatus::Connected)
                 {
                     tokio::time::sleep(Duration::from_millis(20)).await;
                 }
@@ -152,7 +171,7 @@ mod tests {
             .await
             .unwrap();
         };
-        connected().await;
+        connected(server.clone()).await;
         let id = Uuid::new_v4();
         let open = json!({"sessionId": session, "id": id, "additional": false});
         let tab = server_invoke(server.clone(), "terminal_open".into(), open)
@@ -160,16 +179,19 @@ mod tests {
             .unwrap();
         assert_eq!(tab[0]["id"], json!(id));
         let old_owner = owner(&server).await.unwrap();
-        set_server_on(server.clone(), false).await.unwrap();
+        let key = crate::servers::terminal_endpoint(&server).unwrap();
+        remove_server(server.clone()).await.unwrap();
         quit_completely().await.unwrap();
         let registry = registry().await.unwrap();
         let saved: Owners = crate::store::read_json(&registry.path).await.unwrap();
-        assert_eq!(saved.pending[&server], vec![old_owner]);
-        assert!(!saved.active.contains_key(&server));
-        set_server_on(server.clone(), true).await.unwrap();
-        connected().await;
+        assert_eq!(saved.pending[&key], vec![old_owner]);
+        assert!(!saved.active.contains_key(&key));
+        let restored = add_server(url, token, None).await.unwrap().id;
+        assert_ne!(server, restored);
+        let server = restored;
+        connected(server.clone()).await;
         tokio::time::timeout(Duration::from_secs(5), async {
-            while registry.owners.lock().await.pending.contains_key(&server) {
+            while registry.owners.lock().await.pending.contains_key(&key) {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         })

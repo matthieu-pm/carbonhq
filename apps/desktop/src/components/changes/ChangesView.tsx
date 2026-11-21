@@ -12,7 +12,7 @@ import { useHotkey } from "@/hooks/useHotkey";
 import { useCommitLog, useHeadTree } from "@/hooks/useRepo";
 import { commitBase, defaultSubTab, type SubTab } from "@/lib/commit";
 import { cn } from "@/lib/utils";
-import type { ChangedFile, Commit } from "@/types/events";
+import type { ChangedFile, ChangeSet, Commit } from "@/types/events";
 
 const SUB_TABS = [
   // "Uncommitted" rather than "Changes": the view is already called Changes,
@@ -38,21 +38,20 @@ const NO_FILES: readonly ChangedFile[] = [];
 /// and committed — a second place to write commits would be a second way to do
 /// the thing the reader is already asking the agent for.
 ///
-/// Scoped to the whole tree, unlike the right panel's changes tab, which
-/// answers "what did this turn do" and stays as it is. Everything runs against
-/// `cwd` rather than the project root — a worktree session has its own tree.
 export default function ChangesView({
   cwd,
   active,
   revision,
   writeRevision,
   sideHost,
-  latest,
+  latestRange,
+  summaryDiff,
   busy,
 }: {
   cwd: string;
   sideHost?: HTMLElement | null;
-  latest: ReturnType<typeof useChanges>;
+  latestRange: { baseline: string | null; head: string | null };
+  summaryDiff: { earlier: ChangeSet | null } | null;
   /// False while another view is showing. The component stays mounted so its
   /// selection and its rendered diffs survive, but a hidden view must not keep
   /// snapshotting the working tree on every event.
@@ -69,6 +68,11 @@ export default function ChangesView({
   // indistinguishable from a reader who chose it, so nothing else could ever
   // lead.
   const [subTabPick, setSubTabPick] = useState<SubTab | null>(null);
+  const [openedSummary, setOpenedSummary] = useState<typeof summaryDiff>(null);
+  if (summaryDiff !== openedSummary) {
+    setOpenedSummary(summaryDiff);
+    if (summaryDiff) setSubTabPick(summaryDiff.earlier ? "earlier" : "latest");
+  }
   const [commit, setCommit] = useState<Commit | null>(null);
   const [branchSha, setBranchSha] = useState<string | null>(null);
   const [latestPath, setLatestPath] = useState<string | null>(null);
@@ -162,11 +166,14 @@ export default function ChangesView({
   const pick = (files: readonly ChangedFile[], path: string | null) =>
     files.find((f) => f.path === path) ?? files[0] ?? null;
 
-  const isLatest = subTab === "latest";
-  const treeFiles = isLatest ? latest.changes?.files ?? NO_FILES : workingFiles;
-  const tree = isLatest ? latest : working;
-  const treeTab = subTab === "uncommitted" || isLatest;
-  const selectedWorking = pick(treeFiles, isLatest ? latestPath : workingPath);
+  const earlier = subTab === "earlier" ? summaryDiff?.earlier : null;
+  const scopes = earlier ? [...SUB_TABS, { value: "earlier" as const, label: "Earlier turn" }] : SUB_TABS;
+  const isTurn = subTab === "latest" || !!earlier;
+  const latest = useChanges(cwd, latestRange.baseline, latestRange.head, writeRevision, active && subTab === "latest", busy);
+  const tree = earlier ? { changes: earlier, loading: false, error: null } : isTurn ? latest : working;
+  const treeFiles = tree.changes?.files ?? NO_FILES;
+  const treeTab = subTab === "uncommitted" || isTurn;
+  const selectedWorking = pick(treeFiles, isTurn ? latestPath : workingPath);
   const selectedCommitFile = pick(commitFiles, subTab === "branch" ? branchPath : commitPath);
 
   const showing = treeTab ? tree : commitChanges;
@@ -184,7 +191,7 @@ export default function ChangesView({
   // and `useHotkey` claims every chord it matches, so leaving it bound would
   // take ⌘⇧← from the composer, where it selects to the start of the line.
   const stepSubTab = (delta: number) => {
-    const next = SUB_TABS[SUB_TABS.findIndex((t) => t.value === subTab) + delta];
+    const next = scopes[scopes.findIndex((t) => t.value === subTab) + delta];
     if (next) setSubTabPick(next.value);
   };
   //
@@ -223,7 +230,7 @@ export default function ChangesView({
             a list under them rather than a panel body: the button's own `px-2`
             lands its label at 12px, level with the filenames below it. */}
         <div className="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-1">
-          {SUB_TABS.map(({ value, label }) => (
+          {scopes.map(({ value, label }) => (
             <Tooltip key={value}>
               <TooltipTrigger asChild>
                 <button
@@ -260,13 +267,13 @@ export default function ChangesView({
         {treeTab ? (
           treeFiles.length === 0 ? (
             <p className="min-h-0 flex-1 px-3 py-6 text-ui text-muted-foreground">
-              {tree.error ?? (isLatest ? (tree.loading ? "Reading latest turn…" : "No changes from the latest turn.") : working.changes ? "No uncommitted changes." : "Reading the working tree…")}
+              {tree.error ?? (isTurn ? (tree.loading ? "Reading latest turn…" : "No changes from the latest turn.") : working.changes ? "No uncommitted changes." : "Reading the working tree…")}
             </p>
           ) : (
             <FileList
               files={treeFiles}
               selected={selectedWorking?.path ?? null}
-              onSelect={isLatest ? setLatestPath : setWorkingPath}
+              onSelect={isTurn ? setLatestPath : setWorkingPath}
               className="min-h-0 flex-1 overflow-y-auto"
             />
           )

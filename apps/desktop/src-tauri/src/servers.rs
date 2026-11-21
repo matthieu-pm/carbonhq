@@ -156,6 +156,16 @@ fn conns() -> std::sync::MutexGuard<'static, Vec<Conn>> {
     CONNS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// A re-added server gets a new row ID but still owns the same terminal processes.
+pub(crate) fn terminal_endpoint(id: &str) -> Option<String> {
+    if id == LOCAL {
+        return Some(LOCAL.to_owned());
+    }
+    conns().iter().find(|c| c.saved.id == id).map(|c| {
+        c.saved.ssh.as_ref().map(ssh::Target::line).unwrap_or_else(|| c.saved.url.clone())
+    })
+}
+
 fn info(conn: &Conn) -> ServerInfo {
     ServerInfo {
         id: conn.saved.id.clone(),

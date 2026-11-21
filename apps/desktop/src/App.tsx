@@ -186,7 +186,7 @@ import { useAgentUpdates } from "@/hooks/useAgentUpdates";
 import LoginExpiredNotice from "@/components/composer/LoginExpiredNotice";
 import AutoContinueNotice from "@/components/composer/AutoContinueNotice";
 import RecoveryNotice from "@/components/composer/RecoveryNotice";
-import type { Attachment, IssueQuery, IssueRef, SessionIndexItem, WorktreeDisposition } from "@/types/events";
+import type { Attachment, ChangeSet, IssueQuery, IssueRef, SessionIndexItem, WorktreeDisposition } from "@/types/events";
 import { useSlashCommands } from "@/hooks/useSlashCommands";
 import { useMcpMentions } from "@/hooks/useMcpMentions";
 import { useRecorder } from "@/hooks/useTranscription";
@@ -1554,6 +1554,11 @@ function App() {
   const modelTakesImages =
     models.find((m) => m.id === modelId)?.acceptsImages ?? true;
 
+  const [summaryDiff, setSummaryDiff] = useState<{ session: string; earlier: ChangeSet | null } | null>(null);
+  const latestRange = useMemo(
+    () => changeRange(selectedSession?.events ?? [], selectedSession?.tailBaseline, "latest"),
+    [selectedSession?.events, selectedSession?.tailBaseline],
+  );
   const { baseline, head, previous } = useMemo(
     () => changeRange(selectedSession?.events ?? [], selectedSession?.tailBaseline),
     [selectedSession?.events, selectedSession?.tailBaseline],
@@ -2949,6 +2954,12 @@ function App() {
       docked={summary.docks}
       onOpen={(tab) => {
         summary.closePopover();
+        if (tab === "changes") {
+          const changes = shownChanges.changes;
+          const earlier = changes && (changes.base !== latestRange.baseline ||
+            (latestRange.head !== null && changes.head !== latestRange.head));
+          setSummaryDiff({ session: shownSession.sessionId, earlier: earlier ? changes : null });
+        }
         showPanel(tab);
       }}
       onManageSources={serverOfPath(shownSession.cwd) === LOCAL ? () => { summary.closePopover(); setSettingsTab("mcp"); setSettingsOpen(true); } : undefined}
@@ -3172,6 +3183,9 @@ function App() {
             closeTerminal={(id) => terminalControls.current?.close(id)}
             availableTools={tabs}
             openTool={showPanel}
+            restoreTool={(tab) => changeDock((d) => ({
+              ...expandTab(d, tab), active: d.active === tab ? null : d.active,
+            }))}
             closeTool={closeView}
             rename={
               mainGroup || !shownSession
@@ -3674,7 +3688,8 @@ function App() {
             cwd={selectedSession.cwd}
             active={changesVisible}
             sideHost={dock.active === "changes" ? sideHost : null}
-            latest={shownChanges}
+            latestRange={latestRange}
+            summaryDiff={summaryDiff?.session === selectedSession.sessionId ? summaryDiff : null}
             revision={turnRevision}
             writeRevision={writeRevision}
             busy={busy}
