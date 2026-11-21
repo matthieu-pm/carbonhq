@@ -48,6 +48,7 @@ export function CanvasEditor({
   file,
   projects,
   collapsed,
+  controlsOpen = true,
   sidebarStyle,
   resizeHandle,
   libraryError,
@@ -55,6 +56,7 @@ export function CanvasEditor({
   file: CanvasFile;
   projects: Project[];
   collapsed: boolean;
+  controlsOpen?: boolean;
   sidebarStyle: CSSProperties;
   resizeHandle: ReactNode;
   libraryError: string;
@@ -215,6 +217,36 @@ export function CanvasEditor({
       );
     }
   }
+  const notices = (libraryError || error) && (
+    <>
+      {libraryError && (
+        <p className="ce-notice" role="alert">
+          {libraryError}
+        </p>
+      )}
+      {error && (
+        <div role="alert" className="ce-notice">
+          {error}
+          <Button
+            size="sm"
+            disabled={saving}
+            onClick={() => void (conflict ? session.keepMine() : session.flush())}
+          >
+            {conflict ? "Keep my edits" : "Retry save"}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              if (window.confirm("Discard unsaved edits and reload this canvas?")) void session.load();
+            }}
+          >
+            Reload from disk
+          </Button>
+        </div>
+      )}
+    </>
+  );
   return (
     <section
       className="ce-editor"
@@ -332,6 +364,7 @@ export function CanvasEditor({
       {doc && page ? (
         <>
           <div className="ce-stage">
+            {!controlsOpen && notices && <div className="ce-stage-notices">{notices}</div>}
             <CanvasBoard
               doc={doc}
               page={page}
@@ -356,7 +389,7 @@ export function CanvasEditor({
               ))}
             </div>
           </div>
-          <aside className="ce-inspector" aria-label="Canvas inspector">
+          <aside className="ce-inspector" hidden={!controlsOpen} aria-label="Canvas inspector">
             <header className="ce-inspector-head">
               <span aria-live="polite">{saving ? "Saving…" : ""}</span>
               <DropdownMenu>
@@ -375,32 +408,7 @@ export function CanvasEditor({
                 </DropdownMenuContent>
               </DropdownMenu>
             </header>
-            {libraryError && (
-              <p className="ce-notice" role="alert">
-                {libraryError}
-              </p>
-            )}
-            {error && (
-              <div role="alert" className="ce-notice">
-                {error}
-                <Button
-                  size="sm"
-                  disabled={saving}
-                  onClick={() => void (conflict ? session.keepMine() : session.flush())}
-                >
-                  {conflict ? "Keep my edits" : "Retry save"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    if (window.confirm("Discard unsaved edits and reload this canvas?")) void session.load();
-                  }}
-                >
-                  Reload from disk
-                </Button>
-              </div>
-            )}
+            {controlsOpen && notices}
             <div className="ce-scroll">
               <CanvasInspector
                 key={selected?.id ?? page.id}

@@ -661,10 +661,10 @@ pub fn hold_sends() {
 /// One send counted for its whole length, waiting first while a restart is
 /// closing the server — which ends the wait by exiting, or by finding work
 /// and reopening.
-struct Sending;
+pub(crate) struct Sending;
 
 impl Sending {
-    async fn enter() -> Self {
+    pub(crate) async fn enter() -> Self {
         loop {
             SENDS.fetch_add(1, SeqCst);
             if !CLOSING.load(SeqCst) {
@@ -709,7 +709,7 @@ impl SessionManager {
     /// so one of the two always sees the other.
     pub async fn close_if_idle(&self) -> bool {
         CLOSING.store(true, SeqCst);
-        if SENDS.load(SeqCst) == 0 && !self.any_turn_in_flight().await {
+        if SENDS.load(SeqCst) == 0 && !crate::terminal::has_running() && !self.any_turn_in_flight().await {
             return true;
         }
         CLOSING.store(false, SeqCst);
@@ -2378,7 +2378,10 @@ impl SessionManager {
             eprintln!("could not delete pi's session file for {session_id}: {e}");
         }
 
-        delete_session(session_id).await
+        let removed = delete_session(session_id).await?;
+        let deleted = session_id.to_owned();
+        crate::terminal::close(move |tab| tab.session == deleted).await?;
+        Ok(removed)
     }
 
     /// Moves a session's unread mark: `Completed` → `Idle` on a read, `Idle` →

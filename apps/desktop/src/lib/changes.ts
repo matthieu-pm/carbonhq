@@ -47,7 +47,8 @@ type ChangeRange = Range & {
 /// — or the user in their editor — changed in the same repo since that prompt
 /// gets attributed to this one. A turn is short enough for that overlap to be
 /// unlikely; a session is not.
-export function changeRange(events: AgentEvent[], tailBaseline?: TailBaseline | null): ChangeRange {
+export function changeRange(events: AgentEvent[], tailBaseline?: TailBaseline | null, scope: "summary" | "latest" = "summary"): ChangeRange {
+  let completed = false;
   let head: string | null = null;
   // The newest turn whatever it did, for when none changed anything: the panel
   // then says so, rather than claiming there is no snapshot at all.
@@ -59,6 +60,16 @@ export function changeRange(events: AgentEvent[], tailBaseline?: TailBaseline | 
     // The newest head seen walking back to a prompt is that turn's end, which
     // also covers a background subagent's report-back turn: its closing
     // snapshot is fresher than the prompt's own turn's and supersedes it.
+    if (scope === "latest") {
+      if (!completed && payload.type === "turn_completed") {
+        completed = true;
+        head = payload.head ?? null;
+      }
+      if (payload.type === "user_message" && !("queued" in payload && payload.queued)) {
+        return { baseline: completed && !head ? null : payload.baseline ?? null, head, previous: null };
+      }
+      continue;
+    }
     if (!head && payload.type === "turn_completed" && payload.head) {
       head = payload.head;
     }

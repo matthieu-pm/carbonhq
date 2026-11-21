@@ -32,7 +32,8 @@ import { cn } from "@/lib/utils";
 import type { ChangeSet, Harness, PrUnavailable, PullRequest } from "@/types/events";
 
 /// The same toolbar control pins on a roomy canvas and opens a popover otherwise.
-export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange, boundary }: {
+export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange, boundary, className }: {
+  className?: string;
   open: boolean;
   onToggle: () => void;
   popover?: ReactNode;
@@ -45,7 +46,7 @@ export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange, bou
     <Button id="pinned-summary-toggle" variant="ghost" size="icon-sm"
       aria-label="Toggle pinned summary" aria-pressed={open} aria-controls="pinned-summary"
       onClick={popover ? undefined : onToggle}
-      className={cn("shrink-0 text-muted-foreground", open && "bg-accent text-foreground")}>
+      className={cn("shrink-0 text-muted-foreground", open && "bg-accent text-foreground", className)}>
       <UnorderedList3Outline18 className="size-4.5" aria-hidden />
     </Button>
   );

@@ -30,7 +30,7 @@ export function reconcileLog(
 ///
 /// Named here rather than beside the row it labels, so the rule below can
 /// answer in it without this file reaching up into a component.
-export type SubTab = "uncommitted" | "branch" | "history";
+export type SubTab = "uncommitted" | "branch" | "history" | "latest" | "earlier";
 
 /// Where that row lands before the reader has picked a tab.
 ///

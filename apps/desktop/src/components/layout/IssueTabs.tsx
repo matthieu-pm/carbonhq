@@ -124,12 +124,16 @@ export function HeaderIconButton({
   label,
   shortcut,
   size = "icon-sm",
+  disabled,
+  expanded,
   onClick,
   children,
 }: {
   label: string;
   shortcut?: ShortcutId;
   size?: "icon-sm" | "icon-xs";
+  disabled?: boolean;
+  expanded?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -140,6 +144,8 @@ export function HeaderIconButton({
           variant="ghost"
           size={size}
           aria-label={label}
+          disabled={disabled}
+          aria-expanded={expanded}
           onClick={onClick}
           className="shrink-0 text-muted-foreground transition-colors hover:text-foreground active:not-aria-[haspopup]:translate-y-0"
         >

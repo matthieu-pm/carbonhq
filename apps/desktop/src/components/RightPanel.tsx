@@ -15,7 +15,11 @@ import { cn } from "@/lib/utils";
 /// The header button that opens and closes the pane. Lives here rather than in
 /// `App` so the toggle and the thing it toggles stay in one file, and outside
 /// [RightPanel] so it remains reachable when the pane is closed.
-export function PanelToggle({ onToggle }: { onToggle: () => void }) {
+export function PanelToggle({ onToggle, label = "Toggle panel", expanded }: {
+  onToggle: () => void;
+  label?: string;
+  expanded?: boolean;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -25,7 +29,8 @@ export function PanelToggle({ onToggle }: { onToggle: () => void }) {
           variant="ghost"
           size="icon-sm"
           onClick={onToggle}
-          aria-label="Toggle panel"
+          aria-label={label}
+          aria-expanded={expanded}
           // `shrink-0` because this is the way back out of a pane dragged
           // wide: everything else in that header may give up width or clip,
           // this may not.
@@ -35,7 +40,7 @@ export function PanelToggle({ onToggle }: { onToggle: () => void }) {
         </Button>
       </TooltipTrigger>
       <TooltipContent side="left">
-        Toggle Panel
+        {label}
         <ShortcutKeys ids={["panel.toggle"]} />
       </TooltipContent>
     </Tooltip>

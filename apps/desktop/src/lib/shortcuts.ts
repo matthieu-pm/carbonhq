@@ -76,16 +76,17 @@ export const SHORTCUTS = [
   { id: "tab.close", label: "Close tab or pane", group: "Sessions", chord: k("w") },
 
   { id: "sidebar.toggle", label: "Toggle sidebar", group: "Panels and views", chord: k("b") },
-  { id: "panel.toggle", label: "Toggle right panel", group: "Panels and views", chord: k("e") },
-  { id: "panel.side", label: "Move panel to the other side", group: "Panels and views", chord: k("e", { alt: true }) },
+  { id: "terminal.toggle", label: "Toggle terminal", group: "Panels and views", chord: k("j") },
+  { id: "panel.toggle", label: "Toggle side pane", group: "Panels and views", chord: k("e") },
+  { id: "panel.side", label: "Move issue details to the other side", group: "Panels and views", chord: k("e", { alt: true }) },
   // The only way to the crew. It has no button anywhere, deliberately — the
   // column is a fixed 320px and a permanent control for it would be chrome in
   // the titlebar for a thing most conversations never have. ⌘⇧C is free of ⌘C,
   // which `sameChord` compares Shift for, so copy is untouched.
   { id: "crew.toggle", label: "Toggle crew", group: "Panels and views", chord: k("c", { shift: true }) },
   // ⌥, not ⇧: ⌘⇧[ and ⌘⇧] step the titlebar's tabs, every browser's chord.
-  { id: "panel.tab.prev", label: "Previous panel tab", group: "Panels and views", chord: k("[", { alt: true, code: "BracketLeft" }) },
-  { id: "panel.tab.next", label: "Next panel tab", group: "Panels and views", chord: k("]", { alt: true, code: "BracketRight" }) },
+  { id: "panel.tab.prev", label: "Previous side tab", group: "Panels and views", chord: k("[", { alt: true, code: "BracketLeft" }) },
+  { id: "panel.tab.next", label: "Next side tab", group: "Panels and views", chord: k("]", { alt: true, code: "BracketRight" }) },
   { id: "panel.refresh", label: "Refresh panel or reload page", group: "Panels and views", chord: k("r") },
   { id: "browser.newTab", label: "New browser tab", group: "Panels and views", chord: k("t") },
   { id: "doc.save", label: "Save doc", group: "Panels and views", chord: k("s") },

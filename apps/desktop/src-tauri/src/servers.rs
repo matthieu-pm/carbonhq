@@ -156,6 +156,16 @@ fn conns() -> std::sync::MutexGuard<'static, Vec<Conn>> {
     CONNS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// A re-added server gets a new row ID but still owns the same terminal processes.
+pub(crate) fn terminal_endpoint(id: &str) -> Option<String> {
+    if id == LOCAL {
+        return Some(LOCAL.to_owned());
+    }
+    conns().iter().find(|c| c.saved.id == id).map(|c| {
+        c.saved.ssh.as_ref().map(ssh::Target::line).unwrap_or_else(|| c.saved.url.clone())
+    })
+}
+
 fn info(conn: &Conn) -> ServerInfo {
     ServerInfo {
         id: conn.saved.id.clone(),
@@ -610,6 +620,7 @@ async fn serve(id: &str, ws: Socket) {
     announce();
     // This Mac's server is loopback, which cannot die silently.
     let remote = id != LOCAL;
+    if remote { tokio::spawn(crate::terminal_client::cleanup(id.to_owned())); }
     let writer = tokio::spawn(async move {
         let mut ping = tokio::time::interval(PING);
         loop {
@@ -986,6 +997,11 @@ pub async fn server_invoke(server: String, cmd: String, args: Value) -> Result<V
         {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+    }
+    let mut args = args;
+    if cmd.starts_with("terminal_") && cmd != "terminal_close_owner" {
+        let owner = crate::terminal_client::owner(&server).await.map_err(|e| json!(e.to_string()))?;
+        args.as_object_mut().ok_or_else(|| json!("invalid terminal arguments"))?.insert("owner".into(), json!(owner));
     }
     let counts = server != LOCAL && cmd == "send_msg";
     // The server skips both for this app, which reports them instead. Only

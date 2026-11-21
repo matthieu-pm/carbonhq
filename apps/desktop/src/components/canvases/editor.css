@@ -353,6 +353,15 @@
   border-left: 1px solid var(--hairline);
   background: var(--background);
 }
+.ce-inspector[hidden] {
+  display: none;
+}
+.ce-stage-notices {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  background: var(--background);
+}
 .ce-inspector-head {
   justify-content: space-between;
 }

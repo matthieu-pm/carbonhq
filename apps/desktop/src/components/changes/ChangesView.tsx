@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import CommitMessage from "@/components/changes/CommitMessage";
 import DiffPane from "@/components/changes/DiffPane";
@@ -11,7 +12,7 @@ import { useHotkey } from "@/hooks/useHotkey";
 import { useCommitLog, useHeadTree } from "@/hooks/useRepo";
 import { commitBase, defaultSubTab, type SubTab } from "@/lib/commit";
 import { cn } from "@/lib/utils";
-import type { ChangedFile, Commit } from "@/types/events";
+import type { ChangedFile, ChangeSet, Commit } from "@/types/events";
 
 const SUB_TABS = [
   // "Uncommitted" rather than "Changes": the view is already called Changes,
@@ -23,6 +24,7 @@ const SUB_TABS = [
   // wider than what has not been committed yet.
   { value: "branch", label: "Branch" },
   { value: "history", label: "History" },
+  { value: "latest", label: "Latest turn" },
 ] as const satisfies readonly { value: SubTab; label: string }[];
 
 /// Holds identity for the two lists' `files` when a read hasn't landed, so the
@@ -36,17 +38,20 @@ const NO_FILES: readonly ChangedFile[] = [];
 /// and committed — a second place to write commits would be a second way to do
 /// the thing the reader is already asking the agent for.
 ///
-/// Scoped to the whole tree, unlike the right panel's changes tab, which
-/// answers "what did this turn do" and stays as it is. Everything runs against
-/// `cwd` rather than the project root — a worktree session has its own tree.
 export default function ChangesView({
   cwd,
   active,
   revision,
   writeRevision,
+  sideHost,
+  latestRange,
+  summaryDiff,
   busy,
 }: {
   cwd: string;
+  sideHost?: HTMLElement | null;
+  latestRange: { baseline: string | null; head: string | null };
+  summaryDiff: { earlier: ChangeSet | null } | null;
   /// False while another view is showing. The component stays mounted so its
   /// selection and its rendered diffs survive, but a hidden view must not keep
   /// snapshotting the working tree on every event.
@@ -63,8 +68,14 @@ export default function ChangesView({
   // indistinguishable from a reader who chose it, so nothing else could ever
   // lead.
   const [subTabPick, setSubTabPick] = useState<SubTab | null>(null);
+  const [openedSummary, setOpenedSummary] = useState<typeof summaryDiff>(null);
+  if (summaryDiff !== openedSummary) {
+    setOpenedSummary(summaryDiff);
+    if (summaryDiff) setSubTabPick(summaryDiff.earlier ? "earlier" : "latest");
+  }
   const [commit, setCommit] = useState<Commit | null>(null);
   const [branchSha, setBranchSha] = useState<string | null>(null);
+  const [latestPath, setLatestPath] = useState<string | null>(null);
   const [workingPath, setWorkingPath] = useState<string | null>(null);
   // A path each, not one shared between the two commit tabs. Switching tabs by
   // the row moves the open commit without either list's `onToggle` running, so
@@ -155,11 +166,18 @@ export default function ChangesView({
   const pick = (files: readonly ChangedFile[], path: string | null) =>
     files.find((f) => f.path === path) ?? files[0] ?? null;
 
-  const selectedWorking = pick(workingFiles, workingPath);
+  const earlier = subTab === "earlier" ? summaryDiff?.earlier : null;
+  const scopes = earlier ? [...SUB_TABS, { value: "earlier" as const, label: "Earlier turn" }] : SUB_TABS;
+  const isTurn = subTab === "latest" || !!earlier;
+  const latest = useChanges(cwd, latestRange.baseline, latestRange.head, writeRevision, active && subTab === "latest", busy);
+  const tree = earlier ? { changes: earlier, loading: false, error: null } : isTurn ? latest : working;
+  const treeFiles = tree.changes?.files ?? NO_FILES;
+  const treeTab = subTab === "uncommitted" || isTurn;
+  const selectedWorking = pick(treeFiles, isTurn ? latestPath : workingPath);
   const selectedCommitFile = pick(commitFiles, subTab === "branch" ? branchPath : commitPath);
 
-  const showing = subTab === "uncommitted" ? working : commitChanges;
-  const selectedFile = subTab === "uncommitted" ? selectedWorking : selectedCommitFile;
+  const showing = treeTab ? tree : commitChanges;
+  const selectedFile = treeTab ? selectedWorking : selectedCommitFile;
 
   // ⌘⇧← / ⌘⇧→ step this row, the same shape ⌘⇧↑/↓ steps the session list — the
   // arrow points at the tab, so a fourth sub-tab would need no fourth binding.
@@ -173,7 +191,7 @@ export default function ChangesView({
   // and `useHotkey` claims every chord it matches, so leaving it bound would
   // take ⌘⇧← from the composer, where it selects to the start of the line.
   const stepSubTab = (delta: number) => {
-    const next = SUB_TABS[SUB_TABS.findIndex((t) => t.value === subTab) + delta];
+    const next = scopes[scopes.findIndex((t) => t.value === subTab) + delta];
     if (next) setSubTabPick(next.value);
   };
   //
@@ -192,30 +210,34 @@ export default function ChangesView({
   // testing the id alone announced every real repository as a plain directory
   // for a frame or two. A repository with no commit yet is not this case: it
   // answers with the empty tree, so its files list as additions.
+  // Keep repository and selection state mounted while the diff moves between tab strips.
+  const present = (body: ReactNode) => sideHost ? createPortal(body, sideHost) : body;
   if (head.settled && head.tree === null && !working.changes) {
-    return (
+    return present(
       <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-ui text-muted-foreground">
         This session is not in a git repository.
       </div>
     );
   }
 
-  return (
+  return present(
     // No top border: the sheet's ring under the titlebar already parts the two.
-    <div className="flex min-h-0 flex-1">
-      <div className="flex w-72 shrink-0 flex-col border-r border-border">
+    <div className={cn("flex min-h-0 min-w-0 flex-1", sideHost && "flex-col @[640px]/diff:flex-row")}>
+      <div className={cn("flex min-h-0 shrink-0 flex-col border-border", sideHost
+        ? "max-h-[40%] border-b @[640px]/diff:max-h-none @[640px]/diff:w-72 @[640px]/diff:border-r @[640px]/diff:border-b-0"
+        : "w-72 border-r")}>
         {/* `px-1` against the right panel's `px-2`, because the tabs here have
             a list under them rather than a panel body: the button's own `px-2`
             lands its label at 12px, level with the filenames below it. */}
-        <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-1">
-          {SUB_TABS.map(({ value, label }) => (
+        <div className="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-1">
+          {scopes.map(({ value, label }) => (
             <Tooltip key={value}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   onClick={() => setSubTabPick(value)}
                   className={cn(
-                    "rounded-md px-2 py-1 text-ui transition-colors",
+                    "shrink-0 rounded-md px-2 py-1 text-ui transition-colors",
                     subTab === value
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -242,16 +264,16 @@ export default function ChangesView({
           ))}
         </div>
 
-        {subTab === "uncommitted" ? (
-          workingFiles.length === 0 ? (
+        {treeTab ? (
+          treeFiles.length === 0 ? (
             <p className="min-h-0 flex-1 px-3 py-6 text-ui text-muted-foreground">
-              {working.changes ? "No uncommitted changes." : "Reading the working tree…"}
+              {tree.error ?? (isTurn ? (tree.loading ? "Reading latest turn…" : "No changes from the latest turn.") : working.changes ? "No uncommitted changes." : "Reading the working tree…")}
             </p>
           ) : (
             <FileList
-              files={workingFiles}
+              files={treeFiles}
               selected={selectedWorking?.path ?? null}
-              onSelect={setWorkingPath}
+              onSelect={isTurn ? setLatestPath : setWorkingPath}
               className="min-h-0 flex-1 overflow-y-auto"
             />
           )

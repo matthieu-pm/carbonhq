@@ -221,7 +221,8 @@ export const APP_COMMANDS = new Set([
 /// `invoke`, routed: to `server` where given, else to the server a qualified
 /// argument names, else to the session's, else local.
 export async function invoke<T>(cmd: string, args?: Rec, server?: ServerId): Promise<T> {
-  const unwrapped = unwrapArgs(args ?? {});
+  // Terminal input may contain a literal carbon:// URL. Only the session determines its server.
+  const unwrapped = cmd.startsWith("terminal_") ? { args: args ?? {}, server: null } : unwrapArgs(args ?? {});
   const sessionId = typeof unwrapped.args.sessionId === "string" ? unwrapped.args.sessionId : null;
   const target = server ?? unwrapped.server ?? (onThisMac(cmd) ? LOCAL : serverOfSession(sessionId));
   // A new session's first send routes by its cwd; this is where its id learns

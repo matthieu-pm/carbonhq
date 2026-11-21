@@ -55,6 +55,15 @@ function noise(): AgentEvent {
 }
 
 describe("changeRange", () => {
+  it("keeps the latest turn even when it changed nothing or has no usable snapshots", () => {
+    const first = [prompt("a"), turnEnd("b")];
+    expect(changeRange([...first, prompt("b"), turnEnd("b")], null, "latest"))
+      .toEqual({ baseline: "b", head: "b", previous: null });
+    expect(changeRange([...first, prompt(null), turnEnd("c")], null, "latest").baseline).toBeNull();
+    expect(changeRange([...first, prompt("b"), turnEnd(null)], null, "latest").baseline).toBeNull();
+    expect(changeRange([turnEnd("c")], { promptId: "outside", baseline: "b" }, "latest").baseline).toBe("b");
+  });
+
   it("keeps a long turn's baseline when its prompt is outside the bounded tail", () => {
     expect(changeRange([noise(), turnEnd("finished")], { promptId: "outside", baseline: "before" }))
       .toEqual({ baseline: "before", head: "finished", previous: null });

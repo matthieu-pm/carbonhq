@@ -38,7 +38,7 @@ export function useViewportWidth(): number {
 
 /// The panes that sit either side of the chat column, each holding width no
 /// other pane can have.
-type Pane = "sidebar" | "panel";
+type Pane = "terminal" | "sidebar" | "panel";
 
 /// Who yields to whom — see `takenBy`, which is where that matters.
 ///
@@ -47,7 +47,7 @@ type Pane = "sidebar" | "panel";
 /// guaranteed either way: the sidebar may take everything but that floor, and
 /// the panel everything the sidebar left over it, so what remains is exactly
 /// the floor.
-const ORDER: readonly Pane[] = ["sidebar", "panel"];
+const ORDER: readonly Pane[] = ["terminal", "sidebar", "panel"];
 
 /// The narrowest the chat column may be squeezed to, whatever the share works
 /// out at. The share alone is a proportion, so on a small window it still hands

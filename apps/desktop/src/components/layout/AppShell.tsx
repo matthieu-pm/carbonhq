@@ -29,6 +29,7 @@ type AppShellProps = {
   /// Right-hand inspector, when open. Sits outside the chat column so the
   /// composer stays scoped to the conversation rather than spanning both.
   panel?: ReactNode;
+  terminal?: ReactNode;
   /// Draws the panel between the sidebar and the chat column instead of at the
   /// window's right edge.
   panelLeft?: boolean;
@@ -71,6 +72,7 @@ export default function AppShell({
   header,
   footer,
   panel,
+  terminal,
   panelLeft = false,
   panelOpen = false,
   centered = false,
@@ -103,13 +105,10 @@ export default function AppShell({
 
   // A card of its own beside the sheet, with the frame showing between. Kept
   // mounted while shut, since the pane hides rather than unmounts.
-  const gap = <div className="w-1.5 shrink-0 bg-surface-frame" />;
   const panelCard = panel && (
-    <div className={cn("flex shrink-0", !panelOpen && "hidden")}>
-      {!panelLeft && gap}
-      <Sheet tall={tall}>{panel}</Sheet>
-      {panelLeft && gap}
-    </div>
+    <PanelCard left={panelLeft} tall={tall} className={!panelOpen ? "hidden" : undefined}>
+      {panel}
+    </PanelCard>
   );
   return (
     // The header spans the window and everything else sits under it, the way a
@@ -191,6 +190,7 @@ export default function AppShell({
         </div>
             </Sheet>
             {!panelLeft && panelCard}
+            {terminal}
           </div>
           <div className="h-2 shrink-0 bg-surface-frame" />
         </div>
@@ -268,6 +268,30 @@ export const SIDEBAR_TOKENS = cn(
 
 export function DockedSidebarFrame({ children }: { children: ReactNode }) {
   return <div className={cn("flex h-full shrink-0 border-r border-hairline bg-surface-frame/50", SIDEBAR_TOKENS)}>{children}</div>;
+}
+
+export function PanelCard({
+  children,
+  className,
+  left = false,
+  tall,
+  resizeHandle,
+}: {
+  children: ReactNode;
+  className?: string;
+  left?: boolean;
+  tall?: boolean;
+  resizeHandle?: ReactNode;
+}) {
+  return (
+    <div className={cn("flex shrink-0", left && "flex-row-reverse", className)}>
+      <div className="w-1.5 shrink-0 bg-surface-frame" />
+      <div className="relative flex min-w-0">
+        {resizeHandle}
+        <Sheet tall={tall}>{children}</Sheet>
+      </div>
+    </div>
+  );
 }
 
 /// A raised card on the frame: an 8px-round ring and shadow, its contents

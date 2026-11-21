@@ -201,7 +201,7 @@ export default function SettingsPage({
             </Section>
             <Section>
               <AutoHideRow
-                label="Auto-hide side panel outside Chat"
+                label="Auto-hide side tabs outside Chat"
                 checked={autoHidePanel}
                 onChange={onAutoHidePanelChange}
               />
@@ -766,8 +766,8 @@ function PanelSideRow({
     <SettingRow
       id={id}
       asGroup
-      label="Panel side"
-      description="Where the Changes and PR panel opens beside the chat."
+      label="Issue details position"
+      description="Where issue details open on the Issues page."
     >
       <span className="flex items-center gap-3">
         {/* Gone with the chord, for the Theme row's reason. */}
