@@ -127,6 +127,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      html2canvas-pro:
+        specifier: ^2.6.4
+        version: 2.6.4
       katex:
         specifier: 0.19.1
         version: 0.19.1
@@ -4850,6 +4853,10 @@ packages:
 
   html-void-elements@3.0.0:
     resolution: {integrity: sha512-bEqo66MRXsUGxWHV5IP0PUiAWwoEjba4VCzg0LjFJBpchPaTfyfCKTG6bc5F8ucKec3q5y6qOdGyYTSBEvhCrg==}
+
+  html2canvas-pro@2.6.4:
+    resolution: {integrity: sha512-1SMOfXwMACgQPt1wcKOtuRnBxkcREiJQdOyVpgp6a4/z9Rb/v7QPcvyu5GlxdDDiMznLwKxX5KwvtSlNlZJ7Wg==}
+    engines: {node: '>=24.0.0'}
 
   htmlparser2@7.2.0:
     resolution: {integrity: sha512-H7MImA4MS6cw7nbyURtLPO1Tms7C5H602LRETv95z1MxO/7CP7rDVROehUYeYBUYEON94NXXDEPmZuq+hX4sog==}
@@ -11632,6 +11639,8 @@ snapshots:
   html-url-attributes@3.0.1: {}
 
   html-void-elements@3.0.0: {}
+
+  html2canvas-pro@2.6.4: {}
 
   htmlparser2@7.2.0:
     dependencies:

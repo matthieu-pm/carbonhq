@@ -9,9 +9,10 @@ import {
   type LayerKind,
   type Page,
 } from "./document";
-import type { Change } from "./CanvasTheme";
+import type { CanvasSession } from "./useCanvasDocument";
+import { CanvasMarkup } from "./CanvasMarkup";
 
-export type Tool = "Select" | "Hand" | LayerKind;
+export type Tool = "Select" | "Hand" | "Pen" | "Comment" | LayerKind;
 export type View = { x: number; y: number; zoom: number };
 export function zoomAt(view: View, next: number, x: number, y: number): View {
   const zoom = Math.min(8, Math.max(0.05, next)),
@@ -55,7 +56,7 @@ export function CanvasBoard({
   setTool,
   view,
   setView,
-  change,
+  session,
 }: {
   doc: Document;
   page: Page;
@@ -65,8 +66,9 @@ export function CanvasBoard({
   setTool: (t: Tool) => void;
   view: View;
   setView: React.Dispatch<React.SetStateAction<View>>;
-  change: Change;
+  session: CanvasSession;
 }) {
+  const change = session.change;
   const board = useRef<HTMLDivElement>(null);
   const gesture = useRef<Drag | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -217,7 +219,7 @@ export function CanvasBoard({
     if (gesture.current?.pointer !== e.pointerId) return;
     move(e);
     const g = gesture.current!;
-    if (g.mode === "draw" && tool !== "Select" && tool !== "Hand") {
+    if (g.mode === "draw" && (tool === "Frame" || tool === "Text" || tool === "Rectangle")) {
       const sized = Math.hypot(g.delta.x, g.delta.y) * view.zoom > 4;
       const l = newLayer(
         tool,
@@ -335,6 +337,7 @@ export function CanvasBoard({
           </span>
         </div>
       )}
+      <CanvasMarkup key={page.id} page={page} view={view} tool={tool} session={session} />
       {drag?.mode === "draw" && (
         <div
           className="ce-marquee"

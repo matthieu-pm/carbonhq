@@ -1,8 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { invoke, listen, LOCAL, serverOfPath } from "@/lib/transport";
+import { invoke, listen, LOCAL, noteSession, serverOfPath } from "@/lib/transport";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { ExternalLink, FileDiff, Minimize2, Plus } from "lucide-react";
+import { ExternalLink, FileDiff, MessageSquare, Minimize2, Plus } from "lucide-react";
 import { SessionToolBody, SessionToolIcon } from "@/components/layout/SessionToolTab";
 import { EMPTY_DOCK, dockTab, closeDockTab, expandTab, isTerminalView, terminalView, terminalLabel, reconcileTerminals, type TerminalView, type TerminalTab, type SessionDock } from "@/lib/sessionDock";
 
@@ -130,7 +130,9 @@ import SpaceTabs from "@/components/layout/SpaceTabs";
 import { useSpaceTabs } from "@/lib/spaceTabs";
 import NavButtons from "@/components/layout/NavButtons";
 import { CanvasLibrary, CanvasTabs } from "@/components/canvases/CanvasLibrary";
-import { canvasRoot, useCanvasLibrary } from "@/hooks/useCanvasLibrary";
+import { CanvasCommentTarget, replaceDeletedCanvasChat, tabTitle, useCanvasChat } from "@/lib/canvasChat";
+import { CanvasChatPanel } from "@/components/canvases/CanvasChat";
+import { canvasKey, canvasRoot, useCanvasLibrary } from "@/hooks/useCanvasLibrary";
 import AttachProjectDialog from "@/components/composer/AttachProjectDialog";
 import WorkspaceSwitch, { type Workspace } from "@/components/layout/WorkspaceSwitch";
 import WindowToolbar from "@/components/layout/WindowToolbar";
@@ -288,6 +290,7 @@ function App() {
     runCheckout,
     setUseWorktree,
     handleSendMsg,
+    sendCanvasMessage,
     handleInterrupt,
     handleStopTask,
     queuedMessages,
@@ -726,7 +729,14 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const canvasLibrary = useCanvasLibrary(spaceProjects, canvasHome && !settingsOpen);
   const canvasEditorOpen = canvasHome && !settingsOpen && !!canvasLibrary.active;
-  const toggleCanvasControls = () => setCanvasControlsOpen((open) => !open);
+  const canvasFile = canvasLibrary.active;
+  const canvasDock = useCanvasChat(canvasFile ? canvasKey(canvasFile) : null);
+  const canvasTab = canvasDock?.tabs.find(tab => tab.id === canvasDock.active);
+  const canvasChatVisible = !!canvasDock?.open && canvasEditorOpen;
+  const toggleCanvasControls = () => {
+    if (canvasDock?.open) { canvasDock.setOpen(false); setCanvasControlsOpen(true); }
+    else setCanvasControlsOpen(open => !open);
+  };
   useHotkey("panel.toggle", toggleCanvasControls, { enabled: canvasEditorOpen, page: true });
   const openCanvasHome = () => {
     setDesignPlace("home");
@@ -1126,11 +1136,13 @@ function App() {
   // The grid's members only where the grid is what the column draws — a crew
   // child that happens to sit in a split group is on screen as a strip, not as
   // that group.
-  const onScreenKey = [mainGroup ? memberKey : "", crewShown, crewUp ? crewAnchorId : null]
+  const canvasChatId = canvasChatVisible && canvasTab && !canvasTab.draft ? canvasTab.id : null;
+  const onScreenKey = [canvasChatId, mainGroup ? memberKey : "", crewShown, crewUp ? crewAnchorId : null]
     .filter(Boolean)
     .join("\n");
   useEffect(() => {
     const ids = [...new Set(onScreenKey.split("\n").filter(Boolean))];
+    if (canvasChatId && canvasFile) noteSession(canvasChatId, serverOfPath(canvasFile.project));
     setOnScreen(ids);
     ids.forEach((id) => void ensureLoaded(id));
     // Both are rebuilt every render; the key is what changes.
@@ -2906,6 +2918,43 @@ function App() {
     onSendNow: handleInterrupt,
   };
 
+  const canvasItems = useMemo(() => {
+    if (!canvasFile) return [];
+    const items = new Map([...sessions, ...sessionIndexItems].map(i => [i.sessionId, i]));
+    return [...items.values()].filter(i => i.projectPath === canvasFile.project && !i.hidden && !i.archived);
+  }, [canvasFile, sessions, sessionIndexItems]);
+  const openCanvasSessionPanel = (tab: PanelTab, subagent?: string) => {
+    if (!canvasTab) return;
+    goToSession(() => {
+      void handleSelectSessionIndexItem(canvasTab.id);
+      if (subagent) setSelectedSubagentId(subagent);
+      showPanel(tab, canvasTab.id);
+    });
+  };
+  const canvasSending = useRef(new Set<string>());
+  const sendFromCanvas = async (text: string, capture?: () => Promise<string>) => {
+    if (!canvasFile || !canvasTab || !canvasDock) throw Error("Open a canvas conversation first.");
+    const { id, draft } = canvasTab;
+    if (canvasSending.current.has(id)) throw Error("Another message is being sent to this conversation.");
+    canvasSending.current.add(id);
+    let destination = id;
+    const replaceDeleted = id === canvasDock.tabs[0].id ? () => {
+      destination = replaceDeletedCanvasChat(canvasKey(canvasFile), id);
+      canvasSending.current.add(destination);
+      return destination;
+    } : undefined;
+    try {
+      const server = serverOfPath(canvasFile.project);
+      const attachments = capture ? [await invoke<Attachment>("canvas_snapshot", { png: await capture() }, server)] : [];
+      canvasDock.setOpen(true);
+      await sendCanvasMessage(canvasFile, id, draft, text, attachments, replaceDeleted);
+      canvasDock.sent(destination);
+    } finally {
+      canvasSending.current.delete(id);
+      canvasSending.current.delete(destination);
+    }
+  };
+
   const viewTitle = shownSession
     ? mainGroup
       ? groupName(mainGroup)
@@ -3020,9 +3069,21 @@ function App() {
       page={<>
         <MountOnce when={canvasHome}>
           <div className={cn("min-w-0 flex-1", canvasHome ? "flex" : "hidden")}>
-            <CanvasLibrary key={canvasHomeVisit} library={canvasLibrary} projects={spaceProjects} collapsed={collapsed}
-              controlsOpen={canvasControlsOpen}
-              visible={canvasHome && !settingsOpen} onSidebarWidth={setCanvasSidebarWidth} onAttach={(onPicked) => setCanvasAttach({ onPicked })} />
+            <CanvasCommentTarget.Provider value={canvasDock && canvasTab ? {
+              title: tabTitle(canvasTab, canvasDock, canvasItems), send: sendFromCanvas,
+            } : null}>
+              <CanvasLibrary key={canvasHomeVisit} library={canvasLibrary} projects={spaceProjects} collapsed={collapsed}
+                controlsOpen={!canvasDock?.open && canvasControlsOpen} visible={canvasHome && !settingsOpen}
+                onSidebarWidth={setCanvasSidebarWidth} onAttach={(onPicked) => setCanvasAttach({ onPicked })} />
+            </CanvasCommentTarget.Provider>
+            {canvasChatVisible && canvasFile && canvasDock && <CanvasChatPanel key={canvasKey(canvasFile)} file={canvasFile} rail={sideRail} dock={canvasDock} items={canvasItems}
+              pane={paneState(canvasDock.active)} chat={{ ...paneChat,
+                onOpenSession: id => goToSession(() => void handleSelectSessionIndexItem(id)),
+                onOpenPlan: () => openCanvasSessionPanel("plan"),
+                onOpenSubagentPanel: () => openCanvasSessionPanel("more"),
+                onOpenSubagent: id => openCanvasSessionPanel("more", id),
+                onSendNow: () => void invoke("interrupt_session", { sessionId: canvasDock.active }).catch(e => setError(String(e))),
+              }} send={sendFromCanvas} />}
           </div>
         </MountOnce>
         {pagesEnabled && (
@@ -3236,10 +3297,15 @@ function App() {
               ))}
             </div>
           )}
+          {canvasEditorOpen && canvasDock && (
+            <HeaderIconButton label="Canvas chat" expanded={canvasDock.open} onClick={() => canvasDock.setOpen(!canvasDock.open)}>
+              <MessageSquare className="size-4" />
+            </HeaderIconButton>
+          )}
           {canvasEditorOpen && (
             <PanelToggle
-              label={canvasControlsOpen ? "Hide canvas controls" : "Show canvas controls"}
-              expanded={canvasControlsOpen}
+              label={canvasControlsOpen && !canvasDock?.open ? "Hide canvas controls" : "Show canvas controls"}
+              expanded={canvasControlsOpen && !canvasDock?.open}
               onToggle={toggleCanvasControls}
             />
           )}
@@ -3280,7 +3346,7 @@ function App() {
                 </>
               ) : null}
         </WindowToolbar>
-        {terminalSession && dock.active && (
+        {(canvasChatVisible || (terminalSession && dock.active)) && (
           <div ref={setSideRail} className="mr-2 flex shrink-0 items-center" data-tauri-drag-region="deep" />
         )}
         </div>
@@ -3651,7 +3717,7 @@ function App() {
             // Its own chords only while the composer is pointed here — the same
             // gate a split pane takes, since Stop and scroll-to-bottom act on
             // the session being written to.
-            active={!issuesOpen && viewTab === "chat" && mainSessionId === selectedSessionId}
+            active={!designOpen && !issuesOpen && viewTab === "chat" && mainSessionId === selectedSessionId}
           />
         )}
       </div>

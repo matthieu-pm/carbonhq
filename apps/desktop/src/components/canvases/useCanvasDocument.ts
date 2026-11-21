@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { canvasKey, type CanvasFile } from "@/hooks/useCanvasLibrary";
 import { invoke } from "@/lib/transport";
-import { readDocument, type Document } from "./document";
+import { readDocument, type CommentPin, type Document } from "./document";
 
 type Snapshot = { doc: Document | null; error: string; saving: boolean; conflict: boolean };
 const open = new Map<string, CanvasSession>();
@@ -21,6 +21,7 @@ export class CanvasSession {
   private history: Document[] = [];
   private future: Document[] = [];
   private loading = false;
+  private pendingComments = 0;
   constructor(readonly file: CanvasFile) {}
   get = () => this.snapshot;
   subscribe = (fn: () => void) => {
@@ -37,6 +38,7 @@ export class CanvasSession {
     const key = canvasKey(this.file);
     if (
       !this.listeners.size &&
+      !this.pendingComments &&
       !this.loading &&
       !this.writing &&
       this.snapshot.doc === this.persisted &&
@@ -83,6 +85,20 @@ export class CanvasSession {
     } finally {
       if (refresh) this.refreshing = false;
       else this.loading = false;
+      this.release();
+    }
+  }
+  async sendComment(pageId: string, pin: CommentPin, send: () => Promise<void>) {
+    // A reopened tab must see the same document while delivery is outstanding.
+    this.pendingComments++;
+    try {
+      await send();
+      this.change(doc => ({
+        ...doc,
+        pages: doc.pages.map(page => page.id === pageId ? { ...page, comments: [...(page.comments ?? []), pin] } : page),
+      }));
+    } finally {
+      this.pendingComments--;
       this.release();
     }
   }
@@ -169,14 +185,15 @@ export class CanvasSession {
   }
 }
 
+export function openCanvasDocument(file: CanvasFile) {
+  const key = canvasKey(file);
+  const current = open.get(key) ?? new CanvasSession(file);
+  open.set(key, current);
+  return current;
+}
+
 export function useCanvasDocument(file: CanvasFile) {
-  // The tab is keyed by file. A closing tab can finish saving while another is active.
-  const [session] = useState(() => {
-    const key = canvasKey(file);
-    const current = open.get(key) ?? new CanvasSession(file);
-    open.set(key, current);
-    return current;
-  });
+  const [session] = useState(() => openCanvasDocument(file));
   const snapshot = useSyncExternalStore(session.subscribe, session.get);
   useEffect(() => {
     void session.load(!!session.get().doc);

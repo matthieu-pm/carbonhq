@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { moveCanvasChat } from "@/lib/canvasChat";
 import { projectLabel } from "@/lib/servers";
 import { invoke } from "@/lib/transport";
 import type { Project } from "@/types/events";
@@ -86,6 +87,7 @@ export function useCanvasLibrary(projects: Project[], visible: boolean) {
         if (action.kind === "archive") close(old);
         else {
           const moved = { project, folder: action.destination, name };
+          moveCanvasChat(old, canvasKey(moved));
           setTabs((prev) => prev.map((tab) => (canvasKey(tab) === old ? moved : tab)));
           select((prev) => (prev === old ? canvasKey(moved) : prev));
         }
