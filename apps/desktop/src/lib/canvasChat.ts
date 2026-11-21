@@ -32,6 +32,18 @@ export function moveCanvasChat(from: string, to: string) {
   changed.emit();
 }
 
+export function replaceDeletedCanvasChat(key: string, deletedId: string): string {
+  const dock = docks[key];
+  if (dock?.tabs[0]?.id !== deletedId) throw Error("This conversation is no longer available.");
+  const id = crypto.randomUUID();
+  update(key, d => ({
+    ...d,
+    active: d.active === deletedId ? id : d.active,
+    tabs: [{ id, draft: true }, ...d.tabs.slice(1)],
+  }));
+  return id;
+}
+
 export function useCanvasChat(key: string | null) {
   const dock = useSyncExternalStore(changed.subscribe, () => (key ? dockFor(key) : null));
   if (!key || !dock) return null;

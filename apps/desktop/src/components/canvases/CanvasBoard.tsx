@@ -9,7 +9,7 @@ import {
   type LayerKind,
   type Page,
 } from "./document";
-import type { Change } from "./CanvasTheme";
+import type { CanvasSession } from "./useCanvasDocument";
 import { CanvasMarkup } from "./CanvasMarkup";
 
 export type Tool = "Select" | "Hand" | "Pen" | "Comment" | LayerKind;
@@ -56,7 +56,7 @@ export function CanvasBoard({
   setTool,
   view,
   setView,
-  change,
+  session,
 }: {
   doc: Document;
   page: Page;
@@ -66,8 +66,9 @@ export function CanvasBoard({
   setTool: (t: Tool) => void;
   view: View;
   setView: React.Dispatch<React.SetStateAction<View>>;
-  change: Change;
+  session: CanvasSession;
 }) {
+  const change = session.change;
   const board = useRef<HTMLDivElement>(null);
   const gesture = useRef<Drag | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -336,7 +337,7 @@ export function CanvasBoard({
           </span>
         </div>
       )}
-      <CanvasMarkup key={page.id} page={page} view={view} tool={tool} change={change} />
+      <CanvasMarkup key={page.id} page={page} view={view} tool={tool} session={session} />
       {drag?.mode === "draw" && (
         <div
           className="ce-marquee"

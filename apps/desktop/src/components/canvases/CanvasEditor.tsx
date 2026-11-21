@@ -309,7 +309,7 @@ export function CanvasEditor({
                       <Plus />
                     </ToolButton>
                   </div>
-                  <div className="ce-scroll">
+                  <div className="ce-scroll ce-pages-scroll">
                     {pagesOpen && (
                       <div className="ce-pages">
                         {doc.pages.map((p) =>
@@ -378,13 +378,14 @@ export function CanvasEditor({
               select={pick}
               view={view}
               setView={setView}
-              change={session.change}
+              session={session}
             />
             <div className="ce-toolbar" role="toolbar" aria-label="Canvas tools">
               {tools.map(({ name, key, icon: Icon }) => (
                 <ToolButton
                   key={name}
-                  label={name + " (" + key + ")"}
+                  label={name}
+                  shortcut={key}
                   active={tool === name}
                   onClick={() => setTool(name)}
                 >

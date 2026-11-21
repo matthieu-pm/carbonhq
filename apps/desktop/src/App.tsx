@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { displayPath, invoke, listen, LOCAL, noteSession, serverOfPath } from "@/lib/transport";
+import { invoke, listen, LOCAL, noteSession, serverOfPath } from "@/lib/transport";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ExternalLink, FileDiff, MessageSquare, Minimize2, Plus } from "lucide-react";
 import { SessionToolBody, SessionToolIcon } from "@/components/layout/SessionToolTab";
@@ -130,7 +130,7 @@ import SpaceTabs from "@/components/layout/SpaceTabs";
 import { useSpaceTabs } from "@/lib/spaceTabs";
 import NavButtons from "@/components/layout/NavButtons";
 import { CanvasLibrary, CanvasTabs } from "@/components/canvases/CanvasLibrary";
-import { CanvasCommentTarget, tabTitle, useCanvasChat } from "@/lib/canvasChat";
+import { CanvasCommentTarget, replaceDeletedCanvasChat, tabTitle, useCanvasChat } from "@/lib/canvasChat";
 import { CanvasChatPanel } from "@/components/canvases/CanvasChat";
 import { canvasKey, canvasRoot, useCanvasLibrary } from "@/hooks/useCanvasLibrary";
 import AttachProjectDialog from "@/components/composer/AttachProjectDialog";
@@ -2937,15 +2937,21 @@ function App() {
     const { id, draft } = canvasTab;
     if (canvasSending.current.has(id)) throw Error("Another message is being sent to this conversation.");
     canvasSending.current.add(id);
+    let destination = id;
+    const replaceDeleted = id === canvasDock.tabs[0].id ? () => {
+      destination = replaceDeletedCanvasChat(canvasKey(canvasFile), id);
+      canvasSending.current.add(destination);
+      return destination;
+    } : undefined;
     try {
       const server = serverOfPath(canvasFile.project);
       const attachments = capture ? [await invoke<Attachment>("canvas_snapshot", { png: await capture() }, server)] : [];
       canvasDock.setOpen(true);
-      const path = [displayPath(canvasFile.project), "canvases", canvasFile.folder, canvasFile.name + ".canvas.json"].filter(Boolean).join("/");
-      await sendCanvasMessage(canvasFile.project, id, draft, capture || draft ? text + "\n\nCanvas: " + path : text, attachments);
-      canvasDock.sent(id);
+      await sendCanvasMessage(canvasFile, id, draft, text, attachments, replaceDeleted);
+      canvasDock.sent(destination);
     } finally {
       canvasSending.current.delete(id);
+      canvasSending.current.delete(destination);
     }
   };
 
@@ -3070,7 +3076,7 @@ function App() {
                 controlsOpen={!canvasDock?.open && canvasControlsOpen} visible={canvasHome && !settingsOpen}
                 onSidebarWidth={setCanvasSidebarWidth} onAttach={(onPicked) => setCanvasAttach({ onPicked })} />
             </CanvasCommentTarget.Provider>
-            {canvasChatVisible && canvasFile && canvasDock && <CanvasChatPanel key={canvasKey(canvasFile)} project={canvasFile.project} rail={sideRail} dock={canvasDock} items={canvasItems}
+            {canvasChatVisible && canvasFile && canvasDock && <CanvasChatPanel key={canvasKey(canvasFile)} file={canvasFile} rail={sideRail} dock={canvasDock} items={canvasItems}
               pane={paneState(canvasDock.active)} chat={{ ...paneChat,
                 onOpenSession: id => goToSession(() => void handleSelectSessionIndexItem(id)),
                 onOpenPlan: () => openCanvasSessionPanel("plan"),

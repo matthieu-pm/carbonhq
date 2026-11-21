@@ -114,6 +114,14 @@
   padding: 2px 12px 2px 20px;
 }
 .ce-pages-header,
+.ce-pages-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.ce-pages-header {
+  overflow: hidden;
+}
+.ce-pages-header,
 .ce-pages > .ce-row {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) 24px;

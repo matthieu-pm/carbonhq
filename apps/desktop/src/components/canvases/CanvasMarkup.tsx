@@ -2,23 +2,24 @@ import { useContext, useRef, useState, type PointerEvent } from "react";
 import { ArrowUp } from "lucide-react";
 import { CanvasCommentTarget } from "@/lib/canvasChat";
 import type { Tool, View } from "./CanvasBoard";
-import type { Change } from "./CanvasTheme";
+import type { CanvasSession } from "./useCanvasDocument";
 import { uid, type CommentPin, type InkPoint, type Page } from "./document";
 
 const ink = "#168bf0";
 
-async function snapshot(board: HTMLElement, view: View, page: Page, pin: CommentPin) {
+async function snapshot(overlay: HTMLElement, view: View, page: Page, pin: CommentPin) {
   const { default: render } = await import("html2canvas-pro");
-  if (!board.isConnected) throw Error("Reopen the canvas to send this comment.");
+  const board = overlay.parentElement;
+  if (!overlay.isConnected || !board) throw Error("Reopen the canvas to send this comment.");
   const width = Math.min(800, board.clientWidth),
     height = Math.min(600, board.clientHeight);
-  const px = view.x + pin.x * view.zoom,
-    py = view.y + pin.y * view.zoom;
-  const x = Math.max(0, Math.min(board.clientWidth - width, px - width / 2));
-  const y = Math.max(0, Math.min(board.clientHeight - height, py - height / 2));
+  const x = width / 2 - pin.x * view.zoom;
+  const y = height / 2 - pin.y * view.zoom;
   const background = await render(board, {
-    x,
-    y,
+    onclone: (_, clone) => {
+      const world = clone.querySelector<HTMLElement>(".ce-world");
+      if (world) world.style.transform = `translate(${x}px, ${y}px) scale(${view.zoom})`;
+    },
     width,
     height,
     scale: 1,
@@ -32,7 +33,7 @@ async function snapshot(board: HTMLElement, view: View, page: Page, pin: Comment
   const ctx = image.getContext("2d");
   if (!ctx) throw Error("Could not capture this part of the canvas.");
   ctx.drawImage(background, 0, 0);
-  ctx.translate(view.x - x, view.y - y);
+  ctx.translate(x, y);
   ctx.scale(view.zoom, view.zoom);
   ctx.fillStyle = ctx.strokeStyle = ink;
   ctx.lineWidth = 3;
@@ -59,12 +60,12 @@ export function CanvasMarkup({
   page,
   view,
   tool,
-  change,
+  session,
 }: {
   page: Page;
   view: View;
   tool: Tool;
-  change: Change;
+  session: CanvasSession;
 }) {
   const target = useContext(CanvasCommentTarget);
   const overlay = useRef<HTMLDivElement>(null);
@@ -113,28 +114,24 @@ export function CanvasMarkup({
     const sampled = sample(e);
     if (!sampled) return;
     const stroke = { id: uid(), points: sampled };
-    change((d) => ({
+    session.change((d) => ({
       ...d,
       pages: d.pages.map((p) => (p.id === page.id ? { ...p, strokes: [...(p.strokes ?? []), stroke] } : p)),
     }));
     clear();
   }
   async function send() {
-    const board = overlay.current?.parentElement;
-    if (!pin || !pin.text.trim() || locked.current || !target || !board) return;
+    const markup = overlay.current;
+    if (!pin || !pin.text.trim() || locked.current || !target || !markup) return;
     const sent = { ...pin, text: pin.text.trim() };
     locked.current = true;
     setSending(true);
     setError("");
     try {
-      await target.send(
+      await session.sendComment(page.id, sent, () => target.send(
         sent.text + "\n\nPage: " + page.name + " (" + Math.round(sent.x) + ", " + Math.round(sent.y) + ")",
-        () => snapshot(board, view, page, sent),
-      );
-      change((d) => ({
-        ...d,
-        pages: d.pages.map((p) => (p.id === page.id ? { ...p, comments: [...(p.comments ?? []), sent] } : p)),
-      }));
+        () => snapshot(markup, view, page, sent),
+      ));
       setPin(null);
     } catch (e) {
       setError(String(e));

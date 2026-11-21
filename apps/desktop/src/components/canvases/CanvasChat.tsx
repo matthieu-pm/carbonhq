@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, MessageSquare, Plus, Square, X } from "lucide-react";
+import { canvasKey, type CanvasFile } from "@/hooks/useCanvasLibrary";
 import { readDraft, useDraft } from "@/hooks/useDraft";
 import { PanelCard } from "@/components/layout/AppShell";
 import { HeaderIconButton } from "@/components/layout/IssueTabs";
@@ -103,10 +104,10 @@ export function CanvasChatPanel({
   pane,
   chat,
   send,
-  project,
+  file,
   rail,
 }: {
-  project: string;
+  file: CanvasFile;
   rail: HTMLElement | null;
   dock: CanvasChatDock;
   items: SessionIndexItem[];
@@ -121,7 +122,9 @@ export function CanvasChatPanel({
     edge: "left",
     label: "Canvas chat width",
   });
+  const project = file.project;
   const active = dock.tabs.find((t) => t.id === dock.active)!;
+  const draftKey = "canvas-chat:" + (active.id === dock.tabs[0].id ? canvasKey(file) : active.id);
   const [picking, setPicking] = useState(false);
   const [choices, setChoices] = useState<SessionIndexItem[] | null>(null);
   const [pickerError, setPickerError] = useState("");
@@ -208,8 +211,8 @@ export function CanvasChatPanel({
           <Chat key={active.id} {...pane} {...chat} crowded rail={false} />
         </div>
         <ChatComposer
-          id={active.id}
-          key={active.id}
+          id={draftKey}
+          key={draftKey}
           title={tabTitle(active, dock, items)}
           send={send}
           stop={

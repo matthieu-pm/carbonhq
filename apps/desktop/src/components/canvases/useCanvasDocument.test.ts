@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@/lib/transport";
-import { CanvasSession } from "./useCanvasDocument";
+import { CanvasSession, openCanvasDocument } from "./useCanvasDocument";
 import type { Document } from "./document";
 
 vi.mock("@/lib/transport", () => ({ invoke: vi.fn() }));
@@ -81,4 +81,24 @@ it("flushes pending edits when the tab closes", async () => {
   close();
   await Promise.resolve();
   expect(JSON.parse(disk).pages[0].background).toBe("green");
+});
+
+it("keeps edits and a delivered pin together when a canvas is reopened during send", async () => {
+  const session = openCanvasDocument(file);
+  const close = session.subscribe(() => {});
+  await session.load();
+  const pin = { id: "corner", text: "Round this", x: 15, y: 30 };
+  let deliver!: () => void;
+  const sending = session.sendComment("page-1", pin, () => new Promise(resolve => { deliver = resolve; }));
+  close();
+  await Promise.resolve();
+  const reopened = openCanvasDocument(file);
+  expect(reopened).toBe(session);
+  const leave = reopened.subscribe(() => {});
+  reopened.change(background("green"));
+  deliver();
+  await sending;
+  await reopened.flush();
+  expect(JSON.parse(disk).pages[0]).toMatchObject({ background: "green", comments: [pin] });
+  leave();
 });

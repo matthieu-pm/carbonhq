@@ -1,17 +1,20 @@
 import { useState, type ReactNode } from "react";
 import { Link2 } from "lucide-react";
+import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { localCssValue, resolve, type Token, type TokenKind } from "./document";
 import { normalizeToken } from "./importTokens";
 
 export function ToolButton({
   label,
+  shortcut,
   children,
   onClick,
   active,
   disabled,
 }: {
   label: string;
+  shortcut?: string;
   children: ReactNode;
   onClick: () => void;
   active?: boolean;
@@ -23,6 +26,7 @@ export function ToolButton({
         <button
           type="button"
           aria-label={label}
+          aria-keyshortcuts={shortcut}
           aria-pressed={active}
           disabled={disabled}
           className="ce-icon"
@@ -31,7 +35,7 @@ export function ToolButton({
           {children}
         </button>
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent>{label}{shortcut && <Kbd>{shortcut}</Kbd>}</TooltipContent>
     </Tooltip>
   );
 }

@@ -1,4 +1,5 @@
-import { forgetSessionServer, invoke, listen, LOCAL, noteSession, qualify, serverOfPath, serverOfSession, type ServerId } from "@/lib/transport";
+import type { CanvasFile } from "./useCanvasLibrary";
+import { displayPath, forgetSessionServer, invoke, listen, LOCAL, noteSession, qualify, serverOfPath, serverOfSession, type ServerId } from "@/lib/transport";
 import { mergeFrom, remoteServers, serverConnected, serverName, subscribeServers } from "@/lib/servers";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { activeMessageEvents } from "@/lib/messageEdit";
@@ -1154,11 +1155,19 @@ const handleSendMsg = async (
   }
 };
 
-const sendCanvasMessage = async (project: string, id: string, draft: boolean, message: string, attachments: Attachment[]) => {
+const sendCanvasMessage = async (
+  file: CanvasFile, id: string, draft: boolean, message: string, attachments: Attachment[],
+  replaceDeleted?: () => string,
+) => {
+  const project = file.project;
   const server = serverOfPath(project);
   noteSession(id, server);
   const item = await invoke<SessionIndexItem | null>("session_index_item", { sessionId: id }, server);
-  if (!item && !draft) throw Error("This conversation is no longer available.");
+  if (!item && !draft) {
+    if (!replaceDeleted) throw Error("This conversation is no longer available.");
+    id = replaceDeleted();
+    noteSession(id, server);
+  }
   if (item && item.projectPath !== project) throw Error("This conversation belongs to another project.");
   if (item) await ensureLoaded(id);
   const harness = item?.harness ?? prefs.harness;
@@ -1174,7 +1183,9 @@ const sendCanvasMessage = async (project: string, id: string, draft: boolean, me
     fast: item?.fast ?? fastFor(prefs.fast, harness, models, modelId),
     projectPath: project, useWorktree: !item && prefs.useWorktree, branch: item?.branch ?? null,
   };
-  await handleSendMsg(message, attachments, null, { id, isNew: !item, pick });
+  const path = [displayPath(project), "canvases", file.folder, file.name + ".canvas.json"].filter(Boolean).join("/");
+  const prompt = !item || attachments.length ? message + "\n\nCanvas: " + path : message;
+  await handleSendMsg(prompt, attachments, null, { id, isNew: !item, pick });
 };
 
 // Takes back the newest prompt still waiting on the backend and hands its text
