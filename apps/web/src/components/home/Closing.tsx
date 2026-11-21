@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { ClosingCards } from "@/components/home/ClosingCards";
+import { PlayWhenVisible } from "@/components/home/PlayWhenVisible";
 import { Title } from "@/components/home/Section";
 import { Stripes } from "@/components/home/Stripes";
 import { REPO } from "@/lib/links";
+import styles from "./footer-walkers.module.css";
 
 const LABEL = "font-mono text-[11px] leading-[14px] tracking-[0.06em] text-white/70 uppercase";
 
@@ -31,21 +34,27 @@ export function Closing() {
         <div className="mt-10"><ClosingCards /></div>
       </div>
 
-      <footer className="relative mx-auto mt-[120px] flex w-full max-w-[960px] flex-col gap-4 pb-[220px] sm:flex-row sm:items-center sm:justify-between lg:mt-auto lg:pb-[276px]">
-        <p className={LABEL}>© {new Date().getFullYear()} Carbon</p>
-        <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2">
-          {LINKS.map((l) => (
-            <a
-              key={l.label}
-              href={l.href}
-              {...(l.out ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-              className={`${LABEL} transition-colors hover:text-white`}
-            >
-              {l.label}
-            </a>
-          ))}
-        </nav>
-        <p className={LABEL}>Free and open source</p>
+      <footer id="footer" className="relative -mx-5 mt-[120px] px-5 sm:-mx-8 sm:px-8 lg:mt-auto">
+        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-4 pb-[220px] sm:flex-row sm:items-center sm:justify-between lg:pb-[276px]">
+          <p className={LABEL}>© {new Date().getFullYear()} Carbon</p>
+          <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2">
+            {LINKS.map((l) => (
+              <a
+                key={l.label}
+                href={l.href}
+                {...(l.out ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                className={`${LABEL} transition-colors hover:text-white`}
+              >
+                {l.label}
+              </a>
+            ))}
+          </nav>
+          <p className={LABEL}>Free and open source</p>
+        </div>
+        <PlayWhenVisible className={styles.runway}>
+          <Link href="/game" prefetch={false} aria-label="Play Tower Shift" className={`${styles.walker} ${styles.operator}`} />
+          <Link href="/game" prefetch={false} aria-label="Play Tower Shift" className={`${styles.walker} ${styles.pi}`} />
+        </PlayWhenVisible>
       </footer>
     </section>
   );

@@ -1,4 +1,4 @@
-import { STAGES, VIEW_HEIGHT, WIDTH, type AgentId, type Game } from "./engine";
+import { STAGES, VIEW_HEIGHT, WIDTH, type AgentId, type Game, type Rescue } from "./engine";
 
 type Pen = (color: string, x: number, y: number, w: number, h?: number) => void;
 
@@ -6,7 +6,7 @@ const INK = "#111b26";
 const EDGE = "#f1d4a2";
 const SHADE = "#40505a";
 const ACCENT = "#ffb458";
-const operation: Record<AgentId, string> = { codex: "REPAIR", claude: "HOLD", pi: "VENT", fx: "POWER" };
+const operation: Record<Game["duties"][number]["agent"], string> = { codex: "REPAIR", claude: "HOLD", pi: "VENT", fx: "POWER" };
 const palette = {
   codex: { light: "#9ae7ce", mid: "#429b90", dark: "#22585d" },
   claude: { light: "#ffc496", mid: "#d77a51", dark: "#864833" },
@@ -54,35 +54,49 @@ function dot(p: Pen, color: string, x: number, y: number, radius: number) {
 
 function sky(ctx: CanvasRenderingContext2D, p: Pen, cameraX: number, cameraY: number, width: number, height: number, stage: number, frame: number) {
   const horizon = Math.round(height * .65 + Math.min(100, cameraY * .15));
+  const spire = stage === 4;
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#2c3a51");
-  gradient.addColorStop(.26, "#54485a");
-  gradient.addColorStop(.56, "#9d605d");
-  gradient.addColorStop(.77, "#d88963");
-  gradient.addColorStop(1, "#e6a76d");
+  gradient.addColorStop(0, spire ? "#19283f" : "#2c3a51");
+  gradient.addColorStop(.26, spire ? "#35445e" : "#54485a");
+  gradient.addColorStop(.56, spire ? "#656581" : "#9d605d");
+  gradient.addColorStop(.77, spire ? "#a78595" : "#d88963");
+  gradient.addColorStop(1, spire ? "#dca69b" : "#e6a76d");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 
   const parallax = (factor: number) => width >= WIDTH ? -cameraX : -cameraX * factor;
   const sunX = Math.round(358 + parallax(.64));
   const sunY = Math.round(horizon - 82);
-  dot(p, "#eaae7c", sunX, sunY, 56);
-  dot(p, "#f3bd83", sunX, sunY + 2, 51);
-  for (let offset = 0; offset < 29; offset += 4) {
-    const y = 20 + offset;
-    const half = Math.floor(Math.sqrt(51 * 51 - y * y));
-    p("#d59675", sunX - half, sunY + y, half * 2, offset >= 16 ? 2 : 1);
+  if (spire) {
+    for (let n = 0; n < width / 7; n++) {
+      const x = Math.floor(noise(n * 627 + 9) * width);
+      const y = Math.floor(noise(n * 71 + 21) * (horizon - 110));
+      p(n % 4 ? "#9aabb9" : "#ccd2ce", x, y, 1, n % 4 ? 1 : 2);
+    }
+    dot(p, "#b6bbcd", sunX, sunY - 75, 21);
+    dot(p, "#dee0d8", sunX - 1, sunY - 76, 19);
+    dot(p, "#c7cbd3", sunX + 4, sunY - 82, 4);
+    dot(p, "#c7cbd3", sunX - 8, sunY - 72, 2);
+  } else {
+    dot(p, "#eaae7c", sunX, sunY, 56);
+    dot(p, "#f3bd83", sunX, sunY + 2, 51);
+    for (let offset = 0; offset < 29; offset += 4) {
+      const y = 20 + offset;
+      const half = Math.floor(Math.sqrt(51 * 51 - y * y));
+      p("#d59675", sunX - half, sunY + y, half * 2, offset >= 16 ? 2 : 1);
+    }
   }
 
+  const cloudShade = spire ? ["#646882", "#7e738a", "#988598", "#a68b9b"] : ["#805c67", "#996b6c", "#b67c72", "#be8574"];
   for (let n = 0; n < Math.ceil(width / 19); n++) {
     const x = Math.round((noise(n * 727 + 8) * (width + 240) + Math.floor(frame / 90)) % (width + 240) - 120 - Math.max(0, cameraX) * .28);
     const y = Math.round(horizon - 224 + noise(n * 897 + 4) * 193);
     const w = 11 + Math.floor(noise(n * 233 + 9) * 82);
-    const c = n % 3 === 0 ? "#805c67" : "#996b6c";
+    const c = cloudShade[n % 3 === 0 ? 0 : 1];
     p(c, x, y, w, 2);
     p(c, x + 4, y - 2, Math.round(w * .71), 2);
-    p("#b67c72", x + 3, y + 2, Math.round(w * .76));
-    if (n % 4 === 0) p("#be8574", x + 8, y + 7, Math.round(w * .4));
+    p(cloudShade[2], x + 3, y + 2, Math.round(w * .76));
+    if (n % 4 === 0) p(cloudShade[3], x + 8, y + 7, Math.round(w * .4));
   }
 
   for (let layer = 0; layer < 3; layer++) {
@@ -120,7 +134,7 @@ function sky(ctx: CanvasRenderingContext2D, p: Pen, cameraX: number, cameraY: nu
     }
   }
 
-  if (stage !== 3) {
+  if (stage < 3) {
     const offset = parallax(.54);
     const first = Math.floor(-offset / 110) - 1;
     const last = Math.ceil((width - offset) / 110) + 1;
@@ -263,11 +277,11 @@ function antenna(p: Pen, x: number, y: number, frame: number, tall = 111) {
 }
 
 function backdrop(p: Pen, stage: number, cameraY: number, height: number, frame: number) {
-  const wall = ["#554249", "#37404a", "#36494b", "#41424e"][stage];
-  const mortar = ["#493943", "#2d3640", "#2b3d45", "#353744"][stage];
-  const stone = ["#61494c", "#43505a", "#425558", "#4a4957"][stage];
-  const metal = ["#5d5156", "#4c5861", "#526367", "#535362"][stage];
-  const panes = stage === 3 ? [[28, 43], [381, 71]] : [[24, 64], [214, 52], [407, 55]];
+  const wall = ["#554249", "#37404a", "#36494b", "#41424e", "#364358"][stage];
+  const mortar = ["#493943", "#2d3640", "#2b3d45", "#353744", "#273348"][stage];
+  const stone = ["#61494c", "#43505a", "#425558", "#4a4957", "#46536a"][stage];
+  const metal = ["#5d5156", "#4c5861", "#526367", "#535362", "#626c7f"][stage];
+  const panes = stage >= 3 ? [[28, 43], [381, 71]] : [[24, 64], [214, 52], [407, 55]];
 
   for (let row = Math.max(0, Math.floor((cameraY - 72) / 145)); row < Math.ceil((cameraY + height + 150) / 145); row++) {
     const floor = row * 145;
@@ -286,7 +300,7 @@ function backdrop(p: Pen, stage: number, cameraY: number, height: number, frame:
       beam(p, x + w - 7, floor, 7, 145, metal);
     }
 
-    if (stage !== 3) {
+    if (stage < 3) {
       const cableY = floor + 27;
       for (let col = 81; col <= 407; col += 2) {
         const sag = Math.round(Math.sin((col - 81) / 326 * Math.PI) * 28);
@@ -330,8 +344,24 @@ function backdrop(p: Pen, stage: number, cameraY: number, height: number, frame:
       tank(p, x + 37, floor + 124, "#475b62");
       p("#7c8074", x + 11, floor + 47, 50, 3);
       p("#3a4952", x + 13, floor + 49, 48, 2);
-    } else {
+    } else if (stage === 3) {
       antenna(p, row % 2 ? 343 : 102, floor + 127, frame, 94 + row % 2 * 18);
+    } else {
+      const x = row % 2 ? 372 : 78;
+      const facing = row % 2 ? -1 : 1;
+      p("#283545", x - 5, floor + 74, 10, 32);
+      p("#718293", x - 4, floor + 76, 2, 28);
+      p("#394659", x - 20, floor + 106, 40, 4);
+      for (let col = 0; col <= 42; col++) {
+        const rim = floor + 47 + Math.floor(col / 2);
+        const depth = Math.round(Math.sin(col / 42 * Math.PI) * 15);
+        const dishX = x + (col - 21) * facing;
+        p("#374558", dishX, rim, 1, depth + 2);
+        p("#748298", dishX, rim + depth, 1, 2);
+        p("#9a9eae", dishX, rim, 1);
+      }
+      for (let n = 0; n < 18; n++) p("#6e7a89", x + n * facing, floor + 68 - n * 2, 2, 3);
+      p("#b9acbb", x + 15 * facing, floor + 32, 5, 3);
     }
   }
 }
@@ -371,12 +401,54 @@ function platform(p: Pen, surface: Game["platforms"][number]) {
     p("#29393e", bolt, y + 5, 2, 4);
     p(movable ? ACCENT : "#aab1a0", bolt, y + 5, 2);
   }
+  if (kind === "catwalk") {
+    for (let n = 5; n < w - 5; n += 8) p("#dea667", x + n, y + 3, 4, 2);
+  }
   if (kind === "floor") {
     p("#18222b", x, y + 13, w, 5);
     for (let col = 4; col < w - 6; col += 9) {
       for (let row = 0; row < 4; row++) p("#a7855f", x + col + row, y + 14 + row, 3);
     }
   }
+}
+
+function directionSign(p: Pen, x: number, ground: number, direction: number, label: string) {
+  const w = label.length * 4 + 16;
+  const left = Math.round(x - w / 2);
+  const y = ground - 66;
+  p("#26323b", x - 2, y + 10, 4, 56);
+  p("#93978c", x - 1, y + 12, 1, 52);
+  p(INK, left - 1, y - 1, w + 2, 14);
+  p("#4a443f", left, y, w, 12);
+  p("#bb905d", left + 1, y, w - 2, 1);
+  letter(p, label, "#ffe4a5", left + (direction > 0 ? 3 : 12), y + 4);
+  const tip = left + (direction > 0 ? w - 3 : 2);
+  p("#ffe4a5", direction > 0 ? tip - 6 : tip, y + 6, 7, 1);
+  for (let n = 1; n <= 3; n++) {
+    p("#ffe4a5", tip - n * direction, y + 6 - n, 1, 1);
+    p("#ffe4a5", tip - n * direction, y + 6 + n, 1, 1);
+  }
+}
+
+function keycardBay(p: Pen, branch: Rescue["branch"], hasKey: boolean, rescued: boolean) {
+  const outward = branch.minX < 0 ? -1 : 1;
+  let previous = branch.junction;
+  for (const deck of branch.ledges) {
+    const fromX = previous.x + previous.w / 2;
+    const toX = deck.x + deck.w / 2;
+    const length = Math.abs(toX - fromX);
+    for (let n = 0; n < length; n += 2) {
+      const t = n / length;
+      const y = previous.y + (deck.y - previous.y) * t - 46 + Math.sin(t * Math.PI) * 7;
+      p("#494957", fromX + n * outward, y, 2, 2);
+    }
+    p("#727179", toX, deck.y - 46, 1, 49);
+    p("#36414b", toX - 1, deck.y - 47, 3, 3);
+    previous = deck;
+  }
+  const fork = branch.junction;
+  if (!hasKey && !rescued) directionSign(p, fork.x + fork.w / 2 + outward * 18, fork.y, outward, "KEYCARD");
+  if (hasKey) directionSign(p, previous.x + previous.w / 2 - outward * 20, previous.y, -outward, "CELL");
 }
 
 function mechanismBackdrop(p: Pen, duty: Game["duties"][number], home: Game["platforms"][number]) {
@@ -433,6 +505,31 @@ function mechanismBackdrop(p: Pen, duty: Game["duties"][number], home: Game["pla
 
 function hazard(p: Pen, danger: Game["hazards"][number], frame: number) {
   const { x, y, w, h, kind, active } = danger;
+  if (kind === "arc") {
+    const lamp = active ? "#c1faff" : danger.charging ? "#ffc479" : "#81918c";
+    p("#212e38", x, y + h - 4, w, 4);
+    for (const post of [x, x + w - 5]) {
+      p("#24333e", post, y + 2, 5, h - 4);
+      p("#71878a", post + 1, y + 3, 2, h - 6);
+      for (let row = 2; row < h - 3; row += 5) p("#45616b", post, y + row, 5, 2);
+      p(lamp, post, y, 5, 3);
+      p(lamp, post, y + h - 7, 5, 2);
+    }
+    if (active) {
+      for (let col = 4; col < w - 4; col++) {
+        const zig = Math.abs((col + Math.floor(frame / 6)) % 10 - 5);
+        p("#51b2cd", x + col, y + 1 + zig, 1, 4);
+        p("#e0feff", x + col, y + 2 + zig, 1);
+        p("#81ddec", x + col, y + h - 7 - zig, 1, 2);
+      }
+    } else if (danger.charging) {
+      const spark = Math.floor(frame / 9) % 2;
+      p(lamp, x + 5, y + 3 + spark, 3, 2);
+      p(lamp, x + w - 8, y + 4 - spark, 3, 2);
+      p(lamp, x + 10, y + h - 3, w - 20, 2);
+    }
+    return;
+  }
   if (kind === "spikes") {
     p("#2b262e", x, y + h - 3, w, 3);
     for (let n = 0; n < w - 6; n += 9) {
@@ -495,7 +592,55 @@ function station(p: Pen, duty: Game["duties"][number], frame: number) {
   }
 }
 
-function door(p: Pen, exit: Game["exit"], stage: number, frame: number) {
+function keycard(p: Pen, card: Rescue["branch"]["keycard"], frame: number) {
+  const { x, w, h } = card;
+  const y = card.y - (frame % 56 < 28 ? 0 : 1);
+  p(INK, x - 5, y - 14, 32, 10);
+  letter(p, "KEYCARD", "#ffe4a5", x - 2, y - 12);
+  p(INK, x - 1, y - 1, w + 2, h + 2);
+  p("#e8a747", x, y, w, h);
+  p("#ffe8a9", x + 1, y, w - 2, 2);
+  p("#514139", x, y + 4, w, 3);
+  p("#fff1bd", x + 3, y + 9, 5, 4);
+  p("#9f692e", x + 4, y + 10, 3, 1);
+  p("#96612e", x + 11, y + 10, 7, 2);
+}
+
+function cellGate(p: Pen, cell: Rescue["cell"], open: boolean) {
+  const { x, y, w, h } = cell;
+  p("#76888a", x, y, w, 4);
+  p("#b3c0b6", x + 1, y, w - 2, 1);
+  for (const post of [x, x + w - 4]) {
+    p("#32424c", post, y + 4, 4, h - 4);
+    p("#8a9998", post + 1, y + 4, 1, h - 4);
+  }
+  const length = open ? 4 : h - 8;
+  for (let bar = x + 8; bar < x + w - 4; bar += 11) {
+    p("#2a353f", bar, y + 4, 3, length);
+    p("#8c9a98", bar, y + 4, 1, length);
+  }
+  p("#53656b", x + 3, y + length + 3, w - 6, 3);
+  p(INK, cell.readerX - 4, y + h - 21, 9, 10);
+  p(open ? "#98d6a3" : "#efb657", cell.readerX - 3, y + h - 20, 7, 3);
+  p("#82908b", cell.readerX - 2, y + h - 15, 5, 1);
+}
+
+function roofConsole(p: Pen, game: Game, frame: number) {
+  const center = game.exit.x + game.exit.w / 2;
+  const floor = game.exit.y + game.exit.h;
+  antenna(p, center + 18, floor, frame, 94);
+  p(INK, center - 12, floor - 25, 24, 25);
+  p("#65777d", center - 10, floor - 22, 20, 19);
+  p(INK, center - 16, floor - 34, 32, 13);
+  p("#667b81", center - 15, floor - 33, 30, 2);
+  for (const [index, duty] of game.duties.entries()) {
+    p(duty.complete ? palette[duty.agent].light : "#53616a", center - 13 + index * 7, floor - 29, 5, 4);
+  }
+  p(INK, center - 17, floor - 54, 34, 11);
+  letter(p, "ANTENNA", game.exit.ready ? "#b6f0d4" : EDGE, center - 13, floor - 51);
+}
+
+function door(p: Pen, exit: Game["exit"], frame: number) {
   const { x, y, w, h, ready } = exit;
   const lamp = ready ? "#a6e1aa" : "#ef9c69";
   const center = x + w / 2;
@@ -506,8 +651,7 @@ function door(p: Pen, exit: Game["exit"], stage: number, frame: number) {
   p("#514d50", x + w - 3, y + 3, 7, h - 3);
   p("#18232d", x + 2, y + 7, w - 4, h - 7);
   if (ready) {
-    const entrance = stage === 3 ? "#43887f" : "#3f655d";
-    p(entrance, x + 6, y + 9, w - 12, h - 9);
+    p("#3f655d", x + 6, y + 9, w - 12, h - 9);
     p("#1d3841", x + 9, y + 10, w - 18, h - 10);
     p("#b6cf9f", x + 5, y + 10, 1, h - 11);
     p("#749884", x + w - 7, y + 10, 1, h - 10);
@@ -773,9 +917,21 @@ export function drawWorld(canvas: HTMLCanvasElement, game: Game, reducedMotion: 
 
   const stage = STAGES[game.stageIndex];
   const playerCenter = game.player.x + game.player.w / 2;
-  const cameraX = width > WIDTH
+  let cameraX = width > WIDTH
     ? Math.round((WIDTH - width) / 2)
     : Math.round(Math.min(WIDTH - width, Math.max(0, playerCenter - width / 2)));
+  const branch = stage.rescue?.branch;
+  if (branch && (game.player.y < branch.junction.y + 32 || playerCenter < 0 || playerCenter > WIDTH)) {
+    if (width <= WIDTH) {
+      const maxLead = Math.max(0, width / 2 - 20);
+      const lead = Math.max(-maxLead, Math.min(maxLead, game.cameraLeadX));
+      cameraX = Math.round(Math.max(branch.minX, Math.min(branch.maxX - width, playerCenter + lead - width / 2)));
+    } else if (branch.minX < 0) {
+      cameraX = Math.min(cameraX, Math.max(branch.minX, Math.round(playerCenter - 190)));
+    } else {
+      cameraX = Math.max(cameraX, Math.min(branch.maxX - width, Math.round(playerCenter - width + 190)));
+    }
+  }
   const safeInset = Math.min(height * .32, Math.ceil(72 * height / displayHeight));
   const floor = stage.route.find((surface) => surface.kind === "floor")?.y ?? stage.height - 40;
   const dockView = floor + safeInset - height;
@@ -800,9 +956,19 @@ export function drawWorld(canvas: HTMLCanvasElement, game: Game, reducedMotion: 
     const home = stage.duties.find((item) => item.id === duty.id)?.mechanism ?? duty.mechanism;
     mechanismBackdrop(p, duty, home);
   }
+  if (branch) keycardBay(p, branch, game.hasKey, game.exit.ready);
   for (const surface of game.platforms) platform(p, surface);
-  for (const obstacle of game.hazards) hazard(p, obstacle, game.frame);
-  door(p, game.exit, game.stageIndex, ambientFrame);
+  for (const obstacle of game.hazards) hazard(p, obstacle, ambientFrame);
+  const rescue = stage.rescue;
+  if (rescue) {
+    const { cell } = rescue;
+    if (!game.hasKey && !game.exit.ready) keycard(p, rescue.branch.keycard, ambientFrame);
+    p("#192a34", cell.x, cell.y, cell.w, cell.h);
+    p("#354851", cell.x + 3, cell.y + 4, cell.w - 6, cell.h - 4);
+    door(p, game.exit, ambientFrame);
+  } else {
+    roofConsole(p, game, ambientFrame);
+  }
   for (const duty of game.duties) station(p, duty, ambientFrame);
 
   const sheet = characterSheet();
@@ -830,6 +996,7 @@ export function drawWorld(canvas: HTMLCanvasElement, game: Game, reducedMotion: 
     }
     if (waiting) tag(p, member.id, member.x, member.y, ambientFrame);
   }
+  if (rescue) cellGate(p, rescue.cell, game.exit.ready);
   if (ready) {
     let pose = 0;
     if (!game.groundedOn) pose = 3;

@@ -6,7 +6,7 @@ import { ClosingCards } from "@/components/home/ClosingCards";
 import { Stripes } from "@/components/home/Stripes";
 import { SITE } from "@/lib/links";
 import { playCue, type Cue } from "./audio";
-import { AGENT_NAMES, STAGES, type AgentId } from "./engine";
+import { AGENT_NAMES, CREW_SIZE, STAGES, type AgentId } from "./engine";
 import { drawPortrait } from "./render";
 import { preloadVictoryScene, VictorySequence } from "./VictorySequence";
 import { Playfield, type RunResult, formatTime } from "./Playfield";
@@ -16,7 +16,7 @@ const abilities: Record<AgentId, string> = {
   codex: "Repairs broken bridges.",
   claude: "Holds pressure plates.",
   pi: "Cuts power to fans.",
-  fx: "Powers moving platforms.",
+  fx: "Powers the shuttle.",
 };
 
 function Portrait({ id }: { id: AgentId }) {
@@ -30,7 +30,8 @@ function CrewRoster() {
     <div className={s.sectionHeading}><h2 id="crew-heading">Meet your crew</h2></div>
     <ol className={s.cards}>
       {STAGES.map((stage, index) => {
-        const recruit = stage.duties[0].agent;
+        if (!stage.rescue) return null;
+        const recruit = stage.rescue.agent;
         return <li key={recruit} data-agent={recruit}>
           <div className={s.avatar}><Portrait id={recruit} /></div>
           <div><p className={s.floorNumber}>Floor 0{index + 1}</p><h3>{AGENT_NAMES[recruit]}</h3><p className={s.ability}>{abilities[recruit]}</p></div>
@@ -46,11 +47,11 @@ function Instructions({ back, start }: { back: () => void; start: () => void }) 
   return <div className={s.briefing}>
     <button type="button" className={s.textButton} onClick={back}><ArrowLeft size={15} /> Title screen</button>
     <h2 tabIndex={-1} ref={title}>How to play</h2>
-    <p>Use your crew to open the exit on each floor. Bring all four agents to the rooftop antenna to restore the signal.</p>
+    <p>Rescue four agents on the climb, then use their skills to restore the antenna on the fifth floor.</p>
     <dl className={s.ruleList}>
       <div><dt><Gamepad2 /> Move &amp; jump</dt><dd>Move with <kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>. Press <kbd>Space</kbd> to jump. On touchscreens, use the on-screen buttons.</dd></div>
-      <div><dt><UsersRound /> Recruit &amp; use crew</dt><dd>Reach a bot to recruit it and gain a life. Bots follow you. At matching machinery, press <kbd>E</kbd> or tap <strong>Use crew</strong> to send one to work.</dd></div>
-      <div><dt><Heart /> Lives &amp; checkpoints</dt><dd>Start with three lives. A fall or a hit costs one and returns you to the floor checkpoint. At zero lives the run ends.</dd></div>
+      <div><dt><UsersRound /> Rescue your crew</dt><dd>On the first four floors, follow the sign onto the exterior catwalk. Take the keycard at the far end and return to the cell. Press <kbd>E</kbd> or tap <strong>Free</strong> to rescue the agent and gain a life. Use the same control at crew machinery.</dd></div>
+      <div><dt><Heart /> Hazards &amp; lives</dt><dd>Jump over spikes. Electric arcs flash amber before they fire. Cross when the posts go dark. You start with three lives. A fall or hit costs one and sends you to the floor checkpoint. At zero lives the run ends.</dd></div>
     </dl>
     <button type="button" className={s.primary} onClick={start}><Play fill="currentColor" size={16} /> Start shift</button>
   </div>;
@@ -73,8 +74,8 @@ function Results({ result, replay }: { result: RunResult; replay: () => void }) 
   return <div className={s.results}>
     <p className={s.signal}><RadioTower size={14} /> {won ? "Signal restored" : "Signal offline"}</p>
     <h2 tabIndex={-1} ref={title}>{won ? "Tower online." : "Shift over."}</h2>
-    <p>{won ? "Your crew brought the rooftop antenna back online." : `Your last checkpoint was the ${STAGES[result.stageIndex].name}. The tower is ready for another run.`}</p>
-    <div className={s.stats}><span><strong>{result.stageIndex + 1}/4</strong> Floor reached</span><span><strong>{result.recruited}/4</strong> Crew</span><span><strong>{time}</strong> Run time</span></div>
+    <p>{won ? "All four agents made it to the Signal Spire. The rooftop antenna is back online." : `Your last checkpoint was the ${STAGES[result.stageIndex].name}. The tower is ready for another run.`}</p>
+    <div className={s.stats}><span><strong>{result.stageIndex + 1}/{STAGES.length}</strong> Floor reached</span><span><strong>{result.recruited}/{CREW_SIZE}</strong> Crew</span><span><strong>{time}</strong> Run time</span></div>
     <button type="button" className={s.primary} onClick={replay}><RotateCcw size={16} /> Play again</button>
     <div className={s.share}><span>Share your run</span>
       <a href={'https://twitter.com/intent/tweet?text=' + encodeURIComponent(share) + '&url=' + encodeURIComponent(url)} target="_blank" rel="noopener noreferrer">X <ArrowUpRight /></a>
@@ -151,10 +152,10 @@ export function TowerShift() {
           <div className={s.titleCopy}>
             <p className={s.signal}><span className={s.signalLight} /> Tower offline</p>
             <h1 className={s.wordmark}><img src="/game/wordmark.png" alt="Tower Shift" width={128} height={57} /></h1>
-            <p className={s.premise}>Climb the server tower. Recruit your crew.<br />Bring the signal back online.</p>
+            <p className={s.premise}>Climb the server tower. Rescue your crew.<br />Bring the signal back online.</p>
             <button type="button" className={s.primary} ref={titleButton} onClick={() => setScreen("rules")}><Play size={16} fill="currentColor" /> Play game <ArrowRight size={16} /></button>
           </div>
-          <div className={s.rail}><div className={s.specs}><span><Flag />4 floors</span><span><Heart />3 starting lives</span><span><Gamepad2 />Keyboard + touch</span></div></div>
+          <div className={s.rail}><div className={s.specs}><span><Flag />{STAGES.length} floors</span><span><Heart />3 starting lives</span><span><Gamepad2 />Keyboard + touch</span></div></div>
         </> : screen !== "victory" && <div className={s.sheetScroll} key={screen}>
           {screen === "rules" ? <div className={s.manual}>
             <Instructions back={backToTitle} start={start} /><CrewRoster />

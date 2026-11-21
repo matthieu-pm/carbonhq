@@ -3,7 +3,7 @@ import { SITE } from "@/lib/links";
 import { TowerShift } from "./TowerShift";
 
 const title = "Tower Shift · Carbon Arcade";
-const description = "Climb a dark server tower with four coding agents. Recruit your crew, repair the machinery, and bring the rooftop antenna back online.";
+const description = "Cross the tower’s exterior catwalks to collect keycards, rescue four coding agents, and restore the signal on the fifth floor.";
 const url = SITE + "/game";
 const image = { url: SITE + "/game/tower-shift.webp", width: 1942, height: 809, alt: "A technician on the sunlit catwalk of a server tower." };
 

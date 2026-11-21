@@ -17,13 +17,13 @@ type Layout = {
 };
 type Canvas = CanvasRenderingContext2D;
 
-const BANK_TIMES = [240, 650, 1070, 1490];
+const BANK_TIMES = [240, 560, 880, 1200, 1520];
 const ASCENT_TIME = 2890;
 
 const fallback: Layout = {
   width: 720, height: 405,
-  banks: Array.from({ length: 4 }, (_, bank) => Array.from({ length: 6 }, (_, n) => ({
-    x: 263 + n * 11, y: 323 - bank * 61, w: 7, h: 13,
+  banks: Array.from({ length: BANK_TIMES.length }, (_, bank) => Array.from({ length: 6 }, (_, n) => ({
+    x: 263 + n * 11, y: 323 - bank * 47, w: 7, h: 13,
   }))),
   antennas: [{ x: 299, y: 55 }, { x: 119, y: 248 }, { x: 414, y: 266 }, { x: 625, y: 226 }],
   launch: { x: 530, y: 324 },
@@ -32,11 +32,14 @@ const fallback: Layout = {
 
 const dusk: Layout = {
   width: 1672, height: 941,
-  banks: [[737, 771], [645, 680], [551, 586], [463, 498]].map(([top, bottom]) =>
-    [[999, 1021], [1023, 1045], [1047, 1093], [1096, 1119], [1121, 1142]].map(([left, right]) => ({
-      x: left, y: top, w: right - left, h: bottom - top,
-    })),
-  ),
+  banks: [
+    ...[[737, 771], [645, 680], [551, 586], [463, 498]].map(([top, bottom]) =>
+      [[999, 1021], [1023, 1045], [1047, 1093], [1096, 1119], [1121, 1142]].map(([left, right]) => ({
+        x: left, y: top, w: right - left, h: bottom - top,
+      })),
+    ),
+    [1051, 1065, 1076].map((x) => ({ x, y: 396, w: 9, h: 11 })),
+  ],
   antennas: [
     { x: 1143, y: 192 }, { x: 819, y: 641 }, { x: 357, y: 660 },
     { x: 1590, y: 614 }, { x: 58, y: 623 },
@@ -129,7 +132,7 @@ function offlineFallback(ctx: Canvas) {
   block(ctx, "#394258", 270, 98, 58, 14);
   block(ctx, "#716177", 271, 98, 53, 2);
   antenna(ctx, fallback.antennas[0], 44);
-  for (let y = 123; y < height; y += 61) {
+  for (let y = 123; y < height; y += 47) {
     block(ctx, "#272c3e", 247, y, 109, 4);
     block(ctx, "#5e5464", 252, y + 4, 101, 2);
     for (let brick = 0; brick < 6; brick++) {
@@ -162,7 +165,7 @@ function energize(ctx: Canvas, layout: Layout, ms: number) {
 
       const { x, y, w, h } = cell;
       const light = [.76, .54, .85, .47, .65][(index * 3 + column) % 5] * live;
-      const tint = ["#ecc082", "#e5ae79", "#d99d7a", "#e4ac6d"][index];
+      const tint = ["#ecc082", "#e5ae79", "#d99d7a", "#e4ac6d", "#f4ce94"][index];
       ctx.globalAlpha = .32 * light;
       block(ctx, "#e2a56e", x, y + h, w, Math.max(1, h * .07));
       ctx.globalAlpha = .97 * light;

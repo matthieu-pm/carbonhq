@@ -1,0 +1,115 @@
+.runway {
+  --cell: clamp(60px, 7vw, 80px);
+  --operator-cell: calc(var(--cell) * 1.2);
+  --travel: clamp(36px, 10vw, 148px);
+  --floor: max(6px, env(safe-area-inset-bottom));
+  --lap: 16s;
+  position: absolute;
+  inset: auto 0 0;
+  height: calc(var(--operator-cell) + var(--floor) + 6px);
+  overflow: clip;
+  pointer-events: none;
+}
+
+.walker {
+  position: absolute;
+  bottom: var(--floor);
+  height: var(--cell);
+  aspect-ratio: 1;
+  transform: translateX(var(--inside));
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.operator {
+  left: 0;
+  height: var(--operator-cell);
+  --outside: -100%;
+  --inside: var(--travel);
+  --facing: 1;
+  --row: 0%;
+  --delay: 0s;
+}
+
+.pi {
+  right: 0;
+  --outside: 100%;
+  --inside: calc(-1 * var(--travel));
+  --facing: -1;
+  --row: 75%;
+  --delay: calc(var(--lap) / 2);
+}
+
+.walker::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: url("/game/characters.webp") no-repeat 0 var(--row) / 400% 500%;
+  background-position-x: calc(var(--stride, 0%) * var(--walking, 0));
+  image-rendering: pixelated;
+  transform: scaleX(var(--facing));
+}
+
+.walker:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) and (scripting: enabled) {
+  .runway[data-play] {
+    --play: running;
+  }
+
+  .walker {
+    animation: patrol var(--lap) linear var(--delay) infinite both;
+    animation-play-state: var(--play, paused);
+  }
+
+  .walker::before {
+    animation: turn var(--lap) step-end var(--delay) infinite both, stride 480ms step-end infinite;
+    animation-play-state: var(--play, paused);
+  }
+
+  .runway:has(:focus-visible) {
+    --play: paused;
+  }
+
+  .walker:focus-visible {
+    --outside: var(--inside);
+  }
+
+  .walker:focus-visible::before {
+    background-position-x: 0%;
+  }
+
+  .runway:has(:focus-visible) .walker:not(:focus-visible) {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+@media (hover: hover) {
+  .runway:hover {
+    --play: paused;
+  }
+}
+
+/* Each half-lap gives two seconds each to enter, wait, exit, and leave the footer empty. */
+@keyframes patrol {
+  0%, 37.5%, 100% { transform: translateX(var(--outside)); }
+  12.5%, 25% { transform: translateX(var(--inside)); }
+}
+
+@keyframes turn {
+  0% { --walking: 1; transform: scaleX(var(--facing)); }
+  12.5% { --walking: 0; }
+  25% { --walking: 1; transform: scaleX(calc(-1 * var(--facing))); }
+  37.5%, 100% { --walking: 0; }
+}
+
+@keyframes stride {
+  0%, 50% { --stride: 0%; }
+  25% { --stride: 33.333333%; }
+  75% { --stride: 66.666667%; }
+}

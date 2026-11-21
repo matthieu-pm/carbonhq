@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ArrowUp, Flag, Heart, Pause, Play, RadioTower, UsersRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUp, Flag, Heart, IdCard, Pause, Play, RadioTower, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { createGame, getContextHint, getSnapshot, stepGame, type Input } from "./engine";
+import { createGame, CREW_SIZE, getContextHint, getSnapshot, STAGES, stepGame, type Input } from "./engine";
 import { drawWorld } from "./render";
 import { RunClock } from "./run-clock";
 import type { Cue } from "./audio";
@@ -145,7 +145,7 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
         else if (input.use && hadPrompt && !game.prompt) cue("crew");
         else if (velocity >= 0 && game.player.vy < -6) cue("jump");
         if (game.stageIndex !== prev.stageIndex || game.lives !== prev.lives || game.prompt !== prev.prompt ||
-          game.notice !== prev.notice || game.recruited.length !== prev.recruited.length || game.status !== prev.status ||
+          game.notice !== prev.notice || game.hasKey !== prev.hasKey || game.recruited.length !== prev.recruited.length || game.status !== prev.status ||
           getContextHint(game) !== prev.hint) {
           prev = getSnapshot(game);
           setHud(prev);
@@ -183,20 +183,25 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
   }
   return <div ref={group} className={s.playfield}>
     <div className={s.hud}>
-      <div className={s.stage}><span><Flag size={13} /> Floor 0{hud.stageIndex + 1} / 04</span><strong>{hud.stageName}</strong></div>
+      <div className={s.stage}>
+        <span className={s.stageMeta}><Flag size={13} /> Floor 0{hud.stageIndex + 1} / {String(STAGES.length).padStart(2, "0")}
+          {hud.hasKey && <span className={s.keycard}><IdCard size={14} aria-hidden="true" /> Keycard</span>}
+        </span>
+        <strong>{hud.stageName}</strong>
+      </div>
       <div className={s.counters}>
         <span aria-label={hud.lives + " lives"}><Heart className={s.heart} size={16} />{hud.lives}</span>
-        <span aria-label={hud.recruited.length + " of 4 agents recruited"}><UsersRound size={17} />{hud.recruited.length}/4</span>
+        <span aria-label={`${hud.recruited.length} of ${CREW_SIZE} agents rescued`}><UsersRound size={17} />{hud.recruited.length}/{CREW_SIZE}</span>
         <time>{formatTime(seconds)}</time>
         <button className={s.iconButton} type="button" aria-label="Pause game" onClick={() => pause(true)} disabled={paused}><Pause size={17} /></button>
       </div>
     </div>
     <div className={s.playScreen}>
-      <canvas className={s.world} ref={canvas} tabIndex={paused ? -1 : 0} aria-label="Tower Shift playfield. Use left and right arrows to move, Space to jump, E to use crew, and Escape to pause." />
+      <canvas className={s.world} ref={canvas} tabIndex={paused ? -1 : 0} aria-label="Tower Shift playfield. Use left and right arrows to move, Space to jump, E to interact, and Escape to pause." />
       <div className={s.notice} role="status">{!paused && hud.notice && <span>{hud.notice}</span>}</div>
       {paused && <div className={s.pauseOverlay}><div className={s.pauseCard}>
         <Pause size={22} /><h2>Shift paused.</h2>
-        <p>Move with the arrows, jump with Space, and use crew with E.</p>
+        <p>Move with the arrows, jump with Space, and press E when an action appears.</p>
         <button type="button" className={s.primary} onClick={resume} ref={resumeButton}><Play fill="currentColor" size={15} /> Resume shift</button>
         {settings}
         <button type="button" className={s.textButton} onClick={onTitle}>End run &amp; return to title</button>
@@ -213,7 +218,7 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
         </button>)}
       </div>
       <div className={s.actions}><div className={s.context} aria-live="polite">{hud.prompt ?
-        <button type="button" onClick={() => tap("use")} className={s.crewButton}><kbd>E</kbd><span>Use crew<small>{hud.prompt}</small></span></button> :
+        <button type="button" onClick={() => tap("use")} className={s.crewButton}><kbd>E</kbd><span>{hud.prompt}</span></button> :
         <span className={s.contextHint}><RadioTower size={15} /> {hud.hint}</span>}
       </div>
         <button type="button" className={s.jumpKey} onPointerDown={(e) => { if (e.button === 0) { e.preventDefault(); tap("jump"); } }}
