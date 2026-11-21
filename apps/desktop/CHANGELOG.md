@@ -22,6 +22,18 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.31.2 · 2026-11-21 · beta
+
+### New
+
+- **Coding session terminals.** Open a shell from the top rail. Use + to open another terminal, or expand a terminal into full view. Shells keep running when you hide the view or quit the app with sessions running.
+- **Session tools in the top rail.** Open Changes, Pinned Summary and other session tools as tabs beside the terminal. Move Changes into full view to give the diff more room.
+
+### Improved
+
+- **Canvas controls.** Show or hide the controls from the top rail. They open on first use and remember your choice.
+- **Subscription usage.** The dashboard and usage popover show providers that report an allowance.
+
 ## 0.31.1 · 2026-11-20 · beta
 
 ### New
