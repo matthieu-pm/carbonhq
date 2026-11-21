@@ -9,6 +9,14 @@ describe("project canvas documents", () => {
     expect(doc.pages).toHaveLength(1);
     expect(readDocument(JSON.stringify(doc))).toEqual(doc);
   });
+  it("round trips page markup and rejects a stroke with malformed coordinates", () => {
+    const doc = readDocument(legacy);
+    doc.pages[0].strokes = [{ id: "stroke", points: [[-4.5, 22], [17, 30]] }];
+    doc.pages[0].comments = [{ id: "pin", x: 17, y: 30, text: "Round this corner" }];
+    expect(readDocument(JSON.stringify(doc))).toEqual(doc);
+    doc.pages[0].strokes[0].points[1][0] = NaN;
+    expect(() => readDocument(JSON.stringify(doc))).toThrow();
+  });
   it("rejects unsupported versions and cyclic layer trees", () => {
     const doc = readDocument(legacy);
     const frame = newLayer("Frame", doc.pages[0].id, null, 0, 0);

@@ -323,6 +323,22 @@ pub async fn upload_path(name: &str) -> Result<PathBuf> {
     Ok(dir.join(name))
 }
 
+/// Stages a canvas capture on the session's server so the normal image send can archive it.
+pub(crate) async fn canvas_snapshot(png: String) -> Result<Attachment> {
+    anyhow::ensure!(
+        png.len() as u64 <= MAX_IMAGE_BYTES.div_ceil(3) * 4,
+        "Canvas snapshot is too large"
+    );
+    let bytes = STANDARD.decode(png)?;
+    anyhow::ensure!(
+        bytes.starts_with(b"\x89PNG\r\n\x1a\n") && bytes.len() as u64 <= MAX_IMAGE_BYTES,
+        "Invalid canvas snapshot"
+    );
+    let path = upload_path("Canvas comment.png").await?;
+    fs::write(&path, bytes).await?;
+    describe(&path.to_string_lossy()).await
+}
+
 /// `attachments/uploads`, the root every [`upload_path`] sits under.
 pub async fn uploads_dir() -> Result<PathBuf> {
     Ok(get_home_app_dir().await?.join("attachments").join("uploads"))

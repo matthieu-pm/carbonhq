@@ -831,6 +831,7 @@ useEffect(() => {
   );
 }, [sessions]);
 
+const composerPick = { harness, modelId, effort, fast, permissionMode, projectPath, branch, useWorktree };
 const handleSendMsg = async (
   message: string,
   // Resolved, not paths, and only because a queued prompt needs them: the row
@@ -840,14 +841,16 @@ const handleSendMsg = async (
   // Where a new session's worktree starts, from a draft `carbon draft new
   // --base` saved. Nothing in the composer sets one.
   baseRef: string | null = null,
+  target?: { id: string; isNew: boolean; pick: typeof composerPick },
 ): Promise<boolean> => {
+  const { harness, modelId, effort, fast, permissionMode, projectPath, branch, useWorktree } = target?.pick ?? composerPick;
   const attachmentPaths = attachments.map((a) => a.path);
 
-  let sessionId = selectedSessionId;
-  const isNewSession = !sessionId;
+  let sessionId = target?.id ?? selectedSessionId;
+  const isNewSession = target?.isNew ?? !sessionId;
   // The unsent pick this send carries. A later edit made while it is out
   // replaces the map entry, and must survive this send landing.
-  const sentPick = sessionId ? unsentPicks.current.get(sessionId) : undefined;
+  const sentPick = !target && sessionId ? unsentPicks.current.get(sessionId) : undefined;
 
   const existing = sessionId ? sessions.find((s) => s.sessionId === sessionId) : undefined;
   // The backend reads the recorded cwd on resume, so this only has to be right
@@ -876,7 +879,7 @@ const handleSendMsg = async (
   // Taken after the mint, so this send's own failure still reports.
   const fail = failUnlessLeft();
 
-  setError(null);
+  if (!target) setError(null);
   // Read before the optimistic write below overwrites it. A send onto a running
   // turn must not release that turn's status if it fails — the turn is still
   // running, and the failure was this prompt's alone.
@@ -1059,7 +1062,7 @@ const handleSendMsg = async (
     if (!isNewSession) {
       // The index now holds what was sent; only the per-model levels outlive
       // it, since the index keeps one.
-      if (unsentPicks.current.get(sessionId) === sentPick) {
+      if (!target && unsentPicks.current.get(sessionId) === sentPick) {
         if (sentPick?.efforts) unsentPicks.current.set(sessionId, { efforts: sentPick.efforts });
         else unsentPicks.current.delete(sessionId);
       }
@@ -1133,7 +1136,7 @@ const handleSendMsg = async (
           .catch(() => undefined)) === null;
       setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
       dropHeld(sessionId);
-      if (selectionRequestRef.current === sessionId) {
+      if (!target && selectionRequestRef.current === sessionId) {
         if (unused) {
           forgetSessionServer(sessionId);
           setNewTaskId(sessionId);
@@ -1145,9 +1148,33 @@ const handleSendMsg = async (
       // the composer still holds the text and the error says why.
       dropProvisional(sessionId, provisional);
     }
+    if (target) throw e;
     fail(e);
     return false;
   }
+};
+
+const sendCanvasMessage = async (project: string, id: string, draft: boolean, message: string, attachments: Attachment[]) => {
+  const server = serverOfPath(project);
+  noteSession(id, server);
+  const item = await invoke<SessionIndexItem | null>("session_index_item", { sessionId: id }, server);
+  if (!item && !draft) throw Error("This conversation is no longer available.");
+  if (item && item.projectPath !== project) throw Error("This conversation belongs to another project.");
+  if (item) await ensureLoaded(id);
+  const harness = item?.harness ?? prefs.harness;
+  const models = modelsByHarness[modelsKey(server, harness)] ?? [];
+  const remembered = rememberedModel(prefs.modelByHarness, harness);
+  const modelId = item?.model ?? (harness === "fx" ? repairFxModel(models, remembered) : usableModel(models, remembered, harness));
+  const model = models.find(m => m.id === modelId);
+  const savedEffort = prefs.effortByModel[modelId] ?? null;
+  const defaultEffort = model ? usableEffort(model, savedEffort, DEFAULT_EFFORT) : savedEffort;
+  const pick = {
+    harness, modelId, effort: item ? item.effort : defaultEffort,
+    permissionMode: item?.permissionMode ?? prefs.permissionMode,
+    fast: item?.fast ?? fastFor(prefs.fast, harness, models, modelId),
+    projectPath: project, useWorktree: !item && prefs.useWorktree, branch: item?.branch ?? null,
+  };
+  await handleSendMsg(message, attachments, null, { id, isNew: !item, pick });
 };
 
 // Takes back the newest prompt still waiting on the backend and hands its text
@@ -3316,6 +3343,6 @@ const contextUsage: { used: number; max: number } | null = (() => {
   return used !== null && max !== null ? { used, max } : null;
 })();
 
-return {harness, setHarness, sessions, selectedSessionId, selectedSession, newTaskId, sessionIndexItems, statusBySession, askingSessions, archivedShown, archivedRequested: showArchived, setShowArchived, models, refreshModels, reloadModels, seedFxModels, loadingModels, modelId, effort, fast, setFast, fastNote, permissionMode, projects: orderedProjects, projectPath, branches, branch, useWorktree, busy, working, backgroundTasks, liveTaskIds, tasksBySession, compacting, apiRetry, contextUsage, error, setError, handleModelChange, setPermissionMode, handleAttachProject, handleSelectProject, handleRemoveProject, setProjectSpace, moveProject, retagSpace, canAnnounce, handleSelectBranch, refreshBranches, pendingBranch, setPendingBranch, runCheckout, setUseWorktree, handleSendMsg, handleInterrupt, handleStopTask, queuedMessages, handleCancelQueued, handleRespondPermission, handleAnswerQuestions, handleSelectSessionIndexItem, handleNewSession, restoreDraftControls, markSessionUnread, setSessionFlags, forkSession, unlinkIssue, detachSession, deleteSession, removeWorktree, ensureLoaded, setNeighbours, dropNeighbours, setOnScreen, setCrewSeen, paneState, indexSide, navGen, activeServer};
+return {harness, setHarness, sessions, selectedSessionId, selectedSession, newTaskId, sessionIndexItems, statusBySession, askingSessions, archivedShown, archivedRequested: showArchived, setShowArchived, models, refreshModels, reloadModels, seedFxModels, loadingModels, modelId, effort, fast, setFast, fastNote, permissionMode, projects: orderedProjects, projectPath, branches, branch, useWorktree, busy, working, backgroundTasks, liveTaskIds, tasksBySession, compacting, apiRetry, contextUsage, error, setError, handleModelChange, setPermissionMode, handleAttachProject, handleSelectProject, handleRemoveProject, setProjectSpace, moveProject, retagSpace, canAnnounce, handleSelectBranch, refreshBranches, pendingBranch, setPendingBranch, runCheckout, setUseWorktree, handleSendMsg, sendCanvasMessage, handleInterrupt, handleStopTask, queuedMessages, handleCancelQueued, handleRespondPermission, handleAnswerQuestions, handleSelectSessionIndexItem, handleNewSession, restoreDraftControls, markSessionUnread, setSessionFlags, forkSession, unlinkIssue, detachSession, deleteSession, removeWorktree, ensureLoaded, setNeighbours, dropNeighbours, setOnScreen, setCrewSeen, paneState, indexSide, navGen, activeServer};
 
 }

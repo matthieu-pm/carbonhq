@@ -8,6 +8,8 @@ import {
   Hand,
   Layers,
   MousePointer2,
+  Pencil,
+  MessageSquare,
   Plus,
   Square,
   Type,
@@ -37,6 +39,8 @@ const tools = [
   { name: "Frame", icon: Frame, key: "F" },
   { name: "Rectangle", icon: Square, key: "R" },
   { name: "Text", icon: Type, key: "T" },
+  { name: "Pen", icon: Pencil, key: "P" },
+  { name: "Comment", icon: MessageSquare, key: "C" },
 ] as const;
 const glyph = { Frame, Rectangle: Square, Text: Type };
 const tabs = [
@@ -280,7 +284,7 @@ export function CanvasEditor({
                 <CanvasTheme doc={doc} change={session.change} project={file.project} projects={projects} />
               ) : (
                 <>
-                  <div className="ce-heading">
+                  <div className="ce-heading ce-pages-header">
                     <button
                       className="ce-pages-heading"
                       aria-expanded={pagesOpen}
