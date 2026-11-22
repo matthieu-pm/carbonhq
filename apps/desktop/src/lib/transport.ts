@@ -8,7 +8,7 @@
 // `&server=ws://…` for anything but the default. That server is `local` there.
 
 import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
-import { listen as tauriListen, type Event, type UnlistenFn } from "@tauri-apps/api/event";
+import { emit as tauriEmit, listen as tauriListen, type Event, type UnlistenFn } from "@tauri-apps/api/event";
 
 /// `"local"` for the in-process core, an id from `servers.json` for a remote one.
 export type ServerId = string;
@@ -359,5 +359,22 @@ async function remoteInvoke<T>(server: Remote, cmd: string, args: Rec): Promise<
   return new Promise<T>((resolve, reject) => {
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
     ws.send(JSON.stringify({ id, cmd, args }));
+  });
+}
+
+/** Only the native host may ask the main webview to control the local window. */
+export async function listenLocalRequest<T>(event: string, answer: (request: T) => unknown): Promise<UnlistenFn> {
+  if (!("__TAURI_INTERNALS__" in window)) return () => {};
+  return tauriListen<{ ready: string } | { reply: string; request: T }>(event, async ({ payload }) => {
+    if ("ready" in payload) {
+      await tauriEmit(payload.ready);
+      return;
+    }
+    try {
+      const data = await answer(payload.request);
+      await tauriEmit(payload.reply, { data: data ?? { ok: true } });
+    } catch (err) {
+      await tauriEmit(payload.reply, { error: String(err) });
+    }
   });
 }

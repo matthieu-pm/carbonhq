@@ -102,3 +102,19 @@ it("keeps edits and a delivered pin together when a canvas is reopened during se
   expect(JSON.parse(disk).pages[0]).toMatchObject({ background: "green", comments: [pin] });
   leave();
 });
+
+it("a CLI flush waits for the editor's pending save", async () => {
+  const session = new CanvasSession(file);
+  await session.load();
+  session.change(background("blue"));
+  let finish!: () => void;
+  vi.mocked(invoke).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const originalSave = session.flush();
+  let answered = false;
+  const cliSave = session.flush().then(() => { answered = true; });
+  await Promise.resolve();
+  expect(answered).toBe(false);
+  finish();
+  await Promise.all([originalSave, cliSave]);
+  expect(answered).toBe(true);
+});

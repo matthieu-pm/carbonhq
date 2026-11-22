@@ -1987,6 +1987,11 @@ const seedFxModels = (provider: string) => {
 };
 
 useEffect(() => {
+  const off = listen("projects_changed", ({server}) => {
+    void invoke<Project[]>("list_projects", {}, server)
+      .then(list => setProjects(prev => mergeFrom(prev, server, list, pathOfProject)))
+      .catch(e => setError(String(e)));
+  });
   invoke<Project[]>("list_projects")
     .then((list) => {
       setProjects((prev) => mergeFrom(prev, LOCAL, list, pathOfProject));
@@ -1995,6 +2000,7 @@ useEffect(() => {
     // Without this a failed read leaves the picker silently empty, and the
     // reason only reaches the console.
     .catch((e) => setError(String(e)));
+  return () => void off.then(remove => remove());
 }, [])
 
 /// One server's projects and sessions, read again. Every server is read each

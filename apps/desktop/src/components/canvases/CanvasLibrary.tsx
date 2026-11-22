@@ -1,3 +1,4 @@
+import { useCanvasWindowPart } from "@/lib/canvasWindow";
 import { lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 import {
   Archive,
@@ -171,7 +172,7 @@ export function CanvasLibrary({
   const [destination, setDestination] = useState("");
   const [error, setError] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const { style, handle } = useSidebarResize();
+  const { style, handle, resize } = useSidebarResize();
   const sidebarWidth = Number(style.width);
   useLayoutEffect(() => { onSidebarWidth(sidebarWidth); }, [onSidebarWidth, sidebarWidth]);
   const search = useRef<HTMLInputElement>(null);
@@ -239,6 +240,19 @@ export function CanvasLibrary({
     { enabled: visible, page: true },
   );
   useHotkey("session.new", () => create("create"), { enabled: visible });
+  useCanvasWindowPart("library", ({ command }) => {
+    if (command.group !== "view" || !visible) throw Error("Open the Canvas library first.");
+    const action = command.args;
+    if (action.op === "state") return { location: scope, layout, query, width: sidebarWidth };
+    if (action.op === "width") return resize(action.pixels);
+    if (action.op === "search") {
+      library.select(null);
+      setSearchOpen(true);
+      setQuery(action.query);
+    } else if (action.op === "layout" && (action.layout === "grid" || action.layout === "list")) {
+      setLayout(action.layout);
+    } else throw Error("Choose grid or list.");
+  });
   const searchBox = (
     <SidebarSearch label="Search canvases" inputRef={search} open={searchOpen} value={query}
       onOpenChange={(open) => {

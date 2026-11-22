@@ -1,3 +1,4 @@
+import { useCanvasWindowPart, useEditorStatus, visibility } from "@/lib/canvasWindow";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Check,
@@ -23,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { CanvasFile } from "@/hooks/useCanvasLibrary";
+import { canvasKey, type CanvasFile } from "@/hooks/useCanvasLibrary";
 import type { Project } from "@/types/events";
 import { useCanvasDocument } from "./useCanvasDocument";
 import { CanvasTheme } from "./CanvasTheme";
@@ -66,6 +67,7 @@ export function CanvasEditor({
   libraryError: string;
 }) {
   const { doc, error, saving, conflict, session } = useCanvasDocument(file);
+  useEditorStatus(canvasKey(file), !!doc, doc ? "" : error);
   const [mode, setMode] = useState<"Design" | "Theme">("Design");
   const [tool, setTool] = useState<Tool>("Select");
   const [pageId, setPageId] = useState("");
@@ -162,6 +164,50 @@ export function CanvasEditor({
   useEffect(() => {
     root.current?.focus({ preventScroll: true });
   }, [!!doc]);
+  useCanvasWindowPart("editor", async ({ command }) => {
+    if (command.group !== "view") throw Error("Choose a view command.");
+    const a = command.args;
+    if (a.op === "state") return { page: page?.id, layer: selectedId, tool, mode, view, pagesOpen, folded: [...folded], saving, conflict, error, ready: !!doc };
+    if (!doc && a.op !== "reload") throw Error(error || "Canvas is loading.");
+    switch (a.op) {
+      case "page":
+        if (!doc?.pages.some(p => p.id === a.id)) throw Error("Unknown page.");
+        activate(a.id); break;
+      case "select":
+        if (a.id !== null && !layers.some(l => l.id === a.id)) throw Error("Unknown layer on this page.");
+        pick(a.id); break;
+      case "mode":
+        if (a.mode !== "Theme" && a.mode !== "Design") throw Error("Choose Design or Theme.");
+        setMode(a.mode); break;
+      case "tool": {
+        const match = tools.find(t => t.name === a.tool);
+        if (!match) throw Error("Unknown canvas tool.");
+        setTool(match.name); break;
+      }
+      case "pan": setView(v => ({...v, x: a.x, y: a.y})); break;
+      case "zoom":
+        if (a.factor < 0.05 || a.factor > 8) throw Error("Choose a zoom between 0.05 and 8.");
+        zoom(a.factor); break;
+      case "fit": fit(); break;
+      case "tree": {
+        if (!layers.some(l => l.id === a.id)) throw Error("Unknown layer on this page.");
+        const next = new Set(folded);
+        if (visibility(a.visibility)) next.delete(a.id); else next.add(a.id);
+        fold(next); break;
+      }
+      case "panel":
+        if (a.panel !== "pages") throw Error("Unknown panel.");
+        showPages(visibility(a.visibility)); break;
+      case "undo": case "redo":
+        if (!session.travel(a.op === "redo")) throw Error("No editor history in that direction.");
+        await session.flush(); break;
+      case "reload": await session.load(); break;
+      case "save": await session.flush(); break;
+      case "keep-mine": await session.keepMine(); break;
+      default: throw Error("Unknown editor action.");
+    }
+    if (["undo", "redo", "save", "reload", "keep-mine"].includes(a.op) && session.get().error) throw Error(session.get().error);
+  });
   function keys(e: React.KeyboardEvent) {
     const target = e.target as HTMLElement;
     if (!root.current?.contains(target) || target.closest("input,textarea,select,[contenteditable=true]"))

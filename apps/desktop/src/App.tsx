@@ -1,3 +1,4 @@
+import { useCanvasDesktop } from "@/hooks/useCanvasDesktop";
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { invoke, listen, LOCAL, noteSession, serverOfPath } from "@/lib/transport";
@@ -2955,6 +2956,25 @@ function App() {
     }
   };
 
+  useCanvasDesktop({
+    library: canvasLibrary, dock: canvasDock, controls: canvasControlsOpen, visible: canvasHome && !settingsOpen,
+    sidebar: !collapsed, setSidebar: show => setCollapsed(!show), setControls: setCanvasControlsOpen,
+    design: path => {
+      const project = projects.find(p => p.path === path);
+      if (path && !project) throw Error("Attach the project before opening its canvas.");
+      if (project && !spaceProjects.includes(project)) changeSpace(project.space ?? null);
+      closeSettings();
+      setWorkspace("Design");
+      setDesignPlace("home");
+      setPeek(false);
+      setSpacesPeek(false);
+    },
+    navigate: forward => {
+      if (!(forward ? canForward : canBack)) throw Error("No history in that direction.");
+      goHistory(forward ? 1 : -1);
+    },
+    send: sendFromCanvas,
+  });
   const viewTitle = shownSession
     ? mainGroup
       ? groupName(mainGroup)

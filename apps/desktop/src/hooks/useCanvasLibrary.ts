@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { moveCanvasChat } from "@/lib/canvasChat";
 import { projectLabel } from "@/lib/servers";
-import { invoke } from "@/lib/transport";
+import { invoke, listen, qualify } from "@/lib/transport";
 import type { Project } from "@/types/events";
 
 export type CanvasFile = { project: string; folder: string; name: string };
@@ -31,6 +31,21 @@ export function useCanvasLibrary(projects: Project[], visible: boolean) {
   const refresh = useCallback(() => setSerial((n) => n + 1), []);
   const writing = useRef(false);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const off = listen<{project: string; folder: string; canvas: string | null; command?: {group: string; args?: {destination: string}}}>("canvas_changed", ({payload, server}) => {
+      const file = {project: qualify(payload.project, server), folder: payload.folder, name: payload.canvas ?? ""};
+      const key = canvasKey(file);
+      if (payload.command?.group === "move" && payload.command.args) {
+        const moved = {...file, folder: payload.command.args.destination};
+        moveCanvasChat(key, canvasKey(moved));
+        setTabs(tabs => tabs.map(t => canvasKey(t) === key ? moved : t));
+        select(active => active === key ? canvasKey(moved) : active);
+      }
+      refresh();
+    });
+    return () => { void off.then(remove => remove()); };
+  }, [refresh]);
 
   useEffect(() => {
     if (!visible) return;

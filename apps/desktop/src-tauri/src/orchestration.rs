@@ -824,6 +824,7 @@ async fn dispatch_inner(request: Request, receipt: Option<&carbon_proto::Operati
         Request::Secret(request) => Ok(Response::Secret {
             data: crate::secrets::request(request, app).await.map_err(anyhow::Error::msg)?,
         }),
+        Request::Canvas(request) => Ok(Response::Canvas { data: crate::canvas_commands::request(request, app).await? }),
         Request::Pages(request) => Ok(Response::Pages {
             data: crate::pages::request(request, app).await.map_err(anyhow::Error::msg)?,
         }),
@@ -898,6 +899,7 @@ pub async fn answer_host(cmd: &str, args: serde_json::Value) -> Result<serde_jso
         return reply;
     }
     match cmd {
+        "canvas_view" => crate::canvas_commands::window_request(args).await,
         "secret_browser" => crate::secrets::answer_browser(args).await,
         "request" => {
             let request: Request = serde_json::from_value(args).map_err(|e| e.to_string())?;

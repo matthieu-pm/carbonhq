@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { canvasKey, type CanvasFile } from "@/hooks/useCanvasLibrary";
-import { invoke } from "@/lib/transport";
+import { invoke, listen, qualify } from "@/lib/transport";
 import { readDocument, type CommentPin, type Document } from "./document";
 
 type Snapshot = { doc: Document | null; error: string; saving: boolean; conflict: boolean };
@@ -17,7 +17,8 @@ export class CanvasSession {
   private input: Element | null = null;
   private groupedAt = 0;
   private refreshing = false;
-  private writing = false;
+  private writing: Promise<void> | null = null;
+  private refreshAgain = false;
   private history: Document[] = [];
   private future: Document[] = [];
   private loading = false;
@@ -55,10 +56,15 @@ export class CanvasSession {
     return { projectPath, folder, name };
   }
   async load(refresh = false) {
-    if (this.loading || this.writing) return;
+    if (refresh && (this.loading || this.writing || this.refreshing)) {
+      this.refreshAgain = true;
+      return;
+    }
+    if (this.writing) await this.writing;
+    if (this.loading) return;
     const before = this.snapshot.doc;
     if (refresh) {
-      if (this.refreshing || before !== this.persisted || this.snapshot.conflict) return;
+      if (before !== this.persisted || this.snapshot.conflict) return;
       this.refreshing = true;
     } else this.loading = true;
     try {
@@ -86,7 +92,13 @@ export class CanvasSession {
       if (refresh) this.refreshing = false;
       else this.loading = false;
       this.release();
+      this.refreshIfQueued();
     }
+  }
+  private refreshIfQueued() {
+    if (!this.refreshAgain) return;
+    this.refreshAgain = false;
+    void this.load(true);
   }
   async sendComment(pageId: string, pin: CommentPin, send: () => Promise<void>) {
     // A reopened tab must see the same document while delivery is outstanding.
@@ -131,6 +143,7 @@ export class CanvasSession {
     this.group = null;
     (redo ? this.history : this.future).push(this.snapshot.doc);
     this.replace(next);
+    return true;
   }
   private replace(doc: Document) {
     clearTimeout(this.timer);
@@ -159,8 +172,17 @@ export class CanvasSession {
   async flush() {
     clearTimeout(this.timer);
     this.timer = undefined;
-    if (this.writing || this.loading || this.snapshot.conflict) return;
-    this.writing = true;
+    if (this.writing) return this.writing;
+    if (this.loading || this.snapshot.conflict) return;
+    this.writing = this.saveChanges().finally(() => {
+      this.writing = null;
+      this.update({ saving: false });
+      this.release();
+      this.refreshIfQueued();
+    });
+    return this.writing;
+  }
+  private async saveChanges() {
     this.update({ saving: true, error: "" });
     try {
       while (this.snapshot.doc && this.snapshot.doc !== this.persisted) {
@@ -177,10 +199,6 @@ export class CanvasSession {
         this.update({ error, conflict: true });
         this.conflictRevision = await invoke<string>("read_canvas_document", this.args()).catch(() => null);
       } else this.update({ error });
-    } finally {
-      this.writing = false;
-      this.update({ saving: false });
-      this.release();
     }
   }
 }
@@ -201,9 +219,14 @@ export function useCanvasDocument(file: CanvasFile) {
       if (document.visibilityState === "visible") void session.load(true);
       else if (session.get().saving) void session.flush();
     };
+    const off = listen<{project: string; folder: string; canvas?: string}>("canvas_changed", ({payload, server}) => {
+      if (session.file.project === qualify(payload.project, server) && session.file.folder === payload.folder && session.file.name === payload.canvas)
+        void session.load(true);
+    });
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
+      void off.then(remove => remove());
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };

@@ -16,6 +16,26 @@ pub(crate) struct Library {
     canvases: Vec<Entry>,
 }
 
+impl Library {
+    /// Search the chosen folder and its descendants using the names shown in the library.
+    pub(crate) fn matching(mut self, archived: bool, folder: &str, query: &str) -> Self {
+        let needle = query.to_lowercase();
+        let prefix = format!("{folder}/");
+        let within = |path: &str| folder.is_empty() || path == folder || path.starts_with(&prefix);
+        self.canvases.retain(|entry| {
+            entry.archived == archived
+                && within(&entry.folder)
+                && format!("{} {}", entry.folder, entry.name)
+                    .to_lowercase()
+                    .contains(&needle)
+        });
+        self.folders.retain(|path| {
+            !archived && within(path) && path != folder && path.to_lowercase().contains(&needle)
+        });
+        self
+    }
+}
+
 #[derive(Serialize)]
 struct Entry {
     folder: String,
@@ -243,7 +263,7 @@ fn apply(project: &Path, action: Action) -> Result<String> {
     }
 }
 
-async fn attached(path: String) -> Result<PathBuf> {
+pub(crate) async fn attached(path: String) -> Result<PathBuf> {
     ensure!(
         crate::projects::list_projects()
             .await?
