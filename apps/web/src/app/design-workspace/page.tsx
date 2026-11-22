@@ -10,9 +10,14 @@ import { Intro, PreviewSlot, Shell } from "./opus-b/_shared/Shell";
 import { CanvasPreview } from "./opus-b/canvas/CanvasPreview";
 import { FieldnotesPreview } from "./opus-b/fieldnotes/FieldnotesPreview";
 
+const title = "Design workspace - Carbon";
+const description = "Draw on a canvas beside your coding agent, repaint linked layers with design tokens, and send feedback with a snapshot of the exact spot.";
+
 export const metadata: Metadata = {
-  title: "Design workspace - Carbon",
-  description: "Draw on a canvas beside your coding agent, repaint linked layers with design tokens, and send feedback with a snapshot of the exact spot.",
+  title,
+  description,
+  openGraph: { title, description, type: "website", siteName: "Carbon", url: "/design-workspace" },
+  twitter: { card: "summary_large_image", title, description },
 };
 
 export default function DesignWorkspacePage() {
