@@ -37,11 +37,9 @@ import Window from "@/components/app/Window";
 import { ClaudeGlyph } from "@/components/ClaudeGlyph";
 import { GreptileGlyph } from "@/components/GreptileGlyph";
 import { MiniHome } from "@/components/home/MiniHome";
+import { desktopHeroWindow } from "./heroWindowSize";
 import { ScaledWindow } from "./ScaledWindow";
 import s from "./Hero.module.css";
-
-const WIDTH = 1800;
-const HEIGHT = 1140;
 
 /// The four sessions that were there before the visitor arrived. The rest of
 /// the list is scenery.
@@ -111,7 +109,7 @@ type MergeState = "open" | "confirming" | "merging" | "merged";
 /// does — open another session, answer the one waiting on a question, start a
 /// task, flip the panel's tabs, open the dev server's tab, merge the PR.
 /// `startX` is where a phone's sideways scroll opens; 0 opens on the sidebar.
-export function Hero({ className, startX = 240 }: { className?: string; startX?: number }) {
+export function Hero({ className, startX = desktopHeroWindow.startX }: { className?: string; startX?: number }) {
   const [selected, setSelected] = useState<string>("background");
   const [view, setView] = useState<"chat" | "browser">("chat");
   const [panelTab, setPanelTab] = useState("PR");
@@ -227,7 +225,7 @@ export function Hero({ className, startX = 240 }: { className?: string; startX?:
     order={summaryOrder} onOrderChange={setSummaryOrder} onOpen={openSummaryPanel} onHide={() => setSummaryOpen(false)} hidden={hiddenSummaryItems} onHiddenChange={setHiddenSummaryItems} />;
 
   return (
-    <ScaledWindow width={WIDTH} height={HEIGHT} minScale={0.48} startX={startX} className={`${s.scene} ${className ?? ""}`}>
+    <ScaledWindow {...desktopHeroWindow} startX={startX} className={`${s.scene} ${className ?? ""}`}>
       <Window
         interactive
         contentClassName={s.content}

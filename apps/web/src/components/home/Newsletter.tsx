@@ -108,7 +108,7 @@ export function Newsletter() {
             {(phase === "crew" || phase === "pressing" || phase === "sending" || phase === "done") && (
               <div className={s.crew} aria-hidden>
                 <CrewBot happy={phase === "done"} />
-                <MousePointer2 className={s.cursor} size={25} fill="white" stroke="#17135b" strokeWidth={1.5} />
+                <MousePointer2 className={s.cursor} size={25} fill="white" stroke="#242424" strokeWidth={1.5} />
                 <span className={s.clickRing} />
               </div>
             )}
@@ -160,7 +160,7 @@ function DitherFill({ active }: { active: boolean }) {
         for (let x = 0; x < canvas.width; x++) {
           const lit = density > (BAYER[y & 3][x & 3] + 0.5) / 16;
           const alpha = (0.3 + density * 0.7) * (lit ? 1 : 0.4);
-          ctx.fillStyle = `rgba(53,143,243,${alpha})`;
+          ctx.fillStyle = `rgba(116,116,116,${alpha})`;
           ctx.fillRect(x, y, 1, 1);
         }
       }

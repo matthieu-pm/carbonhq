@@ -3262,8 +3262,6 @@ function App() {
             tab={viewTab}
             onChange={setViewTab}
             working={busy}
-            branch={prBranch}
-            cwd={shownSession?.cwd}
             alignX={tabsStart}
           />
           {pagesEnabled && (

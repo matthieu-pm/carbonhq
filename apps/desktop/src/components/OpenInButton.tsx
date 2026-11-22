@@ -135,8 +135,7 @@ function LocalOpenInButton({
         </TooltipTrigger>
         {/* The app's name, which the button itself does not carry — the icon
             says which app to anyone who knows the mark and nothing to anyone
-            who doesn't. The path is not repeated: it is on the header's own
-            branch button a row away, and it is the longest thing here.
+            who doesn't.
 
             A failure takes the slot instead, because `open`'s own sentence is
             the only thing that names the cure. `wrap`, since those sentences

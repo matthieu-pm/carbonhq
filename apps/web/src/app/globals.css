@@ -2,24 +2,11 @@
 
 /* The homepage's light look. <html> carries the reader's pick or the system's
    on every page, but only the homepage, marked `data-home`, reads it. A band
-   that stays dark either way, like the blue footer, opts out with
+   that stays dark either way, like the dark footer, opts out with
    `data-scheme="dark"`. */
 @custom-variant light {
   &:where(:root[data-scheme="light"] [data-home], :root[data-scheme="light"] [data-home] *):not(:where([data-scheme="dark"], [data-scheme="dark"] *)) {
     @slot;
-  }
-}
-
-/* One ray of the scheme toggle's hover wave: lit at once, fading while the
-   next few take over. `--shine` is set per scheme: sun bright, moon dim. */
-@keyframes ray-shine {
-  0%,
-  6% {
-    opacity: var(--shine);
-  }
-  30%,
-  100% {
-    opacity: 0;
   }
 }
 
@@ -371,8 +358,8 @@ body {
   [stroke="#FFFFFF38"] { stroke: #00000059; }
   [stroke="#FFFFFF4D"] { stroke: #00000052; }
   [stroke="#FFFFFF0F"] { stroke: #0000001f; }
-  /* The ridges the glow lights, blue on white. */
-  [stroke="#FFFFFF26"] { stroke: #1612f859; }
+  /* The ridges the glow lights, on the light page. */
+  [stroke="#FFFFFF26"] { stroke: #55555559; }
   [id$="-shade"] stop { stop-color: #fff; }
   [id$="-lift"] stop { stop-color: #000; }
   [id$="-lift"] stop:not(:last-child) { stop-opacity: 0.035; }
@@ -381,4 +368,53 @@ body {
 /* Native scrollbars and form controls follow the homepage's scheme. */
 :root[data-scheme="light"]:has([data-home]) {
   color-scheme: light;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+
+  :where([data-page-part], .page-content main > section) {
+    animation: section-in 700ms ease-out var(--entry-delay, 300ms) backwards;
+    view-transition-name: match-element;
+    view-transition-class: page-section position-2;
+  }
+  [data-page-part="nav"] { --entry-delay: 600ms; view-transition-class: page-section position-0; }
+  [data-page-part="preview"], [data-page-part="footer"] { --entry-delay: 0ms; view-transition-class: page-section position-4; }
+}
+
+::view-transition { pointer-events: none; }
+
+::view-transition-old(.page-fade), ::view-transition-old(root) {
+  animation: page-out 1250ms ease-in both;
+}
+
+::view-transition-new(.page-fade), ::view-transition-new(root) {
+  animation: page-in 1250ms ease-out 1250ms both;
+}
+
+::view-transition-group(.position-0) { --position: 0; }
+::view-transition-group(.position-1) { --position: 1; }
+::view-transition-group(.position-2) { --position: 2; }
+::view-transition-group(.position-3) { --position: 3; }
+::view-transition-group(.position-4) { --position: 4; }
+
+::view-transition-old(.page-section) {
+  animation: section-out 600ms ease-in calc(var(--position, 0) * 150ms) both;
+}
+
+::view-transition-new(.page-section) {
+  animation: section-in 700ms ease-out calc(1200ms + (4 - var(--position, 4)) * 150ms) both;
+}
+
+@keyframes section-out { to { opacity: 0; translate: 0 -20px; } }
+@keyframes section-in { from { opacity: 0; translate: 0 20px; } }
+
+@keyframes page-out { to { opacity: 0; } }
+@keyframes page-in { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) {
+    animation: none !important;
+  }
+  ::view-transition-old(*) { opacity: 0; }
 }

@@ -9,7 +9,7 @@ import TodoList from "@/components/chat/TodoList";
 import OpenInButton from "@/components/OpenInButton";
 import PrStateIcon from "@/components/PrStateIcon";
 import McpLogo from "@/components/settings/McpLogo";
-import { UnorderedList3Outline18 } from "@/components/icons/nucleo/UnorderedList3Outline18";
+import { UnorderedList4Outline18 } from "@/components/icons/nucleo/UnorderedList4Outline18";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem,
@@ -47,7 +47,7 @@ export function PinnedSummaryToggle({ open, onToggle, popover, onOpenChange, bou
       aria-label="Toggle pinned summary" aria-pressed={open} aria-controls="pinned-summary"
       onClick={popover ? undefined : onToggle}
       className={cn("shrink-0 text-muted-foreground", open && "bg-accent text-foreground", className)}>
-      <UnorderedList3Outline18 className="size-4.5" aria-hidden />
+      <UnorderedList4Outline18 className="size-4.5" aria-hidden />
     </Button>
   );
   return (

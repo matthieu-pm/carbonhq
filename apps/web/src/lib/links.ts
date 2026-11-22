@@ -1,4 +1,6 @@
 export const REPO = "https://github.com/matthieu-pm/carbonhq";
+export const X_PROFILE = "https://x.com/carbonhq_";
+export const LINKEDIN = "https://www.linkedin.com/company/carbonhq-global/";
 
 export const SITE = "https://carbonhq.sh";
 

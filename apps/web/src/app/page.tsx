@@ -1,3 +1,4 @@
+import { SourceFrame } from "@/components/home/SourceFrame";
 import { Closing } from "@/components/home/Closing";
 import { Everywhere } from "@/components/home/Everywhere";
 import { Faq } from "@/components/home/Faq";
@@ -42,15 +43,17 @@ export default function Home() {
       className="min-h-screen overflow-x-clip bg-black font-inter text-white antialiased light:bg-white light:text-[#0A0A0A]"
     >
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: SCHEMA }} />
-      <Hero />
-      <main>
-        <Orchestrate />
-        <Everywhere />
-        <Features />
-        <Island />
-        <Testimonials />
-        <Faq />
-      </main>
+      <SourceFrame>
+        <Hero />
+        <main>
+          <Orchestrate />
+          <Everywhere />
+          <Features />
+          <Island />
+          <Testimonials />
+          <Faq />
+        </main>
+      </SourceFrame>
       <Closing />
     </div>
   );

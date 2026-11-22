@@ -1,11 +1,15 @@
-.intro {
+.intro,
+.navActions {
   --intro-ink: #fff;
   --intro-muted: rgb(255 255 255 / 74%);
   --intro-note: rgb(255 255 255 / 72%);
   --intro-surface: #222;
   --intro-edge: rgb(255 255 255 / 12%);
-  padding-top: 64px;
   color: var(--intro-ink);
+}
+
+.intro {
+  padding-top: 64px;
 }
 
 .badge {
@@ -79,8 +83,66 @@
   margin-top: 28px;
 }
 
-.action {
+.actions > a {
   display: inline-flex;
+}
+
+.navActions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.navbar {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .navbar {
+    display: grid;
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  }
+}
+
+.navLinks { display: flex; align-items: center; gap: 2px; }
+.navLinks a { white-space: nowrap; }
+.navLinks > *, .themeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding-inline: 10px;
+  border-radius: 6px;
+  color: color-mix(in srgb, currentColor 72%, transparent);
+  font-size: 14px;
+  line-height: 20px;
+}
+.themeButton { width: 32px; padding: 0; cursor: pointer; }
+.compactActions { justify-self: end; align-items: center; gap: 6px; }
+.compactActions .action {
+  min-height: 32px;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.compactActions svg { width: 14px; height: 14px; }
+
+@media (min-width: 640px) and (max-width: 767px) {
+  .navbar > a:first-child { width: 96px; }
+  .navLinks > a { padding-inline: 5px; }
+}
+
+@media (hover: hover) {
+  .navLinks a:hover, .themeButton:hover { background: color-mix(in srgb, currentColor 9%, transparent); }
+}
+.navLinks a:focus-visible, .themeButton:focus-visible { background: color-mix(in srgb, currentColor 9%, transparent); }
+
+.action {
   min-height: 40px;
   align-items: center;
   justify-content: center;
@@ -121,32 +183,18 @@
   line-height: 20px;
 }
 
-:global(:root[data-scheme="light"]) .supporting {
+:global(:root[data-scheme="light"]) .intro,
+:global(:root[data-scheme="light"]) .navActions {
   --intro-ink: #0a0a0a;
   --intro-muted: rgb(10 10 10 / 72%);
   --intro-note: rgb(10 10 10 / 66%);
-  --intro-surface: #f1f1f4;
+  --intro-surface: #f1f1f1;
   --intro-edge: rgb(0 0 0 / 10%);
   color: var(--intro-ink);
 }
 
-:global(:root[data-scheme="light"]) .description {
-  background: #fff;
-}
-
-:global(:root[data-scheme="light"]) .note {
-  width: fit-content;
-  color: #fff;
-}
-
 :global(:root[data-scheme="light"]) .primaryAction {
   color: #fff;
-}
-
-@media (max-width: 1023px) {
-  :global(:root[data-scheme="light"]) .headline {
-    background: repeating-linear-gradient(to right, #1410da 0 2px, #1612f8 2px 6px);
-  }
 }
 
 @media (min-width: 640px) {
@@ -162,17 +210,13 @@
     margin-top: 32px;
   }
   .supporting { padding: 4px 0 0 16px; }
-  :global(:root[data-scheme="light"]) .note {
-    /* The blue band ends 180px past the column, including its 16px inset. */
-    background: linear-gradient(to right, #fff 164px, #424242 164px);
-    background-clip: text;
-    color: transparent;
-  }
 }
 
 @media (max-width: 479px) {
   .actions { flex-direction: column; }
-  .action { width: 100%; }
+  .actions > a { width: 100%; }
+  .navActions { gap: 4px; }
+  .navActions > a { padding-inline: 10px; }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -187,7 +231,7 @@
 @media (min-width: 1024px) {
   .preview {
     left: 50%;
-    width: min(1440px, calc(100vw - 4rem));
+    width: var(--preview-width);
     transform: translateX(-50%);
   }
 }

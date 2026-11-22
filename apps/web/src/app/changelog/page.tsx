@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { SourceFrame } from "@/components/home/SourceFrame";
 import { Closing } from "@/components/home/Closing";
 import { SiteNav } from "@/components/home/SiteNav";
 import { loadChangelog, type Item } from "@/lib/changelog";
@@ -16,7 +17,7 @@ const LABEL = "font-mono text-[11px] leading-[14px] tracking-[0.06em] uppercase"
 /// you" and "failed".
 const CATEGORY = {
   new: { label: "New", square: "bg-[#3DD68C] light:bg-[#0B8A5A]" },
-  improved: { label: "Improved", square: "bg-[#1612F8]" },
+  improved: { label: "Improved", square: "bg-[#808080]" },
   fixed: { label: "Fixed", square: "bg-[#C98BFF] light:bg-[#8526D1]" },
 } as const;
 
@@ -101,53 +102,58 @@ export default function Changelog() {
       data-home
       className="min-h-screen overflow-x-clip bg-black font-inter text-white antialiased light:bg-white light:text-[#0A0A0A]"
     >
-      <main className="px-5 pb-[120px] sm:px-8">
-        <div className="mx-auto w-full max-w-[960px]">
-          <SiteNav bare />
+      <SourceFrame>
+        <main className="px-5 pb-[120px] sm:px-8">
+          <div className="mx-auto w-full max-w-[960px]">
+            <SiteNav bare />
 
-          <div className="lg:ml-[102px] lg:max-w-[756px]">
-            <h1 className="pt-16 font-inter text-[28px] leading-[32px] font-normal tracking-[-0.03em] text-balance sm:pt-[101px] sm:text-[36px] sm:leading-[40px]">
-              Changelog
-            </h1>
-            <p className="mt-4 text-[16px] leading-6 tracking-[-0.01em] text-[#7C7C7C] light:text-[#8A8A8A]">
-              What changed in each Carbon release.
-            </p>
+            <div className="lg:ml-[102px] lg:max-w-[756px]">
+              <div data-page-part="intro">
+                <h1 className="pt-16 font-inter text-[28px] leading-[32px] font-normal tracking-[-0.03em] text-balance sm:pt-[101px] sm:text-[36px] sm:leading-[40px]">
+                  Changelog
+                </h1>
+                <p className="mt-4 text-[16px] leading-6 tracking-[-0.01em] text-[#7C7C7C] light:text-[#8A8A8A]">
+                  What changed in each Carbon release.
+                </p>
+              </div>
 
-            <div className="mt-16 border-t border-white/20 light:border-black/15">
-              {releases.map((r) => (
-                <article
-                  key={r.version}
-                  className="grid gap-6 border-b border-white/20 py-12 sm:grid-cols-[140px_1fr] light:border-black/15"
-                >
-                  <header className="flex gap-3 sm:flex-col sm:gap-1.5">
-                    <h2 className={`${LABEL} text-white light:text-[#0A0A0A]`}>{r.version}</h2>
-                    {r.date && (
-                      <time dateTime={r.date} className={`${LABEL} text-[#7C7C7C] light:text-[#8A8A8A]`}>
-                        {formatDate(r.date)}
-                      </time>
-                    )}
-                  </header>
-                  <div className="space-y-10">
-                    {r.sections.map((s) => (
-                      <section key={s.kind}>
-                        <h3 className={`${LABEL} mb-4 flex items-center gap-2 text-white light:text-[#0A0A0A]`}>
-                          <span aria-hidden className={`size-2 ${CATEGORY[s.kind].square}`} />
-                          {CATEGORY[s.kind].label}
-                        </h3>
-                        <ul className="space-y-5 text-[15px] leading-6 tracking-[-0.01em]">
-                          {s.items.map((item, i) => (
-                            <ChangelogItem key={i} item={item} />
-                          ))}
-                        </ul>
-                      </section>
-                    ))}
-                  </div>
-                </article>
-              ))}
+              <div className="mt-16 border-t border-white/20 light:border-black/15">
+                {releases.map((r) => (
+                  <article
+                    key={r.version}
+                    data-page-part="release"
+                    className="grid gap-6 border-b border-white/20 py-12 sm:grid-cols-[140px_1fr] light:border-black/15"
+                  >
+                    <header className="flex gap-3 sm:flex-col sm:gap-1.5">
+                      <h2 className={`${LABEL} text-white light:text-[#0A0A0A]`}>{r.version}</h2>
+                      {r.date && (
+                        <time dateTime={r.date} className={`${LABEL} text-[#7C7C7C] light:text-[#8A8A8A]`}>
+                          {formatDate(r.date)}
+                        </time>
+                      )}
+                    </header>
+                    <div className="space-y-10">
+                      {r.sections.map((s) => (
+                        <section key={s.kind}>
+                          <h3 className={`${LABEL} mb-4 flex items-center gap-2 text-white light:text-[#0A0A0A]`}>
+                            <span aria-hidden className={`size-2 ${CATEGORY[s.kind].square}`} />
+                            {CATEGORY[s.kind].label}
+                          </h3>
+                          <ul className="space-y-5 text-[15px] leading-6 tracking-[-0.01em]">
+                            {s.items.map((item, i) => (
+                              <ChangelogItem key={i} item={item} />
+                            ))}
+                          </ul>
+                        </section>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </SourceFrame>
       <Closing />
     </div>
   );

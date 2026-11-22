@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, FileDiff, GitPullRequest, Globe, ListChecks, ListTodo, Ticket } from "lucide-react";
+import { BookOpen, CircleDot, FileDiff, GitPullRequest, Globe, ListChecks } from "lucide-react";
+import { DotsOutline18 } from "@/components/icons/nucleo/DotsOutline18";
 import type { PanelTab } from "@/components/RightPanel";
 
-const icons = { changes: FileDiff, browser: Globe, docs: BookOpen, pr: GitPullRequest, more: ListTodo, plan: ListChecks, issue: Ticket };
+const icons = { changes: FileDiff, browser: Globe, docs: BookOpen, pr: GitPullRequest, more: DotsOutline18, plan: ListChecks, issue: CircleDot };
 
 export function SessionToolIcon({ tab, className = "size-3.5 shrink-0" }: { tab: PanelTab; className?: string }) {
   const Icon = icons[tab];

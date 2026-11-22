@@ -54,7 +54,6 @@ import {
   reconcile,
   type TabKey,
 } from "@/lib/tabOrder";
-import BranchButton from "@/components/layout/BranchButton";
 import { cn } from "@/lib/utils";
 
 /// Which view fills the main column.
@@ -124,8 +123,6 @@ export default function ViewTabs({
   title,
   tab,
   onChange,
-  branch,
-  cwd,
   alignX = 0,
   rename,
   working = false,
@@ -150,9 +147,6 @@ export default function ViewTabs({
   /// The session's own title and how to change it; absent where the chat
   /// stands for a group rather than one session.
   rename?: Rename;
-  /// The session's branch and directory, drawn at the row's far end.
-  branch?: string | null;
-  cwd?: string;
   /// Where the sheet starts, from the header's left. The row lines up with it.
   alignX?: number;
   /// The chat's tab, which stands for the session: `project / title`.
@@ -532,12 +526,6 @@ export default function ViewTabs({
           <span className="flex whitespace-nowrap pl-2 opacity-50">
             <ShortcutKeys ids={["tab.prev", "tab.next"]} />
           </span>
-        </span>
-      )}
-      {/* At the row's far end, where it gives way before any tab does. */}
-      {branch && cwd && (
-        <span className="ml-auto flex min-w-6.5 shrink-[999] pl-2 text-ui animate-in fade-in duration-200">
-          <BranchButton branch={branch} cwd={cwd} />
         </span>
       )}
     </div>

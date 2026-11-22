@@ -4,49 +4,42 @@ import { GitHubGlyph } from "@/components/GitHubGlyph";
 import { Wordmark } from "@/components/Wordmark";
 import { fetchStars, formatStars } from "@/lib/github";
 import { REPO } from "@/lib/links";
+import { SiteLinks } from "./SiteLinks";
+import { MobileNav } from "./MobileNav";
+import mobile from "./mobile-nav.module.css";
 import { SchemeToggle } from "./SchemeToggle";
+import styles from "./hero.module.css";
 
-const NAV_CELL =
-  "h-full shrink-0 items-center justify-center gap-1.5 border-l border-white/20 font-mono text-[11px] leading-[14px] tracking-[0.06em] text-white uppercase transition-colors hover:bg-white/10 light:border-black/15 light:text-[#0A0A0A] light:hover:bg-black/5";
+const secondary = `${styles.action} ${styles.secondaryAction}`;
 
-/// The site's bar of cells: wordmark left, scheme, links, stars and Download
-/// right. A server component so the star count arrives in the HTML. The
-/// wordmark's fill masks the homepage's tiles; `bare` drops it on a page
-/// with nothing behind the nav.
 export async function SiteNav({ bare = false }: { bare?: boolean } = {}) {
   const stars = await fetchStars();
 
   return (
-    <nav aria-label="Main" className="flex h-10 items-start justify-between">
-      <Link href="/" aria-label="Carbon home" className={`flex h-10 w-[120px] shrink-0 items-center justify-center px-2 ${bare ? "" : "bg-black light:bg-white"}`}>
+    <nav data-page-part="nav" aria-label="Main" className={styles.navbar}>
+      <Link href="/" aria-label="Carbon home" className={`flex h-10 w-[120px] min-w-0 items-center justify-center px-2 ${bare ? "" : "bg-black light:bg-white"}`}>
         <Wordmark className="h-auto w-full text-white light:text-[#0A0A0A]" />
       </Link>
-      {/* The box draws its right and bottom edges; every cell draws its own
-          left, so hiding Docs on a phone, and the stars on the
-          narrowest, leaves no doubled line. */}
-      <div className="flex h-10 border-r border-b border-white/20 light:border-black/15">
-        <SchemeToggle className={`${NAV_CELL} flex w-10 cursor-pointer`} />
-        {/* A plain anchor: /docs is another deployment behind a rewrite, so
-            client-side routing has nothing to route to. */}
-        <a href="/docs" className={`${NAV_CELL} hidden w-[72px] sm:flex`}>
-          Docs
-        </a>
+      <div className={`${styles.navLinks} ${mobile.desktop}`}><SiteLinks /></div>
+      <div className={`${styles.navActions} ${styles.compactActions} ${mobile.desktop}`}>
+        <SchemeToggle className={styles.themeButton} />
         <a
           href={REPO}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Carbon on GitHub, ${formatStars(stars)} stars`}
-          className={`${NAV_CELL} flex w-20 max-[359px]:hidden`}
+          className={`${secondary} inline-flex`}
         >
-          <GitHubGlyph className="size-3" />
+          <GitHubGlyph className="size-4" />
           {formatStars(stars)}
         </a>
         <DownloadButton
           from="nav"
           label="Download"
-          className={`${NAV_CELL} flex w-[115px] [&>svg]:-mt-0.5 [&>svg]:size-[11px]`}
+          className={`${styles.action} ${styles.primaryAction} inline-flex`}
         />
       </div>
+      <MobileNav />
     </nav>
   );
 }

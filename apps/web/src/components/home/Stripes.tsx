@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 
 const PITCH = 6;
 const GAP = 12;
-const INK = "#0000001F";
+const INK = "#FFFFFF0D";
 const TICK = 1000 / 60;
 // Wave speed², spring back to straight, and damping per tick.
 const C2 = 0.3;
