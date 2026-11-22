@@ -69,7 +69,7 @@ function Item({ question, answer }: { question: string; answer: string }) {
     // A shared `name` makes the group exclusive: opening one closes the rest.
     <details
       name="faq"
-      className="group bg-[#FFFFFF1A] px-6 py-5 not-open:hover:bg-[#FFFFFF24] light:bg-[#F4F4F5] light:not-open:hover:bg-[#EBEBEB] light:open:bg-[#1612F8] [interpolate-size:allow-keywords] open:bg-[#1612F8] details-content:h-0 details-content:overflow-clip open:details-content:h-auto motion-safe:transition-colors motion-safe:details-content:transition-[height,content-visibility] motion-safe:details-content:transition-discrete motion-safe:details-content:duration-300 motion-safe:details-content:ease-out"
+      className="group bg-[#FFFFFF1A] px-6 py-5 not-open:hover:bg-[#FFFFFF24] light:bg-[#F4F4F5] light:not-open:hover:bg-[#EBEBEB] light:open:bg-[#303030] [interpolate-size:allow-keywords] open:bg-[#303030] details-content:h-0 details-content:overflow-clip open:details-content:h-auto motion-safe:transition-colors motion-safe:details-content:transition-[height,content-visibility] motion-safe:details-content:transition-discrete motion-safe:details-content:duration-300 motion-safe:details-content:ease-out"
     >
       {/* Counted on the click, not on toggle: opening one closes another, and
           that close is no reader's choice. */}

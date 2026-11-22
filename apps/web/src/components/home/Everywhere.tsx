@@ -98,7 +98,7 @@ function MacBook() {
       <g opacity="0.45">
         <rect x="268" y="569" width="68" height="149" fill="#141414" />
         <rect x="276" y="587" width="41" height="6" fill="#2E2E2E" />
-        <rect x="276" y="608" width="52" height="6" fill="#1612F8" />
+        <rect x="276" y="608" width="52" height="6" fill="#888888" />
         <rect x="351" y="590" width="114" height="6" fill="#262626" />
         <rect x="351" y="608" width="80" height="6" fill="#4A4A4A" />
         <rect x="351" y="688" width="146" height="18" fill="#1F1F1F" stroke="#333333" />
@@ -108,7 +108,7 @@ function MacBook() {
       <rect x="363" y="726" width="54" height="4" rx="2" fill="#1F1F1F" />
       <rect x="256" y="740" width="268" height="3" fill="#141414" />
       {/* The selected row lights as the sweep ends. */}
-      <rect x="276" y="608" width="52" height="6" fill="#1612F8" className={m.blip} style={at(0.85, 0.08)} />
+      <rect x="276" y="608" width="52" height="6" fill="#888888" className={m.blip} style={at(0.85, 0.08)} />
     </>
   );
 }
@@ -169,7 +169,7 @@ function ComingSoon() {
       <g opacity="0.45">
         <rect x="954.5" y="556.6" width="35.3" height="176.4" fill="#141414" />
         <rect x="958.7" y="577.8" width="21.2" height="7.3" fill="#2E2E2E" />
-        <rect x="958.7" y="602.9" width="26.8" height="7.3" fill="#1612F8" />
+        <rect x="958.7" y="602.9" width="26.8" height="7.3" fill="#888888" />
         <rect x="997.3" y="581.3" width="59" height="6.6" fill="#262626" />
         <rect x="997.3" y="602.5" width="41.6" height="6.6" fill="#4A4A4A" />
         <rect x="997.3" y="697.7" width="75.6" height="21.2" fill="#1F1F1F" stroke="#333333" />
@@ -184,7 +184,7 @@ function ComingSoon() {
       <g opacity="0.45">
         <rect x="1125" y="597.5" width="6" height="6" fill="#3D3D3D" />
         <rect x="1138" y="597.5" width="45" height="6" fill="#2E2E2E" />
-        <rect x="1125" y="621.5" width="6" height="6" fill="#1612F8" />
+        <rect x="1125" y="621.5" width="6" height="6" fill="#888888" />
         <rect x="1138" y="621.5" width="34" height="6" fill="#4A4A4A" />
         <rect x="1123" y="704" width="64" height="16" rx="8" fill="#1F1F1F" />
       </g>
@@ -246,7 +246,7 @@ function Machines({ layout: { id, viewBox, className, place, bus, bands } }: { l
       })}
       {DROPS.map((d) => {
         const [dx, , y] = place[d.on];
-        return <rect key={d.x} x={d.x + dx - 5} y={y - 5} width="10" height="10" fill="#1612F8" />;
+        return <rect key={d.x} x={d.x + dx - 5} y={y - 5} width="10" height="10" fill="#888888" />;
       })}
 
       <g transform={shift("macbook")}>

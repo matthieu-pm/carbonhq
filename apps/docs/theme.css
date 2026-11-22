@@ -40,3 +40,27 @@
 [data-blume-footer] p {
   grid-column-start: 1;
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+
+  header[data-blume-header] { view-transition-name: docs-header; view-transition-class: page-section position-0; }
+  #blume-content { view-transition-name: docs-article; view-transition-class: page-section position-2; }
+  [data-blume-footer] { view-transition-name: docs-footer; view-transition-class: page-section position-4; }
+
+  /* The destination stylesheet also animates sections captured on the marketing site. */
+  ::view-transition-group(.position-0) { --position: 0; }
+  ::view-transition-group(.position-1) { --position: 1; }
+  ::view-transition-group(.position-2) { --position: 2; }
+  ::view-transition-group(.position-3) { --position: 3; }
+  ::view-transition-group(.position-4) { --position: 4; }
+  ::view-transition-old(.page-section) {
+    animation: section-out 600ms ease-in calc(var(--position, 0) * 150ms) both;
+  }
+  ::view-transition-new(.page-section) {
+    animation: section-in 700ms ease-out calc(1200ms + (4 - var(--position, 4)) * 150ms) both;
+  }
+}
+
+@keyframes section-out { to { opacity: 0; translate: 0 -20px; } }
+@keyframes section-in { from { opacity: 0; translate: 0 20px; } }

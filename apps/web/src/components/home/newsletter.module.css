@@ -12,7 +12,7 @@
 .description { max-width: 320px; margin-top: 10px; font-size: 14px; line-height: 21px; color: #ffffffb3; }
 .form { align-self: end; min-width: 0; padding-block: 2px 24px; }
 .controls { display: flex; gap: 8px; }
-.field { position: relative; isolation: isolate; flex: 1; min-width: 0; overflow: hidden; border-radius: 6px; background: #0b0a6e; }
+.field { position: relative; isolation: isolate; flex: 1; min-width: 0; overflow: hidden; border-radius: 6px; background: #242424; }
 .input { position: relative; width: 100%; height: 44px; border: 0; background: transparent; padding: 0 14px; color: white; font-size: 14px; outline: none; }
 .input::placeholder { color: #ffffff80; }
 .field:focus-within { outline: 2px solid white; outline-offset: 3px; }

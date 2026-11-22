@@ -3,7 +3,6 @@
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Copy, Maximize, Minimize, Flag, Gamepad2, Heart, Play, RadioTower, RotateCcw, UsersRound, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClosingCards } from "@/components/home/ClosingCards";
-import { Stripes } from "@/components/home/Stripes";
 import { SITE } from "@/lib/links";
 import { playCue, type Cue } from "./audio";
 import { AGENT_NAMES, CREW_SIZE, STAGES, type AgentId } from "./engine";
@@ -161,8 +160,7 @@ export function TowerShift() {
             <Instructions back={backToTitle} start={start} /><CrewRoster />
           </div> : result && <div className={s.endSheet}>
             <Results result={result} replay={start} />
-            <footer data-scheme="dark" className="relative min-w-0 bg-[#1612F8]">
-              <Stripes />
+            <footer data-scheme="dark" className="relative min-w-0 bg-[#141414]">
               <ClosingCards />
             </footer>
           </div>}

@@ -1,0 +1,114 @@
+.stage {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  height: clamp(360px, 54vw, 600px);
+  background-color: var(--color-background);
+  background-image: radial-gradient(color-mix(in srgb, currentColor 12%, transparent) .8px, transparent .9px);
+  background-size: 16px 16px;
+}
+
+.world {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  transition: transform 700ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.frame {
+  position: absolute;
+  container-type: inline-size;
+  text-align: left;
+  color: inherit;
+  cursor: zoom-in;
+  transition: opacity 350ms;
+}
+
+.frame[data-dim="true"] { opacity: .55; }
+.frame:hover, .frame:focus-visible { opacity: 1; }
+.frame[aria-pressed="true"], .frame:focus-visible {
+  outline: calc(1.5px * var(--inverse)) solid #4b93ff;
+}
+
+.label {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 3px * var(--inverse));
+  transform: scale(var(--inverse));
+  transform-origin: left bottom;
+  font: 500 11px/1.1 var(--font-geist-mono), monospace;
+  white-space: nowrap;
+}
+
+.label small { opacity: .65; font-size: 9px; }
+.frame[aria-pressed="true"] .label { color: #4b93ff; }
+
+.design {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #fbfaf7;
+  color: #211914;
+  font-family: var(--font-inter-sans), sans-serif;
+}
+
+.art {
+  position: absolute;
+  inset: 11% 7% 37%;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 28px;
+  background: linear-gradient(135deg, #ef5a3c, #ffb199);
+}
+
+.art i {
+  position: absolute;
+  width: 89%;
+  height: 78%;
+  left: 30%;
+  top: -8%;
+  border-radius: 2% 88% 4% 2%;
+  transform-origin: 8% 94%;
+  transform: rotate(-48deg);
+  background: linear-gradient(118deg, #ffd4a5 3%, #ffab75 34%, #f96749 64%, #a53123 98%);
+  box-shadow: 0 1.2cqw 3cqw #983c2450;
+}
+
+.art i:nth-child(2) { transform: rotate(-19deg); }
+.art i:nth-child(3) { transform: rotate(10deg); }
+.art i:nth-child(4) { transform: rotate(39deg); }
+
+.brand, .headline, .cta { position: absolute; }
+.brand { top: 4%; left: 7%; font-weight: 700; font-size: 5cqw; letter-spacing: -.06em; }
+.headline { left: 7%; bottom: 16%; width: 84%; font-size: 11cqw; font-weight: 600; line-height: .96; letter-spacing: -.065em; text-wrap: balance; }
+.cta { left: 7%; right: 7%; bottom: 5%; padding: 3.1% 4%; border-radius: 28px; background: #ef5a3c; font-size: 4cqw; text-align: center; font-weight: 600; }
+
+.design[data-format="Desktop"] .brand { font-size: 3.1cqw; }
+.design[data-format="Desktop"] .headline { top: 31%; bottom: auto; width: 39%; font-size: 7.5cqw; }
+.design[data-format="Desktop"] .art { inset: 15% 5% 7% 50%; }
+.design[data-format="Desktop"] .cta { right: auto; bottom: 11%; font-size: 1.8cqw; padding: 1.2% 2.8%; }
+.design:is([data-format="Slide"], [data-format="Square"], [data-format="Story"]) .art { inset: 0; border-radius: 0; }
+.design:is([data-format="Slide"], [data-format="Square"], [data-format="Story"]) .brand { color: #381810; top: 5%; }
+.design:is([data-format="Slide"], [data-format="Square"], [data-format="Story"]) .headline { color: #2d1610; left: 5%; width: 81%; bottom: 7%; }
+.design:is([data-format="Slide"], [data-format="Square"], [data-format="Story"], [data-format="A4"]) .cta { display: none; }
+.design[data-format="Slide"] .headline { font-size: 8.5cqw; width: 62%; }
+.design[data-format="Story"] .headline { font-size: 16cqw; }
+.design[data-format="Square"] .headline { font-size: 13cqw; }
+.design[data-format="A4"] .art { inset: 0 0 42%; border-radius: 0; }
+.design[data-format="A4"] .headline { bottom: 6%; font-size: 12cqw; }
+.design[data-format="Watch"] { background: #291813; }
+.design[data-format="Watch"] .art { inset: 6% 15% 38%; border-radius: 100%; }
+.design[data-format="Watch"] :is(.brand, .headline) { display: none; }
+.design[data-format="Watch"] .cta { bottom: 8%; font-size: 12cqw; color: #291813; }
+
+@media (max-width: 600px) {
+  .stage { height: 360px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world, .frame { transition: none; }
+}
+
+@media (max-width: 600px) {
+  .label { font-size: 10px; }
+}

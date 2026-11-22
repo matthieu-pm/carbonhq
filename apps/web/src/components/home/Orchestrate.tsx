@@ -10,10 +10,6 @@ type Child = Exclude<Key, "root">;
 /// `ramp` steepens an `appear` past its default 1/25 of a loop.
 const at = (s: number, l = 0.06, ramp?: number) => ({ "--s": s, "--l": l, "--ramp": ramp }) as CSSProperties;
 
-/// Paper's tile texture: ten 2px bars, 6px apart, across a 60px tile.
-const stripes = (x: number, y: number, h = 60) =>
-  Array.from({ length: 10 }, (_, i) => `M${x + i * 6} ${y}h2v${h}h-2z`).join("");
-
 const CLAUDE =
   "M-0.282 14.965l6.398-3.589 0.106-0.314-0.106-0.173h-0.314l-1.07-0.066-3.656-0.098-3.17-0.133-3.072-0.164-0.774-0.165-0.725-0.955 0.075-0.477 0.651-0.437 0.931 0.083 2.059 0.14 3.087 0.214 2.24 0.132 3.318 0.346h0.527l0.075-0.215-0.182-0.131-0.14-0.132L2.782 6.665l-3.459-2.289-1.811-1.318-0.98-0.667-0.495-0.626-0.213-1.367 0.889-0.979 1.193 0.822 0.306 0.824 1.211 0.931 2.584 2 3.376 2.487 0.495 0.411 0.196-0.14 0.025-0.099-0.222-0.37-1.837-3.319-1.959-3.376-0.873-1.4-0.23-0.84c-0.082-0.346-0.14-0.634-0.14-0.988L1.852-6.494 2.412-6.675l1.35 0.181 0.569 0.494 0.839 1.92 1.359 3.021 2.107 4.11 0.618 1.219 0.329 1.128 0.124 0.346h0.214v-0.198l0.173-2.313 0.321-2.841 0.314-3.657 0.106-1.03 0.51-1.234 1.014-0.667 0.79 0.378 0.651 0.931-0.906 0.6-0.387 2.512-0.757 3.936-0.495 2.635h0.289l0.329-0.329 1.334-1.77 2.239-2.8 0.988-1.111 1.153-1.227 0.74-0.584h1.399l1.03 1.531-0.461 1.581-1.442 1.828-1.194 1.548-1.713 2.306-1.07 1.844 0.099 0.148 0.255-0.025 3.869-0.823 2.091-0.379 2.496-0.428 1.128 0.527 1.234 0.536-0.444 1.094-2.667 0.659-3.129 0.627-4.661 1.103-0.576 0.04 0.659 0.083 2.1 0.197 0.897 0.05h2.199l4.093 0.305 1.07 0.707 0.643 0.866-1.071 0.659-1.647 0.84-2.223-0.528-5.187-1.235-1.778-0.444h-0.248v0.148l1.482 1.45 2.717 2.453 3.4 3.162 0.173 0.782-0.436 0.618-0.461-0.067-2.99-2.247-1.152-1.013-2.611-2.198h-0.173v0.23l0.601 0.882 3.179 4.775 0.165 1.466-0.231 0.478-0.824 0.287-0.905-0.164-1.86-2.611L12.828 17.682l-1.548-2.636-0.189 0.108-0.915 9.839-0.427 0.502-0.989 0.378-0.824-0.625-0.435-1.013 0.436-2.001 0.527-2.611 0.428-2.074 0.387-2.577 0.231-0.857-0.017-0.058-0.19 0.025-1.943 2.668-2.957 3.994-2.338 2.504-0.56 0.222-0.971-0.502 0.091-0.898 0.543-0.798 3.237-4.118 1.951-2.552 1.26-1.475-0.009-0.214h-0.073l-8.596 5.582-1.531 0.198-0.659-0.618 0.083-1.013 0.313-0.329 2.585-1.778Z";
 
@@ -65,8 +61,6 @@ const ICONS: Record<string, { viewBox: string; opacity?: number; body: ReactNode
   },
 };
 
-// Light greys for the agents' tiles, with their marks drawn dark to suit; the
-// root keeps its blue.
 const LIGHT_TILE: Record<string, string> = {
   "#2E2E2E": "light:fill-[#E4E4E4]",
   "#1F1F1F": "light:fill-[#D9D9D9]",
@@ -76,7 +70,7 @@ type Node = { tile: string; icon: keyof typeof ICONS; model: string; task: strin
 type Point = [x: number, y: number];
 
 const NODES: Record<Key, Node> = {
-  root: { tile: "#1612F8", icon: "claude", model: "Opus 5.5", task: "Ship file uploads" },
+  root: { tile: "#555555", icon: "claude", model: "Opus 5.5", task: "Ship file uploads" },
   upload: { tile: "#2E2E2E", icon: "openai", model: "Sol 6.1", task: "Upload API" },
   retry: { tile: "#2E2E2E", icon: "claude", model: "Opus 5.5", task: "Retry uploads" },
   progress: { tile: "#2E2E2E", icon: "grok", model: "Grok 4.7", task: "Progress UI" },
@@ -187,7 +181,6 @@ function Session({ n, at: [x, y], className, style }: { n: Node; at: Point; clas
     <g className={className} style={style}>
       <rect x={x + 60} y={y} width="180" height="60" fill="#161616" className="light:fill-white" />
       <rect x={x} y={y} width="60" height="60" fill={n.tile} className={LIGHT_TILE[n.tile]} />
-      <path d={stripes(x, y)} fill="#0000008C" className={LIGHT_TILE[n.tile] && "light:fill-[#0000000F]"} />
       <svg x={x + 16} y={y + 16} width="28" height="28" viewBox={icon.viewBox} opacity={icon.opacity}>
         {icon.body}
       </svg>
@@ -247,7 +240,7 @@ function Graph({ layout: { viewBox, className, at: pos, edge, mesh } }: { layout
             stroke="#FFFFFF"
             strokeWidth="2.5"
             strokeLinecap="round"
-            className={`${m.pulse} light:stroke-[#1612F8]`}
+            className={`${m.pulse} light:stroke-[#525252]`}
             style={at(p.at, TRAVEL)}
           />
         ))}
@@ -278,41 +271,6 @@ function Graph({ layout: { viewBox, className, at: pos, edge, mesh } }: { layout
   );
 }
 
-const COL0 = ["#141414", "#141414", "#262626", "#262626", "#3D3D3D", "#6B6B6B", "#6B6B6B", "#A3A3A3", "#1612F8", "#1612F8", "#1612F8", "#F2F2F2", "#F2F2F2", "#F2F2F2"];
-const COL1 = ["#262626", "#6B6B6B", "#1612F8", "#F2F2F2"];
-// The grey ramp turned over for the light page, so the column still runs from
-// the page's own shade into the blue and out the far side.
-const LIGHT: Record<string, string> = {
-  "#141414": "light:fill-[#F5F5F5]",
-  "#262626": "light:fill-[#E6E6E6]",
-  "#3D3D3D": "light:fill-[#CFCFCF]",
-  "#6B6B6B": "light:fill-[#9A9A9A]",
-  "#A3A3A3": "light:fill-[#5C5C5C]",
-  "#F2F2F2": "light:fill-[#141414]",
-};
-
-/// The pixel column on the window's left edge. Off below xl, where the
-/// content column would run into it.
-function Tiles() {
-  const tiles = [...COL0.map((fill, i) => ({ x: 0, y: 40 + i * 60, fill })), ...COL1.map((fill, i) => ({ x: 60, y: 640 + i * 60, fill }))];
-  return (
-    <svg
-      viewBox="0 0 120 880"
-      width="120"
-      height="880"
-      aria-hidden="true"
-      // The inner column is centred, so its left edge sits half the spare width in from the window's.
-      className="pointer-events-none absolute -bottom-[100px] left-[calc(480px-50vw)] hidden xl:block"
-    >
-      <rect width="60" height="40" fill="#141414" className={LIGHT["#141414"]} />
-      {tiles.map((t) => (
-        <rect key={`${t.x}-${t.y}`} x={t.x} y={t.y} width="60" height="60" fill={t.fill} className={LIGHT[t.fill]} />
-      ))}
-      <path d={stripes(0, 0, 40) + tiles.map((t) => stripes(t.x, t.y)).join("")} fill="#0000008C" className="light:fill-[#00000024]" />
-    </svg>
-  );
-}
-
 const REST =
   "Plan with GPT Sol, then hand the build to Opus. Steer sessions from one chat, or jump into any of them directly. Spot another issue mid-task? Ask that session to start a new one.";
 
@@ -322,7 +280,6 @@ const REST =
 export function Orchestrate() {
   return (
     <Section id="orchestrate" className="pt-20 pb-[100px] light:bg-[#F4F4F2]">
-      <Tiles />
       <Title lead="Orchestrate agents however you work.">
         <span className="max-sm:hidden">{REST}</span>
       </Title>

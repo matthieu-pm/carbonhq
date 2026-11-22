@@ -44,7 +44,7 @@ function Mark({ children }: { children: ReactNode }) {
 
 function IssueRow({ id, title, selected }: { id: string; title: string; selected?: boolean }) {
   return (
-    <div className={`flex h-[34px] shrink-0 items-center gap-2.5 px-2.5 ${selected ? "bg-[#1612F8]" : ""}`}>
+    <div className={`flex h-[34px] shrink-0 items-center gap-2.5 px-2.5 ${selected ? "bg-[#525252]" : ""}`}>
       {selected ? <GitHubGlyph className="size-3 shrink-0 text-white" /> : <LinearGlyph className="size-3 shrink-0 text-[#8A8A8A]" />}
       <span className={`w-12 shrink-0 font-mono text-[10px] leading-3 tracking-[-0.04em] ${selected ? "text-[#FFFFFFB3]" : "text-[#8A8A8A]"}`}>
         {id}
@@ -111,8 +111,8 @@ function Browser() {
               You
             </span>
           </div>
-          <div className="absolute top-15 left-8 size-6 rounded-xl border-2 border-[#1612F8] bg-[#1612F84D]" />
-          <span className="absolute top-19 left-15 flex h-[18px] items-center bg-[#1612F8] px-1.5 font-mono text-[9px] leading-3 tracking-[-0.02em] text-white">
+          <div className="absolute top-15 left-8 size-6 rounded-xl border-2 border-[#525252] bg-[#5252524D]" />
+          <span className="absolute top-19 left-15 flex h-[18px] items-center bg-[#525252] px-1.5 font-mono text-[9px] leading-3 tracking-[-0.02em] text-white">
             Agent
           </span>
         </div>

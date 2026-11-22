@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { AppleGlyph } from "@/components/AppleGlyph";
 import { GitHubGlyph } from "@/components/GitHubGlyph";
 import { Wordmark } from "@/components/Wordmark";
-import { HeroBackdrop } from "./HeroBackdrop";
+
+import styles from "./hero.module.css";
 
 const W = 1440;
-const CELL =
-  "flex h-full shrink-0 items-center justify-center gap-1.5 border-l border-white/20 font-mono text-[11px] leading-[14px] tracking-[0.06em] text-white uppercase light:border-black/15 light:text-[#0A0A0A]";
+const secondary = `${styles.action} ${styles.secondaryAction} inline-flex`;
 
 /// This page's own hero, drawn at desktop size and scaled to whatever box holds
 /// it: what the hero window's browser shows at localhost:3000. A skeleton
@@ -28,21 +28,21 @@ export function MiniHome() {
   return (
     <div ref={box} aria-hidden className="absolute inset-0 overflow-hidden bg-black light:bg-white">
       <div className="relative h-[900px] origin-top-left font-inter" style={{ width: W, transform: `scale(${scale})` }}>
-        <HeroBackdrop id="mini-hero" />
         <div className="relative mx-auto w-[960px]">
-          <div className="flex h-10 items-start justify-between">
+          <div className={styles.navbar}>
             <div className="flex h-10 w-[120px] items-center bg-black pl-4 light:bg-white">
               <Wordmark className="h-[11px] w-auto text-white light:text-[#0A0A0A]" />
             </div>
-            <div className="flex h-10 border-r border-b border-white/20 light:border-black/15">
-              <span className={`${CELL} w-[72px]`}>Docs</span>
-              <span className={`${CELL} w-24`}>Sponsor</span>
-              <span className={`${CELL} w-20`}>
-                <GitHubGlyph className="size-3" />
+            <div className={styles.navLinks}>
+              <span>Design workspace</span><span>Docs</span><span>Changelog</span>
+            </div>
+            <div className={`${styles.navActions} ${styles.compactActions}`}>
+              <span className={secondary}>
+                <GitHubGlyph className="size-4" />
                 GitHub
               </span>
-              <span className={`${CELL} w-[115px]`}>
-                <AppleGlyph className="-mt-0.5 size-[11px]" />
+              <span className={`${styles.action} ${styles.primaryAction} inline-flex`}>
+                <AppleGlyph className="size-4" />
                 Download
               </span>
             </div>

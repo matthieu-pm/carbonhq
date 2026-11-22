@@ -20,7 +20,7 @@ export function InstallCommand() {
   }
 
   return (
-    <div className="flex h-10 items-center gap-3 rounded-[6px] bg-[#0B0A6E] px-3.5">
+    <div className="flex h-10 items-center gap-3 rounded-[6px] bg-[#242424] px-3.5">
       <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[12px] leading-4 tracking-[-0.02em] whitespace-nowrap text-[#CFCFCF] [scrollbar-width:none]">
         <span className="text-[#FFE14D] select-none">$ </span>
         <span ref={line}>{INSTALL_LINE}</span>
