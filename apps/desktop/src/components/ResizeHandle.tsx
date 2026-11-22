@@ -138,7 +138,7 @@ export function useResizable({
   pane?: Pane;
   /// Alternate pages use the same bounds without reserving space in the chat layout.
   publish?: boolean;
-}): { style: CSSProperties; handle: ReactNode } {
+}): { style: CSSProperties; handle: ReactNode; resize: (pixels: number) => void } {
   const read = () => readLocalStorage(storageKey, initial);
   const [stored, setStored] = useState(read);
   // The key moves under a mounted pane — the right panel follows the selected
@@ -265,7 +265,7 @@ export function useResizable({
     />
   );
 
-  return { style: { width }, handle };
+  return { style: { width }, handle, resize: pixels => commit(clamp(pixels)) };
 }
 
 export const SIDEBAR_MIN = 240;

@@ -12,23 +12,8 @@ import { Choice, Field } from "./EditorControls";
 import { LayerEffects } from "./LayerEffects";
 import type { Change } from "./CanvasTheme";
 
-const presets: Record<string, Record<string, [number, number]>> = {
-  Phone: { "iPhone 16": [393, 852], "Android compact": [360, 800] },
-  Tablet: { "iPad mini": [744, 1133], "iPad Pro 13″": [1032, 1376] },
-  Desktop: {
-    "MacBook Air": [1280, 832],
-    "MacBook Pro 14″": [1512, 982],
-    "MacBook Pro 16″": [1728, 1117],
-    "iMac 24″": [2240, 1260],
-    "Studio Display 27″": [2560, 1440],
-    "Full HD": [1920, 1080],
-    Wireframe: [1440, 1024],
-  },
-  Presentation: { "16:9": [1920, 1080], "4:3": [1024, 768] },
-  Smartwatch: { "Apple Watch": [198, 242] },
-  Paper: { A4: [794, 1123], "US Letter": [816, 1056] },
-  "Social media": { Square: [1080, 1080], Story: [1080, 1920] },
-};
+import { presets } from "./model.js";
+
 export function CanvasInspector({
   doc,
   page,

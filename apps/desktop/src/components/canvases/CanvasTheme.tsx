@@ -1,3 +1,4 @@
+import { useCanvasWindowPart } from "@/lib/canvasWindow";
 import { useEffect, useRef, useState } from "react";
 import { Blocks, ChevronDown, Copy, FileDown, Plus, Search, Trash2, X } from "lucide-react";
 import { Popover } from "radix-ui";
@@ -131,6 +132,15 @@ export function CanvasTheme({
   const [open, edit] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState("");
+  useCanvasWindowPart("theme", ({command}) => {
+    if (command.group !== "view") throw Error("Choose a Theme view command.");
+    if (command.args.op === "token-search") { setSearch(command.args.query); return; }
+    if (command.args.op !== "token") throw Error("Unknown Theme action.");
+    const id = command.args.id;
+    if (id && !doc.tokens.some(t => t.id === id)) throw Error("Unknown token.");
+    setSearch(null);
+    edit(id);
+  });
   const focusEditor = useRef(false);
   const create = (kind: TokenKind, original?: Token) => {
     const token = {

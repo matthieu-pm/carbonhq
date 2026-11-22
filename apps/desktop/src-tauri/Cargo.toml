@@ -119,6 +119,7 @@ zip = { version = "9", optional = true, default-features = false, features = ["d
 flate2 = { version = "1", optional = true }
 # The This Mac row's pairing QR for the phone. SVG alone: no `image` tree.
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+rquickjs = "0.14"
 serde_yaml_ng = "0.10"
 pulldown-cmark = { version = "0.13", default-features = false }
 portable-pty = "0.9.0"

@@ -10,6 +10,7 @@
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
 
+mod canvas;
 mod discovery;
 mod draft;
 mod pages;
@@ -82,6 +83,8 @@ enum Command {
     /// Save tasks for later, list them, and start or remove them.
     #[command(subcommand, arg_required_else_help = true)]
     Draft(DraftCommand),
+    /// Edit project canvases and drive the desktop Design workspace.
+    Canvas(canvas::CanvasArgs),
     /// Create and edit Pages and slide decks in Spaces.
     #[command(subcommand, arg_required_else_help = true)]
     Pages(pages::PagesCommand),
@@ -482,6 +485,7 @@ fn run() -> Result<(), String> {
                 | Command::Task(_)
                 | Command::Issue(_)
                 | Command::Draft(_)
+                | Command::Canvas(_)
                 | Command::Pages(_)
                 | Command::Secret(_)
                 | Command::Browser(_)
@@ -517,6 +521,7 @@ fn run() -> Result<(), String> {
             }))
         }
         Command::Draft(command) => draft::run(command),
+        Command::Canvas(args) => canvas::run(args),
         Command::Pages(command) => pages::run(command),
         Command::Secret(command) => secret::run(command),
         Command::Browser(args) => browser(args),

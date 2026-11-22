@@ -1,3 +1,4 @@
+import { useCanvasWindowPart } from "@/lib/canvasWindow";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, MessageSquare, Plus, Square, X } from "lucide-react";
@@ -115,12 +116,15 @@ export function CanvasChatPanel({
   chat: PaneChat;
   send: (text: string) => Promise<void>;
 }) {
-  const { style, handle } = useResizable({
+  const { style, handle, resize } = useResizable({
     storageKey: "carbon.canvas.chatWidth",
     initial: 380,
     min: 260,
     edge: "left",
     label: "Canvas chat width",
+  });
+  useCanvasWindowPart("chat", ({command}) => {
+    if (command.group === "view" && command.args.op === "width") resize(command.args.pixels);
   });
   const project = file.project;
   const active = dock.tabs.find((t) => t.id === dock.active)!;

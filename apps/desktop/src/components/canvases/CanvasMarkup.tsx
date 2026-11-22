@@ -1,3 +1,4 @@
+import { useCanvasWindowPart } from "@/lib/canvasWindow";
 import { useContext, useRef, useState, type PointerEvent } from "react";
 import { ArrowUp } from "lucide-react";
 import { CanvasCommentTarget } from "@/lib/canvasChat";
@@ -71,11 +72,12 @@ export function CanvasMarkup({
   const overlay = useRef<HTMLDivElement>(null);
   const drawing = useRef<{ pointer: number; points: InkPoint[] } | null>(null);
   const [points, setPoints] = useState<InkPoint[]>([]);
-  const [pin, setPin] = useState<CommentPin | null>(null);
+  const [selection, setPin] = useState<CommentPin | string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const locked = useRef(false);
-  const saved = pin && page.comments?.some((p) => p.id === pin.id);
+  const saved = typeof selection === "string";
+  const pin = saved ? page.comments?.find(p => p.id === selection) : selection;
   const drawingTool = tool === "Pen" || tool === "Comment";
   function position(e: { clientX: number; clientY: number }): InkPoint {
     const r = overlay.current!.getBoundingClientRect();
@@ -120,21 +122,32 @@ export function CanvasMarkup({
     }));
     clear();
   }
-  async function send() {
+  useCanvasWindowPart("markup", async ({command}) => {
+    if (command.group !== "comment") throw Error("Unknown comment action.");
+    const pin = page.comments?.find(p => p.id === command.args.id);
+    if (!pin || !target || !overlay.current) throw Error("Open the page containing this comment.");
+    if (locked.current) throw Error("A comment is already being sent.");
+    if (!pin.text.trim()) throw Error("Enter comment text before sending.");
+    await deliver(pin, true);
+  });
+  async function deliver(pin: CommentPin, alreadySaved = false) {
     const markup = overlay.current;
-    if (!pin || !pin.text.trim() || locked.current || !target || !markup) return;
+    if (!pin.text.trim() || locked.current || !target || !markup) throw Error("Comment is unavailable.");
     const sent = { ...pin, text: pin.text.trim() };
     locked.current = true;
     setSending(true);
     setError("");
     try {
-      await session.sendComment(page.id, sent, () => target.send(
+      const send = () => target.send(
         sent.text + "\n\nPage: " + page.name + " (" + Math.round(sent.x) + ", " + Math.round(sent.y) + ")",
         () => snapshot(markup, view, page, sent),
-      ));
+      );
+      if (alreadySaved) await send();
+      else await session.sendComment(page.id, sent, send);
       setPin(null);
     } catch (e) {
       setError(String(e));
+      throw e;
     } finally {
       locked.current = false;
       setSending(false);
@@ -185,7 +198,7 @@ export function CanvasMarkup({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => {
             if (!locked.current) {
-              setPin(pin?.id === p.id ? null : p);
+              setPin(pin?.id === p.id ? null : p.id);
               setError("");
             }
           }}
@@ -204,7 +217,7 @@ export function CanvasMarkup({
           }}
           onSubmit={(e) => {
             e.preventDefault();
-            void send();
+            if (!saved) void deliver(pin).catch(() => {});
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape" && !sending) {

@@ -56,7 +56,10 @@ use std::path::PathBuf;
 /// v20 adds discovery and creation receipts with effective configuration.
 /// v21 adds explicit interruption recovery and deduplicated continuation.
 /// v22 adds agent-created OPF decks in Spaces.
-pub const PROTOCOL_VERSION: u32 = 22;
+/// v23 adds Canvas library, document and desktop requests.
+pub const PROTOCOL_VERSION: u32 = 23;
+
+pub mod canvas;
 
 /// The oldest envelope the app still answers. Rises only when a shape is
 /// *renamed*, never for an addition: v4 renamed `LinkIssues.identifiers` to
@@ -144,6 +147,7 @@ impl Request {
             | Request::ListShares(_) => 10,
             Request::SetRemoteAccess(_) => 11,
             Request::WriteIssue(_) => 13,
+            Request::Canvas(_) => 23,
             Request::Pages(PageRequest::CreateDeck { .. }) => 22,
             Request::Pages(_) => 14,
             Request::Secret(_) => 15,
@@ -186,6 +190,7 @@ pub enum Request {
     ListShares(ListSessions),
     SetRemoteAccess(SetRemoteAccess),
     WriteIssue(WriteIssue),
+    Canvas(canvas::CanvasRequest),
     Pages(PageRequest),
     Secret(SecretRequest),
     OnMachine(OnMachine),
@@ -1038,6 +1043,7 @@ pub enum Response {
     Drafts {
         drafts: Vec<DraftSummary>,
     },
+    Canvas { data: serde_json::Value },
     Pages {
         data: serde_json::Value,
     },
@@ -1488,6 +1494,7 @@ mod tests {
             .chain([&Request::Task(TaskRequest::Status { task_id: "task".into() })])
             .chain([&Request::Recovery(RecoveryRequest::List { session_id: None })])
             .chain([&Request::SendMessage(SendMessage { durable: true, request_id: Some("durable".into()), ..Default::default() })])
+            .chain([&Request::Canvas(canvas::CanvasRequest { project: ".".into(), folder: String::new(), canvas: None, revision: None, command: canvas::CanvasCommand::Read })])
             .chain([&Request::Discover(DiscoveryRequest::Harnesses)])
             .map(Request::version)
             .max();

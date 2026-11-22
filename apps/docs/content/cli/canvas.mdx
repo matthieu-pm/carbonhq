@@ -1,0 +1,63 @@
+---
+title: Canvas
+description: Edit project canvases and control the desktop Design workspace from the CLI.
+---
+
+Run `carbon canvas` inside an attached project, or pass `--project /absolute/project/path`. Use `projects` to discover attached projects and `attach` to attach the selected directory. On another machine, pass `--machine NAME` and that machine's project path.
+
+## Create and edit a canvas
+
+```bash
+canvas=$(carbon canvas create | jq -r .name)
+frame=$(carbon canvas --canvas "$canvas" layer add Frame page-1 --name Checkout | jq -r .data.id)
+carbon canvas --canvas "$canvas" layer preset "$frame" "iPhone 16"
+carbon canvas --canvas "$canvas" layer add Text page-1 --parent "$frame" --name Heading
+carbon canvas --canvas "$canvas" read
+```
+
+Commands print JSON. A document read returns `data` and `revision`. Pass that revision to an edit with `--revision REV` when the edit depends on what you read. A stale revision fails before saving. `undo` and `redo` traverse CLI edits retained by the running server. The server checks the saved content before restoring an edit.
+
+| Command | Actions |
+| --- | --- |
+| Library | `projects`, `attach`, `list`, `search`, `create`, `folder`, `move`, `archive`, `restore` |
+| Document | `read`, `undo`, `redo` |
+| `page` | `list`, `add`, `rename`, `paint`, `remove` |
+| `layer` | `list`, `add`, `rename`, `text`, `move`, `nudge`, `resize`, `presets`, `preset`, `parent`, `style`, `replace-color`, `remove` |
+| `effect` | `list`, `add`, `set`, `image`, `enable`, `disable`, `move`, `remove`, `add-stop`, `set-stop`, `remove-stop` |
+| `token` | `list`, `add`, `rename`, `set`, `duplicate`, `apply`, `remove`, `import` |
+| `stroke` | `list`, `draw`, `erase` |
+| `comment` | `list`, `add`, `edit`, `remove`, `send` |
+
+Use `--folder designs/mobile` to target a nested canvas. `list --archived` finds canvases to restore. Read the document to discover page, layer, effect, stop, and token IDs. `layer style` accepts editor properties such as `fontSize`, `display`, and `padding`. Use an `@TOKEN_ID` value to link a page background, effect color, gradient stop or style. `effect image` loads an image file on the project's machine. `token import DESIGN.md` imports supported YAML and CSS definitions. Add `--source-project PATH` to import from another attached project.
+
+```bash
+carbon canvas --canvas "$canvas" stroke draw page-1 '[[40,30],[55,45],[80,42]]'
+carbon canvas --canvas "$canvas" token import DESIGN.md
+carbon canvas --canvas "$canvas" layer style "$frame" display flex
+```
+
+## Control the desktop window
+
+Open Carbon on the target machine for view commands, chat, and sending comment snapshots. `view open` selects the canvas in the Design workspace. `view state` reports the active canvas, tabs, panels, page, selected layer, tool and viewport. Pass `--canvas NAME` to editor commands to check that the intended canvas is still active.
+
+```bash
+carbon canvas --canvas "$canvas" view open
+carbon canvas --canvas "$canvas" view select "$frame"
+carbon canvas view fit
+carbon canvas view panel inspector show
+pin=$(carbon canvas --canvas "$canvas" comment add page-1 80 42 "Align these edges" | jq -r .data.id)
+carbon canvas --canvas "$canvas" comment send "$pin"
+```
+
+`comment send` captures the area around a pin on the visible page and sends it to the active canvas conversation. Choose a destination with `chat new`, `chat open SESSION_ID` or `chat select ID`. `chat list`, `send`, `stop` and `close` operate on that canvas's conversation dock.
+
+| View commands | Actions |
+| --- | --- |
+| Navigation | `library`, `all-projects`, `refresh`, `search`, `layout`, `open`, `close`, `back`, `forward` |
+| Editor | `state`, `page`, `select`, `tool`, `mode`, `pan`, `zoom`, `fit`, `tree` |
+| Panels | `panel`, `width`, `token-search`, `token` |
+| Editor history and saves | `undo`, `redo`, `save`, `reload`, `keep-mine` |
+
+Tool and mode names match the labels in Carbon, including `Pen` and `Theme`. Panel names are `sidebar`, `inspector`, `pages` and `chat`. Use `show` or `hide`. `view zoom 1` sets 100 percent. `view reload` discards unsaved editor changes. `view keep-mine` attempts to save the editor's copy after a conflict.
+
+Run `carbon canvas COMMAND --help` for arguments and examples of accepted values.

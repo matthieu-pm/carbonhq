@@ -303,6 +303,14 @@ in the crew beside this session, and that they can have you record a preference
 in `CLAUDE.md`, `AGENTS.md` or memory. Every other session stays in the sidebar
 unless the user asks.
 
+## Project canvases
+
+Use `carbon canvas projects` to find attached project paths. Inside an attached project, `carbon canvas list` lists its library. Use `--project PATH` and `--folder FOLDER` to target another location. `create` returns a name. Pass it back with `--canvas NAME`. Document reads and edits return JSON with a revision. Pass `--revision REV` when an edit depends on a previous read.
+
+Use the `page`, `layer`, `effect`, `token`, `stroke` and `comment` subcommands for document edits. Use `--help` on a group to discover its actions. Headless edits work on the target machine, including with `--machine`.
+
+`view open` opens the named canvas in the desktop window. Read `view state` to discover the active tab, page and selection. `view` also controls tools, panels and viewport. `chat` targets the canvas conversation. `comment send PIN_ID` sends the visible page's pin and a snapshot to that conversation. Sending a comment delivers a message immediately.
+
 ## Markdown Pages
 
 Spaces and Pages ship with desktop beta.5 and later. They are available on fresh

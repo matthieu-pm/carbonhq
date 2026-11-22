@@ -16,6 +16,26 @@ pub(crate) struct Library {
     canvases: Vec<Entry>,
 }
 
+impl Library {
+    /// Search the chosen folder and its descendants using the names shown in the library.
+    pub(crate) fn matching(mut self, archived: bool, folder: &str, query: &str) -> Self {
+        let needle = query.to_lowercase();
+        let prefix = format!("{folder}/");
+        let within = |path: &str| folder.is_empty() || path == folder || path.starts_with(&prefix);
+        self.canvases.retain(|entry| {
+            entry.archived == archived
+                && within(&entry.folder)
+                && format!("{} {}", entry.folder, entry.name)
+                    .to_lowercase()
+                    .contains(&needle)
+        });
+        self.folders.retain(|path| {
+            !archived && within(path) && path != folder && path.to_lowercase().contains(&needle)
+        });
+        self
+    }
+}
+
 #[derive(Serialize)]
 struct Entry {
     folder: String,
@@ -243,7 +263,7 @@ fn apply(project: &Path, action: Action) -> Result<String> {
     }
 }
 
-async fn attached(path: String) -> Result<PathBuf> {
+pub(crate) async fn attached(path: String) -> Result<PathBuf> {
     ensure!(
         crate::projects::list_projects()
             .await?
@@ -278,9 +298,14 @@ pub(crate) async fn change(project_path: String, action: Action) -> Result<Strin
     .context("Canvas update stopped")??)
 }
 
-fn document_path(project: &Path, folder: &str, name: &str) -> Result<PathBuf> {
+fn document_path(project: &Path, folder: &str, name: &str, archived: bool) -> Result<PathBuf> {
     check_name(name)?;
     let root = directory(project, "canvases", false)?;
+    let root = if archived {
+        directory(&root, ARCHIVE, false)?
+    } else {
+        root
+    };
     let path = folder_path(&root, folder, false)?.join(format!("{name}{EXT}"));
     ensure!(path.symlink_metadata()?.is_file(), "Canvas is unavailable");
     Ok(path)
@@ -291,10 +316,11 @@ pub(crate) async fn read(
     project_path: String,
     folder: String,
     name: String,
+    archived: bool,
 ) -> Result<String, crate::Fail> {
     let project = attached(project_path).await?;
     Ok(
-        tokio::fs::read_to_string(document_path(&project, &folder, &name)?)
+        tokio::fs::read_to_string(document_path(&project, &folder, &name, archived)?)
             .await
             .context("Could not read canvas")?,
     )
@@ -307,10 +333,11 @@ fn save_document(
     name: &str,
     previous: &str,
     content: &str,
+    archived: bool,
 ) -> Result<()> {
     #[cfg(unix)]
     let _checkout = lock_library(&directory(project, "canvases", false)?)?;
-    let path = document_path(project, folder, name)?;
+    let path = document_path(project, folder, name, archived)?;
     ensure!(
         fs::read_to_string(&path)? == previous,
         "Canvas changed on disk. Reload the latest version before saving."
@@ -341,11 +368,12 @@ pub(crate) async fn save(
     name: String,
     previous: String,
     content: String,
+    archived: bool,
 ) -> Result<(), crate::Fail> {
     let project = attached(project_path).await?;
     Ok(tokio::task::spawn_blocking(move || {
         let _guard = WRITES.blocking_lock();
-        save_document(&project, &folder, &name, &previous, &content)
+        save_document(&project, &folder, &name, &previous, &content, archived)
     })
     .await
     .context("Canvas save stopped")??)
@@ -365,11 +393,11 @@ mod tests {
                 folder: String::new(),
             },
         )?;
-        let path = document_path(&project, "", &name)?;
+        let path = document_path(&project, "", &name, false)?;
         let original = fs::read_to_string(&path)?;
         let edited = r##"{"version":1,"elements":[],"pages":[{"background":"#abcdef"}]}"##;
-        save_document(&project, "", &name, &original, edited)?;
-        assert!(save_document(&project, "", &name, &original, &original).is_err());
+        save_document(&project, "", &name, &original, edited, false)?;
+        assert!(save_document(&project, "", &name, &original, &original, false).is_err());
         assert_eq!(fs::read_to_string(&path)?, edited);
         apply(
             &project,
@@ -378,7 +406,8 @@ mod tests {
                 name: name.clone(),
             },
         )?;
-        assert!(save_document(&project, "", &name, edited, &original).is_err());
+        assert!(save_document(&project, "", &name, edited, &original, false).is_err());
+        save_document(&project, "", &name, edited, &original, true)?;
         assert!(!path.exists());
         fs::remove_dir_all(&project)?;
         Ok(())

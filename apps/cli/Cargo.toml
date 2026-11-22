@@ -11,7 +11,7 @@ name = "carbon"
 path = "src/main.rs"
 
 [dependencies]
-carbon-proto = { path = "../../crates/carbon-proto" }
+carbon-proto = { path = "../../crates/carbon-proto", features = ["clap"] }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 serde_json = "1"

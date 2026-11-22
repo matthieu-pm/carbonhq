@@ -49,6 +49,7 @@ pub mod headless;
 pub mod recording;
 mod local_servers;
 mod canvas_library;
+mod canvas_commands;
 pub mod docs;
 pub mod pages;
 pub mod pages_linear;
