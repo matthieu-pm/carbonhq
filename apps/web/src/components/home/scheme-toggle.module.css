@@ -1,0 +1,36 @@
+.icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+  --morph: 440ms cubic-bezier(.35, 0, .2, 1);
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 18%));
+}
+
+.highlight { stop-color: #fff6bd; }
+.midtone { stop-color: #ffdc6c; }
+.shadow { stop-color: #f8a12d; }
+.rim { stop-color: #d77723; }
+
+.icon stop { transition: stop-color var(--morph); }
+
+.rays, .globe {
+  transform-origin: 16px 16px;
+  transition: transform var(--morph), opacity var(--morph);
+}
+
+.craters {
+  opacity: 0;
+  transition: opacity var(--morph);
+}
+
+:global(html[data-scheme="light"]) .highlight { stop-color: #fffefa; }
+:global(html[data-scheme="light"]) .midtone { stop-color: #e1e5ed; }
+:global(html[data-scheme="light"]) .shadow { stop-color: #a7b3c8; }
+:global(html[data-scheme="light"]) .rim { stop-color: #75849e; }
+:global(html[data-scheme="light"]) .globe { transform: scale(1.48); }
+:global(html[data-scheme="light"]) .rays { transform: rotate(45deg) scale(.52); opacity: 0; }
+:global(html[data-scheme="light"]) .craters { opacity: .8; }
+
+@media (prefers-reduced-motion: reduce) {
+  .icon * { transition: none; }
+}

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowLeft, ArrowRight, CircleDot, Settings } from "lucide-react";
 
+import { WorkspaceSwitch, type Workspace } from "./WorkspaceSwitch";
 import { SIDEBAR_WIDTH } from "./Sidebar";
 
 /// Keeps the website preview on the desktop's rail, inset sidebar and sheet geometry.
@@ -13,6 +14,7 @@ export default function Window({
   panel,
   sidebarWidth = SIDEBAR_WIDTH,
   interactive = false,
+  workspace = "Coding",
   sidebarOpen = true,
   onToggleSidebar,
   onHome,
@@ -34,6 +36,7 @@ export default function Window({
   panel?: ReactNode;
   sidebarWidth?: number;
   interactive?: boolean;
+  workspace?: Workspace;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   onHome?: () => void;
@@ -52,7 +55,7 @@ export default function Window({
       )}
     >
       <header className="flex h-(--titlebar-h) shrink-0 items-center pr-3">
-        <div className="flex shrink-0 items-center" style={{ width: sidebarOpen ? sidebarWidth + 52 : 172 }}>
+        <div className="flex shrink-0 items-center" style={{ width: sidebarOpen ? sidebarWidth + 52 : 248 }}>
           <TrafficLights className="w-[84px] shrink-0 pl-[19px]" />
           <ChromeControl label="Go back" onClick={onBack} disabled={!onBack}>
             <ArrowLeft className="size-4" />
@@ -63,11 +66,7 @@ export default function Window({
           <ChromeControl label="Toggle sidebar" onClick={onToggleSidebar} pressed={sidebarOpen}>
             <PanelLeftIcon className="size-4.5" />
           </ChromeControl>
-          {sidebarOpen && (
-            <span className="ml-auto mr-2 flex items-center gap-1 text-ui text-muted-foreground">
-              All Profiles
-            </span>
-          )}
+          <div className="ml-auto mr-2"><WorkspaceSwitch value={workspace} navigate={interactive} /></div>
         </div>
         <span aria-hidden className="h-4 w-px shrink-0 bg-hairline" />
         <div className="flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden pl-2">

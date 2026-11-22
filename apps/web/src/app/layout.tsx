@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import Script from "next/script";
+import { WorkspaceNavigation } from "@/components/home/WorkspaceNavigation";
 import { SCHEME_SCRIPT } from "@/components/home/scheme";
 import { SITE } from "@/lib/links";
 import "./globals.css";
@@ -77,7 +78,7 @@ export default function RootLayout({
         <Script id="scheme" strategy="beforeInteractive">
           {SCHEME_SCRIPT}
         </Script>
-        {children}
+        <WorkspaceNavigation>{children}</WorkspaceNavigation>
       </body>
     </html>
   );

@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { Faq } from "@/components/home/Faq";
+import { Testimonials } from "@/components/home/Testimonials";
 import { AgentMarks } from "@/components/home/AgentMarks";
 import { Section, Title } from "@/components/home/Section";
+import { workspaceQuestions } from "./_components/workspaceQuestions";
 import { BoardTour } from "./_components/BoardTour";
 import { SwitchHero } from "./fieldnotes/SwitchHero";
 import { Intro, PreviewSlot, Shell } from "./opus-b/_shared/Shell";
@@ -49,6 +52,8 @@ export default function DesignWorkspacePage() {
           <BoardTour />
         </div>
       </Section>
+      <Testimonials workspace="design" />
+      <Faq questions={workspaceQuestions} />
     </Shell>
   );
 }

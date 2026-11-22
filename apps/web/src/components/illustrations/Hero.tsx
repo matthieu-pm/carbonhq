@@ -19,6 +19,7 @@ import Panel, {
   Section,
   VercelMark,
 } from "@/components/app/Panel";
+import { ProfileSwitcher, type PreviewProfile } from "@/components/app/ProfileSwitcher";
 import Sidebar, { GroupBreak, SessionRow, TaskHint } from "@/components/app/Sidebar";
 import { AddTab, BranchButton, ChatIcon, ItemTab, PanelToggle } from "@/components/app/Tabs";
 import { GitHubGlyph } from "@/components/GitHubGlyph";
@@ -51,6 +52,7 @@ type Started = {
   id: string;
   prompt: string;
   branch: string;
+  profile: PreviewProfile;
   reply: number;
   done: boolean;
   /// Finished while the visitor was looking elsewhere.
@@ -113,6 +115,9 @@ export function Hero({ className, startX = desktopHeroWindow.startX }: { classNa
   const [selected, setSelected] = useState<string>("background");
   const [view, setView] = useState<"chat" | "browser">("chat");
   const [panelTab, setPanelTab] = useState("PR");
+  const [profile, setProfile] = useState<PreviewProfile>("All Profiles");
+  const work = profile !== "Personal";
+  const personal = profile !== "Work";
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [panelShown, setPanelShown] = useState(true);
   const [detailsPanel, setDetailsPanel] = useState(false);
@@ -175,9 +180,10 @@ export function Hero({ className, startX = desktopHeroWindow.startX }: { classNa
     if (!prompt) return;
     const id = `task-${Date.now()}`;
     // Keep earlier tasks reachable through the titlebar history.
-    const task = {
+    const task: Started = {
       id,
       prompt,
+      profile: profile === "Personal" ? "Personal" : "Work",
       branch: NEW_BRANCHES[started.length % NEW_BRANCHES.length],
       reply: Math.floor(Math.random() * GENERIC.length),
       done: false,
@@ -239,23 +245,23 @@ export function Hero({ className, startX = desktopHeroWindow.startX }: { classNa
           // The live list runs by stage, workspace-wide, with no headings:
           // what wants the reader first, then what is idle, then pull
           // requests by how far along they are, then what was set aside.
-          <Sidebar onNewTask={() => open("new")}>
-            <SessionRow
+          <Sidebar onNewTask={() => open("new")} footer={<ProfileSwitcher value={profile} onChange={setProfile} />}>
+            {work && <SessionRow
               title={TITLES.linear}
               unread={answer === undefined ? "command" : undefined}
               trailing={linearWorking ? <Orb /> : answer !== undefined ? "now" : "2m"}
               active={selected === "linear"}
               onClick={() => open("linear")}
-            />
-            <SessionRow
+            />}
+            {personal && <SessionRow
               title={TITLES.speedrun}
               unread={speedrunRead ? undefined : "add"}
               trailing="5m"
               active={selected === "speedrun"}
               onClick={() => open("speedrun")}
-            />
-            <GroupBreak />
-            {started.slice(0, 3).map((t) => (
+            />}
+            {work && <GroupBreak />}
+            {started.filter(t => profile === "All Profiles" || t.profile === profile).slice(0, 3).map((t) => (
               <SessionRow
                 key={t.id}
                 title={t.prompt}
@@ -265,29 +271,29 @@ export function Hero({ className, startX = desktopHeroWindow.startX }: { classNa
                 onClick={() => open(t.id)}
               />
             ))}
-            <SessionRow
+            {work && <SessionRow
               title={TITLES.comments}
               trailing={<Orb />}
               active={selected === "comments"}
               onClick={() => open("comments")}
-            />
-            <SessionRow title="Test run and greeting" trailing="1d" />
-            <GroupBreak />
-            <SessionRow
+            />}
+            {personal && <SessionRow title="Test run and greeting" trailing="1d" />}
+            {work && <GroupBreak />}
+            {work && <SessionRow
               title={TITLES.background}
               pr={pr}
               trailing={merged ? "now" : "6m"}
               active={selected === "background"}
               onClick={() => open("background")}
-            />
-            <SessionRow title="Settings theme picker" pr={<PrOpenGlyph />} trailing="18h" />
-            <GroupBreak />
-            <SessionRow title="Draw placed tags as chips" pr={<PrMergedGlyph />} trailing="2d" />
-            <SessionRow title="Clamp long user bubbles" pr={<PrMergedGlyph />} trailing="3d" />
-            <GroupBreak />
+            />}
+            {work && <SessionRow title="Settings theme picker" pr={<PrOpenGlyph />} trailing="18h" />}
+            {work && <GroupBreak />}
+            {personal && <SessionRow title="Draw placed tags as chips" pr={<PrMergedGlyph />} trailing="2d" />}
+            {work && <SessionRow title="Clamp long user bubbles" pr={<PrMergedGlyph />} trailing="3d" />}
+            {work && <GroupBreak />}
             {/* Set aside: started, not wanted now, so held back at the foot. */}
-            <SessionRow title="Outline view from tree-sitter" trailing="1w" className="opacity-30" />
-            <SessionRow title="Port drafts to SQLite" trailing="2w" className="opacity-30" />
+            {work && <SessionRow title="Outline view from tree-sitter" trailing="1w" className="opacity-30" />}
+            {work && <SessionRow title="Port drafts to SQLite" trailing="2w" className="opacity-30" />}
             <TaskHint />
           </Sidebar>
         }
