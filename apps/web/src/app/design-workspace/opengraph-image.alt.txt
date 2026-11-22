@@ -1,0 +1,1 @@
+Carbon Design workspace with an onboarding screen on the canvas, its layers, and canvas chat.
