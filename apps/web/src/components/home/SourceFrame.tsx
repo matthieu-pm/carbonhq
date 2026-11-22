@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { LINKEDIN, REPO, X_PROFILE } from "@/lib/links";
-import { DesignRuler } from "./DesignRuler";
+import { ReturningToCoding } from "./WorkspaceNavigation";
+import { DesignRuler, RulerContents } from "./DesignRuler";
 import styles from "./source-frame.module.css";
 
 const tokenColors: Record<string, string> = {
@@ -47,6 +48,7 @@ const SINK_SOURCE = [
   "pub fn emit<S: serde::Serialize>(&self, event: &str, payload: S) -> anyhow::Result<()> { let value = serde_json::to_value(payload)?; crate::orchestration::tasks::live_event(event, &value); (self.0)(event, value); Ok(()) } }",
   `impl std::fmt::Debug for Sink { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("Sink") } }`,
 ].join(" ");
+const SINK = highlight(SINK_SOURCE);
 const topTokens = ["Sink", "serde_json", "emit", "'static", "event"];
 const topLines = topTokens.map(token => highlight(SINK_SOURCE, [
   { token, href: REPO, label: "Carbon on GitHub" },
@@ -63,7 +65,7 @@ export function SourceFrame({ children, rulers = false }: { children: ReactNode;
     <div className={styles.frame}>
       {rulers ? (
         <>
-          <DesignRuler axis="horizontal" source={SINK_SOURCE} initialCode={highlight(SINK_SOURCE)} links={[{ href: REPO, label: "Carbon on GitHub" }]} />
+          <DesignRuler axis="horizontal" source={SINK_SOURCE} initialCode={SINK} links={[{ href: REPO, label: "Carbon on GitHub" }]} />
           <DesignRuler axis="vertical" source={MANAGER_SOURCE} initialCode={MANAGER} links={[xLink, gameLink, linkedinLink]} />
         </>
       ) : <CodeRails />}
@@ -73,13 +75,17 @@ export function SourceFrame({ children, rulers = false }: { children: ReactNode;
 }
 
 function CodeRails() {
+  const returning = useContext(ReturningToCoding);
+  const [settled, setSettled] = useState(false);
+  const reversing = returning && !settled;
+  const finish = useCallback(() => setSettled(true), []);
   const topCode = useRef<HTMLElement>(null);
   const gutter = useRef<HTMLDivElement>(null);
   const sample = useRef<HTMLElement>(null);
   const [topToken, setTopToken] = useState(0);
   const [visibleCopies, setVisibleCopies] = useState(1);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const top = topCode.current;
     const row = top?.parentElement;
     const el = gutter.current;
@@ -111,11 +117,12 @@ function CodeRails() {
 
   return (
     <>
-      <div className={styles.top}>
+      <div className={styles.top} data-source-rail="horizontal" data-returning={reversing || undefined}>
         <span aria-hidden="true" className={styles.file}>sink.rs</span>
         <code ref={topCode}>{topLines[topToken]}</code>
+        {reversing && <RulerContents axis="horizontal" source={SINK_SOURCE} initialCode={SINK} onReturn={finish} />}
       </div>
-      <div ref={gutter} className={styles.gutter}>
+      <div ref={gutter} className={styles.gutter} data-source-rail="vertical" data-returning={reversing || undefined}>
         {Array.from({ length: Math.max(1, Math.ceil(visibleCopies)) }, (_, index) => {
           const links = placements.filter(({ copy }) => copy === index).map(({ link }) => link);
           return (
@@ -124,6 +131,7 @@ function CodeRails() {
             </code>
           );
         })}
+        {reversing && <RulerContents axis="vertical" source={MANAGER_SOURCE} initialCode={MANAGER} onReturn={finish} />}
       </div>
     </>
   );

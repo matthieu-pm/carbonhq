@@ -1,3 +1,4 @@
+import { Doodle, WorkspaceSwitch } from "@/components/app/WorkspaceSwitch";
 import type { CSSProperties, ReactNode } from "react";
 import {
   Archive,
@@ -22,6 +23,8 @@ import {
   Square,
   Type,
 } from "lucide-react";
+
+export { Doodle, WorkspaceSwitch };
 
 /// Drawn pieces of the desktop Canvas editor, shared by the three Design
 /// workspace pages. Each mirrors a real surface in `apps/desktop/src/components/canvases`:
@@ -99,22 +102,6 @@ export const LOOK: Look = {
   thumbs: ["#E9D8B8", "#C9D7CF", "#D9CFE6"],
 };
 
-/// The Design workspace's switch icon, Nucleo's doodle as the app draws it.
-export function Doodle({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 18 18" className={className} aria-hidden="true">
-      <path
-        d="m4.8404,2.25c-3.2556,2.6989-3.1932,6.5748-1.1928,8.1571,1.7743,1.4036,5.0348.9719,7.008-.3968,1.9472-1.3508,3.2194-3.7759,2.2117-4.9604-.9517-1.1187-3.8673-1.2374-6.5606,1.433-2.2633,2.244-3.0929,6.2074-.8698,8.113,2.1832,1.8713,7.1734,1.6167,10.3131-1.8739"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-      />
-    </svg>
-  );
-}
-
 /// A drawn app window: the site's frame fill and shadow, the app's palette.
 export function Shot({ label, className, style, children }: { label: string; className?: string; style?: CSSProperties; children: ReactNode }) {
   return (
@@ -126,43 +113,6 @@ export function Shot({ label, className, style, children }: { label: string; cla
       className={cx("app-frame relative flex flex-col overflow-hidden rounded-[12px] font-sans text-ui text-foreground shadow-window", className)}
     >
       <div aria-hidden="true" className="contents">{children}</div>
-    </div>
-  );
-}
-
-/// The titlebar's Coding / Design switch. With `onPick` it is a real radio
-/// group; without it, a picture of one.
-export function WorkspaceSwitch({ value, onPick, size = "sm" }: { value: "Coding" | "Design"; onPick?: (v: "Coding" | "Design") => void; size?: "sm" | "lg" }) {
-  const big = size === "lg";
-  const items = [
-    { name: "Coding" as const, icon: <CodeXml className={big ? "size-4" : "size-3.5"} /> },
-    { name: "Design" as const, icon: <Doodle className={big ? "size-4" : "size-3.5"} /> },
-  ];
-  return (
-    <div
-      role={onPick ? "radiogroup" : undefined}
-      aria-label={onPick ? "Workspace" : undefined}
-      className={cx("flex rounded-md bg-foreground/6", big && "rounded-lg p-0.5")}
-    >
-      {items.map(({ name, icon }) => {
-        const on = value === name;
-        const look = cx(
-          "flex items-center justify-center gap-1.5 rounded-md text-muted-foreground transition-colors",
-          big ? "h-9 px-3.5 text-[13px]" : "h-7 w-8",
-          on && "bg-foreground/10 text-foreground ring-1 ring-foreground/15 ring-inset",
-        );
-        return onPick ? (
-          <button key={name} type="button" role="radio" aria-checked={on} onClick={() => onPick(name)} className={cx(look, "cursor-pointer hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring")}>
-            {icon}
-            {big && <span>{name}</span>}
-          </button>
-        ) : (
-          <span key={name} className={look}>
-            {icon}
-            {big && <span>{name}</span>}
-          </span>
-        );
-      })}
     </div>
   );
 }

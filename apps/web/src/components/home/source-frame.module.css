@@ -142,6 +142,26 @@
   align-self: center;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .top[data-returning] { position: relative; }
+  .frame [data-returning] > code, [data-returning] > .file { visibility: hidden; }
+  [data-returning] .scale {
+    position: absolute;
+    inset: 0;
+    animation-direction: reverse;
+    animation-delay: 0ms;
+  }
+  .top[data-returning] .scale {
+    left: var(--gutter);
+    width: calc(100% - var(--gutter));
+    animation-delay: 300ms;
+  }
+  [data-returning] .scramble {
+    animation-direction: reverse;
+    animation-delay: 1100ms;
+  }
+}
+
 @keyframes scramble-out {
   0%, 20% { opacity: 1; }
   100% { opacity: 0; }
@@ -159,6 +179,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scramble { display: none; }
+  .scramble, [data-returning] .scale { display: none; }
   .scale, .gutter .scale { animation: none; }
 }

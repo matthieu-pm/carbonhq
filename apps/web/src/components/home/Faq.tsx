@@ -3,11 +3,10 @@
 import { posthog } from "@/lib/posthog";
 import { Section } from "@/components/home/Section";
 
-/// Six questions as native disclosures, all closed to start; the glide is CSS alone.
-export function Faq() {
+export function Faq({ questions = FAQ }: { questions?: [string, string][] }) {
   return (
     <Section id="faq" className="py-20">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: FAQ_SCHEMA }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: faqSchema(questions) }} />
       <div className="flex flex-col gap-10 lg:flex-row lg:gap-24">
         <div className="flex shrink-0 flex-col gap-3 lg:w-72">
           <h2 className="font-inter text-[28px] leading-[32px] font-light tracking-[-0.03em] text-white sm:text-[36px] sm:leading-[40px] light:text-[#0A0A0A]">
@@ -15,7 +14,7 @@ export function Faq() {
           </h2>
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-px">
-          {FAQ.map(([q, a]) => (
+          {questions.map(([q, a]) => (
             <Item key={q} question={q} answer={a} />
           ))}
         </div>
@@ -51,16 +50,17 @@ const FAQ: [string, string][] = [
   ],
 ];
 
-// Google's FAQ rich result; `<` escaped so no answer can close the script tag.
-const FAQ_SCHEMA = JSON.stringify({
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  mainEntity: FAQ.map(([name, text]) => ({
-    "@type": "Question",
-    name,
-    acceptedAnswer: { "@type": "Answer", text },
-  })),
-}).replace(/</g, "\\u003c");
+function faqSchema(questions: [string, string][]) {
+  return JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: questions.map(([name, text]) => ({
+      "@type": "Question",
+      name,
+      acceptedAnswer: { "@type": "Answer", text },
+    })),
+  }).replace(/</g, "\\u003c");
+}
 
 // Height animates through `::details-content` with `interpolate-size`; a
 // browser lacking either just toggles, and reduced motion drops the transition.

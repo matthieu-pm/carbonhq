@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { AssistantText, UserBubble } from "@/components/app/Chat";
 import { ItemTab, PanelToggle } from "@/components/app/Tabs";
+import { WorkspaceSwitch } from "@/components/app/WorkspaceSwitch";
 import Window, { TrafficLights, cx } from "@/components/app/Window";
 import { desktopHeroWindow, mobileHeroImage } from "@/components/illustrations/heroWindowSize";
 import { ScaledWindow } from "@/components/illustrations/ScaledWindow";
@@ -93,7 +94,8 @@ export function DesignPreview({
     <div ref={compact} data-app-window className={cx("app-frame relative overflow-hidden rounded-xl border border-border text-foreground shadow-window", hero && "flex h-full flex-col")}>
       <div className="flex h-9 items-center gap-3 px-3">
         <TrafficLights className="shrink-0 [&>span]:size-2.5" />
-        <span className="min-w-0 truncate text-ui text-muted-foreground">{file}.canvas · Design workspace</span>
+        <WorkspaceSwitch value="Design" navigate />
+        <span className="min-w-0 truncate text-ui text-muted-foreground">{file}.canvas</span>
       </div>
       <div className={cx("mx-1.5 mb-1.5 overflow-hidden rounded-[8px] shadow-[0_0_0_1px_var(--color-hairline)]", hero && "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_240px]")}>
         <div className={hero ? "min-h-0" : "h-[392px]"}>
@@ -125,6 +127,7 @@ export function DesignPreview({
         <ScaledWindow {...(hero ? desktopHeroWindow : demoWindow)}>
           <div ref={full} className="relative h-full w-full">
             <Window
+              workspace="Design"
               interactive
               className="h-full w-full"
               sidebarWidth={248}

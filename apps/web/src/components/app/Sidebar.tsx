@@ -46,11 +46,13 @@ const STRIP_BUTTON =
 export default function Sidebar({
   children,
   onNewTask,
+  footer,
   className,
 }: {
   children?: ReactNode;
   /// Makes New Task a button, with the hover fill the app's strip has.
   onNewTask?: () => void;
+  footer?: ReactNode;
   className?: string;
 }) {
   return (
@@ -102,6 +104,7 @@ export default function Sidebar({
       <div className="flex min-h-0 flex-1 flex-col gap-px overflow-hidden pt-2 pb-3 pl-2 pr-2">
         {children}
       </div>
+      {footer}
     </aside>
   );
 }

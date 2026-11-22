@@ -130,7 +130,7 @@
   border-radius: 6px;
   font-size: 13px;
 }
-.compactActions svg { width: 14px; height: 14px; }
+.compactActions .action svg { width: 14px; height: 14px; }
 
 @media (min-width: 640px) and (max-width: 767px) {
   .navbar > a:first-child { width: 96px; }

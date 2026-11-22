@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@blobatar/react": "^2.7.0",
+    "@heroicons/react": "^2.2.0",
     "@yogesharc/thinking-orbs": "^0.1.2",
     "blobatar": "^2.7.0",
     "lucide-react": "^1.60.0",

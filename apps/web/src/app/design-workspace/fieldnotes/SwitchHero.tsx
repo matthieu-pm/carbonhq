@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ArrowUp, CircleDot, CodeXml, GitBranch, Plus } from "lucide-react";
+import { ProfileSwitcher } from "@/components/app/ProfileSwitcher";
 import { Fit } from "../_components/Fit";
 import { BoardShot, Editor, Shot, WorkspaceSwitch, cx } from "../_components/kit";
 import m from "../_components/motion.module.css";
@@ -26,8 +27,8 @@ function CodingShot({ width, height }: { width: number; height: number }) {
           <i className="size-3 rounded-full bg-[#FEBC2E]" />
           <i className="size-3 rounded-full bg-[#28C840]" />
         </span>
-        <WorkspaceSwitch value="Coding" />
-        <span className={cx("flex h-7 items-center gap-1.5 rounded-md bg-surface-thumb px-2.5", !compact && "ml-[90px]")}>Fix checkout layout</span>
+        <div className={compact ? "" : "ml-[90px]"}><WorkspaceSwitch value="Coding" /></div>
+        <span className="flex h-7 items-center gap-1.5 rounded-md bg-surface-thumb px-2.5">Fix checkout layout</span>
         {!compact && <span className="ml-auto mr-3 flex items-center gap-1.5 text-muted-foreground"><GitBranch className="size-3.5" />worktree-fix-checkout</span>}
       </div>
       <div className="flex min-h-0 flex-1">
@@ -40,6 +41,7 @@ function CodingShot({ width, height }: { width: number; height: number }) {
               {s.title}
             </span>
           ))}
+          <ProfileSwitcher />
         </div>
         <div className={cx("app-sheet flex min-w-0 flex-1 flex-col border-t border-edge-surface", !compact && "rounded-tl-[10px] border-l")}>
           <div className="mx-auto flex w-full max-w-[640px] flex-1 flex-col gap-4 px-5 pt-8">

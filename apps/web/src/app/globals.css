@@ -373,6 +373,9 @@ body {
 @media (prefers-reduced-motion: no-preference) {
   @view-transition { navigation: auto; }
 
+  [data-source-rail="horizontal"] { view-transition-name: carbon-top-rail; }
+  [data-source-rail="vertical"] { view-transition-name: carbon-left-rail; }
+
   :where([data-page-part], .page-content main > section) {
     animation: section-in 700ms ease-out var(--entry-delay, 300ms) backwards;
     view-transition-name: match-element;
@@ -418,3 +421,16 @@ body {
   }
   ::view-transition-old(*) { opacity: 0; }
 }
+
+/* React shrinks the transition overlay to zero. The ruler snapshots need a paintable viewport. */
+:root:has([data-source-rail])::view-transition {
+  width: 100vw !important;
+  height: 100dvh !important;
+}
+
+::view-transition-group(carbon-top-rail), ::view-transition-group(carbon-left-rail) {
+  animation: none;
+  z-index: 2;
+}
+::view-transition-old(carbon-top-rail), ::view-transition-old(carbon-left-rail) { display: none; }
+::view-transition-new(carbon-top-rail), ::view-transition-new(carbon-left-rail) { animation: none; }
