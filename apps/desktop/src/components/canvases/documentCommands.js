@@ -162,10 +162,12 @@ function effectAction(doc, a, input) {
     case "add-stop": {
       const stop = { id: uid(), color: a.color, at: a.at };
       (e.stops ??= []).push(stop);
+      e.stops.sort((a, b) => parseFloat(a.at) - parseFloat(b.at));
       return { id: stop.id };
     }
     case "set-stop":
       Object.assign(item(e.stops ?? [], a.stop), { color: a.color, at: a.at });
+      e.stops.sort((a, b) => parseFloat(a.at) - parseFloat(b.at));
       break;
     case "remove-stop":
       remove(e.stops ?? [], a.stop);

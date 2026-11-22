@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { listenLocalRequest } from "./transport";
 
 export type ViewAction =
@@ -63,7 +64,7 @@ export function useCanvasWindowPart(part: WindowPart, handler: Handler) {
 export function canvasWindowPart(part: WindowPart, req: WindowRequest) {
   const handler = handlers.get(part);
   if (!handler) throw Error("Open the canvas " + part + " first.");
-  return handler(req);
+  return flushSync(() => handler(req));
 }
 
 export function visibility(value: string) {
@@ -78,7 +79,7 @@ export function useCanvasWindow(handler: Handler) {
     latest.current = handler;
   });
   useEffect(() => {
-    const off = listenLocalRequest<WindowRequest>("canvas-command", (request) => latest.current(request));
+    const off = listenLocalRequest<WindowRequest>("canvas-command", (request) => flushSync(() => latest.current(request)));
     return () => {
       void off.then((remove) => remove());
     };

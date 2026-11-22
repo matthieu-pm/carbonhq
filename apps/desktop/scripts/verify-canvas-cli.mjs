@@ -50,6 +50,7 @@ try {
     }
   }
   assert.deepEqual(run(["projects"]), []);
+  run(["--revision", "stale", "attach"], /revision applies to document/i);
   run(["attach"]);
   assert.equal(run(["projects"])[0].path, project);
   run(["folder", "designs"]);
@@ -91,7 +92,11 @@ try {
   assert.equal(run(["effect", "list", frame]).data[0].fields.image, "data:image/png;base64," + file.toString("base64"));
   run(["effect", "set", frame, effect, "type", "Linear"]);
   const stop = id("effect", "add-stop", frame, effect, "#abc", "50%");
-  run(["effect", "set-stop", frame, effect, stop, "#fff", "45%"]);
+  const earlier = id("effect", "add-stop", frame, effect, "#fff", "20%");
+  const stops = () => run(["effect", "list", frame]).data.find(e => e.id === effect).stops.map(s => s.id);
+  assert.deepEqual(stops(), [earlier, stop]);
+  run(["effect", "set-stop", frame, effect, stop, "#fff", "10%"]);
+  assert.deepEqual(stops(), [stop, earlier]);
   run(["effect", "disable", frame, effect]);
   run(["effect", "enable", frame, effect]);
   run(["effect", "move", frame, effect, "1"]);

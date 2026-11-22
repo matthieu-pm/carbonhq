@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { canvasKey, type CanvasFile } from "@/lib/canvasFile";
+import { relocateCanvasDocument } from "@/components/canvases/useCanvasDocument";
 import { moveCanvasChat } from "@/lib/canvasChat";
 import { projectLabel } from "@/lib/servers";
 import { invoke, listen, qualify } from "@/lib/transport";
 import type { Project } from "@/types/events";
 
-export type CanvasFile = { project: string; folder: string; name: string };
+export { canvasKey, type CanvasFile } from "@/lib/canvasFile";
 export type CanvasLocation = { project: string; folder: string; archived: boolean };
 export const canvasRoot: CanvasLocation = { project: "", folder: "", archived: false };
 type Entry = Omit<CanvasFile, "project"> & { modified: number; archived: boolean };
@@ -16,8 +18,6 @@ export type CanvasAction =
   | { kind: "archive"; folder: string; name: string }
   | { kind: "restore"; folder: string; name: string }
   | { kind: "move"; folder: string; name: string; destination: string };
-
-export const canvasKey = (file: CanvasFile) => JSON.stringify([file.project, file.folder, file.name]);
 
 export function useCanvasLibrary(projects: Project[], visible: boolean) {
   const [location, setLocation] = useState(canvasRoot);
@@ -38,9 +38,13 @@ export function useCanvasLibrary(projects: Project[], visible: boolean) {
       const key = canvasKey(file);
       if (payload.command?.group === "move" && payload.command.args) {
         const moved = {...file, folder: payload.command.args.destination};
+        relocateCanvasDocument(file, moved, false);
         moveCanvasChat(key, canvasKey(moved));
         setTabs(tabs => tabs.map(t => canvasKey(t) === key ? moved : t));
         select(active => active === key ? canvasKey(moved) : active);
+      } else if (payload.command?.group === "archive" || payload.command?.group === "restore") {
+        const archive = payload.command.group === "archive";
+        relocateCanvasDocument(file, file, archive, !archive);
       }
       refresh();
     });
@@ -97,11 +101,16 @@ export function useCanvasLibrary(projects: Project[], visible: boolean) {
     try {
       const name = await invoke<string>("change_canvas_library", { projectPath: project, action });
       if (action.kind === "create") open({ project, folder: action.folder, name });
+      const file = { project, folder: action.folder, name };
+      if (action.kind === "restore") relocateCanvasDocument(file, file, false, true);
       if (action.kind === "archive" || action.kind === "move") {
-        const old = canvasKey({ project, folder: action.folder, name });
-        if (action.kind === "archive") close(old);
-        else {
+        const old = canvasKey(file);
+        if (action.kind === "archive") {
+          relocateCanvasDocument(file, file, true);
+          close(old);
+        } else {
           const moved = { project, folder: action.destination, name };
+          relocateCanvasDocument(file, moved, false);
           moveCanvasChat(old, canvasKey(moved));
           setTabs((prev) => prev.map((tab) => (canvasKey(tab) === old ? moved : tab)));
           select((prev) => (prev === old ? canvasKey(moved) : prev));

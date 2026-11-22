@@ -169,6 +169,11 @@ export function CanvasEditor({
     const a = command.args;
     if (a.op === "state") return { page: page?.id, layer: selectedId, tool, mode, view, pagesOpen, folded: [...folded], saving, conflict, error, ready: !!doc };
     if (!doc && a.op !== "reload") throw Error(error || "Canvas is loading.");
+    const blurField = () => {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && root.current?.contains(focused)) focused.blur();
+    };
+    if (["save", "undo", "redo", "keep-mine"].includes(a.op)) blurField();
     switch (a.op) {
       case "page":
         if (!doc?.pages.some(p => p.id === a.id)) throw Error("Unknown page.");
@@ -201,7 +206,7 @@ export function CanvasEditor({
       case "undo": case "redo":
         if (!session.travel(a.op === "redo")) throw Error("No editor history in that direction.");
         await session.flush(); break;
-      case "reload": await session.load(); break;
+      case "reload": await session.reload(blurField); break;
       case "save": await session.flush(); break;
       case "keep-mine": await session.keepMine(); break;
       default: throw Error("Unknown editor action.");
@@ -303,6 +308,7 @@ export function CanvasEditor({
       aria-label={"Canvas: " + file.name}
       tabIndex={-1}
       ref={root}
+      data-canvas-key={canvasKey(file)}
       onKeyDown={keys}
       onInputCapture={(e) => {
         const input = e.target as Element;

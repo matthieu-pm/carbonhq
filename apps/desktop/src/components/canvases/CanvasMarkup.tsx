@@ -72,11 +72,12 @@ export function CanvasMarkup({
   const overlay = useRef<HTMLDivElement>(null);
   const drawing = useRef<{ pointer: number; points: InkPoint[] } | null>(null);
   const [points, setPoints] = useState<InkPoint[]>([]);
-  const [pin, setPin] = useState<CommentPin | null>(null);
+  const [selection, setPin] = useState<CommentPin | string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const locked = useRef(false);
-  const saved = pin && page.comments?.some((p) => p.id === pin.id);
+  const saved = typeof selection === "string";
+  const pin = saved ? page.comments?.find(p => p.id === selection) : selection;
   const drawingTool = tool === "Pen" || tool === "Comment";
   function position(e: { clientX: number; clientY: number }): InkPoint {
     const r = overlay.current!.getBoundingClientRect();
@@ -197,7 +198,7 @@ export function CanvasMarkup({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => {
             if (!locked.current) {
-              setPin(pin?.id === p.id ? null : p);
+              setPin(pin?.id === p.id ? null : p.id);
               setError("");
             }
           }}
@@ -216,7 +217,7 @@ export function CanvasMarkup({
           }}
           onSubmit={(e) => {
             e.preventDefault();
-            if (pin) void deliver(pin).catch(() => {});
+            if (!saved) void deliver(pin).catch(() => {});
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape" && !sending) {

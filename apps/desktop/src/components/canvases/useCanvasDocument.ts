@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { canvasKey, type CanvasFile } from "@/hooks/useCanvasLibrary";
+import { flushSync } from "react-dom";
+import { canvasKey, type CanvasFile } from "@/lib/canvasFile";
 import { invoke, listen, qualify } from "@/lib/transport";
 import { readDocument, type CommentPin, type Document } from "./document";
 
@@ -16,14 +17,27 @@ export class CanvasSession {
   private group: string | Element | null = null;
   private input: Element | null = null;
   private groupedAt = 0;
-  private refreshing = false;
+  private reading: Promise<void> | null = null;
   private writing: Promise<void> | null = null;
   private refreshAgain = false;
   private history: Document[] = [];
   private future: Document[] = [];
   private loading = false;
+  private discardingDraft = false;
   private pendingComments = 0;
-  constructor(readonly file: CanvasFile) {}
+  private archived = false;
+  constructor(public file: CanvasFile) {}
+  private key() {
+    return (this.archived ? "archive:" : "") + canvasKey(this.file);
+  }
+  relocate(file: CanvasFile, archived: boolean) {
+    open.delete(this.key());
+    this.file = file;
+    this.archived = archived;
+    open.set(this.key(), this);
+    if (this.reading) this.refreshAgain = true;
+    if (this.snapshot.doc !== this.persisted && !this.snapshot.conflict) void this.flush();
+  }
   get = () => this.snapshot;
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -36,7 +50,7 @@ export class CanvasSession {
     };
   };
   private release() {
-    const key = canvasKey(this.file);
+    const key = this.key();
     if (
       !this.listeners.size &&
       !this.pendingComments &&
@@ -53,22 +67,55 @@ export class CanvasSession {
   }
   private args() {
     const { project: projectPath, folder, name } = this.file;
-    return { projectPath, folder, name };
+    return { projectPath, folder, name, archived: this.archived };
   }
-  async load(refresh = false) {
-    if (refresh && (this.loading || this.writing || this.refreshing)) {
-      this.refreshAgain = true;
-      return;
+  async load(refresh = false): Promise<void> {
+    if (this.reading) {
+      if (refresh) {
+        this.refreshAgain = true;
+        return this.reading;
+      }
+      await this.reading;
+      return this.load(false);
     }
-    if (this.writing) await this.writing;
-    if (this.loading) return;
+    if (this.writing) {
+      await this.writing;
+      return this.load(refresh);
+    }
+    this.reading = this.read(refresh).finally(() => {
+      this.reading = null;
+      this.release();
+      this.refreshIfQueued();
+    });
+    return this.reading;
+  }
+  reload(discardFocusedDraft: () => void) {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    this.discardingDraft = true;
+    try {
+      discardFocusedDraft();
+    } finally {
+      this.discardingDraft = false;
+    }
+    return this.load();
+  }
+  async synchronize() {
+    if (this.snapshot.doc !== this.persisted || this.writing) await this.flush();
+    while (this.reading) await this.reading;
+    await this.load(true);
+    if (this.snapshot.error || this.snapshot.conflict) throw Error(this.snapshot.error || "Canvas has unsaved conflicts.");
+    if (this.snapshot.doc !== this.persisted) throw Error("Canvas changed during the command. Try again.");
+  }
+  private async read(refresh: boolean) {
+    const key = this.key();
     const before = this.snapshot.doc;
     if (refresh) {
       if (before !== this.persisted || this.snapshot.conflict) return;
-      this.refreshing = true;
     } else this.loading = true;
     try {
       const raw = await invoke<string>("read_canvas_document", this.args());
+      if (key !== this.key()) return;
       if (
         refresh &&
         (this.loading || this.writing || before !== this.snapshot.doc || before !== this.persisted)
@@ -85,14 +132,11 @@ export class CanvasSession {
       this.future = [];
       this.group = null;
       this.conflictRevision = null;
-      this.update({ doc, error: "", conflict: false, saving: false });
+      flushSync(() => this.update({ doc, error: "", conflict: false, saving: false }));
     } catch (err) {
-      if (!refresh || before === this.snapshot.doc) this.update({ error: String(err) });
+      if (key === this.key() && (!refresh || before === this.snapshot.doc)) this.update({ error: String(err) });
     } finally {
-      if (refresh) this.refreshing = false;
-      else this.loading = false;
-      this.release();
-      this.refreshIfQueued();
+      if (!refresh) this.loading = false;
     }
   }
   private refreshIfQueued() {
@@ -122,7 +166,7 @@ export class CanvasSession {
   }
   change = (apply: (doc: Document) => Document, group?: string | Element) => {
     const old = this.snapshot.doc;
-    if (!old || this.loading) return;
+    if (!old || this.loading || this.discardingDraft) return;
     const doc = apply(old);
     if (old === doc) return;
     const key = group ?? this.input;
@@ -188,7 +232,13 @@ export class CanvasSession {
       while (this.snapshot.doc && this.snapshot.doc !== this.persisted) {
         const doc = this.snapshot.doc;
         const content = JSON.stringify(doc, null, 2) + "\n";
-        await invoke("save_canvas_document", { ...this.args(), previous: this.saved, content });
+        const key = this.key();
+        try {
+          await invoke("save_canvas_document", { ...this.args(), previous: this.saved, content });
+        } catch (err) {
+          if (key !== this.key()) continue;
+          throw err;
+        }
         this.saved = content;
         this.persisted = doc;
       }
@@ -201,6 +251,15 @@ export class CanvasSession {
       } else this.update({ error });
     }
   }
+}
+
+export function relocateCanvasDocument(file: CanvasFile, destination: CanvasFile, archived: boolean, restoring = false) {
+  const session = open.get((restoring ? "archive:" : "") + canvasKey(file));
+  if (!session) return;
+  const focused = typeof document === "undefined" ? null : document.activeElement;
+  if (focused && focused instanceof HTMLElement && focused.closest<HTMLElement>("[data-canvas-key]")?.dataset.canvasKey === canvasKey(file))
+    focused.blur();
+  session.relocate(destination, archived);
 }
 
 export function openCanvasDocument(file: CanvasFile) {
@@ -219,8 +278,8 @@ export function useCanvasDocument(file: CanvasFile) {
       if (document.visibilityState === "visible") void session.load(true);
       else if (session.get().saving) void session.flush();
     };
-    const off = listen<{project: string; folder: string; canvas?: string}>("canvas_changed", ({payload, server}) => {
-      if (session.file.project === qualify(payload.project, server) && session.file.folder === payload.folder && session.file.name === payload.canvas)
+    const off = listen<{project: string; folder: string; canvas?: string; command?: {group: string}}>("canvas_changed", ({payload, server}) => {
+      if (!["move", "archive", "restore"].includes(payload.command?.group ?? "") && session.file.project === qualify(payload.project, server) && session.file.folder === payload.folder && session.file.name === payload.canvas)
         void session.load(true);
     });
     window.addEventListener("focus", refresh);

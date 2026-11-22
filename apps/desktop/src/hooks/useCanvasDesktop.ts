@@ -1,4 +1,5 @@
 import { flushSync } from "react-dom";
+import { openCanvasDocument } from "@/components/canvases/useCanvasDocument";
 import { canvasKey, type useCanvasLibrary } from "./useCanvasLibrary";
 import { canvasWindowPart, useCanvasWindow, visibility, waitForCanvasEditor } from "@/lib/canvasWindow";
 import type { CanvasChatDock } from "@/lib/canvasChat";
@@ -37,11 +38,9 @@ export function useCanvasDesktop(ui: Desktop) {
             editor: ui.visible && active ? await canvasWindowPart("editor", req) : null,
           };
         case "all-projects":
-          flushSync(() => {
-            ui.design("");
-            library.setLocation({ project: "", folder: "", archived: false });
-            library.select(null);
-          });
+          ui.design("");
+          library.setLocation({ project: "", folder: "", archived: false });
+          library.select(null);
           return;
         case "refresh":
           library.refresh();
@@ -49,8 +48,12 @@ export function useCanvasDesktop(ui: Desktop) {
         case "width":
           if (!ui.visible) throw Error("Open the Canvas workspace first.");
           if (command.args.panel === "sidebar") return canvasWindowPart("library", req);
-          if (command.args.panel === "chat" && dock?.open) return canvasWindowPart("chat", req);
-          throw Error("Choose an open sidebar or chat panel.");
+          break;
+        case "panel":
+          if (command.args.panel !== "sidebar") break;
+          if (!ui.visible) throw Error("Open the Canvas workspace first.");
+          ui.setSidebar(visibility(command.args.visibility));
+          return;
         case "back":
         case "forward":
           ui.navigate(command.args.op === "forward");
@@ -100,6 +103,10 @@ export function useCanvasDesktop(ui: Desktop) {
     ) {
       throw Error("Open the target canvas in the desktop window first.");
     }
+    if (command.group === "view" && command.args.op === "width") {
+      if (command.args.panel === "chat" && dock?.open) return canvasWindowPart("chat", req);
+      throw Error("Choose an open sidebar or chat panel.");
+    }
     if (command.group === "view" && command.args.op === "panel") {
       const { panel, visibility: value } = command.args;
       const show = visibility(value);
@@ -108,14 +115,16 @@ export function useCanvasDesktop(ui: Desktop) {
         ui.setControls(show);
         return;
       }
-      if (panel === "sidebar") {
-        ui.setSidebar(show);
-        return;
-      }
       if (panel === "chat") {
         dock?.setOpen(show);
         return;
       }
+    }
+    if (command.group === "comment" || (command.group === "view" &&
+        ["select", "page", "tree", "fit", "token"].includes(command.args.op))) {
+      const key = canvasKey(active);
+      await openCanvasDocument(active).synchronize();
+      await waitForCanvasEditor(key);
     }
     if (command.group === "view" && (command.args.op === "token" || command.args.op === "token-search"))
       return canvasWindowPart("theme", req);
@@ -139,7 +148,7 @@ export function useCanvasDesktop(ui: Desktop) {
         );
         if (!sessions.some((s) => s.sessionId === chat.id && s.projectPath === project && !s.hidden))
           throw Error("Unknown conversation in this project.");
-        dock.add(chat.id, false);
+        flushSync(() => dock.add(chat.id, false));
         return;
       }
       case "close":

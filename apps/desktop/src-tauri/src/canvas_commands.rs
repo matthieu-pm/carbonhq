@@ -152,7 +152,7 @@ async fn document(req: CanvasRequest, sink: &Sink) -> Result<Value> {
     let key = (req.project.clone(), req.folder.clone(), name(&req)?);
     let input = source(&req).await?;
     let mut history = HISTORY.lock().await;
-    let raw = library::read(key.0.clone(), key.1.clone(), key.2.clone()).await?;
+    let raw = library::read(key.0.clone(), key.1.clone(), key.2.clone(), false).await?;
     let current = revision(&raw);
     ensure!(
         req.revision.as_ref().is_none_or(|r| r == &current),
@@ -173,7 +173,7 @@ async fn document(req: CanvasRequest, sink: &Sink) -> Result<Value> {
         };
         ensure!(expected == &raw, "Canvas has changed since this edit");
         let revision = revision(content);
-        library::save(key.0, key.1, key.2, raw, content.clone()).await?;
+        library::save(key.0, key.1, key.2, raw, content.clone(), false).await?;
         entry.undone = !redo;
         changed(sink, &req)?;
         return Ok(json!({"revision": revision}));
@@ -194,6 +194,7 @@ async fn document(req: CanvasRequest, sink: &Sink) -> Result<Value> {
             key.2.clone(),
             raw.clone(),
             content.clone(),
+            false,
         )
         .await?;
         history.retain(|e| e.key != key || !e.undone);
@@ -223,6 +224,27 @@ async fn document(req: CanvasRequest, sink: &Sink) -> Result<Value> {
 /// Dispatch library and document work on the machine that owns the attached checkout.
 pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
     use Cmd::*;
+    if req.revision.is_some() {
+        ensure!(
+            matches!(
+                &req.command,
+                Read | Page(_)
+                    | Layer(_)
+                    | Effect(_)
+                    | Token(_)
+                    | Stroke(_)
+                    | Undo
+                    | Redo
+                    | Comment(
+                        CommentAction::List { .. }
+                            | CommentAction::Add { .. }
+                            | CommentAction::Edit { .. }
+                            | CommentAction::Remove { .. }
+                    )
+            ),
+            "--revision applies to document commands"
+        );
+    }
     match &req.command {
         Projects => {
             return Ok(serde_json::to_value(
@@ -235,10 +257,6 @@ pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
             return Ok(serde_json::to_value(result)?);
         }
         View(_) | Chat(_) | Comment(CommentAction::Send { .. }) => {
-            ensure!(
-                req.revision.is_none(),
-                "--revision applies to document commands"
-            );
             #[cfg(any(feature = "desktop", feature = "serve"))]
             return crate::serve::host_call("canvas_view", serde_json::to_value(req)?)
                 .await
@@ -285,10 +303,6 @@ pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
         },
         _ => return document(req, sink).await,
     };
-    ensure!(
-        req.revision.is_none(),
-        "--revision applies to document commands"
-    );
     let mut history = HISTORY.lock().await;
     let name = library::change(req.project.clone(), action).await?;
     history.retain(|e| !(e.key.0 == req.project && e.key.1 == req.folder && e.key.2 == name));
