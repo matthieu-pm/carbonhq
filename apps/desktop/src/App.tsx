@@ -3347,7 +3347,9 @@ function App() {
               ) : null}
         </WindowToolbar>
         {(canvasChatVisible || (terminalSession && dock.active)) && (
-          <div ref={setSideRail} className="mr-2 flex shrink-0 items-center" data-tauri-drag-region="deep" />
+          <div ref={setSideRail} className="relative mr-2 flex shrink-0 items-center" data-tauri-drag-region="deep">
+            <span aria-hidden className="pointer-events-none absolute left-0 h-4 w-px bg-hairline" />
+          </div>
         )}
         </div>
       }

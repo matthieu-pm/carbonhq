@@ -339,7 +339,7 @@ export default function TerminalPane({
         className="flex min-w-0 flex-col bg-background"
       >
         {rail && createPortal(
-          <div style={style} className="flex h-(--titlebar-h) min-w-0 items-center gap-1 border-l border-hairline px-1">
+          <div style={style} className="flex h-(--titlebar-h) min-w-0 items-center gap-1 px-1">
             <div
               ref={tabStrip}
               role="tablist"
