@@ -330,6 +330,8 @@ export function NewTaskComposer({
   mode,
   project,
   base,
+  modelPicker,
+  autoFocus = true,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -341,6 +343,8 @@ export function NewTaskComposer({
   project: string;
   /// What a worktree forks from, named since the CLI ignores the checkout.
   base: string;
+  modelPicker?: ReactNode;
+  autoFocus?: boolean;
 }) {
   return (
     <div className="px-4 pb-4">
@@ -356,7 +360,7 @@ export function NewTaskComposer({
           <div className="px-3 pt-3">
             <textarea
               rows={3}
-              autoFocus
+              autoFocus={autoFocus}
               aria-label="Describe a task"
               value={value}
               onChange={(event) => onChange(event.target.value)}
@@ -385,8 +389,12 @@ export function NewTaskComposer({
               <span className="truncate px-1.5 font-normal text-muted-foreground/60">from {base}</span>
               <span className="flex h-7 shrink-0 items-center px-1.5">{mode}</span>
               <span className="ml-auto flex h-7 min-w-0 items-center gap-1 px-1.5">
-                {agent}<span className="truncate">{model}</span>
-                {effort && <span className="text-muted-foreground/60">{effort}</span>}
+                {modelPicker ?? (
+                  <>
+                    {agent}<span className="truncate">{model}</span>
+                    {effort && <span className="text-muted-foreground/60">{effort}</span>}
+                  </>
+                )}
               </span>
             </div>
             <span className="grid size-7 shrink-0 place-items-center text-muted-foreground"><Mic className="size-4" /></span>

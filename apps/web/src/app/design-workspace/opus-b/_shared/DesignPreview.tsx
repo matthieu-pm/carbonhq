@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { AssistantText, UserBubble } from "@/components/app/Chat";
 import { ItemTab, PanelToggle } from "@/components/app/Tabs";
-import { WorkspaceSwitch } from "@/components/app/WorkspaceSwitch";
+import { WorkspaceSwitch, type Workspace } from "@/components/app/WorkspaceSwitch";
 import Window, { TrafficLights, cx } from "@/components/app/Window";
 import { desktopHeroWindow, mobileHeroImage } from "@/components/illustrations/heroWindowSize";
 import { ScaledWindow } from "@/components/illustrations/ScaledWindow";
@@ -78,6 +78,8 @@ export function DesignPreview({
   compactPanel,
   hero = false,
   file = "onboarding",
+  onWorkspaceChange,
+  desktopOnly = false,
 }: {
   ctl: Control;
   /// What the loop shows, said once under the window.
@@ -85,6 +87,8 @@ export function DesignPreview({
   compactPanel: "inspector" | "chat" | "theme";
   hero?: boolean;
   file?: string;
+  onWorkspaceChange?: (workspace: Workspace) => void;
+  desktopOnly?: boolean;
 }) {
   const { state } = ctl;
   const full = useRef<HTMLDivElement>(null);
@@ -94,7 +98,7 @@ export function DesignPreview({
     <div ref={compact} data-app-window className={cx("app-frame relative overflow-hidden rounded-xl border border-border text-foreground shadow-window", hero && "flex h-full flex-col")}>
       <div className="flex h-9 items-center gap-3 px-3">
         <TrafficLights className="shrink-0 [&>span]:size-2.5" />
-        <WorkspaceSwitch value="Design" navigate />
+        <WorkspaceSwitch value="Design" navigate onPick={onWorkspaceChange} />
         <span className="min-w-0 truncate text-ui text-muted-foreground">{file}.canvas</span>
       </div>
       <div className={cx("mx-1.5 mb-1.5 overflow-hidden rounded-[8px] shadow-[0_0_0_1px_var(--color-hairline)]", hero && "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_240px]")}>
@@ -123,12 +127,13 @@ export function DesignPreview({
 
   return (
     <div ref={ctl.ref} className={hero ? "w-full" : "mx-auto max-w-[1280px]"}>
-      <div className="max-sm:hidden">
+      <div className={desktopOnly ? undefined : "max-sm:hidden"}>
         <ScaledWindow {...(hero ? desktopHeroWindow : demoWindow)}>
           <div ref={full} className="relative h-full w-full">
             <Window
               workspace="Design"
               interactive
+              onWorkspaceChange={onWorkspaceChange}
               className="h-full w-full"
               sidebarWidth={248}
               sidebar={<Navigator ctl={ctl} file={file} />}
@@ -152,13 +157,13 @@ export function DesignPreview({
         </ScaledWindow>
       </div>
 
-      <div className="sm:hidden">
+      {!desktopOnly && <div className="sm:hidden">
         {hero ? (
           <ScaledWindow width={mobileHeroWidth} height={mobileHeroHeight}>
             {compactWindow}
           </ScaledWindow>
         ) : compactWindow}
-      </div>
+      </div>}
 
       {story && <Caption ctl={ctl} story={story} />}
     </div>

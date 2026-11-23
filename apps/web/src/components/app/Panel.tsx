@@ -22,6 +22,7 @@ export default function Panel({
   children,
   width = 460,
   className,
+  label,
 }: {
   tabs: string[];
   active: string;
@@ -30,9 +31,11 @@ export default function Panel({
   children: ReactNode;
   width?: number;
   className?: string;
+  label?: string;
 }) {
   return (
     <aside
+      aria-label={label}
       className={cx("relative flex shrink-0 flex-col", className)}
       style={{ width }}
     >
