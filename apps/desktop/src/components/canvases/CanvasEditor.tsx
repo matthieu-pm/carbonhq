@@ -67,7 +67,7 @@ export function CanvasEditor({
   resizeHandle: ReactNode;
   libraryError: string;
 }) {
-  const { doc, error, saving, conflict, session } = useCanvasDocument(file);
+  const { doc, preview, error, saving, conflict, session } = useCanvasDocument(file);
   const composer = useContext(CanvasComposerSlot);
   useEditorStatus(canvasKey(file), !!doc, doc ? "" : error);
   const [mode, setMode] = useState<"Design" | "Theme">("Design");
@@ -274,8 +274,9 @@ export function CanvasEditor({
       );
     }
   }
-  const notices = (libraryError || error) && (
+  const notices = (preview || libraryError || error) && (
     <>
+      {preview && <p className="ce-notice" role="status">Previewing agent edits</p>}
       {libraryError && (
         <p className="ce-notice" role="alert">
           {libraryError}
@@ -425,6 +426,7 @@ export function CanvasEditor({
             {!controlsOpen && notices && <div className="ce-stage-notices">{notices}</div>}
             <CanvasBoard
               doc={doc}
+              preview={preview}
               page={page}
               tool={tool}
               setTool={setTool}

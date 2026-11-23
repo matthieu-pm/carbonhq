@@ -44,6 +44,14 @@ pub enum CanvasCommand {
     Undo,
     /// Reapply the last undone CLI edit.
     Redo,
+    /// Show layer edits in the open frame before committing them together.
+    Preview {
+        /// Owning Carbon session. Defaults to the calling agent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        session: Option<String>,
+        #[cfg_attr(feature = "clap", command(subcommand))]
+        action: PreviewAction,
+    },
     /// Manage canvas pages.
     #[cfg_attr(feature = "clap", command(subcommand))]
     Page(PageAction),
@@ -68,6 +76,24 @@ pub enum CanvasCommand {
     /// Control the active canvas conversation.
     #[cfg_attr(feature = "clap", command(subcommand))]
     Chat(ChatAction),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::Subcommand))]
+#[serde(tag = "op", content = "args", rename_all = "kebab-case")]
+pub enum PreviewAction {
+    /// Read this session's draft, or the saved canvas before its first edit.
+    Read,
+    /// Preview a layer edit and return its layer ID.
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    Layer(LayerAction),
+    /// Preview a layer effect.
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    Effect(EffectAction),
+    /// Commit all pending preview edits as one undoable change.
+    Save,
+    /// Discard this session's unsaved preview.
+    Cancel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -561,6 +561,7 @@ pub async fn settle_dead_child(
     if replaced {
         return;
     }
+    crate::canvas_commands::retire_previews(session_id).await;
 
     let item = match get_session_index_item(session_id).await {
         Ok(Some(item)) => item,
@@ -2306,6 +2307,7 @@ impl SessionManager {
         #[cfg(any(feature = "serve", feature = "desktop"))]
         crate::headless::close_session(session_id);
         crate::share::close_session(session_id);
+        crate::canvas_commands::retire_previews(session_id).await;
         // Settled is done with, so the profile goes too: an unsettled session's
         // browser starts signed out. Both, whichever browser made one.
         #[cfg(all(feature = "cef", target_os = "macos"))]
@@ -3851,6 +3853,9 @@ async fn ingest_event(ctx: &Ingest<'_>, mut agent_event: AgentEvent, app: &Sink,
     // subagent's writes land after this, but its report-back turn closes
     // with its own, fresher snapshot.
     if let AgentEventPayload::TurnCompleted { ref mut head, .. } = agent_event.payload {
+        if agent_event.subagent.is_none() {
+            crate::canvas_commands::retire_previews(ctx.session_id).await;
+        }
         *head = crate::git::snapshot_tree(ctx.session_cwd).await;
     }
 

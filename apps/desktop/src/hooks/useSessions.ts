@@ -1,4 +1,4 @@
-import type { CanvasFile } from "./useCanvasLibrary";
+import { canvasPath, type CanvasFile } from "@/lib/canvasFile";
 import { displayPath, forgetSessionServer, invoke, listen, LOCAL, noteSession, qualify, serverOfPath, serverOfSession, type ServerId } from "@/lib/transport";
 import { mergeFrom, remoteServers, serverConnected, serverName, subscribeServers } from "@/lib/servers";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -1188,8 +1188,9 @@ const sendCanvasMessage = async (
     fast: item?.fast ?? fastFor(prefs.fast, harness, models, modelId),
     projectPath: project, useWorktree: !item && prefs.useWorktree, branch: item?.branch ?? null,
   };
-  const path = [displayPath(project), "canvases", file.folder, file.name + ".canvas.json"].filter(Boolean).join("/");
-  const prompt = !item || attachments.length ? message + "\n\nCanvas: " + path : message;
+  const path = displayPath(canvasPath(file));
+  const canvasTarget = JSON.stringify({ project: displayPath(project), folder: file.folder, canvas: file.name });
+  const prompt = `${message}\n\nCanvas: ${path}\nCarbon canvas target: ${canvasTarget}. For frame edits, use carbon canvas with these --project, --folder and --canvas values. Build the frame incrementally with preview layer and preview effect so the user sees each step. Finish with preview save, or preview cancel to discard.`;
   await handleSendMsg(prompt, attachments, null, { id, isNew: !item, pick });
 };
 

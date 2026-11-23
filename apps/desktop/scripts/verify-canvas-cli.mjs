@@ -20,6 +20,7 @@ const env = {
   CARBON_HOME: home,
   CARBON_ENDPOINT: path.join(home, "carbon.sock"),
   CARBON_NO_ANALYTICS: "1",
+  CARBON_SESSION_ID: "canvas-preview-test",
 };
 const child = spawn(server, ["--port", "0"], { env, stdio: "ignore" });
 const exited = new Promise((resolve) => child.once("exit", resolve));
@@ -66,6 +67,25 @@ try {
   assert.deepEqual(run(["layer", "presets"]).data.Phone["iPhone 16"], [393, 852]);
   run(["layer", "preset", frame, "iPhone 16"]);
   const text = id("layer", "add", "Text", page, "--parent", frame);
+  const beforePreview = run(["read"]);
+  const heading = id("preview", "layer", "add", "Text", page, "--parent", frame);
+  run(["preview", "layer", "text", heading, "Payment"]);
+  run(["preview", "effect", "add", heading, "Fill"]);
+  assert.equal(run(["preview", "read"]).data.elements.find(l => l.id === heading).text, "Payment");
+  assert.deepEqual(run(["read"]), beforePreview);
+  run(["preview", "--session", "another-agent", "cancel"], /another agent/i);
+  run(["preview", "save"]);
+  assert.equal(run(["read"]).data.elements.find(l => l.id === heading).text, "Payment");
+  run(["undo"]);
+  assert.deepEqual(run(["read"]), beforePreview);
+  run(["preview", "layer", "rename", frame, "Unsaved"]);
+  run(["preview", "cancel"]);
+  assert.deepEqual(run(["read"]), beforePreview);
+  run(["preview", "layer", "rename", frame, "Agent"]);
+  run(["layer", "rename", frame, "User"]);
+  run(["preview", "save"], /changed during preview/i);
+  run(["preview", "cancel"]);
+  assert.equal(run(["read"]).data.elements.find(l => l.id === frame).name, "User");
   run(["layer", "rename", text, "Label"]);
   run(["layer", "text", text, "Continue"]);
   run(["layer", "parent", text]);
@@ -125,7 +145,10 @@ try {
   assert.equal(layers.find((l) => l.id === frame).style.borderRadius, "24px");
   run(["layer", "style", frame, "madeUpStyle", "12px"], /unsupported/i);
   run(["view", "open"], /desktop window/i);
+  run(["preview", "layer", "rename", frame, "Before move"]);
   run(["move", "designs"]);
+  run(["preview", "save"], /unavailable|No such file/i);
+  run(["--folder", "designs", "preview", "save"], /no pending preview/i);
   run(["--folder", "designs", "archive"]);
   assert.equal(run(["list", "--archived"]).canvases[0].name, canvas);
   run(["--folder", "designs", "restore"]);

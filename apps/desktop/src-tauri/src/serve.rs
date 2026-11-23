@@ -1548,9 +1548,9 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         search_files(cwd: String, query: String, limit: usize) => files::search_files(cwd, query, limit).await;
         canvas_library(project_path: String) => crate::canvas_library::list(project_path).await;
         canvas_snapshot(png: String) => crate::attachments::canvas_snapshot(png).await.map_err(crate::Fail::from);
-        read_canvas_document(project_path: String, folder: String, name: String, archived: Option<bool>) => crate::canvas_library::read(project_path, folder, name, archived.unwrap_or(false)).await;
+        read_canvas_document(project_path: String, folder: String, name: String, archived: Option<bool>, include_preview: Option<bool>) => crate::canvas_commands::editor_document(project_path, folder, name, archived.unwrap_or(false), include_preview.unwrap_or(false)).await;
         save_canvas_document(project_path: String, folder: String, name: String, previous: String, content: String, archived: Option<bool>) => crate::canvas_library::save(project_path, folder, name, previous, content, archived.unwrap_or(false)).await;
-        change_canvas_library(project_path: String, action: crate::canvas_library::Action) => crate::canvas_library::change(project_path, action).await;
+        change_canvas_library(project_path: String, action: crate::canvas_library::Action) => crate::canvas_commands::change_library(project_path, action).await;
         list_dir(cwd: String, dir: String) => files::list_dir(cwd, dir).await;
         read_file(path: String) => read_file(&path).await;
         // Servers listening on *this* machine, which is the one a forwarded

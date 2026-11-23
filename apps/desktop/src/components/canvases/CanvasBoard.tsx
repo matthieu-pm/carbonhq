@@ -49,6 +49,7 @@ function degrees(value = "0deg") {
 }
 export function CanvasBoard({
   doc,
+  preview,
   page,
   selected,
   select,
@@ -59,6 +60,7 @@ export function CanvasBoard({
   session,
 }: {
   doc: Document;
+  preview: Document | null;
   page: Page;
   selected?: Layer;
   select: (id: string | null) => void;
@@ -74,6 +76,8 @@ export function CanvasBoard({
   const [drag, setDrag] = useState<Drag | null>(null);
   const [box, setBox] = useState<Box | null>(null);
   const layers = doc.elements.filter((l) => l.page === page.id);
+  // Pointer gestures edit saved layers even while the board is painting a draft.
+  const painted = preview ? preview.elements.filter(l => l.page === page.id) : layers;
   const find = (id: string | null) => layers.find((l) => l.id === id);
   function angle(id: string | null) {
     let sum = 0,
@@ -134,7 +138,7 @@ export function CanvasBoard({
     obs.observe(el);
     obs.observe(root);
     return () => obs.disconnect();
-  }, [doc, selected, view, drag]);
+  }, [doc, preview, selected, view, drag]);
   useEffect(() => {
     const root = board.current;
     if (!root) return;
@@ -257,7 +261,7 @@ export function CanvasBoard({
   }
   function render(l: Layer, flex: boolean): React.ReactNode {
     const g = geometry(l, drag),
-      children = layers.filter((c) => c.parent === l.id);
+      children = painted.filter((c) => c.parent === l.id);
     const style: CSSProperties = {
       ...layerAppearance({ ...l, style: g.style }, doc.tokens),
       position: flex ? "relative" : "absolute",
@@ -272,7 +276,7 @@ export function CanvasBoard({
       </div>
     );
   }
-  const roots = layers.filter((l) => !l.parent);
+  const roots = painted.filter((l) => !l.parent);
   return (
     <div
       ref={board}
@@ -311,7 +315,7 @@ export function CanvasBoard({
                 data-frame-label={l.id}
                 className="ce-frame-label"
                 style={{ left: g.x, top: g.y, transform: `scale(${1 / view.zoom}) translateY(-100%)` }}
-                onClick={() => select(l.id)}
+                onClick={() => { if (find(l.id)) select(l.id); }}
               >
                 {l.name}
               </button>
