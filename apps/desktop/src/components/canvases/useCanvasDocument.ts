@@ -10,21 +10,6 @@ import { readDocument, type CommentPin, type Document } from "./document";
 type Snapshot = { doc: Document | null; preview: Document | null; error: string; saving: boolean; conflict: boolean };
 const open = new Map<string, CanvasSession>();
 
-// Each viewer replaces its own file watch, including after a desktop restart or tab reload.
-function canvasWatchScope() {
-  const key = "carbon.canvas.watchScope";
-  try {
-    const storage = "__TAURI_INTERNALS__" in window ? window.localStorage : window.sessionStorage;
-    const previous = storage.getItem(key);
-    if (previous) return previous;
-    const scope = `canvas-${crypto.randomUUID()}`;
-    storage.setItem(key, scope);
-    return scope;
-  } catch {
-    return `canvas-${crypto.getRandomValues(new Uint32Array(2)).join("-")}`;
-  }
-}
-
 export class CanvasSession {
   private snapshot: Snapshot = { doc: null, preview: null, error: "", saving: false, conflict: false };
   private listeners = new Set<() => void>();
@@ -92,14 +77,13 @@ export class CanvasSession {
   }
   watchFile() {
     const path = canvasPath(this.file);
-    const scope = canvasWatchScope();
     let active = true;
     const refresh = () => {
       if (active && canvasPath(this.file) === path) void this.load(true);
     };
     const arm = async () => {
       if (!active) return;
-      await watchDocs(scope, [path]);
+      await watchDocs("canvas", [path]);
       refresh();
     };
     const changed = listen<string>("doc_changed", ({ payload }) => {
@@ -112,7 +96,7 @@ export class CanvasSession {
     void Promise.all([changed, reconnect]).then(arm);
     return () => {
       active = false;
-      void watchDocs(scope, []);
+      void watchDocs("canvas", []);
       void changed.then(off => off());
       void reconnect.then(off => off());
     };

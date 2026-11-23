@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
-    sync::LazyLock,
+    sync::{Arc, LazyLock},
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
@@ -227,14 +227,28 @@ async fn document(req: CanvasRequest, sink: &Sink) -> Result<Value> {
 }
 
 struct Draft {
-    sink: Sink,
-    owner: String,
     base: String,
     content: String,
 }
 
-static DRAFTS: LazyLock<Mutex<HashMap<CanvasKey, Draft>>> =
+struct PreviewSlot {
+    owner: String,
+    sink: Sink,
+    draft: Mutex<Option<Draft>>,
+}
+
+static DRAFTS: LazyLock<Mutex<HashMap<CanvasKey, Arc<PreviewSlot>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+async fn remove_slot(key: &CanvasKey, slot: &Arc<PreviewSlot>) {
+    let mut drafts = DRAFTS.lock().await;
+    if drafts
+        .get(key)
+        .is_some_and(|current| Arc::ptr_eq(current, slot))
+    {
+        drafts.remove(key);
+    }
+}
 
 fn preview_changed(key: &CanvasKey, sink: &Sink) -> Result<()> {
     sink.emit(
@@ -256,12 +270,17 @@ pub(crate) async fn editor_document(
     let key = (project, folder, name);
     let raw = library::read(key.0.clone(), key.1.clone(), key.2.clone(), archived).await?;
     let preview = if include_preview && !archived {
-        DRAFTS
-            .lock()
-            .await
-            .get(&key)
-            .filter(|draft| draft.base == raw)
-            .map(|draft| draft.content.clone())
+        let slot = DRAFTS.lock().await.get(&key).cloned();
+        match slot {
+            Some(slot) => slot
+                .draft
+                .lock()
+                .await
+                .as_ref()
+                .filter(|draft| draft.base == raw)
+                .map(|draft| draft.content.clone()),
+            None => None,
+        }
     } else {
         None
     };
@@ -276,13 +295,20 @@ pub(crate) async fn editor_document(
 
 /// A stopped or finished turn can no longer save its outstanding preview.
 pub(crate) async fn retire_previews(owner: &str) {
-    DRAFTS.lock().await.retain(|key, draft| {
-        if draft.owner != owner {
-            return true;
+    let owned: Vec<_> = DRAFTS
+        .lock()
+        .await
+        .iter()
+        .filter(|(_, slot)| slot.owner == owner)
+        .map(|(key, slot)| (key.clone(), slot.clone()))
+        .collect();
+    for (key, slot) in owned {
+        let mut draft = slot.draft.lock().await;
+        remove_slot(&key, &slot).await;
+        if draft.take().is_some() {
+            let _ = preview_changed(&key, &slot.sink);
         }
-        let _ = preview_changed(key, &draft.sink);
-        false
-    });
+    }
 }
 
 async fn preview(
@@ -293,66 +319,96 @@ async fn preview(
 ) -> Result<Value> {
     use carbon_proto::canvas::PreviewAction::*;
     let key = (req.project.clone(), req.folder.clone(), name(&req)?);
-    let mut drafts = DRAFTS.lock().await;
-    let draft = drafts.get(&key);
+    let slot = DRAFTS
+        .lock()
+        .await
+        .entry(key.clone())
+        .or_insert_with(|| {
+            Arc::new(PreviewSlot {
+                owner: owner.to_owned(),
+                sink: sink.clone(),
+                draft: Mutex::new(None),
+            })
+        })
+        .clone();
     ensure!(
-        draft.is_none_or(|d| d.owner == owner),
+        slot.owner == owner,
         "Another agent is previewing this canvas"
     );
-    if matches!(action, Cancel) {
-        if drafts.remove(&key).is_some() {
-            preview_changed(&key, sink)?;
+    let mut pending = slot.draft.lock().await;
+    ensure!(
+        DRAFTS
+            .lock()
+            .await
+            .get(&key)
+            .is_some_and(|current| Arc::ptr_eq(current, &slot)),
+        "Canvas preview ended. Read it again."
+    );
+    let result = async {
+        if matches!(action, Cancel) {
+            if pending.take().is_some() {
+                preview_changed(&key, sink)?;
+            }
+            return Ok(json!({"cancelled": true}));
         }
-        return Ok(json!({"cancelled": true}));
-    }
 
-    let saved = library::read(key.0.clone(), key.1.clone(), key.2.clone(), false).await?;
-    ensure!(
-        draft.is_none_or(|d| d.base == saved),
-        "Canvas changed during preview. Cancel the preview and read it again."
-    );
-    let raw = draft.map_or(&saved, |d| &d.content);
-    let current = revision(raw);
-    ensure!(
-        req.revision.as_ref().is_none_or(|r| r == &current),
-        "Canvas revision changed. Read it again."
-    );
-    req.command = match action {
-        Save => {
-            let draft = draft.context("No pending preview to save")?;
-            let mut history = HISTORY.lock().await;
-            commit(&mut history, &key, saved, draft.content.clone()).await?;
-            drafts.remove(&key);
-            sink.emit(
-                "canvas_changed",
-                json!({"project": key.0, "folder": key.1, "canvas": key.2}),
-            )?;
-            return Ok(json!({"revision": current}));
-        }
-        Read => Cmd::Read,
-        Layer(action) => Cmd::Layer(action),
-        Effect(action) => Cmd::Effect(action),
-        Cancel => unreachable!(),
-    };
-    let input = source(&req).await?;
-    let raw = raw.clone();
-    let result =
-        tokio::task::spawn_blocking(move || evaluate(&raw, &req.command, &input)).await??;
-    let mut next = current;
-    if let Some(content) = result.content {
-        next = revision(&content);
-        drafts.insert(
-            key.clone(),
-            Draft {
-                sink: sink.clone(),
-                owner: owner.to_owned(),
+        let draft = pending.as_ref();
+        let saved = library::read(key.0.clone(), key.1.clone(), key.2.clone(), false).await?;
+        ensure!(
+            draft.is_none_or(|d| d.base == saved),
+            "Canvas changed during preview. Cancel the preview and read it again."
+        );
+        let raw = draft.map_or(&saved, |d| &d.content);
+        let current = revision(raw);
+        ensure!(
+            req.revision.as_ref().is_none_or(|r| r == &current),
+            "Canvas revision changed. Read it again."
+        );
+        req.command = match action {
+            Save => {
+                let draft = draft.context("No pending preview to save")?;
+                let mut history = HISTORY.lock().await;
+                ensure!(
+                    DRAFTS
+                        .lock()
+                        .await
+                        .get(&key)
+                        .is_some_and(|current| Arc::ptr_eq(current, &slot)),
+                    "Canvas preview ended. Read it again."
+                );
+                commit(&mut history, &key, saved, draft.content.clone()).await?;
+                *pending = None;
+                sink.emit(
+                    "canvas_changed",
+                    json!({"project": key.0, "folder": key.1, "canvas": key.2}),
+                )?;
+                return Ok(json!({"revision": current}));
+            }
+            Read => Cmd::Read,
+            Layer(action) => Cmd::Layer(action),
+            Effect(action) => Cmd::Effect(action),
+            Cancel => unreachable!(),
+        };
+        let input = source(&req).await?;
+        let raw = raw.clone();
+        let result =
+            tokio::task::spawn_blocking(move || evaluate(&raw, &req.command, &input)).await??;
+        let mut next = current;
+        if let Some(content) = result.content {
+            next = revision(&content);
+            *pending = Some(Draft {
                 base: saved,
                 content,
-            },
-        );
-        preview_changed(&key, sink)?;
+            });
+            preview_changed(&key, sink)?;
+        }
+        Ok(json!({"revision": next, "data": result.data}))
     }
-    Ok(json!({"revision": next, "data": result.data}))
+    .await;
+    if pending.is_none() {
+        remove_slot(&key, &slot).await;
+    }
+    result
 }
 
 /// Retire a draft when its backing file moves, even if a new canvas later reuses that name.
@@ -371,12 +427,15 @@ pub(crate) async fn change_library(project: String, action: Action) -> Result<St
     let Some(key) = key else {
         return library::change(project, action).await;
     };
-    let mut drafts = DRAFTS.lock().await;
     let mut history = HISTORY.lock().await;
     let result = library::change(project, action).await?;
     history.retain(|edit| edit.key != key);
-    if let Some(draft) = drafts.remove(&key) {
-        preview_changed(&key, &draft.sink)?;
+    let slot = DRAFTS.lock().await.remove(&key);
+    drop(history);
+    if let Some(slot) = slot {
+        if slot.draft.lock().await.take().is_some() {
+            preview_changed(&key, &slot.sink)?;
+        }
     }
     Ok(result)
 }
@@ -547,15 +606,22 @@ mod preview_tests {
         for (name, owner) in [("Checkout", "owner-a"), ("Receipt", "owner-b")] {
             DRAFTS.lock().await.insert(
                 key(name),
-                Draft {
+                Arc::new(PreviewSlot {
                     sink: sink.clone(),
                     owner: owner.into(),
-                    base: String::new(),
-                    content: String::new(),
-                },
+                    draft: Mutex::new(Some(Draft {
+                        base: String::new(),
+                        content: String::new(),
+                    })),
+                }),
             );
         }
-        retire_previews("owner-a").await;
+        let other = DRAFTS.lock().await.get(&key("Receipt")).unwrap().clone();
+        let busy = other.draft.lock().await;
+        tokio::time::timeout(Duration::from_secs(2), retire_previews("owner-a"))
+            .await
+            .unwrap();
+        drop(busy);
         assert!(!DRAFTS.lock().await.contains_key(&key("Checkout")));
         assert!(DRAFTS.lock().await.contains_key(&key("Receipt")));
         assert_eq!(events.lock().unwrap()[0]["canvas"], "Checkout");

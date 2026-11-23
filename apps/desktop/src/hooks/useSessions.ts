@@ -842,7 +842,7 @@ const handleSendMsg = async (
   // Where a new session's worktree starts, from a draft `carbon draft new
   // --base` saved. Nothing in the composer sets one.
   baseRef: string | null = null,
-  target?: { id: string; isNew: boolean; pick: typeof composerPick },
+  target?: { id: string; isNew: boolean; pick: typeof composerPick; canvas?: CanvasFile },
 ): Promise<boolean> => {
   const { harness, modelId, effort, fast, permissionMode, projectPath, branch, useWorktree } = target?.pick ?? composerPick;
   const attachmentPaths = attachments.map((a) => a.path);
@@ -1010,7 +1010,12 @@ const handleSendMsg = async (
     // this one cannot overtake it.
     const outcome = await invoke<SendOutcome>("send_msg", {
       sessionId,
-      prompt: message,
+      // Older servers read only prompt and still need the canvas path.
+      prompt: target?.canvas ? message + "\n\nCanvas: " + displayPath(canvasPath(target.canvas)) : message,
+      canvasPrompt: target?.canvas && {
+        text: message,
+        target: { project: displayPath(target.canvas.project), folder: target.canvas.folder, canvas: target.canvas.name },
+      },
       attachmentPaths: sentPaths,
       harness,
       model: isAcp(harness) ? "" : modelId,
@@ -1188,10 +1193,7 @@ const sendCanvasMessage = async (
     fast: item?.fast ?? fastFor(prefs.fast, harness, models, modelId),
     projectPath: project, useWorktree: !item && prefs.useWorktree, branch: item?.branch ?? null,
   };
-  const path = displayPath(canvasPath(file));
-  const canvasTarget = JSON.stringify({ project: displayPath(project), folder: file.folder, canvas: file.name });
-  const prompt = `${message}\n\nCanvas: ${path}\nCarbon canvas target: ${canvasTarget}. For frame edits, use carbon canvas with these --project, --folder and --canvas values. Build the frame incrementally with preview layer and preview effect so the user sees each step. Finish with preview save, or preview cancel to discard.`;
-  await handleSendMsg(prompt, attachments, null, { id, isNew: !item, pick });
+  await handleSendMsg(message, attachments, null, { id, isNew: !item, pick, canvas: file });
 };
 
 // Takes back the newest prompt still waiting on the backend and hands its text

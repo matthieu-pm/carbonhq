@@ -128,6 +128,12 @@ pub fn watch_docs(app: Sink, scope: String, paths: Vec<String>) -> Result<(), St
         return Ok(());
     }
 
+    held.insert(scope, file_watcher(app, paths)?);
+    Ok(())
+}
+
+/// Keep the directory watches alive for as long as their viewer owns the handle.
+pub(crate) fn file_watcher(app: Sink, paths: Vec<String>) -> Result<RecommendedWatcher, String> {
     let (watched, dirs) = watch_targets(paths);
 
     let handle = app.clone();
@@ -155,8 +161,7 @@ pub fn watch_docs(app: Sink, scope: String, paths: Vec<String>) -> Result<(), St
             .map_err(|e| e.to_string())?;
     }
 
-    held.insert(scope, watcher);
-    Ok(())
+    Ok(watcher)
 }
 
 /// The files to recognise in an event, and the directories to watch to see one.

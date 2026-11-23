@@ -394,8 +394,8 @@ export function CanvasEditor({
           <div className="ce-stage">
             {!controlsOpen && notices && <div className="ce-stage-notices">{notices}</div>}
             <CanvasBoard
-              tree={tree}
-              scene={boardScene}
+              scene={scene}
+              agentScene={boardScene}
               graphics={renderer !== "DOM"}
               doc={doc}
               page={page}
@@ -406,7 +406,7 @@ export function CanvasEditor({
               camera={camera}
               session={session}
             />
-            {renderer === "Compare" && <CanvasBoard reference graphics={false} tree={tree} scene={boardScene}
+            {renderer === "Compare" && <CanvasBoard reference graphics={false} scene={scene} agentScene={boardScene}
               doc={doc} page={page} tool={tool} setTool={setTool} selected={selected} select={pick}
               camera={camera} session={session} />}
             <div className="ce-bottom">

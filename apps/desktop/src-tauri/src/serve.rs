@@ -1193,6 +1193,8 @@ async fn connection(
     // waiting on this host waits forever.
     let mut failed = None;
     let mut closed = replies.closed.subscribe();
+    // Only watch calls retain this handle, so disconnecting also drops an in-flight registration.
+    let canvas_watch = Arc::new(std::sync::Mutex::new(None));
     let calls = Arc::new(Semaphore::new(CLIENT_CALLS));
     loop {
         if *closed.borrow() { break; }
@@ -1230,10 +1232,11 @@ async fn connection(
         // Concurrently, as Tauri runs async commands: a send that spawns a
         // child must not hold a permission reply behind it.
         let (sink, replies) = (sink.clone(), replies.clone());
+        let watch = (call.cmd == "watch_docs").then(|| canvas_watch.clone());
         tokio::spawn(crate::analytics::CLIENT_COUNTS.scope(counts, async move {
             let _permit = permit;
             let args = tag_dictation(&call.cmd, call.args, island);
-            let reply = match dispatch(&call.cmd, args, sink).await {
+            let reply = match dispatch(&call.cmd, args, sink, watch).await {
                 Ok(ok) => {
                     if island {
                         island_used(&call.cmd);
@@ -1370,10 +1373,12 @@ async fn dispatch_mac(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value
     }
 }
 
+type CanvasWatch = Arc<std::sync::Mutex<Option<notify::RecommendedWatcher>>>;
+
 /// Every core command the desktop exposes, minus the ones that act on the
 /// server's own desktop: opening apps and terminals, and the pasteboard.
 /// Mac-only modules are not compiled here.
-async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
+async fn dispatch(cmd: &str, args: Value, sink: Sink, canvas_watch: Option<CanvasWatch>) -> Result<Value, Value> {
     #[cfg(feature = "desktop")]
     if matches!(
         cmd,
@@ -1420,13 +1425,13 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
         get_feature_flags() => ok(crate::settings::get_feature_flags().await);
         // Sessions.
         send_msg(
-            session_id: String, prompt: String, attachment_paths: Vec<String>,
+            session_id: String, prompt: String, canvas_prompt: Option<crate::CanvasPrompt>, attachment_paths: Vec<String>,
             harness: Harness, model: ModelId, effort: Option<Effort>,
             permission_mode: ApprovalPolicy, fast: bool, cwd: String,
             branch: Option<String>, use_worktree: bool, worktree_name: Option<String>,
             base_ref: Option<String>, is_new_session: bool,
         ) => crate::send_msg(
-            &session_id, &prompt, attachment_paths, harness, model, effort,
+            &session_id, &prompt, canvas_prompt, attachment_paths, harness, model, effort,
             permission_mode, fast, &cwd, branch.as_deref(), use_worktree,
             worktree_name.as_deref(), base_ref.as_deref(), is_new_session, sink,
         ).await;
@@ -1610,7 +1615,19 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink) -> Result<Value, Value> {
             let sink = sink.clone();
             // Synchronous and it joins a watcher thread on replace, so off
             // the runtime's workers — the desktop's `(async)` for the same reason.
-            tokio::task::spawn_blocking(move || crate::docs::watch_docs(sink, scope, paths))
+            tokio::task::spawn_blocking(move || {
+                if scope == "canvas" {
+                    if let Some(watch) = canvas_watch {
+                        *watch.lock().map_err(|err| err.to_string())? = if paths.is_empty() {
+                            None
+                        } else {
+                            Some(crate::docs::file_watcher(sink, paths)?)
+                        };
+                        return Ok(());
+                    }
+                }
+                crate::docs::watch_docs(sink, scope, paths)
+            })
                 .await
                 .unwrap_or_else(|e| Err(e.to_string()))
         };
@@ -2033,11 +2050,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn closing_one_canvas_watch_preserves_another_viewers_watch() {
+        let path = std::env::current_exe().unwrap();
+        let args = json!({ "scope": "canvas", "paths": [path] });
+        let first = CanvasWatch::default();
+        let second = CanvasWatch::default();
+        let sink = Sink::new(|_, _| {});
+        for watch in [&first, &second] {
+            dispatch("watch_docs", args.clone(), sink.clone(), Some(watch.clone())).await.unwrap();
+        }
+        dispatch("watch_docs", json!({ "scope": "canvas", "paths": [] }), sink, Some(first.clone())).await.unwrap();
+        assert!(first.lock().unwrap().is_none());
+        assert!(second.lock().unwrap().is_some());
+        assert_eq!(Arc::strong_count(&second), 1);
+    }
+
+    #[tokio::test]
     async fn unknown_and_malformed_commands_answer_err() {
         let sink = Sink::new(|_, _| {});
-        let err = dispatch("browser_open", Value::Null, sink.clone()).await.unwrap_err();
+        let err = dispatch("browser_open", Value::Null, sink.clone(), None).await.unwrap_err();
         assert_eq!(err, json!("unknown command browser_open"));
-        let err = dispatch("stop_task", json!({ "sessionId": 1 }), sink).await.unwrap_err();
+        let err = dispatch("stop_task", json!({ "sessionId": 1 }), sink, None).await.unwrap_err();
         assert!(err.as_str().unwrap().starts_with("invalid arguments to stop_task"));
     }
 }

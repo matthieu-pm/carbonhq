@@ -79,6 +79,9 @@ pub struct QueuedMessage {
     /// The raw prompt. Attachments are resolved at flush rather than now, so
     /// what the composer gets back on a cancel is what the user typed.
     pub text: String,
+    #[serde(skip)]
+    #[ts(skip)]
+    pub canvas_target: Option<String>,
     pub attachment_paths: Vec<String>,
     /// Held with the prompt rather than looked up at flush: a relayed message
     /// can wait out a long turn, and the sending session may be renamed or
@@ -757,6 +760,7 @@ impl SessionManager {
         &self,
         session_id: &str,
         prompt: &str,
+        canvas_target: Option<&str>,
         // Absolute paths of what the composer had attached. Re-read here rather
         // than uploaded: the frontend holds a thumbnail, not bytes.
         attachment_paths: &[String],
@@ -809,7 +813,7 @@ impl SessionManager {
         app: &Sink,
     ) -> Result<SendOutcome> {
         self.send_msg_inner(
-            session_id, prompt, attachment_paths, issue_ids, harness, model, effort,
+            session_id, prompt, canvas_target, attachment_paths, issue_ids, harness, model, effort,
             permission_mode, fast, cwd, branch, use_worktree, worktree_name, base_ref,
             is_new_session, parent_session_id, hidden, title, from, claim_continue, app,
             None, None,
@@ -821,6 +825,7 @@ impl SessionManager {
         &self,
         session_id: &str,
         prompt: &str,
+        canvas_target: Option<&str>,
         attachment_paths: &[String],
         issue_ids: &[String],
         harness: Harness,
@@ -1153,7 +1158,7 @@ impl SessionManager {
             // project's anyway.
             let mcp_servers = crate::mcp_mentions::mentioned(harness, spawn_cwd, prompt).await;
             if let Err(error) = session
-                .send_msg(prompt, attachment_paths, issues, &mcp_servers, baseline, from, None, app)
+                .send_msg(prompt, attachment_paths, issues, &mcp_servers, canvas_target, baseline, from, None, app)
                 .await
             {
                 // Nothing has this session yet — it is inserted below — so
@@ -1405,7 +1410,7 @@ impl SessionManager {
                 // nothing for Carbon's queue to do here and no boundary for it to
                 // race for — whether or not a tool happens to be running now.
                 if matches!(s.stdin, Transport::Pi(_) | Transport::Grok(_)) {
-                    s.steer(prompt, attachment_paths, issues, mcp_servers, from, app).await?;
+                    s.steer(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app).await?;
                     return Ok(SendOutcome {
                         issues: linked,
                         ..Default::default()
@@ -1435,7 +1440,7 @@ impl SessionManager {
                         });
                     }
                     if let Some(queued) = s
-                        .queue_if_in_flight(prompt, attachment_paths, issues, mcp_servers, from.clone(), app)
+                        .queue_if_in_flight(prompt, attachment_paths, issues, mcp_servers, canvas_target, from.clone(), app)
                         .await
                     {
                         return Ok(SendOutcome {
@@ -1455,7 +1460,7 @@ impl SessionManager {
                     }
                 } else {
                     if tool_in_flight {
-                        s.queue_and_flush(prompt, attachment_paths, issues, mcp_servers, from, app)
+                        s.queue_and_flush(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app)
                             .await;
                         return Ok(SendOutcome {
                             issues: linked,
@@ -1463,7 +1468,7 @@ impl SessionManager {
                         });
                     }
 
-                    let queued = s.queue_msg(prompt, attachment_paths, issues, mcp_servers, from, app).await;
+                    let queued = s.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app).await;
                     return Ok(SendOutcome {
                         snapshot: None,
                         queued: Some(queued),
@@ -1476,7 +1481,7 @@ impl SessionManager {
             // but alive, so the narrower the gap the less of the user's own
             // editing lands on the turn's side of the diff.
             let baseline = git::snapshot_tree(&session_cwd).await;
-            s.send_msg(prompt, attachment_paths, issues, mcp_servers, baseline, from, dispatch.as_deref_mut(), app)
+            s.send_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, baseline, from, dispatch.as_deref_mut(), app)
                 .await?;
             return Ok(SendOutcome {
                 issues: linked,
@@ -1579,7 +1584,7 @@ impl SessionManager {
         }
 
         if let Err(error) = session
-            .send_msg(prompt, attachment_paths, issues, mcp_servers, baseline, from, dispatch.as_deref_mut(), app)
+            .send_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, baseline, from, dispatch.as_deref_mut(), app)
             .await
         {
             // Same reason as the creation path above: the insert is below, so
@@ -1670,7 +1675,7 @@ impl SessionManager {
         let prompt = dispatch.prompt().to_owned();
         let from = dispatch.sender().cloned();
         self.send_msg_inner(
-            &id, &prompt, &[], &[], target.harness, target.model, target.effort,
+            &id, &prompt, None, &[], &[], target.harness, target.model, target.effort,
             target.permission_mode, target.fast, &target.cwd, None, false, None, None,
             false, None, false, None, from, None, app, Some(locked), Some(dispatch),
         ).await?;
@@ -1957,7 +1962,7 @@ impl SessionManager {
             unreachable!()
         };
         let mcp_servers = crate::mcp_mentions::mentioned(item.harness, &item.cwd, prompt).await;
-        session.send_msg(prompt, &[], issues, &mcp_servers, Some(plan.baseline), None, None, app).await
+        session.send_msg(prompt, &[], issues, &mcp_servers, None, Some(plan.baseline), None, None, app).await
             .context("The old turn was rewound, but the revised prompt could not be sent. Your edit is preserved")?;
         let replacement = list_session_events(session_id)
             .await?
@@ -2748,6 +2753,7 @@ impl Session {
         attachment_paths: &[String],
         issues: &[IssueRef],
         mcp_servers: &[String],
+        canvas_target: Option<&str>,
         baseline: Option<String>,
         from: Option<MessageSender>,
         mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
@@ -2760,6 +2766,7 @@ impl Session {
             attachment_paths,
             issues,
             mcp_servers,
+            canvas_target,
             baseline.clone(),
             false,
             crate::harness::pi::Delivery::WhenIdle,
@@ -2783,6 +2790,7 @@ impl Session {
         // the baseline: nothing ran, so the changes panel reads the turn as
         // having changed nothing rather than diffing it against "now".
         if !runs {
+            crate::canvas_commands::retire_previews(&self.id).await;
             let closed = AgentEvent::mint(
                 self.id.clone(),
                 self.harness,
@@ -2828,6 +2836,7 @@ impl Session {
         attachment_paths: &[String],
         issues: &[IssueRef],
         mcp_servers: &[String],
+        canvas_target: Option<&str>,
         from: Option<MessageSender>,
         app: &Sink,
     ) -> QueuedMessage {
@@ -2835,6 +2844,7 @@ impl Session {
             id: Uuid::now_v7().to_string(),
             session_id: self.id.clone(),
             text: prompt.to_string(),
+            canvas_target: canvas_target.map(str::to_owned),
             attachment_paths: attachment_paths.to_vec(),
             from,
             issues: issues.to_vec(),
@@ -2867,6 +2877,7 @@ impl Session {
         attachment_paths: &[String],
         issues: &[IssueRef],
         mcp_servers: &[String],
+        canvas_target: Option<&str>,
         from: Option<MessageSender>,
         app: &Sink,
     ) -> Option<QueuedMessage> {
@@ -2874,7 +2885,7 @@ impl Session {
         if !_turn.turn_in_flight() {
             return None;
         }
-        Some(self.queue_msg(prompt, attachment_paths, issues, mcp_servers, from, app).await)
+        Some(self.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app).await)
     }
 
     /// Takes back the newest held prompt, newest-first because that is the one
@@ -2916,6 +2927,7 @@ impl Session {
         attachment_paths: &[String],
         issues: &[IssueRef],
         mcp_servers: &[String],
+        canvas_target: Option<&str>,
         from: Option<MessageSender>,
         app: &Sink,
     ) -> Result<()> {
@@ -2926,6 +2938,7 @@ impl Session {
             attachment_paths,
             issues,
             mcp_servers,
+            canvas_target,
             // No baseline, for the reason a flushed prompt has none: the
             // changes panel pairs the newest baseline with the newest head
             // after it, so a snapshot taken mid-turn would cut the running
@@ -2972,10 +2985,11 @@ impl Session {
         attachment_paths: &[String],
         issues: &[IssueRef],
         mcp_servers: &[String],
+        canvas_target: Option<&str>,
         from: Option<MessageSender>,
         app: &Sink,
     ) {
-        self.queue_msg(prompt, attachment_paths, issues, mcp_servers, from, app).await;
+        self.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app).await;
         flush_queued(
             &self.id,
             self.harness,
@@ -3606,6 +3620,7 @@ async fn deliver_prompt(
     // The `$` mentions that matched. Their note goes to the child and not to
     // the event, unlike `issues` — see [`crate::mcp_mentions`].
     mcp_servers: &[String],
+    canvas_target: Option<&str>,
     baseline: Option<String>,
     queued: bool,
     // Where this lands on a harness that can take a prompt into a turn already
@@ -3630,6 +3645,10 @@ async fn deliver_prompt(
     let prepared = attachments::prepare(session_id, prompt, attachment_paths, harness).await?;
     let text = prepared.text;
     let sent = crate::mcp_mentions::with_hint(&text, mcp_servers);
+    let sent = match canvas_target {
+        Some(target) => format!("{sent}\n\nCarbon canvas target: {target}. Use carbon canvas with these --project, --folder and --canvas values. For frame edits, use preview layer and preview effect so the user sees each step. Finish with preview save, or preview cancel to discard."),
+        None => sent,
+    };
     let sent = crate::issues::drafting::with_context(session_id, &sent).await.map_err(anyhow::Error::msg)?;
 
     let sent = match dispatch.as_ref() {
@@ -4406,6 +4425,7 @@ async fn flush_one_per_turn(
                 &message.attachment_paths,
                 &message.issues,
                 &message.mcp_servers,
+                message.canvas_target.as_deref(),
                 // No baseline, for `deliver_batch`'s reason.
                 None,
                 true,
@@ -4480,6 +4500,7 @@ async fn deliver_batch(
             &message.attachment_paths,
             &message.issues,
             &message.mcp_servers,
+            message.canvas_target.as_deref(),
             None,
             true,
             // A flush runs at a boundary, so there is no turn to steer into.

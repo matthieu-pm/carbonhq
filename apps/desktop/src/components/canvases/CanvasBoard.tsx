@@ -1,3 +1,4 @@
+import { flushSync } from "react-dom";
 import { commitPreview } from "./geometryPreview";
 import { editLayer } from "./layerEdit";
 import {
@@ -29,7 +30,6 @@ import {
   previewGeometry,
   type Bounds,
   type GraphicsScene,
-  type PageLayers,
   type PaintItem,
   type PaintGroup,
 } from "./graphicsScene";
@@ -68,8 +68,8 @@ function degrees(value = "0deg") {
   return n;
 }
 export function CanvasBoard({
-  tree,
-  scene,
+  scene: savedScene,
+  agentScene,
   graphics,
   reference = false,
   doc,
@@ -81,7 +81,7 @@ export function CanvasBoard({
   camera,
   session,
 }: {
-  tree: PageLayers;
+  agentScene: GraphicsScene;
   scene: GraphicsScene;
   graphics: boolean;
   reference?: boolean;
@@ -98,6 +98,9 @@ export function CanvasBoard({
   const board = useRef<HTMLDivElement>(null);
   const gesture = useRef<Drag | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [measuring, setMeasuring] = useState(false);
+  const scene = measuring || drag ? savedScene : agentScene;
+  const tree = savedScene.tree;
   const [box, setBox] = useState<Box | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {
@@ -286,6 +289,8 @@ export function CanvasBoard({
     if (!draw) select(layer?.id ?? null);
     if (!draw && !corner && (!layer || find(layer.parent)?.style.display === "flex")) return;
     const parent = draw ? (hit?.kind === "Frame" ? hit.id : (hit?.parent ?? null)) : (layer?.parent ?? null);
+    // Measure the saved layout so an editor gesture cannot commit an agent's draft dimensions.
+    if (scene !== savedScene) flushSync(() => setMeasuring(true));
     const parentEl = parent && node(parent),
       parentAngle = angle(parent);
     let local = { x: (e.clientX - r.left - view.x) / view.zoom, y: (e.clientY - r.top - view.y) / view.zoom };
@@ -304,11 +309,11 @@ export function CanvasBoard({
       };
     }
     if (parent && !parentEl) {
-      const b = scene.byId.get(parent)?.layout;
+      const b = savedScene.byId.get(parent)?.layout;
       if (b) local = { x: point.x - b.x, y: point.y - b.y };
     }
     const el = layer && node(layer.id);
-    const bounds = layer && scene.byId.get(layer.id)?.layout;
+    const bounds = layer && savedScene.byId.get(layer.id)?.layout;
     const g: Drag = {
       pointer: e.pointerId,
       start: { x: e.clientX, y: e.clientY },
@@ -325,6 +330,7 @@ export function CanvasBoard({
     root.setPointerCapture(e.pointerId);
     gesture.current = g;
     setDrag(g);
+    setMeasuring(false);
     e.preventDefault();
   }
   function move(e: PointerEvent<HTMLDivElement>) {
@@ -523,7 +529,7 @@ export function CanvasBoard({
         <DragGeometry.Provider value={drag}>{world}</DragGeometry.Provider>
         <div ref={labelContainer}>
           {labels.map((l) => {
-            const g = geometry(l, drag);
+            const g = geometry(scene.tree.byId.get(l.id) ?? l, drag);
             return (
               <button
                 key={l.id}
