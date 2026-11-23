@@ -79,7 +79,6 @@ import { prTabVisible, usePullRequest } from "@/hooks/usePullRequest";
 import RightPanel, {
   MountOnce,
   PANEL_LABELS,
-  PanelActions,
   PanelToggle,
   TabBody,
   tabOrder,
@@ -1401,7 +1400,7 @@ function App() {
   // The counter brings the view forward; the active path is what ⌘W closes.
   // Which files are open past that is the view's own business, where a doc's
   // tab row has to exist in the panel before the panel is drawn.
-  const { opened: filesOpened, active: activeFile, open: openFiles } = useOpenFiles(selectedSessionId);
+  const { opened: filesOpened, active: activeFile } = useOpenFiles(selectedSessionId);
   const hasDocsTab = docs.length > 0;
   // Read here for the PR tab's reason too: the row has to know the tab exists
   // before the panel draws it, and the card's "View plan" button opens it.
@@ -2854,6 +2853,11 @@ function App() {
   const shownSession =
     selectedSession ?? sessionIndexItems.find((i) => i.sessionId === selectedSessionId) ?? null;
   const terminalSession = !designOpen && !issuesOpen && !spacesOpen && !settingsOpen ? shownSession?.sessionId : null;
+  const toolButton = (tab: PanelTab) => (
+    <HeaderIconButton key={tab} label={PANEL_LABELS[tab]} expanded={visibleTool(tab)} onClick={() => showPanel(tab)}>
+      <SessionToolIcon tab={tab} className="size-4" />
+    </HeaderIconButton>
+  );
   const [sideRail, setSideRail] = useState<HTMLDivElement | null>(null);
   const [sideHost, setSideHost] = useState<HTMLDivElement | null>(null);
   const showTerminal = () => changeDock((d) => ({ ...d, terminals: true, active: "terminal" }));
@@ -3303,16 +3307,7 @@ function App() {
               <HeaderIconButton label="Terminal" shortcut="terminal.toggle" expanded={dock.active === "terminal" || !!fullTerminal} onClick={toggleTerminal}>
                 <TerminalOutline18 className="size-4" />
               </HeaderIconButton>
-              {tabs.filter((tab) => tab !== "changes").map((tab) => (
-                <HeaderIconButton
-                  key={tab}
-                  label={PANEL_LABELS[tab]}
-                  expanded={visibleTool(tab)}
-                  onClick={() => showPanel(tab)}
-                >
-                  <SessionToolIcon tab={tab} className="size-4" />
-                </HeaderIconButton>
-              ))}
+              {tabs.filter((tab) => tab !== "changes" && tab !== "more").map(toolButton)}
             </div>
           )}
           {canvasEditorOpen && canvasDock && (
@@ -3345,23 +3340,16 @@ function App() {
                 </>
               )
             : shownSession ? (
-                <>
-                  <PanelActions
-                    // In the Files view alone: the file on screen, or the
-                    // session's directory where no file is open.
-                    refresh={panelRefresh}
-                    cwd={viewTab === "files" || panelShown || fullTool ? shownSession.cwd : null}
-                    file={fileShown ? openFiles.find((f) => f.path === activeFile) : undefined}
-                  />
+                <div className="-ml-1.5 flex shrink-0 items-center gap-0.5">
                   {viewTab === "chat" && <PinnedSummaryToggle
-                    className="-ml-1.5"
                     open={summaryShown}
                     onToggle={summary.toggle}
                     popover={summary.mode === "popover" ? summaryCard : undefined}
                     onOpenChange={summary.setOpen}
                     boundary={summary.canvas}
                   />}
-                </>
+                  {terminalSession && hasMoreTab && toolButton("more")}
+                </div>
               ) : null}
         </WindowToolbar>
         {(canvasChatVisible || (terminalSession && dock.active)) && (
@@ -3373,7 +3361,7 @@ function App() {
       }
       terminal={terminalSession && (dock.active || dock.fullTerminals.length > 0) && <Suspense fallback={null}>
         <TerminalPane key={terminalSession} sessionId={terminalSession} hide={hideDock}
-          sideOpen={!!dock.active} fullHost={fullTerminalHost} fullId={fullTerminal?.id}
+          refresh={panelRefresh} sideOpen={!!dock.active} fullHost={fullTerminalHost} fullId={fullTerminal?.id}
           fullTabs={dock.fullTerminals} controls={terminalControls} expandTerminal={expandTerminal}
           rail={sideRail} contentHost={setSideHost} views={dock.side}
           selectedView={dock.active === "terminal" ? null : dock.active} terminals={dock.terminals}
