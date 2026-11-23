@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Maximize, Minimize, Scan, ZoomOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, Maximize, Minimize, RotateCcw, Scan, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DownloadButton } from "@/components/DownloadButton";
 import { Hero } from "@/components/illustrations/Hero";
@@ -10,6 +10,8 @@ import { AgentPicker, DesignSurface } from "./Scenes";
 import styles from "./presentation.module.css";
 
 const chapters = [
+  { id: "opening", name: "Intro", title: "Meet Carbon.",
+    description: "A workspace for coding, design, and the agents you already use.", focus: "window" },
   { id: "intro", name: "Carbon", title: "Your agents. One place to build.",
     description: "Run coding agents side by side. Explore Carbon from inside the workspace.", focus: "window" },
   { id: "agents", name: "Agents", title: "Bring your own agent.",
@@ -20,6 +22,8 @@ const chapters = [
     description: "Choose Comment in the canvas toolbar, then pin feedback on the welcome screen.", focus: "canvas" },
   { id: "remote", name: "Run Carbon", title: "Your agents, on your machines.",
     description: "Sessions can run on this Mac or on a Linux server you connect over SSH.", focus: "local" },
+  { id: "outro", name: "Outro", title: "Make something with Carbon.",
+    description: "Bring your agents. Open a project. Start building.", focus: "window" },
 ] as const;
 
 type Chapter = (typeof chapters)[number];
@@ -103,18 +107,31 @@ export function Presentation() {
   const coding = useRef<HTMLDivElement>(null);
   const design = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLDivElement>(null);
+  const route = useRef<HTMLElement>(null);
   const animation = useRef<Animation | null>(null);
   const viewedSize = useRef<Size | null>(null);
   const chapter = chapters[index];
   const focus = chapter.focus;
+  const bookend = chapter.id === "opening" || chapter.id === "outro" ? chapter.id : undefined;
 
   const go = useCallback((next: number) => {
     if (!chapters[next]) return;
     setOverview(false);
     if (next !== index) {
+      setTraveling(true);
       window.history.pushState(null, "", `#${chapters[next].id}`);
       setIndex(next);
     }
+  }, [index]);
+
+  function goToChapter(id: Chapter["id"]) {
+    go(chapters.findIndex((item) => item.id === id));
+  }
+
+  useEffect(() => {
+    const navigation = route.current;
+    if (!navigation || navigation.scrollWidth <= navigation.clientWidth) return;
+    navigation.querySelector('[aria-current="step"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [index]);
 
   useLayoutEffect(() => {
@@ -179,7 +196,11 @@ export function Presentation() {
       }
       const frame = frameFor(surface, focus, narrow);
       const align = narrow ? 0.5 : focus === "canvas" ? 0.4 : focus === "pr" || focus === "local" ? 0.67 : 0.5;
-      const destination = overview || !frame || focus === "window" ? full : frameCamera(size, frame, narrow ? 14 : 30, align);
+      let destination = overview || !frame || focus === "window" ? full : frameCamera(size, frame, narrow ? 14 : 30, align);
+      if (bookend) {
+        destination = frameCamera(size, wholeWindow, narrow ? 10 : 8, bookend === "opening" && !narrow ? 0.74 : 0.5);
+        destination.y += narrow ? size.height * 0.17 : 12;
+      }
       await move(destination, 780);
       if (canceled) return;
       setReady(true);
@@ -192,7 +213,7 @@ export function Presentation() {
       canceled = true;
       cancelAnimationFrame(frameId);
     };
-  }, [focus, overview, size]);
+  }, [bookend, focus, overview, size]);
 
   useEffect(() => {
     const syncChapter = () => {
@@ -241,7 +262,7 @@ export function Presentation() {
   }
 
   return (
-    <div ref={shell} className={styles.shell} data-scheme="dark">
+    <div ref={shell} className={styles.shell} data-scheme="dark" data-bookend={bookend}>
       <header className={styles.header}>
         <a href="/" className={styles.brand} aria-label="Carbon website"><Wordmark /></a>
         <div className={styles.toolbar}>
@@ -257,27 +278,50 @@ export function Presentation() {
         </div>
       </header>
 
-      <section className={styles.caption} aria-live="polite">
+      <section className={styles.caption} aria-live="polite" aria-hidden={!!bookend}>
         <div><h1>{chapter.title}</h1><p>{chapter.description}</p></div>
         {focus === "local" && <DownloadButton className={styles.download} />}
       </section>
 
-      <main ref={viewport} className={styles.viewport} aria-label="Carbon workspace preview" aria-busy={traveling}>
+      <main ref={viewport} className={styles.viewport} aria-label="Carbon workspace preview" aria-busy={traveling} aria-hidden={!!bookend}>
         <div ref={world} className={styles.world} data-ready={ready} style={{ width: wholeWindow.width, height: wholeWindow.height }}>
           <div ref={coding} data-surface="coding" className={styles.surface} data-active={workspace === "coding"}
-            inert={traveling || workspace !== "coding"} aria-hidden={traveling || workspace !== "coding"}>
-            <Hero onWorkspaceChange={(next) => { if (next === "Design") go(3); }}
+            inert={!!bookend || traveling || workspace !== "coding"} aria-hidden={traveling || workspace !== "coding"}>
+            <Hero onWorkspaceChange={(next) => { if (next === "Design") goToChapter("design"); }}
               presentation={{ focus: codingFocus, modelPicker: <AgentPicker key={codingFocus} initiallyOpen={codingFocus === "agents"} /> }} />
           </div>
           <div ref={design} data-surface="design" className={styles.surface} data-active={workspace === "design"}
-            inert={traveling || workspace !== "design"} aria-hidden={traveling || workspace !== "design"}>
-            <DesignSurface onCoding={() => go(2)} />
+            inert={!!bookend || traveling || workspace !== "design"} aria-hidden={traveling || workspace !== "design"}>
+            <DesignSurface onCoding={() => goToChapter("coding")} />
           </div>
         </div>
       </main>
 
+      {bookend && (
+        <section key={bookend} data-variant={bookend} className={styles.cover} aria-labelledby="presentation-cover-title">
+          <div className={styles.coverContent}>
+            <h1 id="presentation-cover-title">{chapter.title}</h1>
+            <p>{chapter.description}</p>
+            <div className={styles.coverActions}>
+              {bookend === "opening" ? (
+                <button type="button" className={styles.download} onClick={() => goToChapter("intro")}>
+                  Start presentation <ArrowRight aria-hidden="true" />
+                </button>
+              ) : (
+                <>
+                  <DownloadButton className={styles.download} />
+                  <button type="button" className={styles.replay} onClick={() => goToChapter("opening")}>
+                    <RotateCcw aria-hidden="true" /> Replay
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       <footer className={styles.footer}>
-        <nav className={styles.route} aria-label="Presentation chapters">
+        <nav ref={route} className={styles.route} aria-label="Presentation chapters">
           {chapters.map(({ id, name }, item) => (
             <button type="button" key={id} aria-current={index === item ? "step" : undefined}
               onClick={() => go(item)}><span aria-hidden />{name}</button>
