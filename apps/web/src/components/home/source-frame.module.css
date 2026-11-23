@@ -118,6 +118,11 @@
   animation: rule-across 1200ms 1000ms cubic-bezier(.22,.7,.25,1) both;
 }
 
+.top .scale {
+  align-items: flex-end;
+  padding-bottom: 8px;
+}
+
 .mark {
   flex: 0 0 100px;
   padding-left: 3px;
