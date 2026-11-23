@@ -300,6 +300,7 @@ function App() {
     setUseWorktree,
     handleSendMsg,
     sendCanvasMessage,
+    canvasModelFor,
     handleInterrupt,
     handleStopTask,
     queuedMessages,
@@ -812,7 +813,10 @@ function App() {
     target: canvasComposerKey ?? composerKey,
     onText: (text, session) => {
       appendToDraft(session, text);
-      if (session === canvasComposerKey) return focusCanvasComposer();
+      if (canvasComposerKey) {
+        if (session === canvasComposerKey) focusCanvasComposer();
+        return;
+      }
       // Straight back to typing: the words landed in a draft the reader is
       // most likely about to add to or send. Only where they are still looking
       // at the session they spoke into — a dictation outlives the screen it
@@ -835,7 +839,7 @@ function App() {
   // settings, which is the answer the reader needs rather than a dead key.
   // Off for a remote session, like every Mac-only feature.
   const dictationServer = canvasFile && canvasComposerKey ? serverOfPath(canvasFile.project) : activeServer;
-  useHotkey("dictate", () => void recorder.toggle(), { platformOnly: true, enabled: dictationServer === LOCAL });
+  useHotkey("dictate", () => void recorder.toggle(), { platformOnly: true, enabled: dictationServer === LOCAL, page: !!canvasComposerKey });
 
   const [worktreePrompt, setWorktreePrompt] = useState<WorktreePrompt | null>(null);
 
@@ -903,11 +907,11 @@ function App() {
       subject: title,
     });
   };
-  const setViewTab = (tab: ViewTab) => {
+  const setViewTab = useCallback((tab: ViewTab) => {
     if (selectedSessionId || tab === "chat" || tab === "browser") {
       setViewTabs((prev) => ({ ...prev, [browserSessionId]: tab }));
     }
-  };
+  }, [selectedSessionId, browserSessionId]);
 
   // Themes and Shiki's engine are shared by every code surface, so they load
   // once here instead of on the first diff the user happens to open.
@@ -2014,6 +2018,11 @@ function App() {
     return () => setLinkOpener(null);
   }, [selectedSessionId, navGen, setError]);
 
+  const openBrowserChat = useCallback(() => {
+    setViewTab("chat");
+    focusComposerOnMount();
+  }, [setViewTab]);
+
   // An element picked in the page lands in that session's draft, and the
   // composer is brought on screen to show it — off the full view and onto
   // Chat, since the composer is hidden there.
@@ -2023,11 +2032,10 @@ function App() {
       const active = sessionId === browserSessionId;
       appendToDraft(active ? composerKey : sessionId, describePick(element));
       if (!active) return;
-      if (viewTab === "browser") setViewTab("chat");
-      focusComposerOnMount();
+      openBrowserChat();
     });
     return () => setPickHandler(null);
-  }, [browserSessionId, composerKey, viewTab, setViewTab]);
+  }, [browserSessionId, composerKey, openBrowserChat]);
 
   // Every way of arriving at a session, so none of them can forget to leave the
   // issues page. The two sidebar buttons closed it and the chords beside them
@@ -3000,12 +3008,13 @@ function App() {
       file={canvasFile}
       dock={canvasDock}
       items={canvasItems}
+      modelTakesImages={canvasModelFor(serverOfPath(canvasFile.project), canvasItems.find(i => i.sessionId === canvasTab.id)).model?.acceptsImages ?? true}
       busy={paneState(canvasDock.active).busy}
       send={(text, attachments) => sendFromCanvas(text, undefined, attachments)}
       onStop={() => invoke("interrupt_session", { sessionId: canvasDock.active }, serverOfPath(canvasFile.project))}
       onOpenInTasks={canvasTab.draft ? undefined : () => goToSession(() => void handleSelectSessionIndexItem(canvasTab.id))}
       dictation={dictationServer === LOCAL && dictateControl}
-      dictating={recorder.state !== "idle"}
+      dictating={dictationServer === LOCAL && recorder.state !== "idle"}
       onCancelRecording={cancelRecording}
       appError={error}
       onDismissAppError={() => setError(null)}
@@ -3776,7 +3785,7 @@ function App() {
           <SessionToolBody side={dock.active === "browser" ? sideHost : null} full={false}>
             <Suspense fallback={null}><BrowserPane sessionId={browserSessionId}
               active={sessionToolsVisible && dock.active === "browser" && !fullBrowserOpen} mode="panel"
-              onChat={focusComposer} /></Suspense>
+              onChat={openBrowserChat} /></Suspense>
           </SessionToolBody>
         )}
         {[...dock.side, ...dock.full].map((tab) => {
@@ -3814,11 +3823,7 @@ function App() {
             sessionId={browserSessionId}
             active={fullBrowserOpen}
             mode="full"
-            // The composer is hidden under the full view, so Chat leaves it.
-            onChat={() => {
-              setViewTab("chat");
-              focusComposerOnMount();
-            }}
+            onChat={openBrowserChat}
           />
         </MountOnce>
       </TabBody>

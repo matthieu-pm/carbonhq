@@ -77,6 +77,7 @@ function Demo() {
       file={file}
       dock={dock}
       items={sessions}
+      modelTakesImages
       busy={busy}
       send={async (text, attachments) => {
         await new Promise((r) => setTimeout(r, 600));

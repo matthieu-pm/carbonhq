@@ -33,6 +33,7 @@ import {
   pickAttachments,
   readAttachments,
   removeAttachment,
+  sendWithAttachments,
   useAttachments,
 } from "@/hooks/useAttachments";
 import { readDraft, useDraft } from "@/hooks/useDraft";
@@ -62,6 +63,7 @@ export function CanvasComposer({
   file,
   dock,
   items,
+  modelTakesImages,
   busy,
   send,
   onStop,
@@ -75,6 +77,7 @@ export function CanvasComposer({
   file: CanvasFile;
   dock: CanvasChatDock;
   items: SessionIndexItem[];
+  modelTakesImages: boolean;
   busy: boolean;
   send: (text: string, attachments: Attachment[]) => Promise<void>;
   onStop: () => Promise<void>;
@@ -95,8 +98,11 @@ export function CanvasComposer({
   const [text, setText] = useDraft(key);
   const attachments = useAttachments(key);
   const [collapsed, setCollapsed] = useLocalStorage("carbon.canvas.composerCollapsed", false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
+  const [sendStates, setSendStates] = useState<Record<string, { sending?: boolean; error?: string }>>({});
+  const { sending = false, error = "" } = sendStates[key] ?? {};
+  const updateSend = (change: { sending?: boolean; error?: string }) =>
+    setSendStates(states => ({ ...states, [key]: { ...states[key], ...change } }));
+  const setError = (error: string) => updateSend({ error });
   const [dragging, setDragging] = useState(false);
   const [picking, setPicking] = useState(false);
   const { choices, error: pickerError } = useCanvasConversationChoices(file.project, picking);
@@ -119,7 +125,7 @@ export function CanvasComposer({
     setCollapsed(false);
     void pickAttachments(key).catch((e) => setError(String(e)));
   };
-  useHotkey("attach", attachFiles);
+  useHotkey("attach", attachFiles, { page: true });
 
   // The window is the drop target, as in the session composer: while a canvas
   // is open that composer is hidden and stands down, so the file lands here.
@@ -180,17 +186,14 @@ export function CanvasComposer({
   async function submit() {
     if (!canSend) return;
     const message = text.trim();
-    const sent = attachments;
-    setSending(true);
-    setError("");
+    updateSend({ sending: true, error: "" });
     try {
-      await send(message, sent);
+      await sendWithAttachments(key, pins => send(message, pins));
       if (readDraft(key) === text) setText("");
-      for (const a of sent) removeAttachment(key, a.path);
     } catch (e) {
       setError(String(e));
     } finally {
-      setSending(false);
+      updateSend({ sending: false });
     }
   }
 
@@ -289,7 +292,7 @@ export function CanvasComposer({
                   removeAttachment(key, path);
                   forget(server, [path]);
                 }}
-                modelTakesImages
+                modelTakesImages={modelTakesImages}
               />
             </div>
           )}

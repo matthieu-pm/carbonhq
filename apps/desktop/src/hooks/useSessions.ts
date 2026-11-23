@@ -1155,6 +1155,15 @@ const handleSendMsg = async (
   }
 };
 
+const canvasModelFor = (server: ServerId, item?: SessionIndexItem | null) => {
+  const harness = item?.harness ?? prefs.harness;
+  const models = modelsByHarness[modelsKey(server, harness)] ?? [];
+  const remembered = rememberedModel(prefs.modelByHarness, harness);
+  const modelId = item?.model ?? (harness === "fx" ? repairFxModel(models, remembered) : usableModel(models, remembered, harness));
+  const model = models.find(m => m.id === modelId);
+  return { harness, models, modelId, model };
+};
+
 const sendCanvasMessage = async (
   file: CanvasFile, id: string, draft: boolean, message: string, attachments: Attachment[],
   replaceDeleted?: () => string,
@@ -1170,11 +1179,7 @@ const sendCanvasMessage = async (
   }
   if (item && item.projectPath !== project) throw Error("This conversation belongs to another project.");
   if (item) await ensureLoaded(id);
-  const harness = item?.harness ?? prefs.harness;
-  const models = modelsByHarness[modelsKey(server, harness)] ?? [];
-  const remembered = rememberedModel(prefs.modelByHarness, harness);
-  const modelId = item?.model ?? (harness === "fx" ? repairFxModel(models, remembered) : usableModel(models, remembered, harness));
-  const model = models.find(m => m.id === modelId);
+  const { harness, models, modelId, model } = canvasModelFor(server, item);
   const savedEffort = prefs.effortByModel[modelId] ?? null;
   const defaultEffort = model ? usableEffort(model, savedEffort, DEFAULT_EFFORT) : savedEffort;
   const pick = {
@@ -3360,6 +3365,6 @@ const contextUsage: { used: number; max: number } | null = (() => {
   return used !== null && max !== null ? { used, max } : null;
 })();
 
-return {harness, setHarness, sessions, selectedSessionId, selectedSession, newTaskId, sessionIndexItems, statusBySession, askingSessions, archivedShown, archivedRequested: showArchived, setShowArchived, models, refreshModels, reloadModels, seedFxModels, loadingModels, modelId, effort, fast, setFast, fastNote, permissionMode, projects: orderedProjects, projectPath, branches, branch, useWorktree, busy, working, backgroundTasks, liveTaskIds, tasksBySession, compacting, apiRetry, contextUsage, error, setError, handleModelChange, setPermissionMode, handleAttachProject, handleSelectProject, handleRemoveProject, setProjectSpace, moveProject, retagSpace, canAnnounce, handleSelectBranch, refreshBranches, pendingBranch, setPendingBranch, runCheckout, setUseWorktree, handleSendMsg, sendCanvasMessage, handleInterrupt, handleStopTask, queuedMessages, handleCancelQueued, handleRespondPermission, handleAnswerQuestions, handleSelectSessionIndexItem, handleNewSession, restoreDraftControls, markSessionUnread, setSessionFlags, forkSession, unlinkIssue, detachSession, deleteSession, removeWorktree, ensureLoaded, setNeighbours, dropNeighbours, setOnScreen, setCrewSeen, paneState, indexSide, navGen, activeServer};
+return {harness, setHarness, sessions, selectedSessionId, selectedSession, newTaskId, sessionIndexItems, statusBySession, askingSessions, archivedShown, archivedRequested: showArchived, setShowArchived, models, refreshModels, reloadModels, seedFxModels, loadingModels, modelId, effort, fast, setFast, fastNote, permissionMode, projects: orderedProjects, projectPath, branches, branch, useWorktree, busy, working, backgroundTasks, liveTaskIds, tasksBySession, compacting, apiRetry, contextUsage, error, setError, handleModelChange, setPermissionMode, handleAttachProject, handleSelectProject, handleRemoveProject, setProjectSpace, moveProject, retagSpace, canAnnounce, handleSelectBranch, refreshBranches, pendingBranch, setPendingBranch, runCheckout, setUseWorktree, handleSendMsg, sendCanvasMessage, canvasModelFor, handleInterrupt, handleStopTask, queuedMessages, handleCancelQueued, handleRespondPermission, handleAnswerQuestions, handleSelectSessionIndexItem, handleNewSession, restoreDraftControls, markSessionUnread, setSessionFlags, forkSession, unlinkIssue, detachSession, deleteSession, removeWorktree, ensureLoaded, setNeighbours, dropNeighbours, setOnScreen, setCrewSeen, paneState, indexSide, navGen, activeServer};
 
 }

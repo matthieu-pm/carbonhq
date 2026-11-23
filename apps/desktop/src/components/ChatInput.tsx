@@ -668,6 +668,7 @@ export default function ChatInput({
   // capture and preventDefault when they dismiss — so an open dialog, menu or
   // lightbox spends the key before this sees it.
   useEffect(() => {
+    if (away) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
@@ -676,12 +677,13 @@ export default function ChatInput({
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [away]);
 
   useEffect(() => {
+    if (away) return;
     document.addEventListener("keydown", typeIntoComposer);
     return () => document.removeEventListener("keydown", typeIntoComposer);
-  }, []);
+  }, [away]);
 
   // The drop target is the whole window, not the card: a file aimed at the
   // composer while the transcript fills the screen would otherwise have to be

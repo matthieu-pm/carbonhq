@@ -11,6 +11,7 @@ vi.mock("@/lib/transport", () => ({
   listen: () => Promise.resolve(() => {}),
 }));
 
+import { readAttachments, restoreAttachments, sendWithAttachments } from "@/hooks/useAttachments";
 import { forget, keepUploading, MAX_UPLOAD_BYTES, upload } from "@/lib/uploads";
 
 describe("upload", () => {
@@ -77,6 +78,31 @@ describe("upload", () => {
     forget("vps", ["/d.png"]);
     expect(invoke).toHaveBeenCalledTimes(2);
     stop();
+  });
+
+  it("rereads a canvas attachment after sending and restores pins when a send fails", async () => {
+    const key = "canvas-chat:upload-test";
+    const file = { path: "/canvas.txt", name: "canvas.txt", size: 10, mimeType: null, isImage: false, preview: null };
+    invoke.mockReset();
+    invoke.mockResolvedValueOnce("/srv/first").mockResolvedValueOnce("/srv/edited").mockResolvedValue("/srv/other");
+    restoreAttachments(key, [file]);
+    const stop = keepUploading("vps", () => readAttachments(key));
+    try {
+      await sendWithAttachments(key, async ([pin]) => {
+        expect(await upload("vps", pin.path, pin.size)).toBe("/srv/first");
+        forget("vps", [pin.path]);
+        expect(invoke).toHaveBeenCalledTimes(1);
+      });
+      restoreAttachments(key, [file]);
+      await expect(sendWithAttachments(key, async ([pin]) => {
+        expect(await upload("vps", pin.path, pin.size)).toBe("/srv/edited");
+        restoreAttachments(key, [{ ...file, path: "/another.txt" }]);
+        throw new Error("Send failed");
+      })).rejects.toThrow("Send failed");
+      expect(readAttachments(key).map(pin => pin.path)).toEqual(["/another.txt", file.path]);
+    } finally {
+      stop();
+    }
   });
 
   it("refuses a file over the cap without sending it", async () => {
