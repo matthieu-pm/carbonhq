@@ -14,6 +14,26 @@ let composer: HTMLElement | null = null;
 /// the composer unmounts whenever the reader leaves the Chat tab.
 export function registerComposer(el: HTMLElement | null) {
   composer = el;
+  if (el && Date.now() < focusOnMountUntil) {
+    focusOnMountUntil = 0;
+    el.focus();
+  }
+}
+
+/// A focus asked for while no composer was mounted, honoured by the next one
+/// to mount before this time and dropped after, so a composer appearing much
+/// later never takes focus out of whatever the reader moved on to.
+let focusOnMountUntil = 0;
+
+/// Focuses the composer, or the one about to mount. For a caller that has
+/// just switched to the Chat view: the composer only exists there, so a plain
+/// `focusComposer` in the same handler finds nothing.
+export function focusComposerOnMount() {
+  if (composer) {
+    composer.focus();
+    return;
+  }
+  focusOnMountUntil = Date.now() + 1000;
 }
 
 /// Puts the caret back in the composer, or does nothing where there isn't one.

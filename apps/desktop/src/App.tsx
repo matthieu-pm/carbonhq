@@ -130,8 +130,17 @@ import SpaceTabs from "@/components/layout/SpaceTabs";
 import { useSpaceTabs } from "@/lib/spaceTabs";
 import NavButtons from "@/components/layout/NavButtons";
 import { CanvasLibrary, CanvasTabs } from "@/components/canvases/CanvasLibrary";
-import { CanvasCommentTarget, replaceDeletedCanvasChat, tabTitle, useCanvasChat } from "@/lib/canvasChat";
+import {
+  CanvasCommentTarget,
+  CanvasComposerSlot,
+  canvasDraftKey,
+  focusCanvasComposer,
+  replaceDeletedCanvasChat,
+  tabTitle,
+  useCanvasChat,
+} from "@/lib/canvasChat";
 import { CanvasChatPanel } from "@/components/canvases/CanvasChat";
+import { CanvasComposer } from "@/components/canvases/CanvasComposer";
 import { canvasKey, canvasRoot, useCanvasLibrary } from "@/hooks/useCanvasLibrary";
 import AttachProjectDialog from "@/components/composer/AttachProjectDialog";
 import WorkspaceSwitch, { type Workspace } from "@/components/layout/WorkspaceSwitch";
@@ -200,7 +209,7 @@ import { issueTag, rememberIssueTitle, setIssueOpener } from "@/lib/issue";
 import { loadOlder } from "@/lib/olderPages";
 import { authFailedTurn } from "@/lib/auth";
 import { basename } from "@/lib/format";
-import { focusComposer, focusComposerEnd } from "@/lib/composerFocus";
+import { focusComposer, focusComposerEnd, focusComposerOnMount } from "@/lib/composerFocus";
 import { changeRange, lastToolResult } from "@/lib/changes";
 import { usePlan } from "@/lib/plan";
 import { currentTodos, startsNewList, type Todo } from "@/lib/todos";
@@ -733,6 +742,7 @@ function App() {
   const canvasDock = useCanvasChat(canvasFile ? canvasKey(canvasFile) : null);
   const canvasTab = canvasDock?.tabs.find(tab => tab.id === canvasDock.active);
   const canvasChatVisible = !!canvasDock?.open && canvasEditorOpen;
+  const canvasComposerKey = canvasEditorOpen && canvasFile && canvasDock ? canvasDraftKey(canvasFile, canvasDock) : null;
   const toggleCanvasControls = () => {
     if (canvasDock?.open) { canvasDock.setOpen(false); setCanvasControlsOpen(true); }
     else setCanvasControlsOpen(open => !open);
@@ -798,9 +808,11 @@ function App() {
     // Pinned when recording starts, so a dictation survives switching sessions
     // and still lands where it was spoken. Drafts are per session, so it is
     // waiting there on the way back.
-    target: composerKey,
+    // The canvas composer is the one on screen while a canvas is open.
+    target: canvasComposerKey ?? composerKey,
     onText: (text, session) => {
       appendToDraft(session, text);
+      if (session === canvasComposerKey) return focusCanvasComposer();
       // Straight back to typing: the words landed in a draft the reader is
       // most likely about to add to or send. Only where they are still looking
       // at the session they spoke into — a dictation outlives the screen it
@@ -822,7 +834,8 @@ function App() {
   // shortcut is for. Enabled always: pressed with nothing downloaded it opens
   // settings, which is the answer the reader needs rather than a dead key.
   // Off for a remote session, like every Mac-only feature.
-  useHotkey("dictate", () => void recorder.toggle(), { platformOnly: true, enabled: activeServer === LOCAL });
+  const dictationServer = canvasFile && canvasComposerKey ? serverOfPath(canvasFile.project) : activeServer;
+  useHotkey("dictate", () => void recorder.toggle(), { platformOnly: true, enabled: dictationServer === LOCAL });
 
   const [worktreePrompt, setWorktreePrompt] = useState<WorktreePrompt | null>(null);
 
@@ -2007,13 +2020,14 @@ function App() {
   useEffect(() => {
     setPickHandler((sessionId, element) => {
       if (!element) return;
-      appendToDraft(sessionId, describePick(element));
-      if (sessionId !== selectedSessionId) return;
+      const active = sessionId === browserSessionId;
+      appendToDraft(active ? composerKey : sessionId, describePick(element));
+      if (!active) return;
       if (viewTab === "browser") setViewTab("chat");
-      focusComposer();
+      focusComposerOnMount();
     });
     return () => setPickHandler(null);
-  }, [selectedSessionId, viewTab, setViewTab]);
+  }, [browserSessionId, composerKey, viewTab, setViewTab]);
 
   // Every way of arriving at a session, so none of them can forget to leave the
   // issues page. The two sidebar buttons closed it and the chords beside them
@@ -2937,7 +2951,7 @@ function App() {
     });
   };
   const canvasSending = useRef(new Set<string>());
-  const sendFromCanvas = async (text: string, capture?: () => Promise<string>) => {
+  const sendFromCanvas = async (text: string, capture?: () => Promise<string>, pinned: Attachment[] = []) => {
     if (!canvasFile || !canvasTab || !canvasDock) throw Error("Open a canvas conversation first.");
     const { id, draft } = canvasTab;
     if (canvasSending.current.has(id)) throw Error("Another message is being sent to this conversation.");
@@ -2950,7 +2964,7 @@ function App() {
     } : undefined;
     try {
       const server = serverOfPath(canvasFile.project);
-      const attachments = capture ? [await invoke<Attachment>("canvas_snapshot", { png: await capture() }, server)] : [];
+      const attachments = capture ? [await invoke<Attachment>("canvas_snapshot", { png: await capture() }, server), ...pinned] : pinned;
       canvasDock.setOpen(true);
       await sendCanvasMessage(canvasFile, id, draft, text, attachments, replaceDeleted);
       canvasDock.sent(destination);
@@ -2959,6 +2973,44 @@ function App() {
       canvasSending.current.delete(destination);
     }
   };
+
+  const dictateControl = (
+    <DictateControl
+      state={recorder.state}
+      level={recorder.level}
+      savedAudio={recorder.savedAudio}
+      onStart={() => void recorder.start()}
+      onStop={() => void recorder.stop()}
+      onCancel={() => void recorder.cancel()}
+      onRetry={() => void recorder.retry()}
+      // Reveals rather than opens: the reader asking for the file wants
+      // to keep it, play it, or send it on, and Finder is the one place
+      // all three are reachable. Same reasoning `pickFileOpener` gives.
+      onReveal={() => recorder.savedAudio && void revealItemInDir(recorder.savedAudio)}
+    />
+  );
+  const cancelRecording = () => {
+    if (recorder.state !== "recording") return false;
+    void recorder.cancel();
+    return true;
+  };
+  const canvasComposer = canvasComposerKey && canvasFile && canvasDock && canvasTab && (
+    <CanvasComposer
+      key={canvasKey(canvasFile)}
+      file={canvasFile}
+      dock={canvasDock}
+      items={canvasItems}
+      busy={paneState(canvasDock.active).busy}
+      send={(text, attachments) => sendFromCanvas(text, undefined, attachments)}
+      onStop={() => invoke("interrupt_session", { sessionId: canvasDock.active }, serverOfPath(canvasFile.project))}
+      onOpenInTasks={canvasTab.draft ? undefined : () => goToSession(() => void handleSelectSessionIndexItem(canvasTab.id))}
+      dictation={dictationServer === LOCAL && dictateControl}
+      dictating={recorder.state !== "idle"}
+      onCancelRecording={cancelRecording}
+      appError={error}
+      onDismissAppError={() => setError(null)}
+    />
+  );
 
   useCanvasDesktop({
     library: canvasLibrary, dock: canvasDock, controls: canvasControlsOpen, visible: canvasHome && !settingsOpen,
@@ -3096,9 +3148,11 @@ function App() {
             <CanvasCommentTarget.Provider value={canvasDock && canvasTab ? {
               title: tabTitle(canvasTab, canvasDock, canvasItems), send: sendFromCanvas,
             } : null}>
-              <CanvasLibrary key={canvasHomeVisit} library={canvasLibrary} projects={spaceProjects} collapsed={collapsed}
-                controlsOpen={!canvasDock?.open && canvasControlsOpen} visible={canvasHome && !settingsOpen}
-                onSidebarWidth={setCanvasSidebarWidth} onAttach={(onPicked) => setCanvasAttach({ onPicked })} />
+              <CanvasComposerSlot.Provider value={canvasComposer}>
+                <CanvasLibrary key={canvasHomeVisit} library={canvasLibrary} projects={spaceProjects} collapsed={collapsed}
+                  controlsOpen={!canvasDock?.open && canvasControlsOpen} visible={canvasHome && !settingsOpen}
+                  onSidebarWidth={setCanvasSidebarWidth} onAttach={(onPicked) => setCanvasAttach({ onPicked })} />
+              </CanvasComposerSlot.Provider>
             </CanvasCommentTarget.Provider>
             {canvasChatVisible && canvasFile && canvasDock && <CanvasChatPanel key={canvasKey(canvasFile)} file={canvasFile} rail={sideRail} dock={canvasDock} items={canvasItems}
               pane={paneState(canvasDock.active)} chat={{ ...paneChat,
@@ -3107,7 +3161,7 @@ function App() {
                 onOpenSubagentPanel: () => openCanvasSessionPanel("more"),
                 onOpenSubagent: id => openCanvasSessionPanel("more", id),
                 onSendNow: () => void invoke("interrupt_session", { sessionId: canvasDock.active }).catch(e => setError(String(e))),
-              }} send={sendFromCanvas} />}
+              }} />}
           </div>
         </MountOnce>
         {pagesEnabled && (
@@ -3455,29 +3509,10 @@ function App() {
           cwd={composerCwd}
           onStop={handleInterrupt}
           onCancelQueued={handleCancelQueued}
-          onCancelRecording={() => {
-            if (recorder.state !== "recording") return false;
-            void recorder.cancel();
-            return true;
-          }}
+          onCancelRecording={cancelRecording}
           dictating={recorder.state !== "idle"}
-          dictation={
-            activeServer === LOCAL && <DictateControl
-              state={recorder.state}
-              level={recorder.level}
-              savedAudio={recorder.savedAudio}
-              onStart={() => void recorder.start()}
-              onStop={() => void recorder.stop()}
-              onCancel={() => void recorder.cancel()}
-              onRetry={() => void recorder.retry()}
-              // Reveals rather than opens: the reader asking for the file wants
-              // to keep it, play it, or send it on, and Finder is the one place
-              // all three are reachable. Same reasoning `pickFileOpener` gives.
-              onReveal={() =>
-                recorder.savedAudio && void revealItemInDir(recorder.savedAudio)
-              }
-            />
-          }
+          dictation={activeServer === LOCAL && dictateControl}
+          away={!!canvasComposerKey}
           queuedCount={queuedMessages.length}
           busy={busy}
           sessionId={composerKey}
@@ -3740,7 +3775,8 @@ function App() {
         {dock.side.includes("browser") && (
           <SessionToolBody side={dock.active === "browser" ? sideHost : null} full={false}>
             <Suspense fallback={null}><BrowserPane sessionId={browserSessionId}
-              active={sessionToolsVisible && dock.active === "browser" && !fullBrowserOpen} mode="panel" /></Suspense>
+              active={sessionToolsVisible && dock.active === "browser" && !fullBrowserOpen} mode="panel"
+              onChat={focusComposer} /></Suspense>
           </SessionToolBody>
         )}
         {[...dock.side, ...dock.full].map((tab) => {
@@ -3778,6 +3814,11 @@ function App() {
             sessionId={browserSessionId}
             active={fullBrowserOpen}
             mode="full"
+            // The composer is hidden under the full view, so Chat leaves it.
+            onChat={() => {
+              setViewTab("chat");
+              focusComposerOnMount();
+            }}
           />
         </MountOnce>
       </TabBody>

@@ -1,5 +1,5 @@
 import { useCanvasWindowPart, useEditorStatus, visibility } from "@/lib/canvasWindow";
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Check,
   ChevronDown,
@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { canvasKey, type CanvasFile } from "@/hooks/useCanvasLibrary";
+import { CanvasComposerSlot } from "@/lib/canvasChat";
 import type { Project } from "@/types/events";
 import { useCanvasDocument } from "./useCanvasDocument";
 import { CanvasTheme } from "./CanvasTheme";
@@ -67,6 +68,7 @@ export function CanvasEditor({
   libraryError: string;
 }) {
   const { doc, error, saving, conflict, session } = useCanvasDocument(file);
+  const composer = useContext(CanvasComposerSlot);
   useEditorStatus(canvasKey(file), !!doc, doc ? "" : error);
   const [mode, setMode] = useState<"Design" | "Theme">("Design");
   const [tool, setTool] = useState<Tool>("Select");
@@ -215,7 +217,7 @@ export function CanvasEditor({
   });
   function keys(e: React.KeyboardEvent) {
     const target = e.target as HTMLElement;
-    if (!root.current?.contains(target) || target.closest("input,textarea,select,[contenteditable=true]"))
+    if (!root.current?.contains(target) || target.closest("input,textarea,select,[contenteditable=true],.ce-composer"))
       return;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
@@ -432,18 +434,21 @@ export function CanvasEditor({
               setView={setView}
               session={session}
             />
-            <div className="ce-toolbar" role="toolbar" aria-label="Canvas tools">
-              {tools.map(({ name, key, icon: Icon }) => (
-                <ToolButton
-                  key={name}
-                  label={name}
-                  shortcut={key}
-                  active={tool === name}
-                  onClick={() => setTool(name)}
-                >
-                  <Icon />
-                </ToolButton>
-              ))}
+            <div className="ce-bottom">
+              {composer}
+              <div className="ce-toolbar" role="toolbar" aria-label="Canvas tools">
+                {tools.map(({ name, key, icon: Icon }) => (
+                  <ToolButton
+                    key={name}
+                    label={name}
+                    shortcut={key}
+                    active={tool === name}
+                    onClick={() => setTool(name)}
+                  >
+                    <Icon />
+                  </ToolButton>
+                ))}
+              </div>
             </div>
           </div>
           <aside className="ce-inspector" hidden={!controlsOpen} aria-label="Canvas inspector">

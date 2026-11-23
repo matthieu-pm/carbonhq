@@ -1,7 +1,9 @@
 import type { SessionIndexItem } from "@/types/events";
-import { createContext, useSyncExternalStore } from "react";
+import { createContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { channel } from "./channel";
 import { readLocalStorage, writeLocalStorage } from "@/hooks/useLocalStorage";
+import { invoke, serverOfPath } from "./transport";
+import { canvasKey, type CanvasFile } from "./canvasFile";
 
 export type CanvasChatTab = { id: string; draft: boolean };
 type Dock = { open: boolean; active: string; tabs: CanvasChatTab[] };
@@ -80,4 +82,50 @@ export function tabTitle(tab: CanvasChatTab, dock: CanvasChatDock, items: Sessio
   return (
     items.find((i) => i.sessionId === tab.id)?.title ?? (tab.draft ? "New conversation" : "Conversation")
   );
+}
+
+/// The draft and attachment key for the dock's active conversation. The first
+/// tab keys on the canvas rather than its id, since a deleted first conversation
+/// is replaced by a fresh id and the half-written prompt must survive that.
+export function canvasDraftKey(file: CanvasFile, dock: Pick<CanvasChatDock, "active" | "tabs">) {
+  return "canvas-chat:" + (dock.active === dock.tabs[0].id ? canvasKey(file) : dock.active);
+}
+
+/// The floating composer, drawn by `App` and placed by the editor inside its
+/// stage, so it sits on the canvas it talks about rather than beside it.
+export const CanvasComposerSlot = createContext<ReactNode>(null);
+
+/// The project's conversations that a dock could open, read while `open`.
+export function useCanvasConversationChoices(project: string, open: boolean) {
+  const [choices, setChoices] = useState<SessionIndexItem[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    setError("");
+    setChoices(null);
+    void invoke<SessionIndexItem[]>("list_session_index_items", { archived: false }, serverOfPath(project))
+      .then((all) => {
+        if (current) setChoices(all.filter((i) => i.projectPath === project && !i.hidden));
+      })
+      .catch((e) => {
+        if (current) setError(String(e));
+      });
+    return () => {
+      current = false;
+    };
+  }, [project, open]);
+  return { choices, error };
+}
+
+let canvasInput: HTMLTextAreaElement | null = null;
+
+/// Called by the floating composer's text box; `null` on unmount.
+export function registerCanvasComposer(el: HTMLTextAreaElement | null) {
+  canvasInput = el;
+}
+
+/// Hands focus back to the floating composer after dictation lands in it.
+export function focusCanvasComposer() {
+  canvasInput?.focus();
 }

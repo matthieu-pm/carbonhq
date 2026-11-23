@@ -236,6 +236,8 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 
 **A demo is its own page, never a flag on the real one.** An HTML page in `apps/desktop/demo/` (`demo/<question>.html`) loading its own entry from `src/demo/`, and opened at `/demo/<question>.html`. Vite's dev server serves any HTML under the package root, so it is reachable under `pnpm dev`; `vite.config.ts` names no extra `rollupOptions.input`, so `pnpm build` emits `index.html` alone. Gating on a query flag was the rejected alternative: it puts demo-only branches inside production code paths. A demo mounts the **real** components with faked inputs, and needs no test seam in `src/`: stub the Tauri bridge in the demo itself.
 
+[browser-toolbar.html](apps/desktop/demo/browser-toolbar.html) mounts the browser pane's URL row in the full view over a dark and a light page, in the right panel at 512px and 320px, and with nothing open. The bridge logs what each control sends, and the `⋯` native menu is drawn as a list whose items fire their real actions.
+
 [update-rail.html](apps/desktop/demo/update-rail.html) mounts the real rail with the blue update button above usage, and the sidebar's update row beside it, in every update state: none, downloading with and without a size, ready, blocked by a running turn, and a failed install.
 
 [profiles.html](apps/desktop/demo/profiles.html) mounts profile settings and the footer switcher with saved demo profiles, for icon and color selection, keyboard access and overflow at different sidebar widths.
@@ -245,6 +247,8 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 [slides.html](apps/desktop/demo/slides.html) mounts Spaces with three decks in different authored themes and the deck editor around them. Saves land in memory, and **Agent edit** writes a revision behind the editor, so an edit made just before it reaches the conflict dialog. Covers draw on scroll into view, so a hidden browser tab (the session browser) shows the glyph until IntersectionObserver fires.
 
 [font-sizes.html](apps/desktop/demo/font-sizes.html) mounts the UI and code font size rows above chrome, chat, a raw `text-sm` button, tool output, an Edit diff and the virtualized Files view. Its **Run size check** reads every computed size back at two non-default pairs and checks the Files view's row pitch matches its line height.
+
+[canvas-composer.html](apps/desktop/demo/canvas-composer.html) mounts the canvas editor with the Design workspace's floating composer in its stage, faked sends, a running turn and a failing send, with an inspector toggle and four widths, for judging where the card and the tool bar sit as the canvas narrows. The session pane is narrower than the 984px breakpoint, so check the side-by-side layout by widening the editor wrapper with `eval`.
 
 **Every demo's `<html>` carries `data-demo`**, or it cannot scroll: the app pins `html`, `body` and `#root` to the window with overflow hidden, since it owns every scroll container, and [App.css](apps/desktop/src/App.css) gives page scroll back only to that attribute.
 

@@ -1,12 +1,10 @@
 import { useCanvasWindowPart } from "@/lib/canvasWindow";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, MessageSquare, Plus, Square, X } from "lucide-react";
-import { canvasKey, type CanvasFile } from "@/hooks/useCanvasLibrary";
-import { readDraft, useDraft } from "@/hooks/useDraft";
+import { MessageSquare, Plus, X } from "lucide-react";
+import type { CanvasFile } from "@/hooks/useCanvasLibrary";
 import { PanelCard } from "@/components/layout/AppShell";
 import { HeaderIconButton } from "@/components/layout/IssueTabs";
-import { invoke, serverOfPath } from "@/lib/transport";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,90 +19,14 @@ import { useResizable } from "@/components/ResizeHandle";
 import Chat from "@/components/Chat";
 import type { PaneChat } from "@/components/SplitView";
 import type { PaneState } from "@/hooks/useSessions";
-import { tabTitle, type CanvasChatDock } from "@/lib/canvasChat";
+import { tabTitle, useCanvasConversationChoices, type CanvasChatDock } from "@/lib/canvasChat";
 import type { SessionIndexItem } from "@/types/events";
-
-function ChatComposer({
-  send,
-  stop,
-  title,
-  id,
-}: {
-  id: string;
-  title: string;
-  send: (text: string) => Promise<void>;
-  stop?: () => Promise<void>;
-}) {
-  const [text, setText] = useDraft(id);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-  async function submit() {
-    if (!text.trim() || sending) return;
-    setSending(true);
-    setError("");
-    try {
-      await send(text.trim());
-      if (readDraft(id) === text) setText("");
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSending(false);
-    }
-  }
-  return (
-    <form
-      className="m-2 rounded-xl border border-border bg-composer p-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      {error && (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      )}
-      <textarea
-        aria-label={`Message ${title}`}
-        placeholder="Message…"
-        rows={2}
-        readOnly={sending}
-        value={text}
-        className="w-full resize-none bg-transparent px-1 outline-none"
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            void submit();
-          }
-        }}
-      />
-      <div className="flex justify-end gap-1">
-        {stop && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Stop response"
-            onClick={() => void stop().catch((e) => setError(String(e)))}
-          >
-            <Square />
-          </Button>
-        )}
-        <Button size="icon-xs" aria-label="Send message" disabled={!text.trim() || sending}>
-          <ArrowUp />
-        </Button>
-      </div>
-    </form>
-  );
-}
 
 export function CanvasChatPanel({
   dock,
   items,
   pane,
   chat,
-  send,
   file,
   rail,
 }: {
@@ -114,7 +36,6 @@ export function CanvasChatPanel({
   items: SessionIndexItem[];
   pane: PaneState;
   chat: PaneChat;
-  send: (text: string) => Promise<void>;
 }) {
   const { style, handle, resize } = useResizable({
     storageKey: "carbon.canvas.chatWidth",
@@ -126,28 +47,9 @@ export function CanvasChatPanel({
   useCanvasWindowPart("chat", ({command}) => {
     if (command.group === "view" && command.args.op === "width") resize(command.args.pixels);
   });
-  const project = file.project;
   const active = dock.tabs.find((t) => t.id === dock.active)!;
-  const draftKey = "canvas-chat:" + (active.id === dock.tabs[0].id ? canvasKey(file) : active.id);
   const [picking, setPicking] = useState(false);
-  const [choices, setChoices] = useState<SessionIndexItem[] | null>(null);
-  const [pickerError, setPickerError] = useState("");
-  useEffect(() => {
-    if (!picking) return;
-    let current = true;
-    setPickerError("");
-    setChoices(null);
-    void invoke<SessionIndexItem[]>("list_session_index_items", { archived: false }, serverOfPath(project))
-      .then((all) => {
-        if (current) setChoices(all.filter((i) => i.projectPath === project && !i.hidden));
-      })
-      .catch((e) => {
-        if (current) setPickerError(String(e));
-      });
-    return () => {
-      current = false;
-    };
-  }, [project, picking]);
+  const { choices, error: pickerError } = useCanvasConversationChoices(file.project, picking);
   return (
     <PanelCard resizeHandle={handle}>
       <aside
@@ -214,17 +116,6 @@ export function CanvasChatPanel({
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <Chat key={active.id} {...pane} {...chat} crowded rail={false} />
         </div>
-        <ChatComposer
-          id={draftKey}
-          key={draftKey}
-          title={tabTitle(active, dock, items)}
-          send={send}
-          stop={
-            pane.busy
-              ? () => invoke("interrupt_session", { sessionId: active.id }, serverOfPath(project))
-              : undefined
-          }
-        />
       </aside>
     </PanelCard>
   );

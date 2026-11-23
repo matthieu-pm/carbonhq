@@ -199,6 +199,9 @@ type ChatInputProps = {
   /// retires the button: the removal clears `worktreeName`, so the control
   /// goes away because the thing it acted on did.
   onRemoveWorktree?: () => void;
+  /// Hidden while another composer has the screen — the canvas's, today. A
+  /// window-wide drop and ⌘-attach then belong to that one, not to this tray.
+  away?: boolean;
 };
 
 const MAX_ROWS = 10;
@@ -254,6 +257,7 @@ export default function ChatInput({
   toolbar,
   dictation,
   dictating = false,
+  away = false,
   notice,
   pending,
   agentUpdate,
@@ -612,7 +616,7 @@ export default function ChatInput({
   }, [sessionId]);
 
   // ⌥ as well as ⌘, so the chord can't collide with the webview's own ⌘O.
-  useHotkey("attach", () => void pickAttachments(attachKey));
+  useHotkey("attach", () => void pickAttachments(attachKey), { enabled: !away });
 
   // What Esc does, wherever focus is. Held in a ref so the listener below can
   // register once and still read current state. Returns whether it consumed the
@@ -684,7 +688,7 @@ export default function ChatInput({
   // dropped on a 60px strip. The card is where the affordance is drawn, because
   // that is where the file is about to land.
   useEffect(() => {
-    if (archived) return;
+    if (archived || away) return;
 
     let unlisten: (() => void) | null = null;
     let live = true;
@@ -727,7 +731,7 @@ export default function ChatInput({
       live = false;
       unlisten?.();
     };
-  }, [attachKey, archived]);
+  }, [attachKey, archived, away]);
 
   // `busy` no longer gates this: a prompt typed into a running turn is queued
   // rather than refused, and the CLI folds it into that turn on its own.
