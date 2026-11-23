@@ -85,8 +85,7 @@ it("flushes pending edits when the tab closes", async () => {
   await session.load();
   session.change(background("green"));
   close();
-  await Promise.resolve();
-  expect(JSON.parse(disk).pages[0].background).toBe("green");
+  await vi.waitFor(() => expect(JSON.parse(disk).pages?.[0].background).toBe("green"));
 });
 
 it("keeps edits and a delivered pin together when a canvas is reopened during send", async () => {
@@ -120,6 +119,7 @@ it("a CLI flush waits for the editor's pending save", async () => {
   const cliSave = session.flush().then(() => { answered = true; });
   await Promise.resolve();
   expect(answered).toBe(false);
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
   finish();
   await Promise.all([originalSave, cliSave]);
   expect(answered).toBe(true);
@@ -151,6 +151,7 @@ it("keeps dirty edits through a move during a write and through archive and rest
   let fail!: (error: Error) => void;
   vi.mocked(invoke).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
   const writing = session.flush();
+  await vi.waitFor(() => expect(fail).toBeTypeOf("function"));
   relocateCanvasDocument(source, moved, false);
   expect(openCanvasDocument(moved)).toBe(session);
   fail(Error("source moved"));

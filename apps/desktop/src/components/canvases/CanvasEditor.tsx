@@ -1,5 +1,6 @@
+import { editLayer } from "./layerEdit";
 import { useCanvasWindowPart, useEditorStatus, visibility } from "@/lib/canvasWindow";
-import { useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import {
   Check,
   ChevronDown,
@@ -30,9 +31,12 @@ import type { Project } from "@/types/events";
 import { useCanvasDocument } from "./useCanvasDocument";
 import { CanvasTheme } from "./CanvasTheme";
 import { CanvasInspector } from "./CanvasInspector";
-import { CanvasBoard, zoomAt, type Tool, type View } from "./CanvasBoard";
+import { CanvasBoard, type Tool } from "./CanvasBoard";
+import { CanvasCamera, zoomAt, initialView } from "./canvasCamera";
 import { ToolButton } from "./EditorControls";
 import { uid } from "./document";
+import { pageLayers, graphicsScene } from "./graphicsScene";
+import { LayerTree } from "./LayerTree";
 import "./editor.css";
 
 const tools = [
@@ -44,12 +48,14 @@ const tools = [
   { name: "Pen", icon: Pencil, key: "P" },
   { name: "Comment", icon: MessageSquare, key: "C" },
 ] as const;
-const glyph = { Frame, Rectangle: Square, Text: Type };
+
 const tabs = [
   { value: "Design", label: "Design" },
   { value: "Theme", label: "Theme" },
 ] as const;
-const initialView: View = { x: 32, y: 40, zoom: 1 };
+function CameraZoom({ camera }: { camera: CanvasCamera }) {
+  return <>{useSyncExternalStore(camera.subscribe, camera.percent)}%</>;
+}
 export function CanvasEditor({
   file,
   projects,
@@ -77,91 +83,61 @@ export function CanvasEditor({
   const [renaming, rename] = useState<string | null>(null);
   const [folded, fold] = useState(new Set<string>());
   const [pagesOpen, showPages] = useState(true);
-  const [view, setView] = useState(initialView);
+  const [camera] = useState(() => new CanvasCamera());
   const root = useRef<HTMLElement>(null);
   const page = doc?.pages.find((p) => p.id === pageId) ?? doc?.pages[0];
-  const layers = doc?.elements.filter((l) => l.page === page?.id) ?? [];
-  const selected = layers.find((l) => l.id === selectedId);
-  function pick(id: string | null) {
+  const [renderer, setRenderer] = useState<"Graphics" | "DOM" | "Compare">("Graphics");
+  const retainedScene = useRef<ReturnType<typeof graphicsScene> | undefined>(undefined);
+  const tree = useMemo(() => pageLayers(doc?.elements ?? [], page?.id, retainedScene.current?.tree), [doc?.elements, page?.id]);
+  const scene = useMemo(() => graphicsScene(tree, doc?.tokens ?? [], retainedScene.current), [tree, doc?.tokens]);
+  useEffect(() => { retainedScene.current = scene; }, [scene]);
+  const boardScene = useMemo(
+    () => preview ? graphicsScene(pageLayers(preview.elements, page?.id), preview.tokens) : scene,
+    [preview, page?.id, scene],
+  );
+  const selected = selectedId ? tree.byId.get(selectedId) : undefined;
+  const pick = useCallback((id: string | null) => {
     select(id);
-    let parent = layers.find((l) => l.id === id)?.parent;
+    let parent = id ? tree.byId.get(id)?.parent : null;
     if (parent) {
       const next = new Set(folded);
       while (parent) {
         next.delete(parent);
-        parent = layers.find((l) => l.id === parent)?.parent;
+        parent = tree.byId.get(parent)?.parent;
       }
-      fold(next);
+      if (next.size !== folded.size) fold(next);
     }
-  }
+  }, [folded, tree]);
   function activate(id: string) {
     setPageId(id);
     select(null);
-    setView(initialView);
-  }
-  function tree(parent: string | null, depth = 0): ReactNode {
-    return layers
-      .filter((l) => l.parent === parent)
-      .map((l) => {
-        const Glyph = glyph[l.kind],
-          hasChildren = layers.some((c) => c.parent === l.id);
-        return (
-          <div key={l.id}>
-            <div
-              className="ce-tree-row"
-              data-selected={selectedId === l.id}
-              style={{ paddingLeft: 7 + depth * 14 }}
-            >
-              {hasChildren ? (
-                <button
-                  className="ce-disclosure"
-                  aria-label={(folded.has(l.id) ? "Expand " : "Collapse ") + l.name}
-                  aria-expanded={!folded.has(l.id)}
-                  onClick={() =>
-                    fold((prev) => {
-                      const n = new Set(prev);
-                      if (n.has(l.id)) n.delete(l.id);
-                      else n.add(l.id);
-                      return n;
-                    })
-                  }
-                >
-                  {folded.has(l.id) ? <ChevronRight /> : <ChevronDown />}
-                </button>
-              ) : (
-                <i className="ce-indent" />
-              )}
-              <button className="ce-layer-row" aria-pressed={selectedId === l.id} onClick={() => pick(l.id)}>
-                <Glyph size={14} />
-                <span>{l.name}</span>
-              </button>
-            </div>
-            {!folded.has(l.id) && tree(l.id, depth + 1)}
-          </div>
-        );
-      });
+    camera.set(initialView);
   }
   const zoom = (next: number) => {
     const b = root.current?.querySelector(".ce-board")?.getBoundingClientRect();
-    if (b) setView((v) => zoomAt(v, next, b.width / 2, b.height / 2));
+    if (b) camera.set(zoomAt(camera.latest(), next, b.width / 2, b.height / 2));
   };
   function fit() {
+    const view = camera.get();
     const board = root.current?.querySelector(".ce-board"),
       b = board?.getBoundingClientRect();
     if (!board || !b) return;
     const rects = Array.from(board.querySelectorAll<HTMLElement>(".ce-world > [data-layer]")).map((el) =>
       el.getBoundingClientRect(),
     );
-    if (!rects.length) {
-      setView(initialView);
-      return;
+    let left = scene.extent?.x ?? Infinity, top = scene.extent?.y ?? Infinity;
+    let right = scene.extent ? scene.extent.x + scene.extent.w : -Infinity;
+    let bottom = scene.extent ? scene.extent.y + scene.extent.h : -Infinity;
+    for (const r of rects) {
+      left = Math.min(left, (r.left - b.left - view.x) / view.zoom);
+      top = Math.min(top, (r.top - b.top - view.y) / view.zoom);
+      right = Math.max(right, (r.right - b.left - view.x) / view.zoom);
+      bottom = Math.max(bottom, (r.bottom - b.top - view.y) / view.zoom);
     }
-    const left = (Math.min(...rects.map((r) => r.left)) - b.left - view.x) / view.zoom,
-      top = (Math.min(...rects.map((r) => r.top)) - b.top - view.y) / view.zoom;
-    const w = (Math.max(...rects.map((r) => r.right)) - b.left - view.x) / view.zoom - left,
-      h = (Math.max(...rects.map((r) => r.bottom)) - b.top - view.y) / view.zoom - top;
+    if (!Number.isFinite(left)) { camera.set(initialView); return; }
+    const w = right - left, h = bottom - top;
     const z = Math.max(0.05, Math.min(8, (b.width - 64) / Math.max(1, w), (b.height - 64) / Math.max(1, h)));
-    setView({ zoom: z, x: (b.width - w * z) / 2 - left * z, y: (b.height - h * z) / 2 - top * z });
+    camera.set({ zoom: z, x: (b.width - w * z) / 2 - left * z, y: (b.height - h * z) / 2 - top * z });
   }
   useEffect(() => {
     root.current?.focus({ preventScroll: true });
@@ -169,7 +145,7 @@ export function CanvasEditor({
   useCanvasWindowPart("editor", async ({ command }) => {
     if (command.group !== "view") throw Error("Choose a view command.");
     const a = command.args;
-    if (a.op === "state") return { page: page?.id, layer: selectedId, tool, mode, view, pagesOpen, folded: [...folded], saving, conflict, error, ready: !!doc };
+    if (a.op === "state") return { page: page?.id, layer: selectedId, tool, mode, view: camera.latest(), pagesOpen, folded: [...folded], saving, conflict, error, ready: !!doc };
     if (!doc && a.op !== "reload") throw Error(error || "Canvas is loading.");
     const blurField = () => {
       const focused = document.activeElement;
@@ -181,7 +157,7 @@ export function CanvasEditor({
         if (!doc?.pages.some(p => p.id === a.id)) throw Error("Unknown page.");
         activate(a.id); break;
       case "select":
-        if (a.id !== null && !layers.some(l => l.id === a.id)) throw Error("Unknown layer on this page.");
+        if (a.id !== null && !tree.byId.has(a.id)) throw Error("Unknown layer on this page.");
         pick(a.id); break;
       case "mode":
         if (a.mode !== "Theme" && a.mode !== "Design") throw Error("Choose Design or Theme.");
@@ -191,13 +167,13 @@ export function CanvasEditor({
         if (!match) throw Error("Unknown canvas tool.");
         setTool(match.name); break;
       }
-      case "pan": setView(v => ({...v, x: a.x, y: a.y})); break;
+      case "pan": camera.set({...camera.latest(), x: a.x, y: a.y}); break;
       case "zoom":
         if (a.factor < 0.05 || a.factor > 8) throw Error("Choose a zoom between 0.05 and 8.");
         zoom(a.factor); break;
       case "fit": fit(); break;
       case "tree": {
-        if (!layers.some(l => l.id === a.id)) throw Error("Unknown layer on this page.");
+        if (!tree.byId.has(a.id)) throw Error("Unknown layer on this page.");
         const next = new Set(folded);
         if (visibility(a.visibility)) next.delete(a.id); else next.add(a.id);
         fold(next); break;
@@ -242,7 +218,7 @@ export function CanvasEditor({
       const ids = new Set<string>();
       const take = (id: string) => {
         ids.add(id);
-        layers.filter((l) => l.parent === id).forEach((l) => take(l.id));
+        tree.children.get(id)?.forEach((l) => take(l.id));
       };
       take(selected.id);
       session.change((d) => ({ ...d, elements: d.elements.filter((l) => !ids.has(l.id)) }));
@@ -253,23 +229,16 @@ export function CanvasEditor({
       ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key) &&
       editingLayers &&
       !target.closest("button") &&
-      !layers.some((l) => l.id === selected.parent && l.style.display === "flex")
+      (!selected.parent || tree.byId.get(selected.parent)?.style.display !== "flex")
     ) {
       const n = e.shiftKey ? 10 : 1;
       e.preventDefault();
       session.change(
-        (d) => ({
-          ...d,
-          elements: d.elements.map((l) =>
-            l.id !== selected.id
-              ? l
-              : {
-                  ...l,
-                  x: l.x + (e.key === "ArrowLeft" ? -n : e.key === "ArrowRight" ? n : 0),
-                  y: l.y + (e.key === "ArrowUp" ? -n : e.key === "ArrowDown" ? n : 0),
-                },
-          ),
-        }),
+        d => editLayer(d, selected, l => ({
+          ...l,
+          x: l.x + (e.key === "ArrowLeft" ? -n : e.key === "ArrowRight" ? n : 0),
+          y: l.y + (e.key === "ArrowUp" ? -n : e.key === "ArrowDown" ? n : 0),
+        })),
         "nudge:" + selected.id,
       );
     }
@@ -413,7 +382,7 @@ export function CanvasEditor({
                         )}
                       </div>
                     )}
-                    <nav aria-label="Layers">{tree(null)}</nav>
+                    <LayerTree pagesOpen={pagesOpen} tree={tree} folded={folded} fold={fold} selected={selectedId} pick={pick} />
                   </div>
                 </>
               ))}
@@ -425,17 +394,21 @@ export function CanvasEditor({
           <div className="ce-stage">
             {!controlsOpen && notices && <div className="ce-stage-notices">{notices}</div>}
             <CanvasBoard
+              tree={tree}
+              scene={boardScene}
+              graphics={renderer !== "DOM"}
               doc={doc}
-              preview={preview}
               page={page}
               tool={tool}
               setTool={setTool}
               selected={selected}
               select={pick}
-              view={view}
-              setView={setView}
+              camera={camera}
               session={session}
             />
+            {renderer === "Compare" && <CanvasBoard reference graphics={false} tree={tree} scene={boardScene}
+              doc={doc} page={page} tool={tool} setTool={setTool} selected={selected} select={pick}
+              camera={camera} session={session} />}
             <div className="ce-bottom">
               {composer}
               <div className="ce-toolbar" role="toolbar" aria-label="Canvas tools">
@@ -457,9 +430,19 @@ export function CanvasEditor({
             <header className="ce-inspector-head">
               <span aria-live="polite">{saving ? "Saving…" : ""}</span>
               <DropdownMenu>
+                <DropdownMenuTrigger asChild><button className="ce-zoom" aria-label="Canvas renderer">
+                  {renderer} <ChevronDown size={12} /></button></DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(["Graphics", "DOM", "Compare"] as const).map(r =>
+                    <DropdownMenuItem key={r} onSelect={() => setRenderer(r)}>
+                      {r === "Compare" ? "Compare side by side" : r === "DOM" ? "DOM reference" : "Graphics"}
+                    </DropdownMenuItem>)}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="ce-zoom" aria-label="Canvas zoom">
-                    {Math.round(view.zoom * 100)}% <ChevronDown size={12} />
+                    <CameraZoom camera={camera} /> <ChevronDown size={12} />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -475,6 +458,7 @@ export function CanvasEditor({
             {controlsOpen && notices}
             <div className="ce-scroll">
               <CanvasInspector
+                tree={tree}
                 key={selected?.id ?? page.id}
                 doc={doc}
                 page={page}

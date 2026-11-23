@@ -2,7 +2,9 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { watchDocs } from "@/lib/servers";
 import { canvasKey, canvasPath, type CanvasFile } from "@/lib/canvasFile";
-import { invoke, listen, qualify, serverOfPath } from "@/lib/transport";
+import { listen, qualify, serverOfPath } from "@/lib/transport";
+import { readCanvas, readCanvasWithPreview } from "./canvasWire";
+import { CanvasSaveClient } from "./canvasSaveClient";
 import { readDocument, type CommentPin, type Document } from "./document";
 
 type Snapshot = { doc: Document | null; preview: Document | null; error: string; saving: boolean; conflict: boolean };
@@ -26,7 +28,7 @@ function canvasWatchScope() {
 export class CanvasSession {
   private snapshot: Snapshot = { doc: null, preview: null, error: "", saving: false, conflict: false };
   private listeners = new Set<() => void>();
-  private saved = "";
+  private writer: CanvasSaveClient | null = null;
   private persisted: Document | null = null;
   private conflictRevision: string | null = null;
   private timer?: ReturnType<typeof setTimeout>;
@@ -71,11 +73,14 @@ export class CanvasSession {
       !this.listeners.size &&
       !this.pendingComments &&
       !this.loading &&
+      !this.reading &&
       !this.writing &&
       this.snapshot.doc === this.persisted &&
       open.get(key) === this
-    )
+    ) {
       open.delete(key);
+      this.writer?.dispose();
+    }
   }
   private update(change: Partial<Snapshot>) {
     this.snapshot = { ...this.snapshot, ...change };
@@ -127,8 +132,8 @@ export class CanvasSession {
     }
     this.reading = this.read(refresh).finally(() => {
       this.reading = null;
-      this.release();
       this.refreshIfQueued();
+      this.release();
     });
     return this.reading;
   }
@@ -157,24 +162,24 @@ export class CanvasSession {
       if (before !== this.persisted || this.snapshot.conflict) return;
     } else this.loading = true;
     try {
-      const result = await invoke<string | { content: string; preview: string | null }>(
-        "read_canvas_document", { ...this.args(), includePreview: true },
-      );
-      const raw = typeof result === "string" ? result : result.content;
+      const result = await readCanvasWithPreview(this.args());
+      const raw = result.content;
+      const unchanged = refresh && before && await this.writer?.matches(raw);
       if (key !== this.key()) return;
       if (
         refresh &&
         (this.loading || this.writing || before !== this.snapshot.doc || before !== this.persisted)
       )
         return;
-      const preview = typeof result === "object" && result.preview ? readDocument(result.preview) : null;
-      if (refresh && before && raw === this.saved) {
+      const preview = result.preview ? readDocument(result.preview) : null;
+      if (unchanged) {
         this.update({ preview, error: "" });
         return;
       }
       const doc = readDocument(raw);
       this.persisted = doc;
-      this.saved = raw;
+      this.writer?.dispose();
+      this.writer = new CanvasSaveClient(raw, doc);
       this.history = [];
       this.future = [];
       this.group = null;
@@ -246,7 +251,7 @@ export class CanvasSession {
     if (this.conflictRevision === null) {
       this.loading = true;
       try {
-        this.conflictRevision = await invoke<string>("read_canvas_document", this.args());
+        this.conflictRevision = await readCanvas(this.args());
       } catch (err) {
         this.update({ error: String(err) });
         return;
@@ -254,7 +259,7 @@ export class CanvasSession {
         this.loading = false;
       }
     }
-    this.saved = this.conflictRevision;
+    await this.writer?.rebase(this.conflictRevision);
     this.persisted = null;
     this.conflictRevision = null;
     this.update({ conflict: false });
@@ -268,8 +273,8 @@ export class CanvasSession {
     this.writing = this.saveChanges().finally(() => {
       this.writing = null;
       this.update({ saving: false });
-      this.release();
       this.refreshIfQueued();
+      this.release();
     });
     return this.writing;
   }
@@ -278,15 +283,13 @@ export class CanvasSession {
     try {
       while (this.snapshot.doc && this.snapshot.doc !== this.persisted) {
         const doc = this.snapshot.doc;
-        const content = JSON.stringify(doc, null, 2) + "\n";
         const key = this.key();
         try {
-          await invoke("save_canvas_document", { ...this.args(), previous: this.saved, content });
+          await this.writer!.save(this.args(), doc);
         } catch (err) {
           if (key !== this.key()) continue;
           throw err;
         }
-        this.saved = content;
         this.persisted = doc;
       }
     } catch (err) {
@@ -294,7 +297,7 @@ export class CanvasSession {
       if (error.includes("Canvas changed on disk")) {
         this.conflictRevision = null;
         this.update({ error, conflict: true });
-        this.conflictRevision = await invoke<string>("read_canvas_document", this.args()).catch(() => null);
+        this.conflictRevision = await readCanvas(this.args()).catch(() => null);
       } else this.update({ error });
     }
   }

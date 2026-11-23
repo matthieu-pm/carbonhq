@@ -69,7 +69,7 @@ Two things repo-wide on purpose. Release pipeline = desktop's alone but live in 
 
 ## Design direction
 
-Carbon keep to one visual language — one radius scale, one yellow, filled buttons carry shadow and chrome don't, shortcuts live in real tooltips and never on `title`. Window is glass (macOS vibrancy) with body's fill the only hole in it, and the titlebar row is what user drag window by.
+Carbon keep to one visual language — one radius scale, filled buttons carry shadow and chrome don't, shortcuts live in real tooltips and never on `title`. Window is glass (macOS vibrancy) with body's fill the only hole in it, and the titlebar row is what user drag window by.
 
 **Rules, rejected alternatives and the reasoning all live in [DESIGN.md](apps/desktop/DESIGN.md)** — read it before restyling anything, changing window chrome, or reworking a panel, card, row or button. Two things there fail *silently* and cost an afternoon each: vibrancy's `body` specificity, and window drag needing both an explicit capability and `data-tauri-drag-region="deep"`.
 

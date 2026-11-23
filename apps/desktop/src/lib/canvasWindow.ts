@@ -52,13 +52,14 @@ type WindowPart = "library" | "editor" | "markup" | "theme" | "chat";
 type Handler = (request: WindowRequest) => unknown;
 const handlers = new Map<WindowPart, Handler>();
 
-export function useCanvasWindowPart(part: WindowPart, handler: Handler) {
+export function useCanvasWindowPart(part: WindowPart, handler: Handler, enabled = true) {
   useLayoutEffect(() => {
+    if (!enabled) return;
     handlers.set(part, handler);
     return () => {
       handlers.delete(part);
     };
-  }, [part, handler]);
+  }, [part, handler, enabled]);
 }
 
 export function canvasWindowPart(part: WindowPart, req: WindowRequest) {

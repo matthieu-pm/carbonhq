@@ -6,7 +6,6 @@ use carbon_proto::canvas::{
 use rquickjs::{CatchResultExt, Function, Module};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
@@ -16,7 +15,7 @@ use std::{
 use tokio::sync::Mutex;
 
 use crate::{
-    canvas_library::{self as library, Action},
+    canvas_library::{self as library, revision, Action},
     sink::Sink,
 };
 
@@ -30,13 +29,6 @@ struct Edit {
 }
 
 static HISTORY: Mutex<VecDeque<Edit>> = Mutex::const_new(VecDeque::new());
-
-fn revision(raw: &str) -> String {
-    Sha256::digest(raw.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
 
 #[derive(Deserialize)]
 struct Outcome {
@@ -252,22 +244,34 @@ fn preview_changed(key: &CanvasKey, sink: &Sink) -> Result<()> {
 }
 
 /// Return a matching saved revision and preview together, including on reconnect.
+#[cfg(any(feature = "desktop", feature = "serve"))]
 pub(crate) async fn editor_document(
     project: String,
     folder: String,
     name: String,
     archived: bool,
     include_preview: bool,
+    gzip: bool,
 ) -> Result<Value, crate::Fail> {
     let key = (project, folder, name);
     let raw = library::read(key.0.clone(), key.1.clone(), key.2.clone(), archived).await?;
-    if include_preview && !archived {
-        let drafts = DRAFTS.lock().await;
-        if let Some(draft) = drafts.get(&key).filter(|draft| draft.base == raw) {
-            return Ok(json!({"content": raw, "preview": draft.content}));
-        }
+    let preview = if include_preview && !archived {
+        DRAFTS
+            .lock()
+            .await
+            .get(&key)
+            .filter(|draft| draft.base == raw)
+            .map(|draft| draft.content.clone())
+    } else {
+        None
+    };
+    let content = library::encode_wire(raw, gzip).await?;
+    if let Some(preview) = preview {
+        return Ok(
+            json!({"content": content, "preview": library::encode_wire(preview, gzip).await?}),
+        );
     }
-    Ok(Value::String(raw))
+    Ok(Value::String(content))
 }
 
 /// A stopped or finished turn can no longer save its outstanding preview.

@@ -94,10 +94,10 @@ function settle(base: Scene, steps: Step[], upTo: number): Scene {
 /// picture and never moves. The server renders that finished picture too, so
 /// the first paint is never an empty window. Any `act` hands the window to the
 /// reader until `replay`.
-export function useScene(base: Scene, steps: Step[]) {
+export function useScene(base: Scene, steps: Step[], autoplay = true) {
   const ref = useRef<HTMLDivElement>(null);
   const last = steps.length - 1;
-  const [index, setIndex] = useState(last);
+  const [index, setIndex] = useState(autoplay ? last : -1);
   const [visible, setVisible] = useState(false);
   const [reduced, setReduced] = useState(false);
   const [override, setOverride] = useState<Partial<Scene> | null>(null);
@@ -118,9 +118,10 @@ export function useScene(base: Scene, steps: Step[]) {
     };
   }, []);
 
-  const playing = visible && !reduced && !override;
+  const playing = autoplay && visible && !reduced && !override;
 
   useEffect(() => {
+    if (!autoplay) return;
     if (reduced) {
       setIndex(last);
       return;
@@ -133,7 +134,7 @@ export function useScene(base: Scene, steps: Step[]) {
     }
     const t = setTimeout(() => setIndex((i) => (i >= last ? 0 : i + 1)), steps[index].hold);
     return () => clearTimeout(t);
-  }, [playing, reduced, index, last, steps]);
+  }, [autoplay, playing, reduced, index, last, steps]);
 
   const scripted = useMemo(() => settle(base, steps, index), [base, steps, index]);
   const state = useMemo<Scene>(() => (override ? { ...scripted, ...override, target: null } : scripted), [scripted, override]);
