@@ -407,10 +407,15 @@ export function usePicking(sessionId: string): boolean {
 }
 
 export function pickElement(sessionId: string, on: boolean) {
+  openErrors.delete(sessionId);
   if (on) picking.add(sessionId);
   else picking.delete(sessionId);
   notify();
-  return invoke("browser_pick", { sessionId, start: on });
+  return invoke("browser_pick", { sessionId, start: on }).catch((error) => {
+    picking.delete(sessionId);
+    openErrors.set(sessionId, String(error));
+    notify();
+  });
 }
 
 /// The block a pick appends to the draft: enough for the agent to find the

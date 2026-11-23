@@ -216,12 +216,47 @@
   display: flex;
   flex: 1;
   min-width: 0;
+  container: ce-stage / inline-size;
+  --ce-tools-w: 260px;
+}
+/* Composer and tools share the bottom edge. Stacked by default: the composer
+   at the right, the tools centred above it. Where the stage is wide enough
+   for both on one line, the tools go back to the stage's centre and the
+   composer narrows to the room left of them, capped at its full 608px. */
+.ce-bottom {
+  position: absolute;
+  inset: auto 14px 14px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+.ce-bottom > * {
+  pointer-events: auto;
+}
+.ce-composer {
+  --ce-composer-radius: calc(var(--radius) * 2.1);
+  width: min(608px, 100%);
+}
+.ce-bottom > .ce-toolbar {
+  align-self: center;
+}
+/* 984px is where the room right of the centred tools first holds a 340px
+   composer: (984 - 28) / 2 - 260 / 2 - 8. */
+@container ce-stage (min-width: 984px) {
+  .ce-bottom > .ce-toolbar {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    transform: translateX(-50%);
+  }
+  .ce-composer {
+    width: min(608px, calc(50% - var(--ce-tools-w) / 2 - 8px));
+  }
 }
 .ce-toolbar {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 2px;

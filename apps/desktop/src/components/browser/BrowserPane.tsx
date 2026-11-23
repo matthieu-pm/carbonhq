@@ -1,19 +1,18 @@
+import { LogicalPosition } from "@tauri-apps/api/dpi";
+import { Menu, type MenuOptions } from "@tauri-apps/api/menu";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   Copy,
-  Bug,
-  ExternalLink,
   Globe,
-  Maximize2,
-  Minimize2,
+  MessageSquare,
+  MoreHorizontal,
   Plus,
   RotateCcw,
   RotateCw,
   Share2,
-  Smartphone,
   SquareDashedMousePointer,
   Trash2,
   X,
@@ -28,8 +27,7 @@ import ShortcutKeys from "@/components/ShortcutKeys";
 import TabMenu from "@/components/browser/TabMenu";
 import { ContextMenuTrigger } from "@/components/ui/context-menu";
 import Spinner from "@/components/ui/spinner";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopied } from "@/hooks/useCopied";
 import { useDragReorder } from "@/hooks/useDragReorder";
@@ -92,14 +90,17 @@ import { zoomLevel } from "@/lib/zoom";
 import { cn } from "@/lib/utils";
 import type { ChromiumStatus } from "@/types/events";
 
-/// The element picker is built and parked: it works, but what it drops into
-/// the composer wants a screenshot beside it before it is worth a button.
-const PICKER = false;
-
 /// The toolbar sits on the card surface, a step off the ghost hover fill at
 /// best, so a hovered button there was invisible. A wash of the foreground
 /// instead.
 const TOOL_BTN = "hover:bg-foreground/10 aria-expanded:bg-foreground/10";
+
+/// A raised round fill on the URL row: the navigation group, Ask, the address
+/// and the buttons at the end all share it, so the row reads as one set.
+const GROUP = "flex h-8 items-center rounded-full bg-foreground/7";
+
+/// An icon button inside a group, round like the group it sits in.
+const ROUND_BTN = cn(TOOL_BTN, "rounded-full");
 
 /// Every tooltip here opens upward. Below the toolbar is the page, a native
 /// view nothing in the DOM can draw over, so a tooltip dropped there is a
@@ -141,6 +142,7 @@ export default function BrowserPane({
   fullOpen = false,
   onExpand,
   onCollapse,
+  onChat,
 }: {
   sessionId: string;
   active: boolean;
@@ -149,6 +151,8 @@ export default function BrowserPane({
   fullOpen?: boolean;
   onExpand?: () => void;
   onCollapse?: () => void;
+  /// The toolbar's chat button: back to this session's conversation.
+  onChat?: () => void;
 }) {
   const tabs = useBrowserTabs(sessionId) ?? [];
   const pending = usePendingTab(sessionId);
@@ -237,6 +241,7 @@ export default function BrowserPane({
         mode={mode}
         onExpand={onExpand}
         onCollapse={onCollapse}
+        onChat={onChat}
       />
       {!empty &&
         (responsive ? (
@@ -358,6 +363,7 @@ function Chrome({
   mode,
   onExpand,
   onCollapse,
+  onChat,
 }: {
   sessionId: string;
   tabs: BrowserTab[];
@@ -366,6 +372,7 @@ function Chrome({
   mode: "panel" | "full";
   onExpand?: () => void;
   onCollapse?: () => void;
+  onChat?: () => void;
 }) {
   const openError = useOpenError(sessionId);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -403,6 +410,11 @@ function Chrome({
   const history = useHistory(sessionId, focused);
   const matches = draft === null ? [] : matchHistory(history, draft);
   const suggesting = focused && !dismissed && matches.length > 0;
+  // After the render that swaps the host for the whole address: selected in
+  // `onFocus`, the selection covered the host and went with it.
+  useLayoutEffect(() => {
+    if (focused) inputRef.current?.select();
+  }, [focused]);
   const picked = suggesting && highlight >= 0 ? matches[highlight] : undefined;
   const listId = useId();
   useEffect(() => {
@@ -423,6 +435,7 @@ function Chrome({
   };
 
   const swap = mode === "panel" ? onExpand : onCollapse;
+  const rowTint = tint(current?.background);
 
   return (
     <div className="shrink-0">
@@ -444,7 +457,7 @@ function Chrome({
               gliding={!!reorder.drag && reorder.drag.from !== i}
               active={tab.active && !pending}
               // The active tab joins the URL row, so it wears the same colour.
-              paint={tab.active && !pending && tab.background ? tint(tab.background) : undefined}
+              paint={tab.active && !pending ? tint(tab.background) : undefined}
               title={tab.error ? `${tab.error} — ${tab.url}` : tab.url}
               icon={<Favicon tab={tab} />}
               overlay={<AgentBeam tab={tab.id} top />}
@@ -508,57 +521,104 @@ function Chrome({
         </div>
       )}
       {/* The page's own colour where it has reported one, the way a browser
-          tints its toolbar; bare with no page at all. */}
+          tints its toolbar; bare with no page at all. Three zones, the address
+          held in the middle by two equal sides, so it sits at the row's centre
+          wherever the sides leave it room to. */}
       <div
         className={cn(
           // Ink at low opacity rather than `border-border`, which some themes
           // draw close to the background; under `tint` it flips with the page.
           // `text-foreground` re-resolves the ink here: inherited, `color` is
           // already computed from the page's tokens and `tint` cannot reach it.
-          "relative flex h-9 items-center gap-0.5 border-b border-foreground/10 px-1.5 text-foreground",
-          current && !current.background && "bg-card",
+          "@container relative flex h-11 items-center gap-2 border-b border-foreground/10 px-2 text-foreground",
+          current && !rowTint && "bg-card",
         )}
-        style={current?.background ? tint(current.background) : undefined}
+        style={rowTint}
       >
         {/* Keyed, so a tab switch starts its own bar rather than finishing another's. */}
         <LoadBar key={current?.id ?? "new"} loading={loading} />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={TOOL_BTN}
-          aria-label="Back"
-          disabled={!current?.canGoBack}
-          onClick={() => void navigate(sessionId, "back")}
-        >
-          <ArrowLeft className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={TOOL_BTN}
-          aria-label="Forward"
-          disabled={!current?.canGoForward}
-          onClick={() => void navigate(sessionId, "forward")}
-        >
-          <ArrowRight className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={TOOL_BTN}
-          aria-label={current?.loading ? "Stop" : "Reload"}
-          disabled={!current}
-          onClick={(e) =>
-            void navigate(
-              sessionId,
-              current?.loading ? "stop" : e.shiftKey ? "hard_reload" : "reload",
-            )
-          }
-        >
-          {current?.loading ? <X className="size-3.5" /> : <RotateCw className="size-3.5" />}
-        </Button>
+        <div className="flex flex-1 basis-0 items-center gap-1.5">
+          <div className={cn(GROUP, "shrink-0 px-0.5")}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={ROUND_BTN}
+                  aria-label="Back"
+                  disabled={!current?.canGoBack}
+                  onClick={() => void navigate(sessionId, "back")}
+                >
+                  <ArrowLeft className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side={TIP_SIDE}>Back</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={ROUND_BTN}
+                  aria-label="Forward"
+                  disabled={!current?.canGoForward}
+                  onClick={() => void navigate(sessionId, "forward")}
+                >
+                  <ArrowRight className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side={TIP_SIDE}>Forward</TooltipContent>
+            </Tooltip>
+            <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-foreground/15" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={ROUND_BTN}
+                  aria-label={current?.loading ? "Stop" : "Reload"}
+                  disabled={!current}
+                  onClick={(e) =>
+                    void navigate(
+                      sessionId,
+                      current?.loading ? "stop" : e.shiftKey ? "hard_reload" : "reload",
+                    )
+                  }
+                >
+                  {current?.loading ? <X className="size-3.5" /> : <RotateCw className="size-3.5" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side={TIP_SIDE}>
+                {current?.loading ? "Stop" : "Reload"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          {/* The element picker: what is clicked lands in this session's draft. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                aria-label="Ask ChatGPT"
+                aria-pressed={picking}
+                disabled={!current}
+                className={cn(
+                  GROUP,
+                  "h-8 shrink-0 gap-1.5 px-3 font-medium hover:bg-foreground/12 disabled:opacity-50 @max-md:w-8 @max-md:px-0",
+                  picking && "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary",
+                )}
+                onClick={() => void pickElement(sessionId, !picking)}
+              >
+                <SquareDashedMousePointer className="size-4" />
+                <span className="@max-md:hidden">Ask ChatGPT</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side={TIP_SIDE}>
+              {picking ? "Click an element, or Esc" : "Pick an element for the chat"}
+            </TooltipContent>
+          </Tooltip>
+        </div>
         <form
-          className="relative min-w-0 flex-1"
+          className="relative min-w-0 flex-[0_1_clamp(10rem,calc(100%_-_31rem),48rem)] @max-md:basis-[max(6rem,calc(100%_-_17.5rem))]"
           onSubmit={(e) => {
             e.preventDefault();
             open(picked?.url ?? draft ?? url, !current);
@@ -568,8 +628,11 @@ function Chrome({
         >
           <input
             ref={inputRef}
-            value={draft ?? url}
+            // At rest the pill names the host, the half a lookalike fakes;
+            // focused it holds the whole address to edit.
+            value={draft ?? (focused || !url ? url : hostOf(url))}
             placeholder="Search or enter a URL"
+            aria-label="Address"
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
@@ -593,10 +656,7 @@ function Chrome({
                 setDismissed(true);
               }
             }}
-            onFocus={(e) => {
-              e.target.select();
-              setFocused(true);
-            }}
+            onFocus={() => setFocused(true)}
             // A page's field goes back to its address; a new tab keeps what
             // was typed into it until it is closed or opened.
             onBlur={() => {
@@ -605,15 +665,11 @@ function Chrome({
               if (current) setDraft(null);
             }}
             className={cn(
-              "h-7 w-full rounded-md px-2.5 font-mono text-ui outline-none transition-colors",
-              // Bare over a page, so the row reads as the page's own; a wash of
-              // the foreground on focus, which `tint` flips to white over a dark
-              // page and black over a light one. No hover wash: leaving the
-              // field downward lands on the native page view, so the webview
-              // never hears the pointer go and `:hover` sticks.
-              current
-                ? "bg-transparent focus:bg-foreground/10"
-                : "bg-surface-raised dark:bg-background",
+              "h-8 w-full truncate rounded-full bg-foreground/7 px-4 text-ui outline-none transition-colors placeholder:text-muted-foreground",
+              // No hover wash: leaving the field downward lands on the native
+              // page view, so the webview never hears the pointer go and
+              // `:hover` sticks.
+              focused ? "bg-foreground/10 text-left" : "text-center",
             )}
           />
           {suggesting && (
@@ -649,82 +705,30 @@ function Chrome({
             </ul>
           )}
         </form>
-        {PICKER && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={picking ? "Cancel picking" : "Pick an element for the chat"}
-                aria-pressed={picking}
-                disabled={!current}
-                className={cn(TOOL_BTN, picking && "bg-primary/15 text-primary")}
-                onClick={() => void pickElement(sessionId, !picking)}
-              >
-                <SquareDashedMousePointer className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side={TIP_SIDE}>
-              {picking ? "Click an element, or Esc" : "Pick an element for the chat"}
-            </TooltipContent>
-          </Tooltip>
-        )}
-        <DeviceMenu sessionId={sessionId} disabled={!current} />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={TOOL_BTN}
-              aria-label="Developer tools"
-              disabled={!current}
-              onClick={() => void openDevTools(sessionId)}
-            >
-              <Bug className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side={TIP_SIDE}>
-            Developer tools
-            <KbdGroup>
-              <Kbd>⌥</Kbd>
-              <Kbd>⌘</Kbd>
-              <Kbd>I</Kbd>
-            </KbdGroup>
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={TOOL_BTN}
-              aria-label="Open in system browser"
-              disabled={!current}
-              onClick={() => void openUrl(url).catch(console.error)}
-            >
-              <ExternalLink className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side={TIP_SIDE}>Open in system browser</TooltipContent>
-        </Tooltip>
-        {swap && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={TOOL_BTN}
-                onClick={swap}
-                aria-label={mode === "panel" ? "Open full view" : "Back to the panel"}
-              >
-                {mode === "panel" ? <Maximize2 className="size-3.5" /> : <Minimize2 className="size-3.5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side={TIP_SIDE}>
-              {mode === "panel" ? "Open full view" : "Back to the panel"}
-            </TooltipContent>
-          </Tooltip>
-        )}
+        <div className="flex flex-1 basis-0 items-center justify-end gap-1.5">
+          {onChat && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(GROUP, "shrink-0 hover:bg-foreground/12")}
+                  aria-label="Chat"
+                  onClick={onChat}
+                >
+                  <MessageSquare className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side={TIP_SIDE}>Chat</TooltipContent>
+            </Tooltip>
+          )}
+          <MoreMenu
+            sessionId={sessionId}
+            url={url}
+            hasPage={!!current}
+            swap={swap && { label: mode === "panel" ? "Open full view" : "Back to the panel", run: swap }}
+          />
+        </div>
       </div>
       {openError && (
         <p className={cn("px-3 pb-1.5 text-ui text-destructive", current && "bg-card")}>{openError}</p>
@@ -828,75 +832,130 @@ function TabButton({
   );
 }
 
-/// Device size, picked where the button is: a native `<select>` laid over the
-/// icon, so the menu is macOS's own. That is the point of it — an in-app menu
-/// lands on the page, and the page is a native view nothing in the DOM draws
-/// over, so opening one swapped the page for a picture of it (a flash) and a
-/// pick made behind that picture came back with the view at a stale size.
-/// A native menu is drawn above everything and touches neither.
+/// The `⋯` menu's items, as `Menu.new` takes them. `selected` is the device
+/// preset in use, which carries the checkmark.
+function moreMenuItems({
+  sessionId,
+  url,
+  hasPage,
+  selected,
+  saved,
+  swap,
+}: {
+  sessionId: string;
+  url: string;
+  hasPage: boolean;
+  selected: string;
+  saved: Device[];
+  swap?: { label: string; run: () => void };
+}): MenuOptions["items"] {
+  const device = (id: string, text: string, pick: () => void) => ({
+    text,
+    checked: selected === id,
+    enabled: hasPage,
+    action: pick,
+  });
+  const apply = (d: Device) => setViewport(sessionId, { preset: d.id, width: d.width, height: d.height });
+  return [
+    {
+      text: "Device size",
+      enabled: hasPage,
+      items: [
+        device("default", "Default", () => setViewport(sessionId, null)),
+        device("responsive", "Responsive", () => setResponsive(sessionId)),
+        { item: "Separator" },
+        ...VIEWPORT_PRESETS.map((d) => device(d.id, d.label, () => apply(d))),
+        ...(saved.length > 0 ? [{ item: "Separator" as const }, { text: "Saved", enabled: false }] : []),
+        ...saved.map((d) => device(d.id, d.label, () => apply(d))),
+      ],
+    },
+    { item: "Separator" },
+    {
+      text: "Developer tools",
+      accelerator: "Alt+CmdOrCtrl+I",
+      enabled: hasPage,
+      action: () => void openDevTools(sessionId),
+    },
+    {
+      text: "Open in system browser",
+      enabled: hasPage,
+      action: () => void openUrl(url).catch(console.error),
+    },
+    ...(swap ? [{ item: "Separator" as const }, { text: swap.label, action: swap.run }] : []),
+  ];
+}
+
+/// The toolbar's overflow: device size, developer tools, the system browser.
 ///
-/// Default clears everything and draws no bar; Responsive fills the pane the
-/// same way but puts the bar up, so its size can be saved as a device.
-function DeviceMenu({ sessionId, disabled }: { sessionId: string; disabled: boolean }) {
+/// A native menu, for the reason device size was a native `<select>` before it
+/// moved in here: an in-app menu lands on the page, a native view nothing in
+/// the DOM draws over, so opening one swapped the page for a picture of it (a
+/// flash) and a size picked behind that picture came back with the view at a
+/// stale size. macOS draws its own menu above everything and touches neither.
+function MoreMenu({
+  sessionId,
+  url,
+  hasPage,
+  swap,
+}: {
+  sessionId: string;
+  url: string;
+  hasPage: boolean;
+  swap?: { label: string; run: () => void };
+}) {
   const viewport = useViewport(sessionId);
   const responsive = useResponsive(sessionId);
   const saved = useCustomDevices();
-  const apply = (next: Viewport | null) => setViewport(sessionId, next);
-  const option = (d: Device) => (
-    <option key={d.id} value={d.id}>
-      {d.label}
-    </option>
-  );
+  const [open, setOpen] = useState(false);
+
+  const show = async (anchor: HTMLElement) => {
+    const selected = viewport?.preset ?? (responsive ? "responsive" : "default");
+    const menu = await Menu.new({ items: moreMenuItems({ sessionId, url, hasPage, selected, saved, swap }) });
+    // Under the button from its left edge: the menu's width is not known
+    // here, so its right edge cannot be lined up.
+    const rect = anchor.getBoundingClientRect();
+    const z = zoomLevel();
+    setOpen(true);
+    try {
+      await menu.popup(new LogicalPosition(rect.left * z, (rect.bottom + 4) * z));
+    } finally {
+      setOpen(false);
+      // Late, so an item's action still finds its channel after the close.
+      setTimeout(() => void menu.close(), 1000);
+    }
+  };
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="group/device relative">
-          <span
-            aria-hidden
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "icon-sm" }),
-              "group-hover/device:bg-foreground/10",
-              (viewport || responsive) && "bg-foreground/10",
-              disabled && "opacity-50",
-            )}
-          >
-            <Smartphone className="size-3.5" />
-          </span>
-          <select
-            aria-label="Device size"
-            disabled={disabled}
-            value={viewport?.preset ?? (responsive ? "responsive" : "default")}
-            onChange={(e) => {
-              if (e.target.value === "responsive") return setResponsive(sessionId);
-              const d = [...VIEWPORT_PRESETS, ...saved].find((x) => x.id === e.target.value);
-              apply(d ? { preset: d.id, width: d.width, height: d.height } : null);
-            }}
-            className="absolute inset-0 cursor-default appearance-none opacity-0"
-          >
-            <option value="default">Default</option>
-            <option value="responsive">Responsive</option>
-            {VIEWPORT_PRESETS.map(option)}
-            {/* A disabled row rather than an <optgroup>, which macOS draws
-                with its items indented off the rest of the list. */}
-            {saved.length > 0 && (
-              <option disabled value="">
-                Saved
-              </option>
-            )}
-            {saved.map(option)}
-          </select>
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(GROUP, "shrink-0 hover:bg-foreground/12", open && "bg-foreground/12")}
+          aria-label="More"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={(e) => void show(e.currentTarget).catch(console.error)}
+        >
+          <MoreHorizontal className="size-4" />
+        </Button>
       </TooltipTrigger>
-      <TooltipContent side={TIP_SIDE}>Device size</TooltipContent>
+      <TooltipContent side={TIP_SIDE}>More</TooltipContent>
     </Tooltip>
   );
 }
 
 /// The URL row painted in the page's colour, with the ink tokens flipped to
 /// suit it — a black page in light mode would otherwise draw grey on black.
-function tint(background: string): React.CSSProperties {
-  const [r, g, b] = background.match(/\d+/g)?.map(Number) ?? [255, 255, 255];
+///
+/// Neutral pages only: black, white and the greys between. A coloured page
+/// keeps the card, so the toolbar stays chrome rather than turning brand
+/// orange under the reader's controls.
+function tint(background: string | null | undefined): React.CSSProperties | undefined {
+  if (!background) return undefined;
+  const [r, g, b] = background.match(/\d+/g)?.map(Number) ?? [];
+  if (r === undefined || g === undefined || b === undefined) return undefined;
+  if (Math.max(r, g, b) - Math.min(r, g, b) > NEUTRAL_SPREAD) return undefined;
   const dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 140;
   return {
     background,
@@ -905,6 +964,11 @@ function tint(background: string): React.CSSProperties {
     ["--muted-foreground" as string]: dark ? "rgb(255 255 255 / 0.6)" : "rgb(0 0 0 / 0.55)",
   };
 }
+
+/// How far apart a colour's channels may sit and still read as grey. Wide
+/// enough for warm or cool off-whites and near-blacks, which pages use as
+/// their neutral; narrow enough that any brand colour misses.
+const NEUTRAL_SPREAD = 24;
 
 const BAR = "flex h-8 shrink-0 items-center gap-1.5 border-b border-border bg-card px-2 text-ui";
 

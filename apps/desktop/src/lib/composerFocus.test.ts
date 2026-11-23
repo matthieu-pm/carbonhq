@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { handsOver } from "./composerFocus";
+import { focusComposerOnMount, handsOver, registerComposer } from "./composerFocus";
 
 const key = (k: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey", boolean>> = {}) => ({
   key: k,
@@ -36,5 +36,41 @@ describe("handsOver", () => {
   it("leaves paste-and-match-style and Option paste", () => {
     expect(handsOver(key("v", { metaKey: true, shiftKey: true }), true)).toBe(false);
     expect(handsOver(key("v", { metaKey: true, altKey: true }), true)).toBe(false);
+  });
+});
+
+describe("focusComposerOnMount", () => {
+  const composer = () => ({ focus: vi.fn() }) as unknown as HTMLElement & { focus: ReturnType<typeof vi.fn> };
+  afterEach(() => {
+    registerComposer(null);
+    vi.useRealTimers();
+  });
+
+  it("focuses a mounted composer at once", () => {
+    const el = composer();
+    registerComposer(el);
+    focusComposerOnMount();
+    expect(el.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("focuses the composer that mounts next, once", () => {
+    registerComposer(null);
+    focusComposerOnMount();
+    const el = composer();
+    registerComposer(el);
+    // A ref callback runs again on every render; only the first mount focuses.
+    registerComposer(null);
+    registerComposer(el);
+    expect(el.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the request when nothing mounts within a second", () => {
+    vi.useFakeTimers();
+    registerComposer(null);
+    focusComposerOnMount();
+    vi.advanceTimersByTime(1500);
+    const el = composer();
+    registerComposer(el);
+    expect(el.focus).not.toHaveBeenCalled();
   });
 });

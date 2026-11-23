@@ -35,6 +35,8 @@ Permission first: `core:default` grant `allow-internal-toggle-maximize` but **no
 
 Then value: bare `data-tauri-drag-region` = **self only**, drag start only where pointer hit that exact element ([drag.js](https://github.com/tauri-apps/tauri) walk composed path), so every label inside row = dead strip in titlebar that look uniform. Use `"deep"` on row and put attribute nowhere else — Tauri stop walk at any clickable element (`A`, `BUTTON`, `INPUT`, `role`, `tabindex`) carrying no attribute of own, so toggles and tabs block on their own and need no opt-out. `="false"` = hard block, for element that must not drag though nothing clickable in it.
 
+**Browser toolbar** (CBN-145). Group Back, Forward and Reload beside Ask ChatGPT. Center the address field when space allows, up to 768px wide. On narrow rows, leave room for the controls on both sides. Ask becomes an icon below 448px. The field shows the host at rest and selects the full URL on focus. Neutral pages tint the toolbar and active tab when their RGB channel spread is at most 24. Other pages use the card surface. The overflow uses a native menu so it opens over the live page.
+
 ## Transparency, and what surfaces sit on
 
 **Vibrancy = macOS flavour of transparency, not second one.** Everything above describe one way of answering "what is behind these surfaces", and it only ever had one answer: the desktop. That answer die in fullscreen, and outside macOS never existed — so app went flat in both, which read as theme washing out rather than as effect.
@@ -360,3 +362,11 @@ Profiles switch directly from a row of filled icons below the session list. All 
 **Covers in cards everywhere, in rows only under Slides.** A cover is 16:9, and beside a Page's square icon it pushes the name out of line, so a mixed list keeps icons. Deck cards keep a Page card's frame for the same reason in a mixed grid. Covers draw when they scroll into view and are cached by revision, so an entry is never stale, only unreachable.
 
 **The sorter keeps the editor's own layout.** Its drag reordering is built around a vertical list; a grid would look better and reorder wrongly.
+
+## Design workspace composer
+
+**The canvas composer floats at the stage's lower right, and the transcript stays in the panel.** Two 45px rows: the conversation it sends into with its picker and a collapse, then attach, text, options, dictation and Send. Its footprint follows the reference it was drawn from: 608px wide where there is room, a 21px corner (`--radius` × 2.1, one rung past the composer's own 2xl, since the scale stops there), and Send a foreground disc rather than `--primary`, so dark mode gets the light neutral circle. It took the panel's place as the only canvas composer, so the panel is the transcript alone. Collapse keeps the header at full width.
+
+**The tool bar keeps its place at the canvas's centre, and the card makes room.** Where the stage is 984px or wider the card narrows to the space right of the centred tools (608px down to about 340px); below that the two stack, tools centred above the card, which takes its full width again. Moving the tools aside to fit the card was the first version and was rejected: the tools are the canvas's, and they should not move because a composer arrived. The breakpoint is a container query on the stage, so the inspector and the chat panel opening move it without any script.
+
+**While a canvas is open the session composer stands down** (`away`): it stays mounted and hidden, and a window-wide drop or ⌘-attach would otherwise pin a file to a tray nobody can see.

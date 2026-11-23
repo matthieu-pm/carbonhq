@@ -141,6 +141,7 @@ export function HeaderIconButton({
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
+          type="button"
           variant="ghost"
           size={size}
           aria-label={label}

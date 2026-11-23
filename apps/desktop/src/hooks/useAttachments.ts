@@ -123,3 +123,19 @@ export function restoreAttachments(sessionId: string | null, attachments: Attach
 
   write(sessionId, [...current, ...fresh]);
 }
+
+/// A send consumes its pins before the remote upload is forgotten. Restore them
+/// on failure alongside anything attached while the send was pending.
+export async function sendWithAttachments(
+  key: string,
+  send: (attachments: Attachment[]) => Promise<void>,
+) {
+  const attachments = readAttachments(key);
+  clearAttachments(key);
+  try {
+    await send(attachments);
+  } catch (error) {
+    restoreAttachments(key, attachments);
+    throw error;
+  }
+}
