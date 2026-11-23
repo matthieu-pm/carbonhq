@@ -670,3 +670,17 @@
 .ce-comment-box button:disabled { background: var(--muted); color: var(--muted-foreground); }
 .ce-comment-box small { width: 100%; padding-inline: 4px; color: var(--muted-foreground); }
 .ce-comment-box p { overflow-wrap: anywhere; max-height: 8rem; overflow: auto; }
+
+.ce-board[aria-label="DOM reference board"] {
+  border-left: 1px solid var(--hairline);
+}
+.ce-reference-label {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 7px;
+  color: var(--foreground);
+  background: var(--background);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}

@@ -1,14 +1,20 @@
 import { useCanvasWindowPart } from "@/lib/canvasWindow";
-import { useContext, useRef, useState, type PointerEvent } from "react";
+import { useContext, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
+import type { Bounds } from "./graphicsScene";
 import { ArrowUp } from "lucide-react";
 import { CanvasCommentTarget } from "@/lib/canvasChat";
-import type { Tool, View } from "./CanvasBoard";
+import type { Tool } from "./CanvasBoard";
+import { initialView, type CanvasCamera, type View } from "./canvasCamera";
 import type { CanvasSession } from "./useCanvasDocument";
 import { uid, type CommentPin, type InkPoint, type Page } from "./document";
 
 const ink = "#168bf0";
 
-async function snapshot(overlay: HTMLElement, view: View, page: Page, pin: CommentPin) {
+type Capture = (area: Bounds) => React.ReactNode;
+
+async function snapshot(overlay: HTMLElement, view: View, page: Page, pin: CommentPin, capture: Capture) {
   const { default: render } = await import("html2canvas-pro");
   const board = overlay.parentElement;
   if (!overlay.isConnected || !board) throw Error("Reopen the canvas to send this comment.");
@@ -19,14 +25,25 @@ async function snapshot(overlay: HTMLElement, view: View, page: Page, pin: Comme
   const background = await render(board, {
     onclone: (_, clone) => {
       const world = clone.querySelector<HTMLElement>(".ce-world");
-      if (world) world.style.transform = `translate(${x}px, ${y}px) scale(${view.zoom})`;
+      if (world) {
+        world.style.transform = `translate(${x}px, ${y}px) scale(${view.zoom})`;
+        const host = world.ownerDocument.createElement("div");
+        const preview = createRoot(host);
+        try {
+          flushSync(() => preview.render(capture({ x: -x / view.zoom, y: -y / view.zoom,
+            w: width / view.zoom, h: height / view.zoom })));
+          world.replaceChildren(...Array.from(host.children, child => child.cloneNode(true)));
+        } finally {
+          preview.unmount();
+        }
+      }
     },
     width,
     height,
     scale: 1,
     logging: false,
     backgroundColor: null,
-    ignoreElements: (el) => el.matches(".ce-markup, .ce-selection, .ce-frame-label"),
+    ignoreElements: (el) => el.matches(".ce-markup, .ce-selection, .ce-frame-label, .ce-reference-label, [data-paint-start]"),
   });
   const image = document.createElement("canvas");
   image.width = background.width;
@@ -58,13 +75,16 @@ async function snapshot(overlay: HTMLElement, view: View, page: Page, pin: Comme
 }
 
 export function CanvasMarkup({
+  reference, capture,
   page,
-  view,
+  camera,
   tool,
   session,
 }: {
+  reference: boolean;
+  capture: Capture;
   page: Page;
-  view: View;
+  camera: CanvasCamera;
   tool: Tool;
   session: CanvasSession;
 }) {
@@ -79,6 +99,8 @@ export function CanvasMarkup({
   const saved = typeof selection === "string";
   const pin = saved ? page.comments?.find(p => p.id === selection) : selection;
   const drawingTool = tool === "Pen" || tool === "Comment";
+  const hasMarkup = drawingTool || pin || page.strokes?.length || page.comments?.length;
+  const view = useSyncExternalStore(camera.subscribe, hasMarkup ? camera.get : () => initialView);
   function position(e: { clientX: number; clientY: number }): InkPoint {
     const r = overlay.current!.getBoundingClientRect();
     return [(e.clientX - r.left - view.x) / view.zoom, (e.clientY - r.top - view.y) / view.zoom];
@@ -129,7 +151,7 @@ export function CanvasMarkup({
     if (locked.current) throw Error("A comment is already being sent.");
     if (!pin.text.trim()) throw Error("Enter comment text before sending.");
     await deliver(pin, true);
-  });
+  }, !reference);
   async function deliver(pin: CommentPin, alreadySaved = false) {
     const markup = overlay.current;
     if (!pin.text.trim() || locked.current || !target || !markup) throw Error("Comment is unavailable.");
@@ -140,7 +162,7 @@ export function CanvasMarkup({
     try {
       const send = () => target.send(
         sent.text + "\n\nPage: " + page.name + " (" + Math.round(sent.x) + ", " + Math.round(sent.y) + ")",
-        () => snapshot(markup, view, page, sent),
+        () => snapshot(markup, view, page, sent, capture),
       );
       if (alreadySaved) await send();
       else await session.sendComment(page.id, sent, send);
