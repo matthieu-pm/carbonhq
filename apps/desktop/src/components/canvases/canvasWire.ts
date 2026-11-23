@@ -8,6 +8,21 @@ export async function readCanvas(args: CanvasLocation) {
     ...args,
     gzip: typeof DecompressionStream !== "undefined",
   });
+  return decodeCanvas(raw);
+}
+
+export async function readCanvasWithPreview(args: CanvasLocation) {
+  const result = await invoke<string | { content: string; preview: string }>("read_canvas_document", {
+    ...args,
+    gzip: typeof DecompressionStream !== "undefined",
+    includePreview: true,
+  });
+  if (typeof result === "string") return { content: await decodeCanvas(result), preview: null };
+  const [content, preview] = await Promise.all([decodeCanvas(result.content), decodeCanvas(result.preview)]);
+  return { content, preview };
+}
+
+function decodeCanvas(raw: string) {
   if (!raw.startsWith("gzip:")) return raw;
   return inflateCanvasGzip(raw.slice(5));
 }

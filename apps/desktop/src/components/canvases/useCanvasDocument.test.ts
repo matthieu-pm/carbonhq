@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { invoke } from "@/lib/transport";
+import { invoke, listen } from "@/lib/transport";
+import { watchDocs } from "@/lib/servers";
 import { CanvasSession, openCanvasDocument, relocateCanvasDocument } from "./useCanvasDocument";
 import type { Document } from "./document";
 
-vi.mock("@/lib/transport", () => ({ invoke: vi.fn() }));
+vi.mock("@/lib/transport", async (original) => ({
+  ...await original<typeof import("@/lib/transport")>(),
+  invoke: vi.fn(),
+  listen: vi.fn(),
+}));
+vi.mock("@/lib/servers", () => ({ watchDocs: vi.fn().mockResolvedValue(undefined) }));
 const original = JSON.stringify({ version: 1, elements: [] });
 let disk: string;
 const file = { project: "/studio", folder: "", name: "test" };
@@ -171,4 +177,55 @@ it("discards focused and debounced edits when reloading the document", async () 
   await vi.advanceTimersByTimeAsync(300);
   expect(session.get().doc?.pages[0].background).toBe("#282828");
   expect(disk).toBe(original);
+});
+
+it("shows successive file edits on the open canvas without a CLI event or refocus", async () => {
+  const file = { project: "carbon://mac/studio", folder: "design/mobile", name: "Home" };
+  const path = "carbon://mac/studio/canvases/design/mobile/Home.canvas.json";
+  const handlers = new Map<string, (event: { payload: string; server: string }) => void>();
+  vi.mocked(listen<string>).mockImplementation(async (name, callback) => {
+    handlers.set(name, event => callback({ ...event, event: name, id: 0 }));
+    return () => { handlers.delete(name); };
+  });
+  const session = new CanvasSession(file);
+  await session.load();
+  const close = session.watchFile();
+  await vi.advanceTimersByTimeAsync(0);
+  const scope = vi.mocked(watchDocs).mock.calls[0][0];
+  expect(watchDocs).toHaveBeenCalledWith(scope, [path]);
+
+  for (const color of ["blue", "green"]) {
+    disk = JSON.stringify(background(color)(session.get().doc!));
+    handlers.get("doc_changed")?.({ payload: path, server: "mac" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.get().doc?.pages[0].background).toBe(color);
+  }
+  disk = JSON.stringify(background("red")(session.get().doc!));
+  handlers.get("doc_changed")?.({ payload: path + ".other", server: "mac" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(session.get().doc?.pages[0].background).toBe("green");
+  handlers.get("live_state")?.({ payload: "", server: "mac" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(session.get().doc?.pages[0].background).toBe("red");
+
+  close();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(watchDocs).toHaveBeenLastCalledWith(scope, []);
+  expect(handlers.size).toBe(0);
+});
+
+it("keeps the agent preview out of local edits and undo history", async () => {
+  const session = new CanvasSession(file);
+  await session.load();
+  const saved = session.get().doc!;
+  const preview = JSON.stringify(background("blue")(saved));
+  vi.mocked(invoke).mockResolvedValueOnce({ content: original, preview });
+  await session.load(true);
+  expect(session.get().doc).toBe(saved);
+  expect(session.get().preview?.pages[0].background).toBe("blue");
+  expect(session.travel(false)).toBeUndefined();
+  session.change(background("green"));
+  expect(session.get().preview).toBeNull();
+  await session.flush();
+  expect(JSON.parse(disk).pages[0].background).toBe("green");
 });

@@ -36,6 +36,19 @@ carbon canvas --canvas "$canvas" token import DESIGN.md
 carbon canvas --canvas "$canvas" layer style "$frame" display flex
 ```
 
+## Preview a frame before saving
+
+Use the same `layer` and `effect` actions under `preview` to build a frame on the open board. Each command updates the preview in memory. The canvas file changes when you run `preview save`. A save counts as one undo step.
+
+```bash
+frame=$(carbon canvas --canvas "$canvas" preview layer add Frame page-1 --name Checkout | jq -r .data.id)
+heading=$(carbon canvas --canvas "$canvas" preview layer add Text page-1 --parent "$frame" | jq -r .data.id)
+carbon canvas --canvas "$canvas" preview layer text "$heading" "Your order"
+carbon canvas --canvas "$canvas" preview save
+```
+
+`preview read` returns the draft. `preview cancel` discards it. Each canvas has one preview owner at a time. Carbon supplies the agent's session ID and clears its pending previews when the turn ends. From a terminal, pass `preview --session ID` on each call and finish with save or cancel. If the saved canvas changes during a preview, cancel and rebuild from the latest version.
+
 ## Control the desktop window
 
 Open Carbon on the target machine for view commands, chat, and sending comment snapshots. `view open` selects the canvas in the Design workspace. `view state` reports the active canvas, tabs, panels, page, selected layer, tool and viewport. Pass `--canvas NAME` to editor commands to check that the intended canvas is still active.

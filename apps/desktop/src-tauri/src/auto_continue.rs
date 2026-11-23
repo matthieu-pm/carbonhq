@@ -91,7 +91,7 @@ fn arm(session_id: String, at: String, sink: Sink) {
         // continue must not move the session onto anything it was not on.
         let sent = manager()
             .send_msg(
-                &item.session_id, PROMPT, &[], &[], item.harness, item.model, item.effort,
+                &item.session_id, PROMPT, None, &[], &[], item.harness, item.model, item.effort,
                 item.permission_mode, item.fast, &item.cwd, None, false, None, None, false,
                 None, false, None, None, Some(&at), &sink,
             )

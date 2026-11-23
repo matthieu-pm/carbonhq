@@ -73,7 +73,7 @@ export function CanvasEditor({
   resizeHandle: ReactNode;
   libraryError: string;
 }) {
-  const { doc, error, saving, conflict, session } = useCanvasDocument(file);
+  const { doc, preview, error, saving, conflict, session } = useCanvasDocument(file);
   const composer = useContext(CanvasComposerSlot);
   useEditorStatus(canvasKey(file), !!doc, doc ? "" : error);
   const [mode, setMode] = useState<"Design" | "Theme">("Design");
@@ -91,6 +91,10 @@ export function CanvasEditor({
   const tree = useMemo(() => pageLayers(doc?.elements ?? [], page?.id, retainedScene.current?.tree), [doc?.elements, page?.id]);
   const scene = useMemo(() => graphicsScene(tree, doc?.tokens ?? [], retainedScene.current), [tree, doc?.tokens]);
   useEffect(() => { retainedScene.current = scene; }, [scene]);
+  const boardScene = useMemo(
+    () => preview ? graphicsScene(pageLayers(preview.elements, page?.id), preview.tokens) : scene,
+    [preview, page?.id, scene],
+  );
   const selected = selectedId ? tree.byId.get(selectedId) : undefined;
   const pick = useCallback((id: string | null) => {
     select(id);
@@ -239,8 +243,9 @@ export function CanvasEditor({
       );
     }
   }
-  const notices = (libraryError || error) && (
+  const notices = (preview || libraryError || error) && (
     <>
+      {preview && <p className="ce-notice" role="status">Previewing agent edits</p>}
       {libraryError && (
         <p className="ce-notice" role="alert">
           {libraryError}
@@ -389,8 +394,8 @@ export function CanvasEditor({
           <div className="ce-stage">
             {!controlsOpen && notices && <div className="ce-stage-notices">{notices}</div>}
             <CanvasBoard
-              tree={tree}
               scene={scene}
+              agentScene={boardScene}
               graphics={renderer !== "DOM"}
               doc={doc}
               page={page}
@@ -401,7 +406,7 @@ export function CanvasEditor({
               camera={camera}
               session={session}
             />
-            {renderer === "Compare" && <CanvasBoard reference graphics={false} tree={tree} scene={scene}
+            {renderer === "Compare" && <CanvasBoard reference graphics={false} scene={scene} agentScene={boardScene}
               doc={doc} page={page} tool={tool} setTool={setTool} selected={selected} select={pick}
               camera={camera} session={session} />}
             <div className="ce-bottom">

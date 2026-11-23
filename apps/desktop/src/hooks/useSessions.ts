@@ -1,4 +1,4 @@
-import type { CanvasFile } from "./useCanvasLibrary";
+import { canvasPath, type CanvasFile } from "@/lib/canvasFile";
 import { displayPath, forgetSessionServer, invoke, listen, LOCAL, noteSession, qualify, serverOfPath, serverOfSession, type ServerId } from "@/lib/transport";
 import { mergeFrom, remoteServers, serverConnected, serverName, subscribeServers } from "@/lib/servers";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -842,7 +842,7 @@ const handleSendMsg = async (
   // Where a new session's worktree starts, from a draft `carbon draft new
   // --base` saved. Nothing in the composer sets one.
   baseRef: string | null = null,
-  target?: { id: string; isNew: boolean; pick: typeof composerPick },
+  target?: { id: string; isNew: boolean; pick: typeof composerPick; canvas?: CanvasFile },
 ): Promise<boolean> => {
   const { harness, modelId, effort, fast, permissionMode, projectPath, branch, useWorktree } = target?.pick ?? composerPick;
   const attachmentPaths = attachments.map((a) => a.path);
@@ -1010,7 +1010,12 @@ const handleSendMsg = async (
     // this one cannot overtake it.
     const outcome = await invoke<SendOutcome>("send_msg", {
       sessionId,
-      prompt: message,
+      // Older servers read only prompt and still need the canvas path.
+      prompt: target?.canvas ? message + "\n\nCanvas: " + displayPath(canvasPath(target.canvas)) : message,
+      canvasPrompt: target?.canvas && {
+        text: message,
+        target: { project: displayPath(target.canvas.project), folder: target.canvas.folder, canvas: target.canvas.name },
+      },
       attachmentPaths: sentPaths,
       harness,
       model: isAcp(harness) ? "" : modelId,
@@ -1188,9 +1193,7 @@ const sendCanvasMessage = async (
     fast: item?.fast ?? fastFor(prefs.fast, harness, models, modelId),
     projectPath: project, useWorktree: !item && prefs.useWorktree, branch: item?.branch ?? null,
   };
-  const path = [displayPath(project), "canvases", file.folder, file.name + ".canvas.json"].filter(Boolean).join("/");
-  const prompt = !item || attachments.length ? message + "\n\nCanvas: " + path : message;
-  await handleSendMsg(prompt, attachments, null, { id, isNew: !item, pick });
+  await handleSendMsg(message, attachments, null, { id, isNew: !item, pick, canvas: file });
 };
 
 // Takes back the newest prompt still waiting on the backend and hands its text

@@ -22,7 +22,7 @@ pub struct CanvasArgs {
 }
 
 /// All commands print JSON so an agent can pass returned IDs to the next action.
-pub fn run(args: CanvasArgs) -> Result<(), String> {
+pub fn run(mut args: CanvasArgs) -> Result<(), String> {
     let project = match args.project {
         Some(path) => path,
         None => {
@@ -30,6 +30,11 @@ pub fn run(args: CanvasArgs) -> Result<(), String> {
             super::repo_root(&cwd).unwrap_or_else(|| cwd.display().to_string())
         }
     };
+    if let CanvasCommand::Preview { session, .. } = &mut args.command {
+        if session.is_none() {
+            *session = super::parent_session_id();
+        }
+    }
     let request = CanvasRequest {
         project,
         folder: args.folder,

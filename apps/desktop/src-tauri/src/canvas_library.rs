@@ -343,14 +343,7 @@ pub(crate) fn revision(raw: &str) -> String {
 
 /// Large documents travel compressed so a canvas can exceed one uncompressed WebSocket frame.
 #[cfg(any(feature = "serve", feature = "desktop"))]
-pub(crate) async fn read_wire(
-    project: String,
-    folder: String,
-    name: String,
-    archived: bool,
-    gzip: bool,
-) -> Result<String, crate::Fail> {
-    let raw = read(project, folder, name, archived).await?;
+pub(crate) async fn encode_wire(raw: String, gzip: bool) -> Result<String, crate::Fail> {
     if !gzip || raw.len() < 1 << 20 {
         return Ok(raw);
     }

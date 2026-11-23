@@ -1,3 +1,4 @@
+import { canvasPath } from "@/lib/canvasFile";
 import { useCanvasWindowPart } from "@/lib/canvasWindow";
 import { lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -135,7 +136,7 @@ export function CanvasTabs({ library, alignX }: { library: Library; alignX: numb
             key={key}
             icon={<DoodleOutline18 className="size-3.5" />}
             label={tab.name}
-            hint={`${tab.project}/canvases/${tab.folder ? tab.folder + "/" : ""}${tab.name}.canvas.json`}
+            hint={canvasPath(tab)}
             active={key === current}
             onPick={() => library.select(key)}
             onClose={() => library.close(key)}

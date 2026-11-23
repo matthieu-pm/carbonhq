@@ -307,6 +307,8 @@ unless the user asks.
 
 Use `carbon canvas projects` to find attached project paths. Inside an attached project, `carbon canvas list` lists its library. Use `--project PATH` and `--folder FOLDER` to target another location. `create` returns a name. Pass it back with `--canvas NAME`. Document reads and edits return JSON with a revision. Pass `--revision REV` when an edit depends on a previous read.
 
+When editing a frame for a user, build it in view with `preview layer` and `preview effect`. Each command updates the open board. Use the returned IDs for subsequent edits. `preview read` includes your unsaved layers. Finish with `preview save` to commit the edits together or `preview cancel` to discard them. All Carbon harnesses supply the session ID. Ending the turn discards pending edits.
+
 Use the `page`, `layer`, `effect`, `token`, `stroke` and `comment` subcommands for document edits. Use `--help` on a group to discover its actions. Headless edits work on the target machine, including with `--machine`.
 
 `view open` opens the named canvas in the desktop window. Read `view state` to discover the active tab, page and selection. `view` also controls tools, panels and viewport. `chat` targets the canvas conversation. `comment send PIN_ID` sends the visible page's pin and a snapshot to that conversation. Sending a comment delivers a message immediately.

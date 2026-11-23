@@ -198,10 +198,24 @@ pub fn http() -> &'static reqwest::Client {
     })
 }
 
+#[derive(serde::Deserialize)]
+struct CanvasPrompt {
+    text: String,
+    target: CanvasTarget,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct CanvasTarget {
+    project: String,
+    folder: String,
+    canvas: String,
+}
+
 #[cfg_attr(feature = "desktop", tauri::command)]
 async fn send_msg(
     session_id: &str,
     prompt: &str,
+    canvas_prompt: Option<CanvasPrompt>,
     attachment_paths: Vec<String>,
     // Deserialized straight into the enum rather than matched off a string: the
     // wire spelling is `Harness`'s own `snake_case`, so a third arm here was a
@@ -249,10 +263,13 @@ async fn send_msg(
         _ => None,
     };
 
+    let canvas_target = canvas_prompt.as_ref().map(|canvas| serde_json::json!(&canvas.target).to_string());
+    let prompt = canvas_prompt.as_ref().map_or(prompt, |canvas| canvas.text.as_str());
     let outcome = manager()
         .send_msg(
             session_id,
             prompt,
+            canvas_target.as_deref(),
             &attachment_paths,
             // Nothing named, ever: the app tags its issues in the prompt
             // text, the composer's `#` picker being the only route, so there is

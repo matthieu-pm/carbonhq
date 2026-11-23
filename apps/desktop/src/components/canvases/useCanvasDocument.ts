@@ -1,16 +1,17 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { canvasKey, type CanvasFile } from "@/lib/canvasFile";
-import { readCanvas } from "./canvasWire";
+import { watchDocs } from "@/lib/servers";
+import { canvasKey, canvasPath, type CanvasFile } from "@/lib/canvasFile";
+import { listen, qualify, serverOfPath } from "@/lib/transport";
+import { readCanvas, readCanvasWithPreview } from "./canvasWire";
 import { CanvasSaveClient } from "./canvasSaveClient";
-import { listen, qualify } from "@/lib/transport";
 import { readDocument, type CommentPin, type Document } from "./document";
 
-type Snapshot = { doc: Document | null; error: string; saving: boolean; conflict: boolean };
+type Snapshot = { doc: Document | null; preview: Document | null; error: string; saving: boolean; conflict: boolean };
 const open = new Map<string, CanvasSession>();
 
 export class CanvasSession {
-  private snapshot: Snapshot = { doc: null, error: "", saving: false, conflict: false };
+  private snapshot: Snapshot = { doc: null, preview: null, error: "", saving: false, conflict: false };
   private listeners = new Set<() => void>();
   private writer: CanvasSaveClient | null = null;
   private persisted: Document | null = null;
@@ -74,6 +75,32 @@ export class CanvasSession {
     const { project: projectPath, folder, name } = this.file;
     return { projectPath, folder, name, archived: this.archived };
   }
+  watchFile() {
+    const path = canvasPath(this.file);
+    let active = true;
+    const refresh = () => {
+      if (active && canvasPath(this.file) === path) void this.load(true);
+    };
+    const arm = async () => {
+      if (!active) return;
+      await watchDocs("canvas", [path]);
+      refresh();
+    };
+    const changed = listen<string>("doc_changed", ({ payload }) => {
+      if (payload === path) refresh();
+    });
+    const reconnect = listen("live_state", ({ server }) => {
+      if (server === serverOfPath(path)) void arm();
+    });
+    // Read after arming to catch a save between the initial read and watch registration.
+    void Promise.all([changed, reconnect]).then(arm);
+    return () => {
+      active = false;
+      void watchDocs("canvas", []);
+      void changed.then(off => off());
+      void reconnect.then(off => off());
+    };
+  }
   async load(refresh = false): Promise<void> {
     if (this.reading) {
       if (refresh) {
@@ -119,7 +146,8 @@ export class CanvasSession {
       if (before !== this.persisted || this.snapshot.conflict) return;
     } else this.loading = true;
     try {
-      const raw = await readCanvas(this.args());
+      const result = await readCanvasWithPreview(this.args());
+      const raw = result.content;
       const unchanged = refresh && before && await this.writer?.matches(raw);
       if (key !== this.key()) return;
       if (
@@ -127,8 +155,9 @@ export class CanvasSession {
         (this.loading || this.writing || before !== this.snapshot.doc || before !== this.persisted)
       )
         return;
+      const preview = result.preview ? readDocument(result.preview) : null;
       if (unchanged) {
-        this.update({ error: "" });
+        this.update({ preview, error: "" });
         return;
       }
       const doc = readDocument(raw);
@@ -139,7 +168,7 @@ export class CanvasSession {
       this.future = [];
       this.group = null;
       this.conflictRevision = null;
-      flushSync(() => this.update({ doc, error: "", conflict: false, saving: false }));
+      flushSync(() => this.update({ doc, preview, error: "", conflict: false, saving: false }));
     } catch (err) {
       if (key === this.key() && (!refresh || before === this.snapshot.doc)) this.update({ error: String(err) });
     } finally {
@@ -198,7 +227,7 @@ export class CanvasSession {
   }
   private replace(doc: Document) {
     clearTimeout(this.timer);
-    this.update({ doc, saving: !this.snapshot.conflict });
+    this.update({ doc, preview: null, saving: !this.snapshot.conflict });
     if (!this.snapshot.conflict) this.timer = setTimeout(() => void this.flush(), 250);
   }
   async keepMine() {
@@ -279,18 +308,25 @@ export function useCanvasDocument(file: CanvasFile) {
   const snapshot = useSyncExternalStore(session.subscribe, session.get);
   useEffect(() => {
     void session.load(!!session.get().doc);
+    const stopWatching = session.watchFile();
     const refresh = () => {
       if (document.visibilityState === "visible") void session.load(true);
       else if (session.get().saving) void session.flush();
     };
-    const off = listen<{project: string; folder: string; canvas?: string; command?: {group: string}}>("canvas_changed", ({payload, server}) => {
+    type Change = { project: string; folder: string; canvas?: string; command?: { group: string } };
+    const onChange = ({ payload, server }: { payload: Change; server: string }) => {
       if (!["move", "archive", "restore"].includes(payload.command?.group ?? "") && session.file.project === qualify(payload.project, server) && session.file.folder === payload.folder && session.file.name === payload.canvas)
         void session.load(true);
-    });
+    };
+    const off = listen<Change>("canvas_changed", onChange);
+    const offPreview = listen<Change>("canvas_preview_changed", onChange);
+    void offPreview.then(() => session.load(true));
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
+      stopWatching();
       void off.then(remove => remove());
+      void offPreview.then(remove => remove());
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };

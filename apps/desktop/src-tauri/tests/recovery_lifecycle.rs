@@ -109,6 +109,7 @@ async fn each_harness_retains_process_exit_and_stale_resolution_does_not_write()
         id: "stranded".into(),
         session_id: removed.clone(),
         text: "Do not recreate deleted work".into(),
+        canvas_target: None,
         attachment_paths: vec![],
         from: None,
         issues: vec![],
