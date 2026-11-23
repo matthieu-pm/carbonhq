@@ -15,6 +15,7 @@ export default function Window({
   sidebarWidth = SIDEBAR_WIDTH,
   interactive = false,
   workspace = "Coding",
+  onWorkspaceChange,
   sidebarOpen = true,
   onToggleSidebar,
   onHome,
@@ -37,6 +38,7 @@ export default function Window({
   sidebarWidth?: number;
   interactive?: boolean;
   workspace?: Workspace;
+  onWorkspaceChange?: (workspace: Workspace) => void;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   onHome?: () => void;
@@ -66,7 +68,7 @@ export default function Window({
           <ChromeControl label="Toggle sidebar" onClick={onToggleSidebar} pressed={sidebarOpen}>
             <PanelLeftIcon className="size-4.5" />
           </ChromeControl>
-          <div className="ml-auto mr-2"><WorkspaceSwitch value={workspace} navigate={interactive} /></div>
+          <div className="ml-auto mr-2"><WorkspaceSwitch value={workspace} navigate={interactive} onPick={onWorkspaceChange} /></div>
         </div>
         <span aria-hidden className="h-4 w-px shrink-0 bg-hairline" />
         <div className="flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-hidden pl-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { FileCode2 } from "lucide-react";
 
 import { BrowserChrome } from "@/components/app/Browser";
@@ -35,6 +35,7 @@ import {
   UserBubble,
 } from "@/components/app/Chat";
 import Window from "@/components/app/Window";
+import type { Workspace } from "@/components/app/WorkspaceSwitch";
 import { ClaudeGlyph } from "@/components/ClaudeGlyph";
 import { GreptileGlyph } from "@/components/GreptileGlyph";
 import { MiniHome } from "@/components/home/MiniHome";
@@ -111,7 +112,12 @@ type MergeState = "open" | "confirming" | "merging" | "merged";
 /// does — open another session, answer the one waiting on a question, start a
 /// task, flip the panel's tabs, open the dev server's tab, merge the PR.
 /// `startX` is where a phone's sideways scroll opens; 0 opens on the sidebar.
-export function Hero({ className, startX = desktopHeroWindow.startX }: { className?: string; startX?: number }) {
+export function Hero({ className, startX = desktopHeroWindow.startX, onWorkspaceChange, presentation }: {
+  className?: string;
+  startX?: number;
+  onWorkspaceChange?: (workspace: Workspace) => void;
+  presentation?: { focus: "window" | "agents" | "pr" | "local"; modelPicker: ReactNode };
+}) {
   const [selected, setSelected] = useState<string>("background");
   const [view, setView] = useState<"chat" | "browser">("chat");
   const [panelTab, setPanelTab] = useState("PR");
@@ -156,6 +162,20 @@ export function Hero({ className, startX = desktopHeroWindow.startX }: { classNa
     if (id !== selected) setHistory((h) => ({ ids: [...h.ids.slice(0, h.index + 1), id], index: h.index + 1 }));
     select(id);
   };
+
+  const preparePresentation = useEffectEvent((focus: NonNullable<typeof presentation>["focus"]) => {
+    open(focus === "agents" ? "new" : "background");
+    setPanelShown(true);
+    if (focus === "local") {
+      setSummaryChoices((choices) => ({ ...choices, background: true }));
+      setHiddenSummaryItems([]);
+      setSummaryOrder(["workspace", "git", "prs", "tasks", "sources", "context"]);
+    }
+  });
+  const presentationFocus = presentation?.focus;
+  useEffect(() => {
+    if (presentationFocus) preparePresentation(presentationFocus);
+  }, [presentationFocus]);
 
   const step = (delta: number) => {
     const index = history.index + delta;
@@ -234,6 +254,7 @@ export function Hero({ className, startX = desktopHeroWindow.startX }: { classNa
     <ScaledWindow {...desktopHeroWindow} startX={startX} className={`${s.scene} ${className ?? ""}`}>
       <Window
         interactive
+        onWorkspaceChange={onWorkspaceChange}
         contentClassName={s.content}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
@@ -354,6 +375,8 @@ export function Hero({ className, startX = desktopHeroWindow.startX }: { classNa
                   mode="Auto"
                   project="ade"
                   base="main"
+                  modelPicker={presentation?.modelPicker}
+                  autoFocus={!presentation}
                 />
                 <div className="pt-8">
                   <HomeCards
@@ -417,7 +440,8 @@ export function Hero({ className, startX = desktopHeroWindow.startX }: { classNa
         }
         panel={
           panelOpen && (
-            <Panel tabs={hasPr ? ["PR", "Changes", "Browser", "More"] : ["Changes", "More"]} active={panelTab} onSelect={setPanelTab} width={350}>
+            <Panel tabs={hasPr ? ["PR", "Changes", "Browser", "More"] : ["Changes", "More"]} active={panelTab} onSelect={setPanelTab} width={350}
+              label={hasPr ? "Pull request and changes" : undefined}>
               {panelTab === "PR" && hasPr && (
                 <PrBody
                   checksPassed={checksPassed}
