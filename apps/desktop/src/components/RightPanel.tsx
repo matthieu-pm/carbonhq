@@ -5,7 +5,6 @@ import OpenInButton from "@/components/OpenInButton";
 import TabButton from "@/components/TabButton";
 import PanelRightIcon from "@/components/icons/PanelRightIcon";
 import { Button } from "@/components/ui/button";
-import { FILE_OPENER } from "@/lib/openWith";
 import ShortcutKeys from "@/components/ShortcutKeys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useResizable } from "@/components/ResizeHandle";
@@ -348,7 +347,9 @@ export default function RightPanel({
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <PanelActions actions={actions} cwd={cwd} refresh={refresh} />
+          {actions}
+          {refresh && <PanelRefreshButton {...refresh} />}
+          {cwd && <OpenInButton path={cwd} />}
         </div>
       </div>
 
@@ -357,57 +358,24 @@ export default function RightPanel({
   );
 }
 
-/// The buttons at the pane's far end — the reader's own action, Open, Refresh.
-/// Shared by the pane's own strip and the titlebar, which draws them when the
-/// pane has none.
-export function PanelActions({
-  actions,
-  cwd,
-  refresh,
-  file,
-}: Pick<RightPanelProps, "actions" | "cwd" | "refresh"> & {
-  /// A file to open in place of `cwd`, through the file opener's own pick.
-  file?: { path: string; line?: number };
-}) {
+export function PanelRefreshButton({ onRefresh, loading }: NonNullable<RightPanelProps["refresh"]>) {
   return (
-    <>
-    {actions}
-
-    {/* Gone entirely on Subagents, which has nothing to re-read. It
-        reserved its width back when the keycaps sat to its right and
-        would have slid on that one tab; with them anchored to the tabs
-        there is nothing left to hold still, and an empty box on the far
-        edge is a slot for a button the reader is not waiting for. */}
-    {refresh && (
-      // A real tooltip rather than the `title` this used to carry: the
-      // chord has to be shown somewhere, and the app puts shortcuts in
-      // tooltips everywhere else.
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground/60 hover:text-muted-foreground"
-            onClick={refresh.onRefresh}
-            aria-label="Refresh"
-          >
-            <RefreshCw className={cn("size-3", refresh.loading && "animate-spin")} />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">
-          Refresh
-          <ShortcutKeys ids={["panel.refresh"]} />
-        </TooltipContent>
-      </Tooltip>
-    )}
-
-    {/* After Refresh, and outside the tab row's own logic: it acts on the
-        session rather than on whatever tab is open. */}
-    {file ? (
-      <OpenInButton path={file.path} opener={FILE_OPENER} line={file.line} />
-    ) : (
-      cwd && <OpenInButton path={cwd} />
-    )}
-    </>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground/60 hover:text-muted-foreground"
+          onClick={onRefresh}
+          aria-label="Refresh"
+        >
+          <RefreshCw className={cn("size-3", loading && "animate-spin")} />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="left">
+        Refresh
+        <ShortcutKeys ids={["panel.refresh"]} />
+      </TooltipContent>
+    </Tooltip>
   );
 }

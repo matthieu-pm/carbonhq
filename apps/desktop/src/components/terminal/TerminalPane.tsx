@@ -1,6 +1,6 @@
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type Ref } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type Ref } from "react";
 import { createPortal } from "react-dom";
-import { PANEL_LABELS, type PanelTab } from "@/components/RightPanel";
+import { PANEL_LABELS, PanelRefreshButton, type PanelTab } from "@/components/RightPanel";
 import { terminalLabel, type TerminalTab } from "@/lib/sessionDock";
 import { SessionToolIcon } from "@/components/layout/SessionToolTab";
 import { useHotkey } from "@/hooks/useHotkey";
@@ -212,6 +212,7 @@ type PaneProps = {
   terminals: boolean;
   views: PanelTab[];
   selectedView: PanelTab | null;
+  refresh: ComponentProps<typeof PanelRefreshButton> | null;
   showView: (view: PanelTab) => void;
   expandView: (view: PanelTab) => void;
   closeView: (view: PanelTab) => void;
@@ -220,7 +221,7 @@ type PaneProps = {
 };
 
 export default function TerminalPane({
-  sessionId, rail, contentHost, terminals, views, selectedView,
+  sessionId, rail, contentHost, terminals, views, selectedView, refresh,
   showView, expandView, closeView, showTerminal, hide, sideOpen, fullHost, fullTabs, fullId, controls, expandTerminal, onTerminalList,
 }: PaneProps) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
@@ -369,6 +370,7 @@ export default function TerminalPane({
               <Plus className="size-4" />
             </HeaderIconButton>
             <div className="flex-1" />
+            {selectedView && refresh && <PanelRefreshButton {...refresh} />}
             {(selectedView || sideTab) && <HeaderIconButton label="Open full view" disabled={!selectedView && busy} onClick={() => {
               if (selectedView) expandView(selectedView);
               else if (sideTab) expandTerminal(sideTab, sideTabs.length > 1);
