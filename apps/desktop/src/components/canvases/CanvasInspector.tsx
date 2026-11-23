@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { editLayer } from "./layerEdit";
+import { memo, useMemo, useState } from "react";
 import {
   blendModes,
   resolve,
@@ -12,14 +13,17 @@ import { Choice, Field } from "./EditorControls";
 import { LayerEffects } from "./LayerEffects";
 import type { Change } from "./CanvasTheme";
 
+import type { PageLayers } from "./graphicsScene";
 import { presets } from "./model.js";
 
-export function CanvasInspector({
+export const CanvasInspector = memo(function CanvasInspector({
+  tree,
   doc,
   page,
   layer,
   change,
 }: {
+  tree: PageLayers;
   doc: Document;
   page: Page;
   layer?: Layer;
@@ -27,7 +31,7 @@ export function CanvasInspector({
 }) {
   const [corners, setCorners] = useState(false);
   const update = (fn: (l: Layer) => Layer) =>
-    change((d) => ({ ...d, elements: d.elements.map((l) => (l.id === layer?.id ? fn(l) : l)) }));
+    layer && change(d => editLayer(d, layer, fn));
   if (!layer)
     return (
       <section className="ce-section">
@@ -85,7 +89,7 @@ export function CanvasInspector({
       onChange={(v) => style(key, v)}
     />
   );
-  const flexParent = doc.elements.find((l) => l.id === layer.parent)?.style.display === "flex";
+  const flexParent = layer.parent && tree.byId.get(layer.parent)?.style.display === "flex";
   return (
     <>
       <section className="ce-section">
@@ -226,10 +230,10 @@ export function CanvasInspector({
         {choice("mixBlendMode", "Blend mode", blendModes)}
       </section>
       <LayerEffects layer={layer} update={update} tokens={doc.tokens} />
-      <SelectionColors doc={doc} layer={layer} change={change} />
+      <SelectionColors tree={tree} doc={doc} layer={layer} change={change} />
     </>
   );
-}
+});
 
 function paintKeys(effect: Effect) {
   if (!effect.enabled || !effect.fields.color) return [];
@@ -238,22 +242,22 @@ function paintKeys(effect: Effect) {
   return ["color", "end"];
 }
 
-function SelectionColors({ doc, layer, change }: { doc: Document; layer: Layer; change: Change }) {
-  const ids = new Set([layer.id]);
-  const visit = (id: string) => {
-    for (const child of doc.elements.filter((l) => l.parent === id)) {
-      ids.add(child.id);
-      visit(child.id);
+function SelectionColors({ tree, doc, layer, change }: { tree: PageLayers; doc: Document; layer: Layer; change: Change }) {
+  const { ids, colors } = useMemo(() => {
+    const ids = new Set<string>(), colors = new Set<string>();
+    const pending = [layer];
+    while (pending.length) {
+      const item = pending.pop()!;
+      ids.add(item.id);
+      for (const child of tree.children.get(item.id) ?? []) pending.push(child);
+      for (const e of item.effects) {
+        const keys = paintKeys(e);
+        for (const key of keys) if (e.fields[key]) colors.add(e.fields[key]);
+        if (keys.includes("end")) e.stops?.forEach(s => colors.add(s.color));
+      }
     }
-  };
-  visit(layer.id);
-  const colors = new Set<string>();
-  for (const l of doc.elements.filter((l) => ids.has(l.id)))
-    for (const e of l.effects) {
-      const keys = paintKeys(e);
-      for (const key of keys) if (e.fields[key]) colors.add(e.fields[key]);
-      if (keys.includes("end")) e.stops?.forEach((s) => colors.add(s.color));
-    }
+    return { ids, colors };
+  }, [tree, layer]);
   if (!colors.size) return null;
   return (
     <section className="ce-section">

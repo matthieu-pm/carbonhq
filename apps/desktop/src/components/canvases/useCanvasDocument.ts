@@ -1,7 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { canvasKey, type CanvasFile } from "@/lib/canvasFile";
-import { invoke, listen, qualify } from "@/lib/transport";
+import { readCanvas } from "./canvasWire";
+import { CanvasSaveClient } from "./canvasSaveClient";
+import { listen, qualify } from "@/lib/transport";
 import { readDocument, type CommentPin, type Document } from "./document";
 
 type Snapshot = { doc: Document | null; error: string; saving: boolean; conflict: boolean };
@@ -10,7 +12,7 @@ const open = new Map<string, CanvasSession>();
 export class CanvasSession {
   private snapshot: Snapshot = { doc: null, error: "", saving: false, conflict: false };
   private listeners = new Set<() => void>();
-  private saved = "";
+  private writer: CanvasSaveClient | null = null;
   private persisted: Document | null = null;
   private conflictRevision: string | null = null;
   private timer?: ReturnType<typeof setTimeout>;
@@ -58,8 +60,10 @@ export class CanvasSession {
       !this.writing &&
       this.snapshot.doc === this.persisted &&
       open.get(key) === this
-    )
+    ) {
       open.delete(key);
+      this.writer?.dispose();
+    }
   }
   private update(change: Partial<Snapshot>) {
     this.snapshot = { ...this.snapshot, ...change };
@@ -114,20 +118,22 @@ export class CanvasSession {
       if (before !== this.persisted || this.snapshot.conflict) return;
     } else this.loading = true;
     try {
-      const raw = await invoke<string>("read_canvas_document", this.args());
+      const raw = await readCanvas(this.args());
+      const unchanged = refresh && before && await this.writer?.matches(raw);
       if (key !== this.key()) return;
       if (
         refresh &&
         (this.loading || this.writing || before !== this.snapshot.doc || before !== this.persisted)
       )
         return;
-      if (refresh && before && raw === this.saved) {
+      if (unchanged) {
         this.update({ error: "" });
         return;
       }
       const doc = readDocument(raw);
       this.persisted = doc;
-      this.saved = raw;
+      this.writer?.dispose();
+      this.writer = new CanvasSaveClient(raw, doc);
       this.history = [];
       this.future = [];
       this.group = null;
@@ -199,7 +205,7 @@ export class CanvasSession {
     if (this.conflictRevision === null) {
       this.loading = true;
       try {
-        this.conflictRevision = await invoke<string>("read_canvas_document", this.args());
+        this.conflictRevision = await readCanvas(this.args());
       } catch (err) {
         this.update({ error: String(err) });
         return;
@@ -207,7 +213,7 @@ export class CanvasSession {
         this.loading = false;
       }
     }
-    this.saved = this.conflictRevision;
+    await this.writer?.rebase(this.conflictRevision);
     this.persisted = null;
     this.conflictRevision = null;
     this.update({ conflict: false });
@@ -231,15 +237,13 @@ export class CanvasSession {
     try {
       while (this.snapshot.doc && this.snapshot.doc !== this.persisted) {
         const doc = this.snapshot.doc;
-        const content = JSON.stringify(doc, null, 2) + "\n";
         const key = this.key();
         try {
-          await invoke("save_canvas_document", { ...this.args(), previous: this.saved, content });
+          await this.writer!.save(this.args(), doc);
         } catch (err) {
           if (key !== this.key()) continue;
           throw err;
         }
-        this.saved = content;
         this.persisted = doc;
       }
     } catch (err) {
@@ -247,7 +251,7 @@ export class CanvasSession {
       if (error.includes("Canvas changed on disk")) {
         this.conflictRevision = null;
         this.update({ error, conflict: true });
-        this.conflictRevision = await invoke<string>("read_canvas_document", this.args()).catch(() => null);
+        this.conflictRevision = await readCanvas(this.args()).catch(() => null);
       } else this.update({ error });
     }
   }

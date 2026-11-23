@@ -6,7 +6,6 @@ use carbon_proto::canvas::{
 use rquickjs::{CatchResultExt, Function, Module};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::{
     collections::VecDeque,
     path::PathBuf,
@@ -15,7 +14,7 @@ use std::{
 use tokio::sync::Mutex;
 
 use crate::{
-    canvas_library::{self as library, Action},
+    canvas_library::{self as library, revision, Action},
     sink::Sink,
 };
 
@@ -27,13 +26,6 @@ struct Edit {
 }
 
 static HISTORY: Mutex<VecDeque<Edit>> = Mutex::const_new(VecDeque::new());
-
-fn revision(raw: &str) -> String {
-    Sha256::digest(raw.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
 
 #[derive(Deserialize)]
 struct Outcome {

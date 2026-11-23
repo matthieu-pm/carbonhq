@@ -1,9 +1,16 @@
+#[cfg(any(feature = "serve", feature = "desktop"))]
+use base64::{engine::general_purpose::STANDARD, Engine};
+#[cfg(any(feature = "serve", feature = "desktop"))]
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use std::fs::{self, File};
+#[cfg(any(feature = "serve", feature = "desktop"))]
+use std::io::Read;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
 const EXT: &str = ".canvas.json";
@@ -326,6 +333,72 @@ pub(crate) async fn read(
     )
 }
 
+/// Identifies the exact bytes a canvas edit was based on.
+pub(crate) fn revision(raw: &str) -> String {
+    Sha256::digest(raw.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Large documents travel compressed so a canvas can exceed one uncompressed WebSocket frame.
+#[cfg(any(feature = "serve", feature = "desktop"))]
+pub(crate) async fn read_wire(
+    project: String,
+    folder: String,
+    name: String,
+    archived: bool,
+    gzip: bool,
+) -> Result<String, crate::Fail> {
+    let raw = read(project, folder, name, archived).await?;
+    if !gzip || raw.len() < 1 << 20 {
+        return Ok(raw);
+    }
+    Ok(tokio::task::spawn_blocking(move || -> Result<String> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(raw.as_bytes())?;
+        Ok(format!("gzip:{}", STANDARD.encode(encoder.finish()?)))
+    })
+    .await
+    .context("Canvas compression stopped")??)
+}
+
+/// Compare under the same library lock as an ordinary save, using the digest of the last read.
+#[cfg(any(feature = "serve", feature = "desktop"))]
+pub(crate) async fn save_gzip(
+    project_path: String,
+    folder: String,
+    name: String,
+    previous: String,
+    content: String,
+    archived: bool,
+) -> Result<(), crate::Fail> {
+    let project = attached(project_path).await?;
+    Ok(tokio::task::spawn_blocking(move || -> Result<()> {
+        let _guard = WRITES.blocking_lock();
+        const MAX_BYTES: u64 = 256 << 20;
+        let compressed = STANDARD.decode(content)?;
+        let mut raw = String::new();
+        GzDecoder::new(&compressed[..])
+            .take(MAX_BYTES + 1)
+            .read_to_string(&mut raw)?;
+        ensure!(
+            raw.len() as u64 <= MAX_BYTES,
+            "Canvas exceeds the 256 MiB compressed-save limit"
+        );
+        save_checked(
+            &project,
+            &folder,
+            &name,
+            |disk| revision(disk) == previous,
+            &raw,
+            archived,
+        )
+    })
+    .await
+    .context("Canvas save stopped")??)
+}
+
 /// Compare the last read under the same lock as archive and move.
 fn save_document(
     project: &Path,
@@ -335,18 +408,39 @@ fn save_document(
     content: &str,
     archived: bool,
 ) -> Result<()> {
+    save_checked(
+        project,
+        folder,
+        name,
+        |disk| disk == previous,
+        content,
+        archived,
+    )
+}
+
+fn save_checked(
+    project: &Path,
+    folder: &str,
+    name: &str,
+    matches: impl FnOnce(&str) -> bool,
+    content: &str,
+    archived: bool,
+) -> Result<()> {
     #[cfg(unix)]
     let _checkout = lock_library(&directory(project, "canvases", false)?)?;
     let path = document_path(project, folder, name, archived)?;
     ensure!(
-        fs::read_to_string(&path)? == previous,
+        matches(&fs::read_to_string(&path)?),
         "Canvas changed on disk. Reload the latest version before saving."
     );
-    let data: serde_json::Value = serde_json::from_str(content)?;
-    ensure!(
-        data["version"] == 1 && data["elements"].is_array(),
-        "Invalid canvas document"
-    );
+    #[derive(Deserialize)]
+    struct Envelope {
+        version: u32,
+        #[serde(rename = "elements")]
+        _elements: Vec<serde::de::IgnoredAny>,
+    }
+    let data: Envelope = serde_json::from_str(content).context("Invalid canvas document")?;
+    ensure!(data.version == 1, "Invalid canvas document");
     let tmp = path.with_file_name(format!(".{}.tmp", uuid::Uuid::new_v4()));
     let mut file = File::create_new(&tmp)?;
     let result = (|| {
