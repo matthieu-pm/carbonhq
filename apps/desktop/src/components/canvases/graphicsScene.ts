@@ -276,6 +276,7 @@ export function graphicsScene(tree: PageLayers, tokens: Token[], previous?: Grap
           kids &&
           bounds &&
           (!layer.style.display || layer.style.display === "block") &&
+          (!layer.style.overflow || ["visible", "hidden", "clip"].includes(layer.style.overflow)) &&
           !effects.some((e) => e.kind === "Border") &&
           (!layer.style.padding || ["0px", "0"].includes(resolve(layer.style.padding, tokens)))
         ) {
@@ -289,7 +290,7 @@ export function graphicsScene(tree: PageLayers, tokens: Token[], previous?: Grap
           homogeneous = false;
         }
       }
-      if (parent === null && item.bounds) extent = union(extent, item.bounds);
+      if (parent === null && bounds) extent = union(extent, bounds);
       items.push(item);
       byId.set(layer.id, item);
     }
@@ -437,7 +438,7 @@ function editGeometry(scene: GraphicsScene, tree: PageLayers, layer: Layer): Gra
   if (layer.parent === null) {
     extent = undefined;
     for (const chunk of index.items.chunks)
-      for (const root of chunk) if (root.bounds) extent = union(extent, root.bounds);
+      for (const root of chunk) if (root.layout) extent = union(extent, root.layout);
   }
   const labels =
     layer.parent === null && layer.kind === "Frame"

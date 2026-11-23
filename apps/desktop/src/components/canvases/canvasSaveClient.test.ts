@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@/lib/transport";
 import { CanvasSession, openCanvasDocument } from "./useCanvasDocument";
 import { canvasContent, CanvasSaveState, type CanvasSaveRequest } from "./canvasSave";
-import { readDocument, type Document } from "./document";
+import { newLayer, readDocument, type Document } from "./document";
 
 vi.mock("@/lib/transport", () => ({ invoke: vi.fn() }));
 const file = { project: "/studio", folder: "", name: "worker" };
@@ -380,4 +380,34 @@ it("recovers when a prepared response cannot be delivered", async () => {
   expect(disk).toBe(canvasContent(session.get().doc!));
   expect(session.get().error).toBe("");
   release();
+});
+
+it("keeps only local content when a conflict makes a small canvas eligible for a worker", async () => {
+  disk = original;
+  const session = new CanvasSession(file);
+  await session.load();
+  session.change(background("green"));
+  disk = canvasContent({ ...readDocument(original), elements: [newLayer("Rectangle", "page-1", null, 0, 0)] }) + " ".repeat(1 << 19);
+  await session.flush();
+  expect(session.get().conflict).toBe(true);
+  await session.keepMine();
+  expect(session.get().error).toBe("");
+  expect(disk).toBe(canvasContent(session.get().doc!));
+});
+
+it("keeps the worker alive through a queued refresh after the last tab closes", async () => {
+  const session = openCanvasDocument({ ...file, name: "closing-refresh" });
+  const close = session.subscribe(() => {});
+  await session.load();
+  let finish!: (value: string) => void;
+  vi.mocked(invoke).mockImplementationOnce(() => new Promise<string>(resolve => { finish = resolve; }));
+  const firstRead = session.load(true);
+  void session.load(true);
+  close();
+  await tick();
+  expect(SaveWorker.instances[0].terminated).toBe(false);
+  finish(disk);
+  await firstRead;
+  await tick();
+  expect(SaveWorker.instances.map(worker => worker.terminated)).toEqual([true]);
 });

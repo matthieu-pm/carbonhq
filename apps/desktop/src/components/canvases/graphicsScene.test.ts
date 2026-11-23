@@ -41,8 +41,21 @@ describe("graphics board", () => {
       [text.id, false],
       [above.id, true],
     ]);
+    frame.style.overflow = "auto";
+    expect(scene(frame, solid, text).byId.get(frame.id)?.group).toBeUndefined();
+    frame.style.overflow = "hidden";
     frame.style.display = "flex";
     expect(scene(frame, solid, text).byId.get(frame.id)?.group).toBeUndefined();
+  });
+
+  it("fits an overflow-visible root frame even when its children share the WebGL surface", () => {
+    const frame = newLayer("Frame", "page", null, 3000, 2000);
+    frame.style.overflow = "visible";
+    const child = newLayer("Rectangle", "page", frame.id, 10, 10);
+    const before = scene(frame, child);
+    expect(before.flat).toBeDefined();
+    expect(before.extent).toEqual({ x: 3000, y: 2000, w: 375, h: 300 });
+    expect(edit(before, { ...frame, x: 500 }).extent).toEqual({ x: 500, y: 2000, w: 375, h: 300 });
   });
 
   it("uses the full document bounds for fit, including culled layers and labels", () => {

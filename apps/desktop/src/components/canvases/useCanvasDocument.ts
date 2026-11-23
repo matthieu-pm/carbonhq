@@ -57,6 +57,7 @@ export class CanvasSession {
       !this.listeners.size &&
       !this.pendingComments &&
       !this.loading &&
+      !this.reading &&
       !this.writing &&
       this.snapshot.doc === this.persisted &&
       open.get(key) === this
@@ -88,8 +89,8 @@ export class CanvasSession {
     }
     this.reading = this.read(refresh).finally(() => {
       this.reading = null;
-      this.release();
       this.refreshIfQueued();
+      this.release();
     });
     return this.reading;
   }
@@ -227,8 +228,8 @@ export class CanvasSession {
     this.writing = this.saveChanges().finally(() => {
       this.writing = null;
       this.update({ saving: false });
-      this.release();
       this.refreshIfQueued();
+      this.release();
     });
     return this.writing;
   }

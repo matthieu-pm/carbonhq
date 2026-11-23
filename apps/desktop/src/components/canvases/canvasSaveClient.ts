@@ -38,6 +38,7 @@ export class CanvasSaveClient {
   >();
   private failure?: Error;
   private disabled = false;
+  private canSeedFromPrevious = true;
   private backup: string | CanvasSavePayload;
   constructor(
     private previous: string,
@@ -129,10 +130,12 @@ export class CanvasSaveClient {
       await this.fallback();
       this.previous = raw;
     }
+    // After Keep Mine, the disk revision can describe a different document from the local mirror.
+    this.canSeedFromPrevious = false;
     this.backup = raw;
   }
   async save(args: CanvasLocation, doc: Document): Promise<void> {
-    if (!this.worker && !this.disabled && needsWorker(doc, this.previous.length)) this.startWorker();
+    if (!this.worker && !this.disabled && this.canSeedFromPrevious && needsWorker(doc, this.previous.length)) this.startWorker();
     await this.ready;
     if (this.failure) await this.fallback();
     if (!this.worker) {
@@ -144,6 +147,7 @@ export class CanvasSaveClient {
       this.previous = content;
       this.backup = content;
       this.mirrored = doc;
+      this.canSeedFromPrevious = true;
       return;
     }
     const patch = canvasPatch(this.mirrored, doc);
