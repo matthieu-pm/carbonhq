@@ -3,8 +3,12 @@
   --muted: #aaa;
   --line: #ffffff24;
   --inset: clamp(13px, 4.2vw, 65px);
+  --header-height: 55px;
+  --footer-height: 62px;
+  position: relative;
   display: grid;
-  grid-template-rows: 55px auto minmax(0, 1fr) 62px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--header-height) auto minmax(0, 1fr) var(--footer-height);
   height: 100dvh;
   overflow: hidden;
   color: var(--ink);
@@ -30,6 +34,7 @@
 .brand { padding-block: 8px; }
 .brand svg { width: 108px; height: auto; }
 .toolbar, .direction { display: flex; align-items: center; gap: 5px; }
+.direction { flex: none; }
 
 .control {
   display: inline-flex;
@@ -71,9 +76,55 @@
 }
 
 .caption p { margin: 6px 0 0; color: var(--muted); font-size: clamp(13px, 1.05vw, 16px); line-height: 1.42; }
+.shell[data-bookend] .caption { visibility: hidden; }
 .download { display: inline-flex; flex: none; align-items: center; gap: 8px; min-height: 40px; padding-inline: 13px; border-radius: 8px; background: white; color: #111; font-size: 13px; font-weight: 550; }
 .download:hover { background: #ddd; }
 .download svg { width: 15px; height: 15px; }
+
+.cover {
+  position: absolute;
+  z-index: 1;
+  inset: var(--header-height) 0 var(--footer-height);
+  display: grid;
+  align-items: center;
+  overflow: auto;
+  padding: clamp(25px, 8vh, 75px) var(--inset);
+  background:
+    linear-gradient(90deg, #090909 4%, #090909ed 30%, #09090952 62%, #09090914),
+    linear-gradient(#09090988, transparent 25%, transparent 75%, #090909ba);
+}
+
+.cover[data-variant="outro"] {
+  justify-items: center;
+  background: radial-gradient(ellipse at center, #090909fa 6%, #090909e6 39%, #09090976 100%);
+  text-align: center;
+}
+
+.coverContent {
+  max-width: 690px;
+  animation: cover-in 350ms ease-out both;
+}
+
+.cover h1 {
+  margin: 0;
+  font: 540 clamp(54px, 8.4vw, 122px)/0.97 var(--font-inter-sans), sans-serif;
+  letter-spacing: -0.075em;
+  text-wrap: balance;
+}
+
+.cover[data-variant="outro"] h1 { font-size: clamp(45px, 6vw, 94px); }
+.cover p { max-width: 38ch; margin: 20px 0 0; color: #cdcdcd; font-size: clamp(17px, 1.65vw, 24px); line-height: 1.45; }
+.cover[data-variant="outro"] p { margin-inline: auto; }
+.coverActions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 26px; }
+.cover[data-variant="outro"] .coverActions { justify-content: center; }
+.coverActions .download, .replay { min-height: 44px; padding-inline: 15px; cursor: pointer; }
+.replay { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; background: #181818; color: var(--ink); font-size: 13px; }
+.replay:hover { background: #272727; }
+.replay svg { width: 15px; height: 15px; }
+
+@keyframes cover-in {
+  from { opacity: 0; transform: translateY(7px); }
+}
 
 .viewport {
   position: relative;
@@ -142,9 +193,10 @@
 .modelRow:hover { background: var(--color-sidebar-accent); }
 .modelRow svg { width: 14px; height: 14px; flex: none; }
 
-.route { display: flex; align-items: center; gap: clamp(6px, 2vw, 25px); }
+.route { display: flex; min-width: 0; align-items: center; gap: clamp(6px, 2vw, 25px); padding: 4px; overflow-x: auto; scrollbar-width: none; }
 .route button {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 7px;
   min-height: 44px;
@@ -160,11 +212,18 @@
 .route button[aria-current="step"] span { border-color: white; background: white; box-shadow: 0 0 11px #fff6; }
 
 @media (max-width: 699px) {
-  .shell { grid-template-rows: 48px auto minmax(0, 1fr) 55px; }
+  .shell { --header-height: 48px; --footer-height: 55px; }
   .brand svg { width: 95px; }
   .caption { height: 152px; align-items: flex-start; flex-direction: column; justify-content: center; padding-block: 11px; }
   .caption h1 { font-size: clamp(24px, 6.5vw, 35px); }
   .download { min-height: 34px; }
+  .cover[data-variant="opening"] {
+    align-items: start;
+    padding-top: clamp(38px, 10vh, 86px);
+    background: linear-gradient(#090909 17%, #090909c9 43%, #09090936 64%, #090909af);
+  }
+  .cover p { margin-top: 15px; }
+  .coverActions { margin-top: 20px; }
   .footer { gap: 3px; }
   .route { gap: clamp(2px, 1.1vw, 8px); }
   .route button { flex-direction: column; justify-content: center; gap: 4px; padding-inline: 3px; font-size: 11px; }
@@ -173,4 +232,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .surface { transition: none; }
+  .coverContent { animation: none; }
 }

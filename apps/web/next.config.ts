@@ -44,9 +44,11 @@ const config: NextConfig = {
         : []),
     ];
   },
-  // The server page moved into the docs.
   async redirects() {
-    return [{ source: "/server", destination: "/docs/server", permanent: true }];
+    return [
+      { source: "/server", destination: "/docs/server", permanent: true },
+      { source: "/prensentation", destination: "/presentation", permanent: true },
+    ];
   },
   // Required by the rewrite above: PostHog's API cares about the trailing
   // slash, and Next's own redirect would strip it before the proxy saw it.
