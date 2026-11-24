@@ -7,6 +7,7 @@ import { Hero } from "@/components/illustrations/Hero";
 import { desktopHeroWindow } from "@/components/illustrations/heroWindowSize";
 import { Wordmark } from "@/components/Wordmark";
 import { AgentPicker, DesignSurface } from "./Scenes";
+import { Showcase } from "./Showcase";
 import styles from "./presentation.module.css";
 
 const chapters = [
@@ -22,6 +23,15 @@ const chapters = [
     description: "Choose Comment in the canvas toolbar, then pin feedback on the welcome screen.", focus: "canvas" },
   { id: "remote", name: "Run Carbon", title: "Your agents, on your machines.",
     description: "Sessions can run on this Mac or on a Linux server you connect over SSH.", focus: "local" },
+  { id: "website-coding", name: "Coding site", title: "The Coding workspace.",
+    description: "Browse the Carbon website and try the coding demos.", focus: "window", showcase: true },
+  { id: "website-design", name: "Design site", title: "The Design workspace.",
+    description: "Explore the canvas, design tokens, and feedback demos on the Carbon website.", focus: "window", showcase: true },
+  { id: "game", name: "Arcade", title: "Tower Shift",
+    description: "Climb the server tower, rescue your crew, and bring the signal back online.", focus: "window", showcase: true },
+  { id: "socials", name: "Socials", title: "Follow Carbon.", description: "", focus: "window", showcase: true },
+  { id: "posters", name: "Posters", title: "Carbon posters.",
+    description: "Browse the artwork from the Carbon campaign and poster library.", focus: "window", showcase: true },
   { id: "outro", name: "Outro", title: "Make something with Carbon.",
     description: "Bring your agents. Open a project. Start building.", focus: "window" },
 ] as const;
@@ -113,6 +123,7 @@ export function Presentation() {
   const chapter = chapters[index];
   const focus = chapter.focus;
   const bookend = chapter.id === "opening" || chapter.id === "outro" ? chapter.id : undefined;
+  const showcase = "showcase" in chapter ? chapter.id : undefined;
 
   const go = useCallback((next: number) => {
     if (!chapters[next]) return;
@@ -130,8 +141,18 @@ export function Presentation() {
 
   useEffect(() => {
     const navigation = route.current;
-    if (!navigation || navigation.scrollWidth <= navigation.clientWidth) return;
-    navigation.querySelector('[aria-current="step"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const active = navigation?.querySelector('[aria-current="step"]');
+    if (!navigation || !active) return;
+    const keepInView = () => {
+      if (navigation.scrollWidth <= navigation.clientWidth) return;
+      const strip = navigation.getBoundingClientRect();
+      const item = active.getBoundingClientRect();
+      navigation.scrollLeft += Math.min(0, item.left - strip.left - 4) + Math.max(0, item.right - strip.right + 4);
+    };
+    keepInView();
+    const observer = new ResizeObserver(keepInView);
+    observer.observe(navigation);
+    return () => observer.disconnect();
   }, [index]);
 
   useLayoutEffect(() => {
@@ -148,6 +169,11 @@ export function Presentation() {
   }, []);
 
   useEffect(() => {
+    if (showcase) {
+      animation.current?.cancel();
+      setTraveling(false);
+      return;
+    }
     const element = world.current;
     if (!element || !size.width || !size.height) return;
     const cameraWorld = element;
@@ -213,7 +239,7 @@ export function Presentation() {
       canceled = true;
       cancelAnimationFrame(frameId);
     };
-  }, [bookend, focus, overview, size]);
+  }, [bookend, focus, overview, showcase, size]);
 
   useEffect(() => {
     const syncChapter = () => {
@@ -279,12 +305,14 @@ export function Presentation() {
       </header>
 
       <section className={styles.caption} aria-live="polite" aria-hidden={!!bookend}>
-        <div><h1>{chapter.title}</h1><p>{chapter.description}</p></div>
+        <div><h1>{chapter.title}</h1>{chapter.description && <p>{chapter.description}</p>}</div>
         {focus === "local" && <DownloadButton className={styles.download} />}
       </section>
 
-      <main ref={viewport} className={styles.viewport} aria-label="Carbon workspace preview" aria-busy={traveling} aria-hidden={!!bookend}>
-        <div ref={world} className={styles.world} data-ready={ready} style={{ width: wholeWindow.width, height: wholeWindow.height }}>
+      <main ref={viewport} className={styles.viewport} data-showcase={showcase}
+        aria-label={showcase ? chapter.name : "Carbon workspace preview"} aria-busy={traveling} aria-hidden={!!bookend}>
+        <div ref={world} className={styles.world} data-ready={ready} inert={!!showcase} aria-hidden={!!showcase}
+          style={{ width: wholeWindow.width, height: wholeWindow.height }}>
           <div ref={coding} data-surface="coding" className={styles.surface} data-active={workspace === "coding"}
             inert={!!bookend || traveling || workspace !== "coding"} aria-hidden={traveling || workspace !== "coding"}>
             <Hero onWorkspaceChange={(next) => { if (next === "Design") goToChapter("design"); }}
@@ -295,6 +323,7 @@ export function Presentation() {
             <DesignSurface onCoding={() => goToChapter("coding")} />
           </div>
         </div>
+        {showcase && <Showcase key={showcase} chapter={showcase} />}
       </main>
 
       {bookend && (

@@ -145,6 +145,7 @@
 }
 
 .world[data-ready="true"] { visibility: visible; }
+.viewport[data-showcase] .world { visibility: hidden; opacity: 0; }
 
 .surface {
   position: absolute;
@@ -215,6 +216,7 @@
   .shell { --header-height: 48px; --footer-height: 55px; }
   .brand svg { width: 95px; }
   .caption { height: 152px; align-items: flex-start; flex-direction: column; justify-content: center; padding-block: 11px; }
+  .shell:has([data-showcase]) .caption { height: auto; }
   .caption h1 { font-size: clamp(24px, 6.5vw, 35px); }
   .download { min-height: 34px; }
   .cover[data-variant="opening"] {
