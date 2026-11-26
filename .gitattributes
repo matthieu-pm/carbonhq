@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# ts-rs emits trailing spaces in generated type declarations.
+apps/desktop/src/types/events.ts whitespace=-blank-at-eol

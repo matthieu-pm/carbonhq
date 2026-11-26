@@ -220,6 +220,7 @@ pub(super) fn receive(tab: i32, rest: &str) {
             let Some(mut state) = guard.as_mut().and_then(|m| m.remove(&tab)) else { return };
             drop(guard);
             let Some(session) = session_of(tab) else { return };
+            emit(session.clone(), None);
             tauri::async_runtime::spawn(async move {
                 let mut annotations = Vec::with_capacity(state.items.len());
                 for i in state.items {

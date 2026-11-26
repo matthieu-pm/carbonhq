@@ -68,9 +68,13 @@ function start() {
     notify();
   });
   void listen<{ sessionId: string; annotations: AnnotationInput[] | null }>("browser_annotate", (e) => {
-    picking.delete(e.payload.sessionId);
-    notify();
-    if (e.payload.annotations?.length) annotateHandler?.(e.payload.sessionId, e.payload.annotations);
+    const { sessionId, annotations } = e.payload;
+    if (annotations === null) {
+      picking.delete(sessionId);
+      notify();
+    } else if (annotations.length) {
+      annotateHandler?.(sessionId, annotations);
+    }
   });
   // A ⌘-chord pressed inside the page. Chromium's view has focus, so the
   // document never saw the key; re-raise it as a synthetic event, which is
@@ -395,8 +399,7 @@ export function useAnnotating(sessionId: string): boolean {
   return useSyncExternalStore(subscribe, () => picking.has(sessionId));
 }
 
-/// Starts or stops Ask in the session's active tab. Stopping drops what the
-/// page holds unsent.
+/// Starts Ask on the active tab or pauses it without discarding annotations.
 export function annotate(sessionId: string, on: boolean) {
   openErrors.delete(sessionId);
   if (on) picking.add(sessionId);

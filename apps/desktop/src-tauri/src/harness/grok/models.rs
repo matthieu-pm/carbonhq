@@ -97,12 +97,20 @@ fn in_picker(model: &Model) -> bool {
 /// switch is off or the model has no twin, so a pick this list cannot pair is
 /// sent exactly as the reader made it.
 pub async fn fast_arg(arg: &str, fast: bool) -> String {
+    fast_arg_from(arg, fast, all()).await
+}
+
+async fn fast_arg_from(
+    arg: &str,
+    fast: bool,
+    models: impl std::future::Future<Output = Vec<Model>>,
+) -> String {
     if !fast || is_fast_twin(arg) {
         return arg.to_string();
     }
 
     let twin = format!("{arg}{FAST_SUFFIX}");
-    all()
+    models
         .await
         .iter()
         .any(|m| m.arg == twin)
@@ -511,8 +519,8 @@ mod tests {
     /// never unrunnable: `find` reads the unfiltered list, or a session already
     /// recorded on it would resolve to nothing, spawn with no `--model` at all
     /// and record its own model as unset.
-    #[tokio::test]
-    async fn the_fast_twin_is_hidden_and_still_runnable() {
+    #[test]
+    fn the_fast_twin_is_hidden_and_still_runnable() {
         let table = fallback();
         let drawn: Vec<&str> = table
             .iter()
@@ -521,7 +529,7 @@ mod tests {
             .collect();
         assert_eq!(drawn, ["grok-4.7", "grok-4.6", "grok-4.5"]);
 
-        assert!(find(&ModelId::new("grok-4.7-build-fast")).await.is_some());
+        assert!(resolve(&ModelId::new("grok-4.7-build-fast"), &table).is_some());
     }
 
     /// The switch *is* the model id here, so this is grok's whole fast-mode
@@ -529,20 +537,23 @@ mod tests {
     /// composer's switch would send a model nobody picked.
     #[tokio::test]
     async fn the_switch_resolves_to_the_twin_and_back() {
-        assert_eq!(fast_arg("grok-4.7", true).await, "grok-4.7-build-fast");
-        assert_eq!(fast_arg("grok-4.7", false).await, "grok-4.7");
+        let wire = read_models(&serde_json::from_str(HANDSHAKE).unwrap());
+        let pick = |arg, fast| fast_arg_from(arg, fast, std::future::ready(wire.clone()));
+        assert_eq!(pick("grok-4.7", true).await, "grok-4.7-build-fast");
+        assert_eq!(pick("grok-4.7", false).await, "grok-4.7");
+        assert_eq!(fast_arg_from("grok-4.7", true, std::future::ready(vec![wire[0].clone()])).await, "grok-4.7");
 
         // Already the fast tier: asking again must not reach for a
         // `…-build-fast-build-fast` that does not exist.
         assert_eq!(
-            fast_arg("grok-4.7-build-fast", true).await,
+            pick("grok-4.7-build-fast", true).await,
             "grok-4.7-build-fast"
         );
 
         // No twin on this wire, so the pick is sent exactly as it was made
         // rather than mangled into an id grok would refuse.
-        assert_eq!(fast_arg("grok-4.6", true).await, "grok-4.6");
-        assert_eq!(fast_arg("grok-9.9", true).await, "grok-9.9");
+        assert_eq!(pick("grok-4.6", true).await, "grok-4.6");
+        assert_eq!(pick("grok-9.9", true).await, "grok-9.9");
     }
 
     /// A shape this build cannot read costs the list, never the app — the
