@@ -1,15 +1,15 @@
 {
-  "version": "0.31.4",
-  "notes": "### New\n\n- **Browser annotations in Ask.** Click an element or drag over an area, then add a note. You can review the screenshots and edit your notes in the composer before sending them to the agent.\n- **Sounds switch.** Turn interface sounds on or off in Settings \u2192 Personalization, the new name for Appearance.\n\n### Fixed\n\n- **Grouped tool counts.** When a group gains another tool call, its new count displays cleanly without the previous count showing underneath.",
-  "pub_date": "2026-11-26T18:40:17.814269Z",
+  "version": "0.31.5",
+  "notes": "### New\n\n- **Floating composer on every tab.** Outside Chat, the session's composer floats as a card in the lower right, over Files, Changes and the browser too. Fold the conversation in and out from its title, resize it from the top and left edges, or minimize it to a round chat button. Its menu renames, pins, forks, settles or deletes the session, copies its ID, folder or branch, and opens it in another app.",
+  "pub_date": "2026-11-26T22:44:39.278331Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmllMVZ0ZkVYSGk4RUw2TDZlYVg0V1daTkdBNWw0NmdMVEJtVHpVTTcrN3dzMndISnV4b1RtRVBRcUZzTG1Ia0ZadFdDTGE3em1sRlFpRDd1Yngrd2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzE4MzgyCWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjQKWmtkbWNiUUpqTGRrV29pYW9wZ2ZTcGxBaCtKQ0dXa21YMkpGSTgvY1FCa09kMEozdDVHZDVSa0hOL1BRMGZRcS8rdWRITXdjRUZxdlNXcVd1aCs5QkE9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.4/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmtKRy9tY3R6Q0hZUUtrcmVxQmNqenN6OTRpalYxSXozRnlCeWlLMFJVdEE4dFBnL3FudXRjdm85UXorYVk5NGFrNmdSamNZaWkwcElOM2ZMRFZucXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzMzMDQ4CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjUKWEJhQWlxYzZuVGJiaW5GN0NNQjQwUjdoUHpMNjBiWFRyMlU0RHJnQ2l1MmVjN0pIbzRGemxRb0thQmxaUEhveXl6My9JZWxOcHV3aHU1QUFQbFBEQ2c9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.5/Carbon_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmllMVZ0ZkVYSGk4RUw2TDZlYVg0V1daTkdBNWw0NmdMVEJtVHpVTTcrN3dzMndISnV4b1RtRVBRcUZzTG1Ia0ZadFdDTGE3em1sRlFpRDd1Yngrd2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzE4MzgyCWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjQKWmtkbWNiUUpqTGRrV29pYW9wZ2ZTcGxBaCtKQ0dXa21YMkpGSTgvY1FCa09kMEozdDVHZDVSa0hOL1BRMGZRcS8rdWRITXdjRUZxdlNXcVd1aCs5QkE9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.4/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmtKRy9tY3R6Q0hZUUtrcmVxQmNqenN6OTRpalYxSXozRnlCeWlLMFJVdEE4dFBnL3FudXRjdm85UXorYVk5NGFrNmdSamNZaWkwcElOM2ZMRFZucXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzMzMDQ4CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjUKWEJhQWlxYzZuVGJiaW5GN0NNQjQwUjdoUHpMNjBiWFRyMlU0RHJnQ2l1MmVjN0pIbzRGemxRb0thQmxaUEhveXl6My9JZWxOcHV3aHU1QUFQbFBEQ2c9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.5/Carbon_universal.app.tar.gz"
     }
   }
 }
