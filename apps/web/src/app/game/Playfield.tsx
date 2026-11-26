@@ -2,13 +2,16 @@
 
 import { ArrowLeft, ArrowRight, ArrowUp, Flag, Heart, IdCard, Pause, Play, RadioTower, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { createGame, CREW_SIZE, getContextHint, getSnapshot, STAGES, stepGame, type Input } from "./engine";
+import { createGame, CREW_SIZE, getContextHint, getSnapshot, HARDCORE_MAX_FRAMES, isRewardRun, recordInput, STAGES, STEP_MS, stepGame, type GameMode, type Input } from "./engine";
 import { drawWorld } from "./render";
 import { RunClock } from "./run-clock";
 import type { Cue } from "./audio";
 import s from "./game.module.css";
 
-export type RunResult = { stageIndex: number; recruited: number; status: "won" | "lost"; seconds: number };
+export type RunResult = {
+  mode: GameMode; stageIndex: number; recruited: number; status: "won" | "lost"; seconds: number;
+  reward?: { elapsedMs: number; replay: string };
+};
 
 export function formatTime(seconds: number) {
   return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
@@ -19,10 +22,10 @@ const keys: Record<string, keyof Input | undefined> = {
   " ": "jump", arrowup: "jump", w: "jump", e: "use",
 };
 
-export function Playfield({ onEnd, onTitle, cue, settings }: {
-  onEnd: (result: RunResult) => void; onTitle: () => void; cue: (kind: Cue) => void; settings?: ReactNode;
+export function Playfield({ mode, onEnd, onTitle, cue, settings }: {
+  mode: GameMode; onEnd: (result: RunResult) => void; onTitle: () => void; cue: (kind: Cue) => void; settings?: ReactNode;
 }) {
-  const [game] = useState(createGame);
+  const [game] = useState(() => createGame(mode));
   const [runClock] = useState(() => new RunClock());
   const [hud, setHud] = useState(() => getSnapshot(game));
   const [seconds, setSeconds] = useState(0);
@@ -35,6 +38,8 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
   const group = useRef<HTMLDivElement>(null);
   const inputs = useRef(new Map<string, keyof Input>());
   const taps = useRef<Input>({});
+  const replay = useRef("");
+  const released = useRef(false);
 
   const hold = useCallback((source: string, action: keyof Input) => {
     if (pauseFlag.current || inputs.current.has(source)) return;
@@ -48,6 +53,7 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
     focusOnPause.current = moveFocus;
     inputs.current.clear();
     taps.current = {};
+    released.current = true;
     game.jumpHeld = false;
     game.useHeld = false;
     setPaused(true);
@@ -121,7 +127,6 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
     if (paused || pauseFlag.current) return;
     runClock.start(performance.now());
     const surface = canvas.current!;
-    const clock = 1000 / 60;
     let last: number | null = null;
     let lag = 0;
     let animation = 0;
@@ -132,15 +137,19 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
       if (pauseFlag.current) return;
       lag += Math.max(0, Math.min(now - (last ?? now), 100));
       last = now;
-      while (lag >= clock && game.status === "playing") {
+      while (lag >= STEP_MS && game.status === "playing") {
         const input = { ...taps.current };
         for (const action of inputs.current.values()) input[action] = true;
         taps.current = {};
         const hadPrompt = game.prompt;
         const velocity = game.player.vy;
+        if (mode === "hardcore" && game.frame < HARDCORE_MAX_FRAMES) {
+          replay.current += recordInput(input, released.current);
+          released.current = false;
+        }
         stepGame(game, input);
         if (game.lives < prev.lives) cue("hurt");
-        else if (game.lives > prev.lives) cue("recruit");
+        else if (game.recruited.length > prev.recruited.length) cue("recruit");
         else if (game.stageIndex !== prev.stageIndex) cue("floor");
         else if (input.use && hadPrompt && !game.prompt) cue("crew");
         else if (velocity >= 0 && game.player.vy < -6) cue("jump");
@@ -150,13 +159,17 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
           prev = getSnapshot(game);
           setHud(prev);
         }
-        lag -= clock;
+        lag -= STEP_MS;
       }
-      const elapsed = runClock.seconds(performance.now());
+      const elapsedMs = runClock.milliseconds(performance.now());
+      const elapsed = Math.floor(elapsedMs / 1000);
       drawWorld(surface, game, reducedMotion.current);
       if (elapsed !== prevSecond) { prevSecond = elapsed; setSeconds(elapsed); }
       if (game.status !== "playing") {
-        onEnd({ status: game.status, stageIndex: game.stageIndex, recruited: game.recruited.length, seconds: elapsed });
+        const reward = mode === "hardcore" && game.status === "won" && isRewardRun(elapsedMs, game.frame)
+          ? { elapsedMs, replay: replay.current }
+          : undefined;
+        onEnd({ mode, status: game.status, stageIndex: game.stageIndex, recruited: game.recruited.length, seconds: elapsed, reward });
         return;
       }
       animation = requestAnimationFrame(frame);
@@ -166,7 +179,7 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
       cancelAnimationFrame(animation);
       runClock.pause(performance.now());
     };
-  }, [game, cue, onEnd, paused, runClock]);
+  }, [game, cue, mode, onEnd, paused, runClock]);
 
   function direction(event: ReactPointerEvent<HTMLButtonElement>, action: "left" | "right") {
     if (event.button !== 0) return;
@@ -185,12 +198,13 @@ export function Playfield({ onEnd, onTitle, cue, settings }: {
     <div className={s.hud}>
       <div className={s.stage}>
         <span className={s.stageMeta}><Flag size={13} /> Floor 0{hud.stageIndex + 1} / {String(STAGES.length).padStart(2, "0")}
+          {mode === "hardcore" && <span className={s.mode}>Hardcore</span>}
           {hud.hasKey && <span className={s.keycard}><IdCard size={14} aria-hidden="true" /> Keycard</span>}
         </span>
         <strong>{hud.stageName}</strong>
       </div>
       <div className={s.counters}>
-        <span aria-label={hud.lives + " lives"}><Heart className={s.heart} size={16} />{hud.lives}</span>
+        <span aria-label={hud.lives === 1 ? "1 life" : hud.lives + " lives"}><Heart className={s.heart} size={16} />{hud.lives}</span>
         <span aria-label={`${hud.recruited.length} of ${CREW_SIZE} agents rescued`}><UsersRound size={17} />{hud.recruited.length}/{CREW_SIZE}</span>
         <time>{formatTime(seconds)}</time>
         <button className={s.iconButton} type="button" aria-label="Pause game" onClick={() => pause(true)} disabled={paused}><Pause size={17} /></button>

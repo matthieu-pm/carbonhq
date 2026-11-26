@@ -1,24 +1,30 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { AGENT_NAMES, createGame, getSnapshot, STAGES, stepGame } from "../src/app/game/engine.ts"
+import { AGENT_NAMES, createGame, getSnapshot, recordInput, STAGES, STEP_MS, stepGame as advanceGame, verifyHardcoreReplay } from "../src/app/game/engine.ts"
 import { RunClock } from "../src/app/game/run-clock.ts"
 
-test("finish time counts slow frames, excludes pauses, and keeps partial seconds across resumes", () => {
+test("finish time counts slow frames, excludes pauses, and keeps milliseconds across resumes", () => {
   const clock = new RunClock()
   clock.start(500)
   for (let now = 700; now <= 10_500; now += 200) {
-    assert.equal(clock.seconds(now), Math.floor((now - 500) / 1000))
+    assert.equal(clock.milliseconds(now), now - 500)
   }
   clock.pause(11_250)
   clock.pause(13_000)
-  assert.equal(clock.seconds(20_000), 10)
+  assert.equal(clock.milliseconds(20_000), 10_750)
   clock.start(20_000)
   clock.start(20_200)
-  assert.equal(clock.seconds(20_250), 11)
+  assert.equal(clock.milliseconds(20_250), 11_000)
 })
 
 const center = (rect) => rect.x + rect.w / 2
 const feet = (game) => game.player.y + game.player.h
+const recordings = new WeakMap()
+
+function stepGame(game, input) {
+  recordings.get(game)?.push(recordInput(input, false))
+  advanceGame(game, input)
+}
 
 function run(game, count, input = {}) {
   for (let i = 0; i < count; i++) stepGame(game, input)
@@ -36,7 +42,12 @@ function waitForOpening(game, arc) {
 
 function jumpTo(game, target, { stop = () => game.groundedOn === target, use = false } = {}) {
   const arc = game.hazards.find((hazard) => hazard.kind === "arc" && hazard.y + hazard.h === target.y)
-  if (arc) waitForOpening(game, arc)
+  if (arc) {
+    waitUntil(game, () => {
+      const phase = (game.frame + arc.y) % 180
+      return phase >= 52 && phase <= 120
+    })
+  }
   stepGame(game, { use })
   for (let i = 0; i < 65; i++) {
     const offset = center(target) - center(game.player)
@@ -134,7 +145,7 @@ function clearFloor(game) {
     assert.deepEqual(getSnapshot(game).recruited, [...previousCrew, agent])
     assert.equal(game.hasKey, false)
     assert.equal(game.exit.ready, true)
-    assert.equal(game.lives, lives + 1)
+    assert.equal(game.lives, lives + (game.mode === "standard" ? 1 : 0))
     walkTo(game, center(stage.exit), { stop: () => game.stageIndex !== stageIndex })
   } else {
     assert.equal(game.crew.some((member) => member.mode === "waiting"), false)
@@ -162,6 +173,45 @@ test("every floor can be cleared with four keycard detours and the full crew ope
   assert.equal(game.lives, 7)
   stepGame(game, {})
   assert.equal(game.lives, 7)
+})
+
+test("Hardcore adds traps to every floor and supports a winning run under two minutes with one life", () => {
+  const game = createGame("hardcore")
+  const inputs = []
+  recordings.set(game, inputs)
+  assert.equal(game.lives, 1)
+  for (const [stageIndex, stage] of STAGES.entries()) {
+    assert.equal(game.stageIndex, stageIndex)
+    assert.ok(game.hazards.length > stage.hazards.length, stage.name)
+    clearFloor(game)
+    assert.equal(game.lives, 1)
+  }
+  const replay = inputs.join("")
+  assert.equal(game.status, "won")
+  assert.equal(game.recruited.length, 4)
+  const elapsedMs = Math.ceil(replay.length * STEP_MS)
+  assert.ok(elapsedMs < 120_000, `Run took ${elapsedMs / 1000}s`)
+  assert.ok(verifyHardcoreReplay(replay, 119_999))
+  assert.equal(verifyHardcoreReplay(replay, 120_000), false)
+  assert.equal(verifyHardcoreReplay(replay, 10), false)
+  assert.equal(verifyHardcoreReplay(replay.slice(0, -1), 119_999), false)
+  assert.equal(verifyHardcoreReplay(replay + "0", 119_999), false)
+  assert.equal(verifyHardcoreReplay("x" + replay, 119_999), false)
+})
+
+test("Hardcore ends on the first hit or fall even after rescuing a companion", () => {
+  const game = createGame("hardcore")
+  clearFloor(game)
+  assert.deepEqual(game.recruited, ["codex"])
+  hitSpikes(game)
+  assert.equal(game.status, "lost")
+  assert.equal(game.lives, 0)
+  assert.equal(game.stageIndex, 1)
+
+  const falling = createGame("hardcore")
+  run(falling, 120, { left: true })
+  assert.equal(falling.status, "lost")
+  assert.equal(falling.lives, 0)
 })
 
 // Stand with one toe on the edge nearest the destination, then try both an immediate and a late jump.
