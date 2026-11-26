@@ -774,7 +774,7 @@ function App() {
     return () => clearTimeout(id);
   }, []);
   // The visible section also belongs to history. Closing resets the next
-  // open to Appearance; Back and Forward restore their own section instead.
+  // open to Personalization; Back and Forward restore their own section instead.
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("appearance");
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);

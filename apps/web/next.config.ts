@@ -48,6 +48,7 @@ const config: NextConfig = {
     return [
       { source: "/server", destination: "/docs/server", permanent: true },
       { source: "/prensentation", destination: "/presentation", permanent: true },
+      { source: "/docs/settings/appearance", destination: "/docs/settings/personalization", permanent: true },
     ];
   },
   // Required by the rewrite above: PostHog's API cares about the trailing

@@ -9,6 +9,8 @@
 /// odd one came through after the reader happened to click something. Media
 /// elements are what `sound.ts` plays through, and the webview lets them play.
 
+import { soundsOn } from "@/lib/soundPref";
+
 export type Voice = (ctx: BaseAudioContext, out: AudioNode, at: number) => void;
 
 const RATE = 44100;
@@ -135,7 +137,10 @@ export function playVoice(voice: Voice, volume = 0.5) {
     .catch(() => {});
 }
 
-export const playSwipeTick = () => playVoice(easedWheel, 0.2);
+/// Gated here, not in `playVoice`, so the audition demo still plays with Sounds off.
+export const playSwipeTick = () => {
+  if (soundsOn()) playVoice(easedWheel, 0.2);
+};
 
 // Rendered at load, so the first swipe's first tick is not a render behind.
 if (typeof OfflineAudioContext !== "undefined") void pool(easedWheel).catch(() => {});
