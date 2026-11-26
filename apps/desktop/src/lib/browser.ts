@@ -5,7 +5,7 @@ import { readLocalStorage } from "@/hooks/useLocalStorage";
 import { channel } from "@/lib/channel";
 import { pushClosedTab } from "@/lib/tabOrder";
 import type { BrowserVisit } from "@/lib/history";
-import type { ChromiumStatus } from "@/types/events";
+import type { AnnotationInput, ChromiumStatus } from "@/types/events";
 import { zoomLevel } from "@/lib/zoom";
 
 /// The in-app browser's frontend half: tabs per session as the backend
@@ -67,10 +67,10 @@ function start() {
     fetched.add(sessionId);
     notify();
   });
-  void listen<{ sessionId: string; element: PickedElement | null }>("browser_pick", (e) => {
+  void listen<{ sessionId: string; annotations: AnnotationInput[] | null }>("browser_annotate", (e) => {
     picking.delete(e.payload.sessionId);
     notify();
-    pickHandler?.(e.payload.sessionId, e.payload.element);
+    if (e.payload.annotations?.length) annotateHandler?.(e.payload.sessionId, e.payload.annotations);
   });
   // A ⌘-chord pressed inside the page. Chromium's view has focus, so the
   // document never saw the key; re-raise it as a synthetic event, which is
@@ -311,26 +311,15 @@ export function openDevTools(sessionId: string) {
   return invoke("browser_devtools", { sessionId });
 }
 
-// --- Picking an element ------------------------------------------------------
-
-type PickedElement = {
-  url: string;
-  title: string;
-  selector: string;
-  tag: string;
-  text: string;
-  attrs: Record<string, string>;
-  rect: { x: number; y: number; width: number; height: number };
-  styles: { color: string; background: string; font: string };
-};
+// --- Annotating with Ask ----------------------------------------------------
 
 const picking = new Set<string>();
-let pickHandler: ((sessionId: string, element: PickedElement | null) => void) | null = null;
+let annotateHandler: ((sessionId: string, annotations: AnnotationInput[]) => void) | null = null;
 
-/// `App` installs the one handler, since what a pick *does* — land in the
+/// `App` installs the one handler, since what a Send *does* — land in the
 /// composer — needs the composer.
-export function setPickHandler(fn: typeof pickHandler) {
-  pickHandler = fn;
+export function setAnnotateHandler(fn: typeof annotateHandler) {
+  annotateHandler = fn;
 }
 
 /// Sessions `carbon browser record` is recording, as `browser_recording` says.
@@ -402,34 +391,22 @@ export function isRecording(sessionId: string): boolean {
   return recording.has(sessionId);
 }
 
-export function usePicking(sessionId: string): boolean {
+export function useAnnotating(sessionId: string): boolean {
   return useSyncExternalStore(subscribe, () => picking.has(sessionId));
 }
 
-export function pickElement(sessionId: string, on: boolean) {
+/// Starts or stops Ask in the session's active tab. Stopping drops what the
+/// page holds unsent.
+export function annotate(sessionId: string, on: boolean) {
   openErrors.delete(sessionId);
   if (on) picking.add(sessionId);
   else picking.delete(sessionId);
   notify();
-  return invoke("browser_pick", { sessionId, start: on }).catch((error) => {
+  return invoke("browser_annotate", { sessionId, start: on }).catch((error) => {
     picking.delete(sessionId);
     openErrors.set(sessionId, String(error));
     notify();
   });
-}
-
-/// The block a pick appends to the draft: enough for the agent to find the
-/// element in the source without a screenshot.
-export function describePick(el: PickedElement): string {
-  const attrs = Object.entries(el.attrs)
-    .filter(([k]) => k !== "class" || el.attrs.class.length < 80)
-    .map(([k, v]) => `${k}="${v}"`)
-    .join(" ");
-  const text = el.text ? ` "${el.text}"` : "";
-  return [
-    `Browser element: \`${el.selector}\` on ${el.url}`,
-    `<${el.tag}${attrs ? " " + attrs : ""}>${text} · ${el.rect.width}×${el.rect.height} at (${el.rect.x}, ${el.rect.y}) · ${el.styles.font} · ${el.styles.color} on ${el.styles.background}`,
-  ].join("\n");
 }
 
 // --- The pending new tab -----------------------------------------------------

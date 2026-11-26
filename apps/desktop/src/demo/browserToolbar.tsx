@@ -107,7 +107,7 @@ Object.assign(window, {
             render();
           });
         }
-        case "browser_pick":
+        case "browser_annotate":
         case "browser_nav":
         case "browser_devtools":
         case "browser_open":

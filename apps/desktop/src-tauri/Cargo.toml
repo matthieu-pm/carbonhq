@@ -131,6 +131,7 @@ rustix = { version = "1", features = ["fs"] }
 # so it cannot be switched per model or per machine. Split across two tables
 # rather than one entry, since the `metal` feature does not compile elsewhere.
 [target.'cfg(target_os = "macos")'.dependencies]
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 transcribe-cpp = { version = "0.4", default-features = false, features = [
   "metal",
 ], optional = true }
@@ -175,7 +176,7 @@ desktop = [
   "dep:zip",
   "dep:flate2",
 ]
-cef = ["desktop", "dep:cef"]
+cef = ["desktop", "dep:cef", "dep:image"]
 # `connect` and TLS: a server reaches other machines too (machines.rs).
 serve = [
   "dep:tokio-tungstenite",

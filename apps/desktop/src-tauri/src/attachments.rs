@@ -17,7 +17,10 @@ use tokio::fs;
 use ts_rs::TS;
 use uuid::Uuid;
 
-use crate::{events::ImageRef, store::get_home_app_dir};
+use crate::{
+    events::{Annotation, AnnotationInput, AnnotationTarget, ImageRef},
+    store::get_home_app_dir,
+};
 
 /// The four the Anthropic API accepts as an `image` block. An extension outside
 /// this set is a file, whatever it depicts — an SVG or a HEIC screenshot is
@@ -508,24 +511,7 @@ pub async fn prepare(
             continue;
         }
 
-        let bytes = fs::read(path).await.context("could not read image")?;
-        let ext = Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("png")
-            .to_ascii_lowercase();
-        let stored = attachments_dir(session_id)
-            .await?
-            .join(format!("{}.{ext}", Uuid::now_v7()));
-        fs::write(&stored, &bytes).await?;
-
-        images.push(PreparedImage {
-            stored_path: stored.to_string_lossy().into_owned(),
-            mime_type: attachment
-                .mime_type
-                .unwrap_or_else(|| "image/png".to_string()),
-            data: STANDARD.encode(&bytes),
-        });
+        images.push(store_image(session_id, path, attachment.mime_type).await?);
     }
 
     // One newline, not two. This text is what the transcript renders, and it
@@ -546,6 +532,92 @@ pub async fn prepare(
     };
 
     Ok(Prepared { text, images })
+}
+
+/// Copies one image into the session's attachments and reads it for the wire.
+async fn store_image(session_id: &str, path: &str, mime_type: Option<String>) -> Result<PreparedImage> {
+    let bytes = fs::read(path).await.context("could not read image")?;
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_ascii_lowercase();
+    let stored = attachments_dir(session_id)
+        .await?
+        .join(format!("{}.{ext}", Uuid::now_v7()));
+    fs::write(&stored, &bytes).await?;
+
+    Ok(PreparedImage {
+        stored_path: stored.to_string_lossy().into_owned(),
+        mime_type: mime_type.unwrap_or_else(|| "image/png".to_string()),
+        data: STANDARD.encode(&bytes),
+    })
+}
+
+/// Stores each annotation's crop after the `taken` images already prepared,
+/// and answers the annotations pointing at where theirs landed. A crop that
+/// cannot be read costs its picture, never the prompt.
+pub async fn prepare_annotations(
+    session_id: &str,
+    annotations: &[AnnotationInput],
+    taken: usize,
+) -> (Vec<Annotation>, Vec<PreparedImage>) {
+    let mut images = Vec::new();
+    let mut out = Vec::new();
+    for a in annotations {
+        let mut image = None;
+        if let Some(path) = a.image_path.as_deref() {
+            let mime = image_mime(Path::new(path)).map(str::to_string);
+            match store_image(session_id, path, mime).await {
+                Ok(prepared) => {
+                    image = Some((taken + images.len()) as u32);
+                    images.push(prepared);
+                }
+                Err(e) => eprintln!("[annotation crop err] {e:#}"),
+            }
+        }
+        out.push(Annotation {
+            note: a.note.clone(),
+            url: a.url.clone(),
+            title: a.title.clone(),
+            target: a.target.clone(),
+            rect: a.rect,
+            image,
+        });
+    }
+    (out, images)
+}
+
+/// What the agent is told about the annotations, appended to the prompt the
+/// child gets and never to the logged text, which the pill draws instead.
+/// Images are numbered among all of the message's, counting from one.
+pub fn annotations_note(annotations: &[Annotation]) -> String {
+    if annotations.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec![format!(
+        "Browser annotations ({}). The user marked these on a page in Carbon's browser; each crop is attached as the image named.",
+        annotations.len()
+    )];
+    for (i, a) in annotations.iter().enumerate() {
+        let r = a.rect;
+        let size = format!("{}×{} at ({}, {})", r.width.round(), r.height.round(), r.x.round(), r.y.round());
+        let what = match &a.target {
+            AnnotationTarget::Element { selector, tag, text } => {
+                let text = if text.is_empty() { String::new() } else { format!(" \"{text}\"") };
+                format!("element `{selector}` (<{tag}>{text}), {size}")
+            }
+            AnnotationTarget::Region => format!("region {size}"),
+            AnnotationTarget::Page => format!("the visible page, {size}"),
+        };
+        let image = a.image.map(|n| format!(", image {}", n + 1)).unwrap_or_default();
+        lines.push(format!("{}. {what} on {}{image}", i + 1, a.url));
+        let note = a.note.trim();
+        if !note.is_empty() {
+            lines.push(format!("   Note: {}", note.replace('\n', "\n   ")));
+        }
+    }
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -641,6 +713,56 @@ mod tests {
         assert_eq!(parse_data_url("data:image/png,iVBOR"), None);
         assert_eq!(parse_data_url("https://example.com/a.png"), None);
         assert_eq!(parse_data_url("data:image/png;base64"), None);
+    }
+
+    /// Each annotation names what it points at, where, its image among the
+    /// message's, and its note; one without a crop names no image.
+    #[test]
+    fn annotations_note_names_target_image_and_note() {
+        let rect = crate::events::AnnotationRect { x: 10.4, y: 20.0, width: 300.0, height: 40.6 };
+        let note = annotations_note(&[
+            Annotation {
+                note: "Make it bigger\nand bolder".into(),
+                url: "https://carbonhq.sh/".into(),
+                title: "Carbon".into(),
+                target: AnnotationTarget::Element {
+                    selector: "main > h1".into(),
+                    tag: "h1".into(),
+                    text: "Orchestrate agents".into(),
+                },
+                rect,
+                image: Some(1),
+            },
+            Annotation {
+                note: "".into(),
+                url: "https://carbonhq.sh/docs".into(),
+                title: String::new(),
+                target: AnnotationTarget::Region,
+                rect,
+                image: None,
+            },
+        ]);
+        assert_eq!(
+            note,
+            "Browser annotations (2). The user marked these on a page in Carbon's browser; each crop is attached as the image named.\n\
+             1. element `main > h1` (<h1> \"Orchestrate agents\"), 300×41 at (10, 20) on https://carbonhq.sh/, image 2\n\
+             \u{20}  Note: Make it bigger\n   and bolder\n\
+             2. region 300×41 at (10, 20) on https://carbonhq.sh/docs"
+        );
+        assert_eq!(annotations_note(&[]), "");
+    }
+
+    /// A send from before annotations carries none, and one from now carries
+    /// the crop's path on the way in and an image index on the way out.
+    #[test]
+    fn annotation_wire_shapes() {
+        let input: AnnotationInput = serde_json::from_str(
+            r#"{"note":"n","url":"u","target":{"kind":"element","selector":"a","tag":"a","text":"t"},"rect":{"x":1,"y":2,"width":3,"height":4},"imagePath":"/tmp/c.png"}"#,
+        )
+        .unwrap();
+        assert_eq!(input.image_path.as_deref(), Some("/tmp/c.png"));
+        let page: AnnotationTarget = serde_json::from_str(r#"{"kind":"page"}"#).unwrap();
+        assert_eq!(page, AnnotationTarget::Page);
     }
 }
 

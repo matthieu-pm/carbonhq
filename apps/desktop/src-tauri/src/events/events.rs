@@ -186,6 +186,13 @@ pub enum AgentEventPayload {
         /// to record one is the tree the message was actually written in.
         #[serde(default)]
         cwd: Option<String>,
+        /// What the reader marked on a browser page with Ask, drawn as one pill
+        /// above the bubble. A field for `from`'s reason: the block telling the
+        /// agent about them goes to the child alone and is not in `text`.
+        /// Optional in TS because a server from before them sends none.
+        #[serde(default)]
+        #[ts(as = "Option<Vec<Annotation>>", optional)]
+        annotations: Vec<Annotation>,
     },
     AssistantText {
         /// `Some` only when this content was also streamed, naming the preview
@@ -796,6 +803,69 @@ pub struct ImageRef {
     pub mime_type: Option<String>,
 }
 
+/// What one browser annotation points at.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "events.ts")]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum AnnotationTarget {
+    /// The element under a click.
+    Element {
+        selector: String,
+        tag: String,
+        #[serde(default)]
+        text: String,
+    },
+    /// A rectangle dragged out on the page.
+    Region,
+    /// The whole visible page, from the toolbar's screenshot button.
+    Page,
+}
+
+/// Where an annotation sat, in CSS pixels of the viewport it was made in.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "events.ts")]
+pub struct AnnotationRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// A browser annotation as the transcript keeps it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "events.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct Annotation {
+    pub note: String,
+    pub url: String,
+    #[serde(default)]
+    pub title: String,
+    pub target: AnnotationTarget,
+    pub rect: AnnotationRect,
+    /// Its crop, as an index into the message's `images`. An index rather than
+    /// a second `ImageRef`, so the fork's path rewrite and the remote file
+    /// route, which both walk `images`, cover the crop too. `None` where the
+    /// crop could not be read at send.
+    #[serde(default)]
+    pub image: Option<u32>,
+}
+
+/// A browser annotation as the composer sends it: the crop is still a file
+/// on the machine that took it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "events.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationInput {
+    pub note: String,
+    pub url: String,
+    #[serde(default)]
+    pub title: String,
+    pub target: AnnotationTarget,
+    pub rect: AnnotationRect,
+    #[serde(default)]
+    pub image_path: Option<String>,
+}
+
 /// Session-level facts, known at startup.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "events.ts")]
@@ -959,7 +1029,9 @@ mod tests {
                 ref issues,
                 ref mcp_servers,
                 ref cwd,
+                ref annotations,
             } if text == "hi"
+                && annotations.is_empty()
                 && images.is_empty()
                 && baseline.is_none()
                 && cwd.is_none()

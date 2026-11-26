@@ -1,7 +1,7 @@
 use crate::{
     attachments,
     events::{
-        AgentEvent, AgentEventPayload, ApprovalPolicy, ErrorSource, ImageRef,
+        AgentEvent, AgentEventPayload, AnnotationInput, ApprovalPolicy, ErrorSource, ImageRef,
         MessageSender, PermissionBehavior, TurnStatus,
     },
     git,
@@ -98,6 +98,10 @@ pub struct QueuedMessage {
     /// a child spawned to ask, which has no place inside a flush.
     #[serde(default)]
     pub mcp_servers: Vec<String>,
+    /// Browser annotations, crops still where they were taken until delivery
+    /// stores them.
+    #[serde(default)]
+    pub annotations: Vec<AnnotationInput>,
 }
 
 /// Held prompts, oldest first. Shared with the stdout task, which is where the
@@ -761,6 +765,7 @@ impl SessionManager {
         session_id: &str,
         prompt: &str,
         canvas_target: Option<&str>,
+        annotations: &[AnnotationInput],
         // Absolute paths of what the composer had attached. Re-read here rather
         // than uploaded: the frontend holds a thumbnail, not bytes.
         attachment_paths: &[String],
@@ -813,7 +818,7 @@ impl SessionManager {
         app: &Sink,
     ) -> Result<SendOutcome> {
         self.send_msg_inner(
-            session_id, prompt, canvas_target, attachment_paths, issue_ids, harness, model, effort,
+            session_id, prompt, canvas_target, annotations, attachment_paths, issue_ids, harness, model, effort,
             permission_mode, fast, cwd, branch, use_worktree, worktree_name, base_ref,
             is_new_session, parent_session_id, hidden, title, from, claim_continue, app,
             None, None,
@@ -826,6 +831,7 @@ impl SessionManager {
         session_id: &str,
         prompt: &str,
         canvas_target: Option<&str>,
+        annotations: &[AnnotationInput],
         attachment_paths: &[String],
         issue_ids: &[String],
         harness: Harness,
@@ -1158,7 +1164,7 @@ impl SessionManager {
             // project's anyway.
             let mcp_servers = crate::mcp_mentions::mentioned(harness, spawn_cwd, prompt).await;
             if let Err(error) = session
-                .send_msg(prompt, attachment_paths, issues, &mcp_servers, canvas_target, baseline, from, None, app)
+                .send_msg(prompt, attachment_paths, issues, &mcp_servers, canvas_target, annotations, baseline, from, None, app)
                 .await
             {
                 // Nothing has this session yet — it is inserted below — so
@@ -1410,7 +1416,7 @@ impl SessionManager {
                 // nothing for Carbon's queue to do here and no boundary for it to
                 // race for — whether or not a tool happens to be running now.
                 if matches!(s.stdin, Transport::Pi(_) | Transport::Grok(_)) {
-                    s.steer(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app).await?;
+                    s.steer(prompt, attachment_paths, issues, mcp_servers, canvas_target, annotations, from, app).await?;
                     return Ok(SendOutcome {
                         issues: linked,
                         ..Default::default()
@@ -1440,7 +1446,7 @@ impl SessionManager {
                         });
                     }
                     if let Some(queued) = s
-                        .queue_if_in_flight(prompt, attachment_paths, issues, mcp_servers, canvas_target, from.clone(), app)
+                        .queue_if_in_flight(prompt, attachment_paths, issues, mcp_servers, canvas_target, annotations, from.clone(), app)
                         .await
                     {
                         return Ok(SendOutcome {
@@ -1460,7 +1466,7 @@ impl SessionManager {
                     }
                 } else {
                     if tool_in_flight {
-                        s.queue_and_flush(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app)
+                        s.queue_and_flush(prompt, attachment_paths, issues, mcp_servers, canvas_target, annotations, from, app)
                             .await;
                         return Ok(SendOutcome {
                             issues: linked,
@@ -1468,7 +1474,7 @@ impl SessionManager {
                         });
                     }
 
-                    let queued = s.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app).await;
+                    let queued = s.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, annotations, from, app).await;
                     return Ok(SendOutcome {
                         snapshot: None,
                         queued: Some(queued),
@@ -1481,7 +1487,7 @@ impl SessionManager {
             // but alive, so the narrower the gap the less of the user's own
             // editing lands on the turn's side of the diff.
             let baseline = git::snapshot_tree(&session_cwd).await;
-            s.send_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, baseline, from, dispatch.as_deref_mut(), app)
+            s.send_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, annotations, baseline, from, dispatch.as_deref_mut(), app)
                 .await?;
             return Ok(SendOutcome {
                 issues: linked,
@@ -1584,7 +1590,7 @@ impl SessionManager {
         }
 
         if let Err(error) = session
-            .send_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, baseline, from, dispatch.as_deref_mut(), app)
+            .send_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, annotations, baseline, from, dispatch.as_deref_mut(), app)
             .await
         {
             // Same reason as the creation path above: the insert is below, so
@@ -1675,7 +1681,7 @@ impl SessionManager {
         let prompt = dispatch.prompt().to_owned();
         let from = dispatch.sender().cloned();
         self.send_msg_inner(
-            &id, &prompt, None, &[], &[], target.harness, target.model, target.effort,
+            &id, &prompt, None, &[], &[], &[], target.harness, target.model, target.effort,
             target.permission_mode, target.fast, &target.cwd, None, false, None, None,
             false, None, false, None, from, None, app, Some(locked), Some(dispatch),
         ).await?;
@@ -1962,7 +1968,7 @@ impl SessionManager {
             unreachable!()
         };
         let mcp_servers = crate::mcp_mentions::mentioned(item.harness, &item.cwd, prompt).await;
-        session.send_msg(prompt, &[], issues, &mcp_servers, None, Some(plan.baseline), None, None, app).await
+        session.send_msg(prompt, &[], issues, &mcp_servers, None, &[], Some(plan.baseline), None, None, app).await
             .context("The old turn was rewound, but the revised prompt could not be sent. Your edit is preserved")?;
         let replacement = list_session_events(session_id)
             .await?
@@ -2754,6 +2760,7 @@ impl Session {
         issues: &[IssueRef],
         mcp_servers: &[String],
         canvas_target: Option<&str>,
+        annotations: &[AnnotationInput],
         baseline: Option<String>,
         from: Option<MessageSender>,
         mut dispatch: Option<&mut crate::orchestration::inbox::Dispatch>,
@@ -2767,6 +2774,7 @@ impl Session {
             issues,
             mcp_servers,
             canvas_target,
+            annotations,
             baseline.clone(),
             false,
             crate::harness::pi::Delivery::WhenIdle,
@@ -2837,6 +2845,7 @@ impl Session {
         issues: &[IssueRef],
         mcp_servers: &[String],
         canvas_target: Option<&str>,
+        annotations: &[AnnotationInput],
         from: Option<MessageSender>,
         app: &Sink,
     ) -> QueuedMessage {
@@ -2845,6 +2854,7 @@ impl Session {
             session_id: self.id.clone(),
             text: prompt.to_string(),
             canvas_target: canvas_target.map(str::to_owned),
+            annotations: annotations.to_vec(),
             attachment_paths: attachment_paths.to_vec(),
             from,
             issues: issues.to_vec(),
@@ -2878,6 +2888,7 @@ impl Session {
         issues: &[IssueRef],
         mcp_servers: &[String],
         canvas_target: Option<&str>,
+        annotations: &[AnnotationInput],
         from: Option<MessageSender>,
         app: &Sink,
     ) -> Option<QueuedMessage> {
@@ -2885,7 +2896,7 @@ impl Session {
         if !_turn.turn_in_flight() {
             return None;
         }
-        Some(self.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app).await)
+        Some(self.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, annotations, from, app).await)
     }
 
     /// Takes back the newest held prompt, newest-first because that is the one
@@ -2928,6 +2939,7 @@ impl Session {
         issues: &[IssueRef],
         mcp_servers: &[String],
         canvas_target: Option<&str>,
+        annotations: &[AnnotationInput],
         from: Option<MessageSender>,
         app: &Sink,
     ) -> Result<()> {
@@ -2939,6 +2951,7 @@ impl Session {
             issues,
             mcp_servers,
             canvas_target,
+            annotations,
             // No baseline, for the reason a flushed prompt has none: the
             // changes panel pairs the newest baseline with the newest head
             // after it, so a snapshot taken mid-turn would cut the running
@@ -2986,10 +2999,11 @@ impl Session {
         issues: &[IssueRef],
         mcp_servers: &[String],
         canvas_target: Option<&str>,
+        annotations: &[AnnotationInput],
         from: Option<MessageSender>,
         app: &Sink,
     ) {
-        self.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, from, app).await;
+        self.queue_msg(prompt, attachment_paths, issues, mcp_servers, canvas_target, annotations, from, app).await;
         flush_queued(
             &self.id,
             self.harness,
@@ -3621,6 +3635,7 @@ async fn deliver_prompt(
     // the event, unlike `issues` — see [`crate::mcp_mentions`].
     mcp_servers: &[String],
     canvas_target: Option<&str>,
+    annotations: &[AnnotationInput],
     baseline: Option<String>,
     queued: bool,
     // Where this lands on a harness that can take a prompt into a turn already
@@ -3642,9 +3657,18 @@ async fn deliver_prompt(
     // Ahead of the event, because it is what decides the event's own text:
     // a non-image attachment becomes an `@path` mention on the prompt, and
     // the transcript has to show what the model was actually given.
-    let prepared = attachments::prepare(session_id, prompt, attachment_paths, harness).await?;
+    let mut prepared = attachments::prepare(session_id, prompt, attachment_paths, harness).await?;
+    let (annotations, crops) =
+        attachments::prepare_annotations(session_id, annotations, prepared.images.len()).await;
+    prepared.images.extend(crops);
     let text = prepared.text;
     let sent = crate::mcp_mentions::with_hint(&text, mcp_servers);
+    let note = attachments::annotations_note(&annotations);
+    let sent = match (sent.trim().is_empty(), note.is_empty()) {
+        (_, true) => sent,
+        (true, false) => note,
+        (false, false) => format!("{sent}\n\n{note}"),
+    };
     let sent = match canvas_target {
         Some(target) => format!("{sent}\n\nCarbon canvas target: {target}. Use carbon canvas with these --project, --folder and --canvas values. For frame edits, use preview layer and preview effect so the user sees each step. Finish with preview save, or preview cancel to discard."),
         None => sent,
@@ -3677,6 +3701,7 @@ async fn deliver_prompt(
         .filter(|interruption| interruption.resumed_at.is_none()).map(|interruption| interruption.id);
     let payload = AgentEventPayload::UserMessage {
         text,
+        annotations,
         issues: issues.to_vec(),
         mcp_servers: mcp_servers.to_vec(),
         images: prepared
@@ -4426,6 +4451,7 @@ async fn flush_one_per_turn(
                 &message.issues,
                 &message.mcp_servers,
                 message.canvas_target.as_deref(),
+                &message.annotations,
                 // No baseline, for `deliver_batch`'s reason.
                 None,
                 true,
@@ -4501,6 +4527,7 @@ async fn deliver_batch(
             &message.issues,
             &message.mcp_servers,
             message.canvas_target.as_deref(),
+                &message.annotations,
             None,
             true,
             // A flush runs at a boundary, so there is no turn to steer into.
@@ -4613,27 +4640,27 @@ pub async fn strand_queue_on_exit(
         // row retiring the queued prompt would drop its attachments from the
         // transcript while telling the reader to resend it. Best effort — a
         // failed prep still surfaces the text rather than losing the prompt.
-        let (text, images) =
+        let (text, mut prepared_images) =
             match attachments::prepare(session_id, &message.text, &message.attachment_paths, harness)
                 .await
             {
-                Ok(prepared) => (
-                    prepared.text,
-                    prepared
-                        .images
-                        .iter()
-                        .map(|i| ImageRef {
-                            path: Some(i.stored_path.clone()),
-                            url: None,
-                            mime_type: Some(i.mime_type.clone()),
-                        })
-                        .collect(),
-                ),
+                Ok(prepared) => (prepared.text, prepared.images),
                 Err(err) => {
                     eprintln!("[fx strand prepare err] {err:#}");
                     (message.text.clone(), Vec::new())
                 }
             };
+        let (annotations, crops) =
+            attachments::prepare_annotations(session_id, &message.annotations, prepared_images.len()).await;
+        prepared_images.extend(crops);
+        let images = prepared_images
+            .iter()
+            .map(|i| ImageRef {
+                path: Some(i.stored_path.clone()),
+                url: None,
+                mime_type: Some(i.mime_type.clone()),
+            })
+            .collect();
         let bubble = AgentEvent::mint(
             session_id.to_string(),
             harness,
@@ -4642,6 +4669,7 @@ pub async fn strand_queue_on_exit(
             None,
             AgentEventPayload::UserMessage {
                 text,
+                annotations,
                 issues: message.issues.clone(),
                 mcp_servers: message.mcp_servers.clone(),
                 images,

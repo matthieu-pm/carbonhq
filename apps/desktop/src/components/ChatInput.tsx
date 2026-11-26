@@ -10,6 +10,7 @@ import {
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ArrowUp, CornerDownLeft, Paperclip, Square, X } from "lucide-react";
 
+import AnnotationPill from "@/components/chat/AnnotationPill";
 import AttachmentTray from "@/components/composer/AttachmentTray";
 import FileMentionMenu from "@/components/composer/FileMentionMenu";
 import IssueMentionMenu from "@/components/composer/IssueMentionMenu";
@@ -28,6 +29,13 @@ import {
   removeAttachment,
   useAttachments,
 } from "@/hooks/useAttachments";
+import {
+  clearAnnotations,
+  editAnnotation,
+  removeAnnotation,
+  useAnnotations,
+  type PendingAnnotation,
+} from "@/hooks/useAnnotations";
 import { useDraft } from "@/hooks/useDraft";
 import { useFileSearch } from "@/hooks/useFileSearch";
 import { useHotkey } from "@/hooks/useHotkey";
@@ -74,7 +82,7 @@ type ChatInputProps = {
   /// backend re-reads each one, so a pinned screenshot is never uploaded twice —
   /// but a prompt that ends up *queued* is drawn from these, rather than having
   /// its paths described a second time.
-  onSend: (message: string, attachments: Attachment[]) => void;
+  onSend: (message: string, attachments: Attachment[], annotations: PendingAnnotation[]) => void;
   /// What the `/` picker offers. Empty until the backend's probe lands, and
   /// empty forever where the harness publishes none — fx, and Codex with no
   /// skills installed. A command typed by hand still works either way, since
@@ -342,6 +350,7 @@ export default function ChatInput({
 
   const attachKey = attachmentKey(sessionId, cwd);
   const attachments = useAttachments(attachKey);
+  const annotations = useAnnotations(attachKey);
   const server = serverOfPath(cwd ?? "");
   // A remote session cannot read a path on this Mac, so whatever is pinned
   // goes over at once, however it arrived — drop, paste, picker, a draft
@@ -741,7 +750,8 @@ export default function ChatInput({
   // A notice does gate it. Backend refuses the same send anyway, so this is not
   // the guard — it is what stops the reader finding that out by writing a
   // prompt and pressing a button that was never going to work.
-  const canSend = !notice && !held && (message.trim().length > 0 || attachments.length > 0);
+  const canSend =
+    !notice && !held && (message.trim().length > 0 || attachments.length > 0 || annotations.length > 0);
 
   /// Dictation and Send, drawn in exactly one of two places.
   ///
@@ -821,7 +831,7 @@ export default function ChatInput({
     const trimmed = message.trim();
     // An attachment on its own is a real prompt — dropping a screenshot and
     // pressing Enter is asking about the screenshot.
-    if (!trimmed && !attachments.length) return;
+    if (!trimmed && !attachments.length && !annotations.length) return;
     // A file the server would refuse can only fail the send; its tile says so.
     if (server !== LOCAL && attachments.some((a) => a.size > MAX_UPLOAD_BYTES)) return;
 
@@ -830,12 +840,13 @@ export default function ChatInput({
     // typed by hand counts the same as one picked.
     for (const name of usedCommands(trimmed, commands)) recordCommand(name);
 
-    onSend(trimmed, attachments);
+    onSend(trimmed, attachments, annotations);
     setMessage("");
     // The box is empty, so the caret has nowhere else to be — and left where it
     // was it would name a position past the end of whatever is typed next.
     setCaret(0);
     clearAttachments(attachKey);
+    clearAnnotations(attachKey);
   };
 
   // Returns before the form, so there is no disabled textarea to focus and no
@@ -1047,6 +1058,23 @@ export default function ChatInput({
             {/* Inside the card and above the text, so an attachment reads as part
                 of the message being composed rather than as a separate control.
                 Padded on the same edges as the textarea below it. */}
+            {annotations.length > 0 && (
+              <div className="px-3 pt-3">
+                <AnnotationPill
+                  items={annotations.map((a) => ({
+                    key: a.id,
+                    note: a.note,
+                    target: a.target,
+                    url: a.url,
+                    src: a.crop?.preview ?? null,
+                  }))}
+                  onClear={() => clearAnnotations(attachKey)}
+                  onEdit={(id, note) => editAnnotation(attachKey, id, note)}
+                  onDelete={(id) => removeAnnotation(attachKey, id)}
+                />
+              </div>
+            )}
+
             {attachments.length > 0 && (
               <div className="px-3 pt-3">
                 <AttachmentTray

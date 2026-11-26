@@ -2,6 +2,7 @@ import { CornerDownLeft } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import ClampedBody from "@/components/chat/ClampedBody";
+import AnnotationPill from "@/components/chat/AnnotationPill";
 import ImageRow from "@/components/chat/ImageRow";
 import { inlineMark } from "@/components/chat/InlineMark";
 import { useHotkey } from "@/hooks/useHotkey";
@@ -59,7 +60,7 @@ export default function QueuedMessages({
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      {messages.map(({ message, attachments }, i) => {
+      {messages.map(({ message, attachments, annotations = [] }, i) => {
         // Same strip the delivered bubble makes: a relayed prompt waits here
         // carrying the line written for the receiving agent, and it must not
         // read one way queued and another way sent.
@@ -73,6 +74,17 @@ export default function QueuedMessages({
                 the app talking, not the message. */}
             <div className="flex w-full flex-col items-end gap-1.5 opacity-55">
               <ImageRow images={imagesOf(attachments)} variant="sent" />
+
+              <AnnotationPill
+                align="end"
+                items={annotations.map((a) => ({
+                  key: a.id,
+                  note: a.note,
+                  target: a.target,
+                  url: a.url,
+                  src: a.crop?.preview ?? null,
+                }))}
+              />
 
               {/* Guarded like the delivered bubble's: a prompt can be an
                   attachment and nothing else. */}

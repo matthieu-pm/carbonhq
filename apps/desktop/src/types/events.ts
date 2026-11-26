@@ -245,7 +245,14 @@ from: MessageSender | null,
  * Deliberately not overwritten on a fork of a fork: the first ancestor
  * to record one is the tree the message was actually written in.
  */
-cwd: string | null, } | { "type": "assistant_text", 
+cwd: string | null, 
+/**
+ * What the reader marked on a browser page with Ask, drawn as one pill
+ * above the bubble. A field for `from`'s reason: the block telling the
+ * agent about them goes to the child alone and is not in `text`.
+ * Optional in TS because a server from before them sends none.
+ */
+annotations?: Array<Annotation>, } | { "type": "assistant_text", 
 /**
  * `Some` only when this content was also streamed, naming the preview
  * it supersedes. `None` — the common case, covering Claude Code
@@ -399,6 +406,34 @@ export type AgentModes = { modes: Array<AgentMode>,
 current: string | null, };
 
 export type AgentUpdate = { harness: Harness, label: string, current: string, latest: string, };
+
+/**
+ * A browser annotation as the transcript keeps it.
+ */
+export type Annotation = { note: string, url: string, title: string, target: AnnotationTarget, rect: AnnotationRect, 
+/**
+ * Its crop, as an index into the message's `images`. An index rather than
+ * a second `ImageRef`, so the fork's path rewrite and the remote file
+ * route, which both walk `images`, cover the crop too. `None` where the
+ * crop could not be read at send.
+ */
+image: number | null, };
+
+/**
+ * A browser annotation as the composer sends it: the crop is still a file
+ * on the machine that took it.
+ */
+export type AnnotationInput = { note: string, url: string, title: string, target: AnnotationTarget, rect: AnnotationRect, imagePath: string | null, };
+
+/**
+ * Where an annotation sat, in CSS pixels of the viewport it was made in.
+ */
+export type AnnotationRect = { x: number, y: number, width: number, height: number, };
+
+/**
+ * What one browser annotation points at.
+ */
+export type AnnotationTarget = { "kind": "element", selector: string, tag: string, text: string, } | { "kind": "region" } | { "kind": "page" };
 
 /**
  * What is on disk.
@@ -1804,7 +1839,12 @@ issues: Array<IssueRef>,
  * Resolved when typed, for `issues`' reason: Claude Code's server list is
  * a child spawned to ask, which has no place inside a flush.
  */
-mcpServers: Array<string>, };
+mcpServers: Array<string>, 
+/**
+ * Browser annotations, crops still where they were taken until delivery
+ * stores them.
+ */
+annotations: Array<AnnotationInput>, };
 
 export type RecoveryAction = "resume" | "retry" | "inspect";
 

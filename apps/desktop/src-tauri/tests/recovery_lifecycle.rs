@@ -114,6 +114,7 @@ async fn each_harness_retains_process_exit_and_stale_resolution_does_not_write()
         from: None,
         issues: vec![],
         mcp_servers: vec![],
+        annotations: vec![],
     }]));
     settle_dead_child(
         &removed,

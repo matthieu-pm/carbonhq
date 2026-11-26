@@ -37,6 +37,8 @@ use tauri::{AppHandle, Emitter, Manager};
 pub mod automation;
 #[path = "history.rs"]
 mod history;
+#[path = "annotate.rs"]
+mod annotate;
 
 const FRAMEWORK: &str = "Chromium Embedded Framework.framework";
 const HELPER: &str = "Carbon Helper.app/Contents/MacOS/Carbon Helper";
@@ -925,11 +927,10 @@ fn sweep() {
             .map(|t| (t.id, t.session.clone()))
             .collect()
     };
-    let picking = PICKING.lock().unwrap().clone().unwrap_or_default();
     let candidates: Vec<i32> = candidates
         .into_iter()
         .filter(|(id, session)| {
-            !picking.contains(id) && automation::parked(*id).is_none() && !automation::driving(session)
+            !annotate::active(*id) && automation::parked(*id).is_none() && !automation::driving(session)
         })
         .map(|(id, _)| id)
         .collect();
@@ -1194,7 +1195,6 @@ wrap_life_span_handler! {
                 return;
             }
             automation::forget(id);
-            disarm_picker(id);
             let session = self.session.clone();
             // A discarded tab keeps its entry; only the browser goes.
             let ghost = {
@@ -1222,6 +1222,7 @@ wrap_life_span_handler! {
 /// Takes a tab's entry out, for a close. The active tab passes to the last
 /// one left.
 fn remove_tab(session: &str, id: i32) {
+    annotate::forget(id, session);
     let remaining = {
         let mut tabs = TABS.lock().unwrap();
         tabs.retain(|t| t.id != id);
@@ -1346,7 +1347,7 @@ wrap_display_handler! {
             update_tab(self.tab, |t| t.favicon = first);
         }
 
-        /// The element picker reports through the console — the one channel
+        /// Ask's annotating reports through the console — the one channel
         /// from page script back to here that needs no binding of its own.
         /// Its lines are swallowed; everything else passes through.
         fn on_console_message(
@@ -1366,32 +1367,17 @@ wrap_display_handler! {
                 }
                 return 1;
             }
-            let Some(rest) = text.strip_prefix(PICK_PREFIX) else {
+            let Some(rest) = text.strip_prefix(annotate::PREFIX) else {
                 let error = sys::cef_log_severity_t::from(level) == sys::cef_log_severity_t::LOGSEVERITY_ERROR;
                 automation::log(self.tab, error, text);
                 return 0;
             };
-            let id = self.tab;
-            // Any page can log the prefix; only a tab whose picker this app
-            // started is listened to, once, and only a payload of the shape
-            // `PICK_JS` writes — `null` for a cancel. Parsed before the gate
-            // is spent, so a malformed line costs nothing. A binding through
-            // the render process would be the trusted channel; this is the
-            // gate until there is one.
-            let Ok(element) = serde_json::from_str::<Option<PickedElement>>(rest) else { return 1 };
-            if !PICKING.lock().unwrap().get_or_insert_with(HashSet::new).remove(&id) {
-                return 1;
-            }
-            let Some(session) = session_of(id) else { return 1 };
-            if let Some(app) = APP.get() {
-                let _ = app.emit("browser_pick", PickEvent { session_id: session, element });
-            }
+            annotate::receive(self.tab, rest);
             1
         }
     }
 }
 
-const PICK_PREFIX: &str = "__carbon_pick__";
 
 const BG_PREFIX: &str = "__carbon_bg__";
 
@@ -1443,138 +1429,6 @@ const BG_JS: &str = r#"(() => {
   report();
 })();"#;
 
-/// Tabs whose picker is running. An entry is spent by the first pick line,
-/// and dropped by a navigation or a close, since the script that would
-/// write one is gone with the document.
-static PICKING: Mutex<Option<HashSet<i32>>> = Mutex::new(None);
-
-/// Disarms a tab's picker and tells the pane, so its button does not stay
-/// pressed for a picker that no longer exists. From `on_load_start` on the
-/// main frame and from `on_before_close`.
-fn disarm_picker(id: i32) {
-    let was = PICKING.lock().unwrap().as_mut().map(|s| s.remove(&id)).unwrap_or(false);
-    if !was {
-        return;
-    }
-    if let (Some(app), Some(session)) = (APP.get(), session_of(id)) {
-        let _ = app.emit("browser_pick", PickEvent { session_id: session, element: None });
-    }
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PickEvent {
-    session_id: String,
-    /// `None` is a cancel.
-    element: Option<PickedElement>,
-}
-
-/// What `PICK_JS` reports, typed so a page cannot hand the composer an
-/// arbitrary object. Mirrors `PickedElement` in browser.ts.
-#[derive(Clone, Serialize, serde::Deserialize)]
-struct PickedElement {
-    url: String,
-    title: String,
-    selector: String,
-    tag: String,
-    text: String,
-    attrs: HashMap<String, String>,
-    rect: PickRect,
-    styles: PickStyles,
-}
-
-#[derive(Clone, Serialize, serde::Deserialize)]
-struct PickRect {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-}
-
-#[derive(Clone, Serialize, serde::Deserialize)]
-struct PickStyles {
-    color: String,
-    background: String,
-    font: String,
-}
-
-/// Injected into the page to pick an element: a highlight follows the
-/// pointer, a click reports the element under it and stops, Escape stops.
-/// Everything it needs to say goes out through `console.log` with
-/// `PICK_PREFIX`; see `on_console_message`. Re-running it replaces a live one.
-const PICK_JS: &str = r#"(() => {
-  if (window.__carbonPick) window.__carbonPick.stop();
-  const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #f5c400;background:rgba(245,196,0,.12);border-radius:3px;transition:all 40ms;';
-  document.documentElement.appendChild(box);
-  const say = (v) => console.log('__carbon_pick__' + (v ? JSON.stringify(v) : 'null'));
-  const selectorOf = (el) => {
-    const parts = [];
-    for (let e = el, i = 0; e && e.nodeType === 1 && i < 5; e = e.parentElement, i++) {
-      let s = e.tagName.toLowerCase();
-      if (e.id) { parts.unshift(s + '#' + CSS.escape(e.id)); break; }
-      const cls = [...e.classList].filter(c => !/^[a-z]+-\[|:/.test(c)).slice(0, 2);
-      if (cls.length) s += '.' + cls.map(CSS.escape).join('.');
-      const p = e.parentElement;
-      if (p) {
-        const same = [...p.children].filter(c => c.tagName === e.tagName);
-        if (same.length > 1) s += ':nth-of-type(' + (same.indexOf(e) + 1) + ')';
-      }
-      parts.unshift(s);
-    }
-    return parts.join(' > ');
-  };
-  const at = (ev) => {
-    const el = document.elementFromPoint(ev.clientX, ev.clientY);
-    return el && el !== box ? el : null;
-  };
-  const move = (ev) => {
-    const el = at(ev);
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    box.style.left = r.left + 'px'; box.style.top = r.top + 'px';
-    box.style.width = r.width + 'px'; box.style.height = r.height + 'px';
-  };
-  // The press is swallowed on both edges and the pick made on the click,
-  // so the page never sees a click on the element that was picked.
-  const block = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
-  const click = (ev) => {
-    ev.preventDefault(); ev.stopPropagation();
-    const el = at(ev);
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const cs = getComputedStyle(el);
-    say({
-      url: location.href,
-      title: document.title,
-      selector: selectorOf(el),
-      tag: el.tagName.toLowerCase(),
-      text: (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 200),
-      attrs: Object.fromEntries(['id','class','role','aria-label','name','href','src','type','placeholder'].filter(a => el.getAttribute(a)).map(a => [a, el.getAttribute(a).slice(0, 120)])),
-      rect: { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) },
-      styles: { color: cs.color, background: cs.backgroundColor, font: cs.fontSize + ' ' + cs.fontFamily.split(',')[0] },
-    });
-    stop();
-  };
-  const key = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); say(null); stop(); } };
-  const opts = { capture: true };
-  const stop = () => {
-    document.removeEventListener('mousemove', move, opts);
-    document.removeEventListener('click', click, opts);
-    document.removeEventListener('mousedown', block, opts);
-    document.removeEventListener('mouseup', block, opts);
-    document.removeEventListener('keydown', key, opts);
-    box.remove();
-    delete window.__carbonPick;
-  };
-  document.addEventListener('mousemove', move, opts);
-  document.addEventListener('mousedown', block, opts);
-  document.addEventListener('mouseup', block, opts);
-  document.addEventListener('click', click, opts);
-  document.addEventListener('keydown', key, opts);
-  window.__carbonPick = { stop };
-})();"#;
-
 wrap_load_handler! {
     struct CarbonLoad {
         tab: i32,
@@ -1593,20 +1447,14 @@ wrap_load_handler! {
             });
         }
 
-        /// The main frame leaving its document takes the picker's script
-        /// with it. Judged here and not on the loading state, which reports
-        /// the whole browser: an iframe loading would disarm a picker whose
-        /// document is still there.
+        /// A new main-frame document: the page colour script goes in, and an
+        /// annotating tab's script goes back in with what was saved. Judged
+        /// on the frame and not on the loading state, which reports the
+        /// whole browser, so an iframe loading changes nothing.
         fn on_load_end(&self, _browser: Option<&mut Browser>, frame: Option<&mut Frame>, _http_status_code: ::std::os::raw::c_int) {
             let Some(frame) = frame.filter(|f| f.is_main() != 0) else { return };
             frame.execute_java_script(Some(&CefString::from(BG_JS)), None, 0);
-        }
-
-        fn on_load_start(&self, _browser: Option<&mut Browser>, frame: Option<&mut Frame>, _transition_type: TransitionType) {
-            if !frame.map(|f| f.is_main() != 0).unwrap_or(false) {
-                return;
-            }
-            disarm_picker(self.tab);
+            annotate::resume(self.tab);
         }
 
         /// Chromium draws its own error page; this only records the reason
@@ -2170,24 +2018,23 @@ pub fn browser_devtools(session_id: String) -> Result<(), String> {
     })
 }
 
-/// Starts or stops the element picker in the active tab. The pick itself
-/// arrives as a `browser_pick` event.
+/// Starts or stops Ask's annotating in the active tab. What it collects
+/// arrives as a `browser_annotate` event on Send.
 #[tauri::command]
-pub fn browser_pick(session_id: String, start: bool) -> Result<(), String> {
+pub fn browser_annotate(session_id: String, start: bool) -> Result<(), String> {
     on_main(move || {
-        let Some(id) = active_id(&session_id) else { return };
-        let Some(frame) = browser_of(id).and_then(|b| b.main_frame()) else { return };
-        {
-            let mut picking = PICKING.lock().unwrap();
-            let set = picking.get_or_insert_with(HashSet::new);
-            if start {
-                set.insert(id);
-            } else {
-                set.remove(&id);
+        if start {
+            if let Some(id) = active_id(&session_id) {
+                annotate::start(id);
             }
+            return;
         }
-        let code = if start { PICK_JS } else { "window.__carbonPick && window.__carbonPick.stop()" };
-        frame.execute_java_script(Some(&CefString::from(code)), None, 0);
+        // Every tab of the session, not the active one: the reader may have
+        // switched tabs since Ask started, and the button speaks for the session.
+        let ids: Vec<i32> = TABS.lock().unwrap().iter().filter(|t| t.session == session_id).map(|t| t.id).collect();
+        for id in ids.into_iter().filter(|id| annotate::active(*id)) {
+            annotate::stop(id);
+        }
     })
 }
 
@@ -2197,16 +2044,24 @@ pub fn close_session(session_id: &str) {
     history::forget(session_id);
     let session_id = session_id.to_string();
     let _ = on_main(move || {
-        let browsers: Vec<Browser> = {
+        let (browsers, discarded) = {
             let mut tabs = TABS.lock().unwrap();
             // Discarded tabs have no browser to close and go now; one mid-wake
             // is closed by `on_after_created` on seeing `closing`.
+            let mut discarded = Vec::new();
             for t in tabs.iter_mut().filter(|t| t.session == session_id) {
                 t.closing = true;
+                if t.discarded && t.browser.is_none() {
+                    discarded.push(t.id);
+                }
             }
             tabs.retain(|t| t.session != session_id || !t.discarded || t.browser.is_some());
-            tabs.iter().filter(|t| t.session == session_id).filter_map(|t| t.browser.clone()).collect()
+            let browsers: Vec<Browser> = tabs.iter().filter(|t| t.session == session_id).filter_map(|t| t.browser.clone()).collect();
+            (browsers, discarded)
         };
+        for id in discarded {
+            annotate::forget(id, &session_id);
+        }
         if browsers.is_empty() {
             set_active(&session_id, None);
             publish(&session_id);

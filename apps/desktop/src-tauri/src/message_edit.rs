@@ -353,7 +353,7 @@ mod tests {
         let session_id = uuid::Uuid::now_v7().to_string();
         let sink = Sink::new(|_, _| {});
         let result=async {
-            manager().send_msg(&session_id,"Reply exactly BLUE. Do not use tools.",None,&[],&[],Harness::Codex,
+            manager().send_msg(&session_id,"Reply exactly BLUE. Do not use tools.",None,&[],&[],&[],Harness::Codex,
                 default_model_for(Harness::Codex).unwrap(),Some(Effort::Low),ApprovalPolicy::Manual,false,at,None,false,None,None,true,None,true,Some("Message edit integration test"),None,None,&sink).await?;
             wait_turn(&session_id,false).await?;
             let events=active_events(&store::list_session_events(&session_id).await?);
@@ -363,7 +363,7 @@ mod tests {
             let events=active_events(&store::list_session_events(&session_id).await?);
             assert!(!events.iter().any(|e|e.id==first.id));
             assert!(events.iter().any(|e|matches!(&e.payload,AgentEventPayload::AssistantText{text,..} if text.contains("GREEN"))));
-            manager().send_msg(&session_id,"Think carefully through the first 1000 prime numbers. Do not use tools. Explain your reasoning in detail.",None,&[],&[],Harness::Codex,
+            manager().send_msg(&session_id,"Think carefully through the first 1000 prime numbers. Do not use tools. Explain your reasoning in detail.",None,&[],&[],&[],Harness::Codex,
                 default_model_for(Harness::Codex).unwrap(),Some(Effort::Low),ApprovalPolicy::Manual,false,at,None,false,None,None,false,None,true,None,None,None,&sink).await?;
             wait_turn(&session_id,true).await?;
             let events=active_events(&store::list_session_events(&session_id).await?);
