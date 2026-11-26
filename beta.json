@@ -1,15 +1,15 @@
 {
-  "version": "0.31.3",
-  "notes": "### New\n\n- **Canvas markup and comments.** Draw on a canvas freehand and send pinned comments to the chat.\n- **Canvas commands for agents.** Agents can create and edit canvases and drive the Design workspace with `carbon canvas`. They can build a frame on the open board as a preview before saving it.\n\n### Improved\n\n- **Faster canvases.** Large canvases pan, zoom and edit faster.\n- **Design composer.** The composer floats over the canvas in the Design workspace.\n- **Browser toolbar.** The Coding browser has a cleaner toolbar.\n\n### Fixed\n\n- **Canvas comments and recovery.** Comment snapshots capture the right area, and pending canvas edits survive a reconnect.\n\nUniversal macOS prerelease for Apple silicon and Intel. The installer is ad-hoc signed and has no Apple notarization. The beta update archive carries Carbon\u2019s updater signature.",
-  "pub_date": "2026-11-26T14:58:03.351495Z",
+  "version": "0.31.4",
+  "notes": "### New\n\n- **Browser annotations in Ask.** Click an element or drag over an area, then add a note. You can review the screenshots and edit your notes in the composer before sending them to the agent.\n- **Sounds switch.** Turn interface sounds on or off in Settings \u2192 Personalization, the new name for Appearance.\n\n### Fixed\n\n- **Grouped tool counts.** When a group gains another tool call, its new count displays cleanly without the previous count showing underneath.",
+  "pub_date": "2026-11-26T18:40:17.814269Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnRnNzZpRUpaT0VldklEVGlrd2o1bFhWQUdUY21pdFNNTW1JTTZXcFU3MXRzRW1hQzhBcWx4c2lTQkl5bTA3WHVtNXg4b2lnUGY1Yi9rNytkckI5UFFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzA0Njg2CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjMKYlo5ZENPdU5LZ2M2TTJ6NU5qbjdyNEFIZkJ0ZEtkYmgrbkxEZVhnUFR3RkVzeHNYQmdjNjMxamgvd1RmbVhyOFUzTUdmVU1rdGZaWjZKUEExWXd1RFE9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.3/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmllMVZ0ZkVYSGk4RUw2TDZlYVg0V1daTkdBNWw0NmdMVEJtVHpVTTcrN3dzMndISnV4b1RtRVBRcUZzTG1Ia0ZadFdDTGE3em1sRlFpRDd1Yngrd2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzE4MzgyCWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjQKWmtkbWNiUUpqTGRrV29pYW9wZ2ZTcGxBaCtKQ0dXa21YMkpGSTgvY1FCa09kMEozdDVHZDVSa0hOL1BRMGZRcS8rdWRITXdjRUZxdlNXcVd1aCs5QkE9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.4/Carbon_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnRnNzZpRUpaT0VldklEVGlrd2o1bFhWQUdUY21pdFNNTW1JTTZXcFU3MXRzRW1hQzhBcWx4c2lTQkl5bTA3WHVtNXg4b2lnUGY1Yi9rNytkckI5UFFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzA0Njg2CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjMKYlo5ZENPdU5LZ2M2TTJ6NU5qbjdyNEFIZkJ0ZEtkYmgrbkxEZVhnUFR3RkVzeHNYQmdjNjMxamgvd1RmbVhyOFUzTUdmVU1rdGZaWjZKUEExWXd1RFE9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.3/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmllMVZ0ZkVYSGk4RUw2TDZlYVg0V1daTkdBNWw0NmdMVEJtVHpVTTcrN3dzMndISnV4b1RtRVBRcUZzTG1Ia0ZadFdDTGE3em1sRlFpRDd1Yngrd2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzE4MzgyCWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjQKWmtkbWNiUUpqTGRrV29pYW9wZ2ZTcGxBaCtKQ0dXa21YMkpGSTgvY1FCa09kMEozdDVHZDVSa0hOL1BRMGZRcS8rdWRITXdjRUZxdlNXcVd1aCs5QkE9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.4/Carbon_universal.app.tar.gz"
     }
   }
 }
