@@ -1,15 +1,15 @@
 {
-  "version": "0.31.2",
-  "notes": "### New\n\n- **Coding session terminals.** Open a shell from the top rail. Use + to open another terminal, or expand a terminal into full view. Shells keep running when you hide the view or quit the app with sessions running.\n- **Session tools in the top rail.** Open Changes, Pinned Summary and other session tools as tabs beside the terminal. Move Changes into full view to give the diff more room.\n\n### Improved\n\n- **Canvas controls.** Show or hide the controls from the top rail. They open on first use and remember your choice.\n- **Subscription usage.** The dashboard and usage popover show providers that report an allowance.\n\nUniversal macOS prerelease for Apple silicon and Intel. The installer is ad-hoc signed and has no Apple notarization. The beta update archive carries Carbon\u2019s updater signature.",
-  "pub_date": "2026-11-21T00:47:56.427571Z",
+  "version": "0.31.3",
+  "notes": "### New\n\n- **Canvas markup and comments.** Draw on a canvas freehand and send pinned comments to the chat.\n- **Canvas commands for agents.** Agents can create and edit canvases and drive the Design workspace with `carbon canvas`. They can build a frame on the open board as a preview before saving it.\n\n### Improved\n\n- **Faster canvases.** Large canvases pan, zoom and edit faster.\n- **Design composer.** The composer floats over the canvas in the Design workspace.\n- **Browser toolbar.** The Coding browser has a cleaner toolbar.\n\n### Fixed\n\n- **Canvas comments and recovery.** Comment snapshots capture the right area, and pending canvas edits survive a reconnect.\n\nUniversal macOS prerelease for Apple silicon and Intel. The installer is ad-hoc signed and has no Apple notarization. The beta update archive carries Carbon\u2019s updater signature.",
+  "pub_date": "2026-11-26T14:58:03.351495Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnVqVjE5aDArUGpBQzlGTzVEZlFQanpjMWJBUEVoaDQrVWJCeTZNdzJHU3JvSitXZEVvRGJqYVhmTjNGTGc3c3FlK2RBV2lMK1NMQ1BqenAyRHBiV3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjIxOTg3CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjIKbXc0bjhsZzUwWFcvUmRDSm5rMml3ZmZrdmtNMktsQ01PQUhyZ2JiR1hIVzdwWjFlblRQYnBCVE1XOHJkNkl1VHY3ZWdSb3BJenRyc2piWTVvb2pLQUE9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.2/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnRnNzZpRUpaT0VldklEVGlrd2o1bFhWQUdUY21pdFNNTW1JTTZXcFU3MXRzRW1hQzhBcWx4c2lTQkl5bTA3WHVtNXg4b2lnUGY1Yi9rNytkckI5UFFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzA0Njg2CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjMKYlo5ZENPdU5LZ2M2TTJ6NU5qbjdyNEFIZkJ0ZEtkYmgrbkxEZVhnUFR3RkVzeHNYQmdjNjMxamgvd1RmbVhyOFUzTUdmVU1rdGZaWjZKUEExWXd1RFE9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.3/Carbon_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnVqVjE5aDArUGpBQzlGTzVEZlFQanpjMWJBUEVoaDQrVWJCeTZNdzJHU3JvSitXZEVvRGJqYVhmTjNGTGc3c3FlK2RBV2lMK1NMQ1BqenAyRHBiV3dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjIxOTg3CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjIKbXc0bjhsZzUwWFcvUmRDSm5rMml3ZmZrdmtNMktsQ01PQUhyZ2JiR1hIVzdwWjFlblRQYnBCVE1XOHJkNkl1VHY3ZWdSb3BJenRyc2piWTVvb2pLQUE9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.2/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWnRnNzZpRUpaT0VldklEVGlrd2o1bFhWQUdUY21pdFNNTW1JTTZXcFU3MXRzRW1hQzhBcWx4c2lTQkl5bTA3WHVtNXg4b2lnUGY1Yi9rNytkckI5UFFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzA0Njg2CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjMKYlo5ZENPdU5LZ2M2TTJ6NU5qbjdyNEFIZkJ0ZEtkYmgrbkxEZVhnUFR3RkVzeHNYQmdjNjMxamgvd1RmbVhyOFUzTUdmVU1rdGZaWjZKUEExWXd1RFE9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.3/Carbon_universal.app.tar.gz"
     }
   }
 }
