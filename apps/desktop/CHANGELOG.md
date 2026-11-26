@@ -22,6 +22,12 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.31.5 · 2026-11-26 · beta
+
+### New
+
+- **Floating composer on every tab.** Outside Chat, the session's composer floats as a card in the lower right, over Files, Changes and the browser too. Fold the conversation in and out from its title, resize it from the top and left edges, or minimize it to a round chat button. Its menu renames, pins, forks, settles or deletes the session, copies its ID, folder or branch, and opens it in another app.
+
 ## 0.31.4 · 2026-11-26 · beta
 
 ### New
