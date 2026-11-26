@@ -22,6 +22,17 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.31.4 · 2026-11-26 · beta
+
+### New
+
+- **Browser annotations in Ask.** Click an element or drag over an area, then add a note. You can review the screenshots and edit your notes in the composer before sending them to the agent.
+- **Sounds switch.** Turn interface sounds on or off in Settings → Personalization, the new name for Appearance.
+
+### Fixed
+
+- **Grouped tool counts.** When a group gains another tool call, its new count displays cleanly without the previous count showing underneath.
+
 ## 0.31.3 · 2026-11-26 · beta
 
 ### New

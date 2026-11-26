@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "carbon"
-version = "0.31.3"
+version = "0.31.4"
 dependencies = [
  "anyhow",
  "async-trait",
