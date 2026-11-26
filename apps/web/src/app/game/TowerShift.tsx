@@ -5,10 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ClosingCards } from "@/components/home/ClosingCards";
 import { SITE } from "@/lib/links";
 import { playCue, type Cue } from "./audio";
-import { AGENT_NAMES, CREW_SIZE, STAGES, type AgentId, type GameMode } from "./engine";
+import { AGENT_NAMES, CREW_SIZE, formatTime, HARDCORE_REWARD_LIMIT_LABEL, STAGES, type AgentId, type GameMode } from "./engine";
 import { drawPortrait } from "./render";
 import { preloadVictoryScene, VictorySequence } from "./VictorySequence";
-import { Playfield, type RunResult, formatTime } from "./Playfield";
+import { Playfield, type RunResult } from "./Playfield";
 import { RewardClaim } from "./RewardClaim";
 import s from "./game.module.css";
 
@@ -49,7 +49,7 @@ function Instructions({ mode, back, start }: { mode: GameMode; back: () => void;
     <button type="button" className={s.textButton} onClick={back}><ArrowLeft size={15} /> Title screen</button>
     <h2 tabIndex={-1} ref={title}>{hardcore ? "Hardcore mode" : "How to play"}</h2>
     <p>Rescue four agents on the climb, then use their skills to restore the antenna on the fifth floor.</p>
-    {hardcore && <p>Finish in under 2 minutes to claim $100 in OpenAI credits.</p>}
+    {hardcore && <p>Finish in under {HARDCORE_REWARD_LIMIT_LABEL} to claim $100 in OpenAI credits.</p>}
     <dl className={s.ruleList}>
       <div><dt><Gamepad2 /> Move &amp; jump</dt><dd>Move with <kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>. Press <kbd>Space</kbd> to jump. On touchscreens, use the on-screen buttons.</dd></div>
       <div><dt><UsersRound /> Rescue your crew</dt><dd>On the first four floors, follow the sign onto the exterior catwalk. Take the keycard at the far end and return to the cell. Press <kbd>E</kbd> or tap <strong>Free</strong> to rescue the agent{hardcore ? "." : " and gain a life."} Use the same control at crew machinery.</dd></div>
@@ -67,7 +67,7 @@ function PrizeRules({ back, play }: { back: () => void; play: () => void }) {
   return <section className={`${s.briefing} ${s.prizeBriefing}`} aria-labelledby="prize-title">
     <button type="button" className={s.textButton} onClick={back}><ArrowLeft size={15} /> Title screen</button>
     <h2 id="prize-title" tabIndex={-1} ref={title}>$100 in OpenAI credits</h2>
-    <p>Finish Tower Shift Hardcore in under 2 minutes of active play to qualify.</p>
+    <p>Finish Tower Shift Hardcore in under {HARDCORE_REWARD_LIMIT_LABEL} of active play to qualify.</p>
     <dl className={s.ruleList}>
       <div><dt><Flag /> Complete all five floors</dt><dd>Rescue all four agents and restore the rooftop signal. The timer counts active play up to the moment you restore the signal.</dd></div>
       <div><dt><Heart /> One life</dt><dd>Every floor has extra traps. You keep one life when you rescue a companion, and the first hit or fall ends your run.</dd></div>

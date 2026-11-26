@@ -45,10 +45,11 @@ function jumpTo(game, target, { stop = () => game.groundedOn === target, use = f
   if (arc) {
     waitUntil(game, () => {
       const phase = (game.frame + arc.y) % 180
-      return phase >= 52 && phase <= 120
+      // The jump can start before the arc switches off because it reaches the ledge later.
+      return phase >= 40 && phase <= 135
     })
   }
-  stepGame(game, { use })
+  if (game.jumpHeld || use) stepGame(game, { use })
   for (let i = 0; i < 65; i++) {
     const offset = center(target) - center(game.player)
     stepGame(game, { left: offset < -3, right: offset > 3, jump: i === 0, use })
@@ -175,7 +176,7 @@ test("every floor can be cleared with four keycard detours and the full crew ope
   assert.equal(game.lives, 7)
 })
 
-test("Hardcore adds traps to every floor and supports a winning run under two minutes with one life", () => {
+test("Hardcore adds traps to every floor and supports a winning run under 1:45 with one life", () => {
   const game = createGame("hardcore")
   const inputs = []
   recordings.set(game, inputs)
@@ -190,13 +191,13 @@ test("Hardcore adds traps to every floor and supports a winning run under two mi
   assert.equal(game.status, "won")
   assert.equal(game.recruited.length, 4)
   const elapsedMs = Math.ceil(replay.length * STEP_MS)
-  assert.ok(elapsedMs < 120_000, `Run took ${elapsedMs / 1000}s`)
-  assert.ok(verifyHardcoreReplay(replay, 119_999))
-  assert.equal(verifyHardcoreReplay(replay, 120_000), false)
+  assert.ok(elapsedMs < 105_000, `Run took ${elapsedMs / 1000}s`)
+  assert.ok(verifyHardcoreReplay(replay, 104_999))
+  assert.equal(verifyHardcoreReplay(replay, 105_000), false)
   assert.equal(verifyHardcoreReplay(replay, 10), false)
-  assert.equal(verifyHardcoreReplay(replay.slice(0, -1), 119_999), false)
-  assert.equal(verifyHardcoreReplay(replay + "0", 119_999), false)
-  assert.equal(verifyHardcoreReplay("x" + replay, 119_999), false)
+  assert.equal(verifyHardcoreReplay(replay.slice(0, -1), 104_999), false)
+  assert.equal(verifyHardcoreReplay(replay + "0", 104_999), false)
+  assert.equal(verifyHardcoreReplay("x" + replay, 104_999), false)
 })
 
 test("Hardcore ends on the first hit or fall even after rescuing a companion", () => {
