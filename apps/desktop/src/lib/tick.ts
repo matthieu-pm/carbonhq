@@ -127,7 +127,6 @@ function pool(voice: Voice) {
 /// Plays one click. Never throws: no audio output is not a reason to stop a
 /// swipe.
 export function playVoice(voice: Voice, volume = 0.5) {
-  if (!soundsOn()) return;
   pool(voice)
     .then((els) => {
       const el = els[turn++ % els.length];
@@ -138,7 +137,10 @@ export function playVoice(voice: Voice, volume = 0.5) {
     .catch(() => {});
 }
 
-export const playSwipeTick = () => playVoice(easedWheel, 0.2);
+/// Gated here, not in `playVoice`, so the audition demo still plays with Sounds off.
+export const playSwipeTick = () => {
+  if (soundsOn()) playVoice(easedWheel, 0.2);
+};
 
 // Rendered at load, so the first swipe's first tick is not a render behind.
 if (typeof OfflineAudioContext !== "undefined") void pool(easedWheel).catch(() => {});
