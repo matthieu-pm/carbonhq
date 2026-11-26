@@ -60,11 +60,11 @@ export default function SessionMenu({
     setOpen(false);
     run();
   };
-  const keys: Record<string, () => void> = {
-    r: actions.onRename,
-    p: () => actions.onSetFlags({ pinned: !pinned }),
-    a: () => actions.onSetFlags(settled ? { archived: false } : { archived: true, pinned: false }),
-  };
+  const pin = () => actions.onSetFlags({ pinned: !pinned });
+  // Settling unpins, or the row would stay up in Pinned — the sidebar's rule.
+  const settle = () => actions.onSetFlags(settled ? { archived: false } : { archived: true, pinned: false });
+  const byKey = (key: string) =>
+    key === "r" ? actions.onRename : key === "p" ? pin : key === "a" ? settle : null;
 
   return (
     <DropdownMenu
@@ -82,7 +82,7 @@ export default function SessionMenu({
         // trigger would blur that field the moment it opened.
         onCloseAutoFocus={(e) => e.preventDefault()}
         onKeyDown={(e) => {
-          const run = !confirming && !e.metaKey && !e.ctrlKey && !e.altKey && keys[e.key.toLowerCase()];
+          const run = !confirming && !e.metaKey && !e.ctrlKey && !e.altKey && byKey(e.key.toLowerCase());
           if (!run) return;
           // Held back from Radix's typeahead, which would read it as a search.
           e.preventDefault();
@@ -110,7 +110,7 @@ export default function SessionMenu({
               Rename
               <Kbd className="ml-auto">R</Kbd>
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-ui" onSelect={keys.p}>
+            <DropdownMenuItem className="text-ui" onSelect={pin}>
               {pinned ? <PinOff /> : <Pin />}
               {pinned ? "Unpin" : "Pin"}
               <Kbd className="ml-auto">P</Kbd>
@@ -142,7 +142,7 @@ export default function SessionMenu({
             </DropdownMenuSub>
             {/* No apps here can open a folder that lives on another server. */}
             {local && open && <OpenInSub path={item.cwd} />}
-            <DropdownMenuItem className="text-ui" onSelect={keys.a}>
+            <DropdownMenuItem className="text-ui" onSelect={settle}>
               {settled ? <ArchiveRestore /> : <Archive />}
               {settled ? "Unsettle" : "Settle"}
               <Kbd className="ml-auto">A</Kbd>

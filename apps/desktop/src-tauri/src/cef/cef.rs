@@ -966,7 +966,8 @@ fn adopt_hole_class(view: &NSView) {
         let obj = view as *const NSView as *mut AnyObject;
         let cls = object_getClass(obj) as usize;
         let mut known = HOLE_CLASSES.lock().unwrap();
-        if known.iter().any(|&(_, sub)| sub == cls) {
+        // Already ours, perhaps under a subclass someone else put on top since.
+        if hole_base(&known, &*obj).is_some() {
             return;
         }
         let sub = match known.iter().find(|&&(base, _)| base == cls) {
@@ -1003,8 +1004,23 @@ extern "C-unwind" fn hole_hit_test(this: &AnyObject, _sel: Sel, point: NSPoint) 
     if inside {
         return std::ptr::null_mut();
     }
-    let Some(base) = this.class().superclass() else { return std::ptr::null_mut() };
+    let Some(base) = hole_base(&HOLE_CLASSES.lock().unwrap(), this) else { return std::ptr::null_mut() };
     unsafe { msg_send![super(this, base), hitTest: point] }
+}
+
+/// The class our subclass extends, found by walking up from the instance's
+/// class. Not just its superclass: KVO isa-swizzles an observed view onto a
+/// subclass of whatever it was, and a super call from there would land back
+/// in `hole_hit_test` and recurse until the stack ran out.
+fn hole_base(known: &[(usize, usize)], obj: &AnyObject) -> Option<&'static AnyClass> {
+    let mut cls: &'static AnyClass = obj.class();
+    loop {
+        let at = cls as *const AnyClass as usize;
+        if let Some(&(base, _)) = known.iter().find(|&&(_, sub)| sub == at) {
+            return Some(unsafe { &*(base as *const AnyClass) });
+        }
+        cls = cls.superclass()?;
+    }
 }
 
 /// Marks a tab seen now.

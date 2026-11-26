@@ -25,8 +25,8 @@ const OPEN_PULL = 24;
 type Size = { width: number; height: number };
 type Edges = { readonly left: boolean; readonly top: boolean };
 
-/// The session's composer floating at the lower right of a tab that is not
-/// Chat — Files, Changes, a full terminal — so the agent stays one keystroke
+/// The session's composer floating at the lower right of every tab but Chat —
+/// Files, Changes, a full terminal, the full browser — so the agent stays one keystroke
 /// away. The title row folds the conversation in and out; the top and left
 /// edges resize; minimise leaves a round chat button in the corner.
 ///
@@ -51,8 +51,8 @@ export default function FloatingComposer({
   composer: ReactNode;
 }) {
   const [stored, setStored] = useLocalStorage<Size>("carbon.floatingComposer.size", DEFAULT_SIZE);
-  const [folded, setExpanded] = useLocalStorage("carbon.floatingComposer.expanded", false);
-  const expanded = folded && !!item;
+  const [open, setExpanded] = useLocalStorage("carbon.floatingComposer.expanded", false);
+  const expanded = open && !!item;
   const [hidden, setHidden] = useLocalStorage("carbon.floatingComposer.hidden", false);
   // The size mid-drag, written to storage once on release.
   const [live, setLive] = useState<Size | null>(null);
