@@ -5,8 +5,7 @@ Code, Codex, fx, pi and Grok Build) in a native chat UI. Run many sessions at
 once, optionally in separate worktrees, with diff, PR, issue and browser views.
 
 Carbon is based on [Dray](https://github.com/monorepo-labs/dray) by yogesharc,
-used under the Apache License 2.0 (see [LICENSE](LICENSE)). This copy renames
-the project to Carbon and replaces its branding.
+used under the Apache License 2.0 (see [LICENSE](LICENSE)).
 
 ## Layout
 
