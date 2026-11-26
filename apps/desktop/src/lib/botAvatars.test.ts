@@ -20,7 +20,8 @@ describe("bot avatars", () => {
         expect(svg).not.toMatch(/NaN|Infinity/);
       }
     }
-  });
+    // ~3s alone, past vitest's 5s default once the full suite shares the CPU.
+  }, 30_000);
 
   it("keeps the streamed call's identity through lifecycle ids, completion and replay", () => {
     const callId = "toolu_01AvatarRegression";

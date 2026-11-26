@@ -79,8 +79,12 @@ export default function ToolGroupRow({
             otherwise would, so the two must read as the same kind of toggle.
             A failing call inside does not color it: one error among a dozen
             calls would paint the whole run as failed, and the row that failed
-            says so itself once the group is expanded. */}
-        <span className={cn("shrink-0", pending && "shimmer-text")}>
+            says so itself once the group is expanded.
+
+            Keyed on `pending` so going live replaces the span: restyled in
+            place, WebKit could leave the old text painted under the shimmer's
+            transparent glyphs, "Bash 3" showing through "Bash 4" (CBN-152). */}
+        <span key={pending ? "live" : "settled"} className={cn("shrink-0", pending && "shimmer-text")}>
           {group.target
             ? groupVerb(group.name, pending)
             : groupLabel(group.name, group.targets, pending)}
