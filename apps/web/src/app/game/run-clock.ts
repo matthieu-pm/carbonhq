@@ -12,7 +12,7 @@ export class RunClock {
     this.startedAt = null;
   }
 
-  seconds(now: number) {
-    return Math.floor((this.playedMs + (this.startedAt === null ? 0 : now - this.startedAt)) / 1000);
+  milliseconds(now: number) {
+    return Math.floor(this.playedMs + (this.startedAt === null ? 0 : now - this.startedAt));
   }
 }

@@ -1,5 +1,8 @@
 export const WIDTH = 480
 export const VIEW_HEIGHT = 450
+export const STEP_MS = 1000 / 60
+export const HARDCORE_REWARD_LIMIT_MS = 120_000
+export const HARDCORE_MAX_FRAMES = HARDCORE_REWARD_LIMIT_MS / STEP_MS
 
 const GRAVITY = 0.39
 const JUMP_SPEED = 9.1
@@ -9,6 +12,7 @@ const PLAYER_HEIGHT = 32
 const WORK_TIME = 38
 
 export type AgentId = "codex" | "claude" | "pi" | "fx"
+export type GameMode = "standard" | "hardcore"
 export type Input = { left?: boolean; right?: boolean; jump?: boolean; use?: boolean }
 type Status = "playing" | "won" | "lost"
 type Rect = { x: number; y: number; w: number; h: number }
@@ -52,9 +56,11 @@ type Stage = {
   exit: Rect
   duties: Duty[]
   hazards: Hazard[]
+  hardcoreHazards: Hazard[]
 }
 
 export type Game = {
+  mode: GameMode
   stageIndex: number
   lives: number
   status: Status
@@ -103,8 +109,16 @@ function surface(x: number, y: number, w: number, kind: PlatformKind = "ledge"):
 type Obstacle = "spikes-left" | "spikes-right" | "arc"
 type CourseSection = ReturnType<typeof ledge> | { agent: AgentId; side: "left" | "right" }
 
-function ledge(center: number, width: number, rise: number, obstacle?: Obstacle) {
-  return { center, width, rise, obstacle }
+function ledge(center: number, width: number, rise: number, obstacle?: Obstacle, hardcoreObstacle?: Obstacle) {
+  return { center, width, rise, obstacle, hardcoreObstacle }
+}
+
+function trap(platform: Platform, obstacle: Obstacle): Hazard {
+  const { x, y, w } = platform
+  if (obstacle === "arc") {
+    return { x: x + w / 2 - 16, y: y - 24, w: 32, h: 24, kind: "arc", active: false }
+  }
+  return { x: obstacle === "spikes-left" ? x : x + w - 25, y: y - 12, w: 25, h: 12, kind: "spikes", active: true }
 }
 
 function keyBranch(junction: Platform, outward: -1 | 1, difficulty: number): KeyBranch {
@@ -138,20 +152,17 @@ function buildStage(name: string, reward: AgentId | null, difficulty: number, se
   const floor = surface(30, roofY + climb, WIDTH - 60, "floor")
   const route = [floor]
   const hazards: Hazard[] = [{ x: 209, y: floor.y - 16, w: 62, h: 16, kind: "spikes", active: true }]
+  const hardcoreHazards: Hazard[] = []
   const duties: Duty[] = []
   let y = floor.y
   for (const section of sections) {
     if ("rise" in section) {
-      const { center, width, rise, obstacle } = section
+      const { center, width, rise, obstacle, hardcoreObstacle } = section
       y -= rise
       const platform = surface(center - width / 2, y, width)
       route.push(platform)
-      if (obstacle === "arc") {
-        hazards.push({ x: center - 16, y: y - 24, w: 32, h: 24, kind: "arc", active: false })
-      } else if (obstacle) {
-        const x = obstacle === "spikes-left" ? platform.x : platform.x + width - 25
-        hazards.push({ x, y: y - 12, w: 25, h: 12, kind: "spikes", active: true })
-      }
+      if (obstacle) hazards.push(trap(platform, obstacle))
+      if (hardcoreObstacle) hardcoreHazards.push(trap(platform, hardcoreObstacle))
       continue
     }
     const { agent, side } = section
@@ -208,46 +219,47 @@ function buildStage(name: string, reward: AgentId | null, difficulty: number, se
     exit: { x: (reward ? roofCenter + outward * 24 : roofCenter) - 17, y: roof.y - 46, w: 34, h: 46 },
     duties,
     hazards,
+    hardcoreHazards,
   }
 }
 
 export const STAGES = [
   buildStage("Loading Dock", "codex", 0, [
-    ledge(158, 104, 60), ledge(263, 110, 66, "spikes-right"), ledge(364, 90, 66),
+    ledge(158, 104, 60, undefined, "spikes-right"), ledge(263, 110, 66, "spikes-right"), ledge(364, 90, 66, undefined, "spikes-right"),
     ledge(297, 80, 79), ledge(194, 96, 69, "spikes-left"), ledge(92, 92, 71),
-    ledge(141, 70, 82), ledge(240, 96, 64, "spikes-right"), ledge(323, 74, 76),
+    ledge(141, 70, 82), ledge(240, 96, 64, "spikes-right"), ledge(323, 74, 76, undefined, "arc"),
     ledge(395, 100, 84),
   ]),
   buildStage("Machine Room", "claude", 1, [
-    ledge(312, 94, 68, "spikes-left"), ledge(206, 76, 72), ledge(109, 84, 75),
+    ledge(312, 94, 68, "spikes-left"), ledge(206, 76, 72, undefined, "spikes-left"), ledge(109, 84, 75),
     { agent: "codex", side: "left" },
     ledge(372, 100, 74, "arc"), ledge(285, 68, 78), ledge(190, 98, 69, "spikes-left"),
-    ledge(87, 82, 72), ledge(157, 80, 79), ledge(255, 96, 72, "spikes-right"),
-    ledge(324, 74, 78), ledge(398, 100, 83),
+    ledge(87, 82, 72, undefined, "spikes-left"), ledge(157, 80, 79), ledge(255, 96, 72, "spikes-right"),
+    ledge(324, 74, 78, undefined, "arc"), ledge(398, 100, 83),
   ]),
   buildStage("Cooling Stack", "pi", 2, [
-    ledge(165, 94, 70, "spikes-right"), ledge(261, 74, 73), ledge(365, 102, 75, "arc"),
+    ledge(165, 94, 70, "spikes-right"), ledge(261, 74, 73, undefined, "arc"), ledge(365, 102, 75, "arc"),
     { agent: "claude", side: "right" },
-    ledge(181, 94, 75, "spikes-left"), ledge(86, 78, 79), ledge(164, 72, 77),
+    ledge(181, 94, 75, "spikes-left"), ledge(86, 78, 79, undefined, "spikes-left"), ledge(164, 72, 77),
     ledge(258, 102, 67, "arc"), ledge(163, 84, 76),
     { agent: "codex", side: "left" },
-    ledge(355, 94, 78, "spikes-right"), ledge(284, 66, 77), ledge(163, 90, 70),
+    ledge(355, 94, 78, "spikes-right"), ledge(284, 66, 77), ledge(163, 90, 70, undefined, "spikes-left"),
     ledge(88, 98, 81),
   ]),
   buildStage("Antenna Deck", "fx", 3, [
-    ledge(306, 94, 70, "spikes-left"), ledge(205, 76, 70), ledge(105, 100, 80, "arc"),
+    ledge(306, 94, 70, "spikes-left"), ledge(205, 76, 70, undefined, "arc"), ledge(105, 100, 80, "arc"),
     { agent: "pi", side: "left" },
     ledge(351, 94, 73, "spikes-right"), ledge(282, 68, 78), ledge(185, 94, 71),
-    ledge(82, 78, 76),
+    ledge(82, 78, 76, undefined, "spikes-left"),
     { agent: "codex", side: "left" },
     ledge(359, 100, 75, "arc"), ledge(286, 66, 80), ledge(186, 94, 72, "spikes-left"),
-    ledge(102, 72, 79), ledge(186, 82, 72), ledge(275, 88, 75),
+    ledge(102, 72, 79), ledge(186, 82, 72), ledge(275, 88, 75, undefined, "spikes-right"),
     { agent: "claude", side: "right" },
     ledge(178, 72, 79), ledge(80, 96, 74, "spikes-left"), ledge(158, 66, 80),
     ledge(253, 100, 72, "arc"), ledge(326, 74, 80), ledge(402, 100, 84),
   ]),
   buildStage("Signal Spire", null, 4, [
-    ledge(142, 104, 73, "spikes-right"), ledge(234, 70, 79), ledge(149, 98, 75, "arc"),
+    ledge(142, 104, 73, "spikes-right"), ledge(234, 70, 79, undefined, "arc"), ledge(149, 98, 75, "arc"),
     { agent: "fx", side: "left" },
     ledge(393, 90, 79, "spikes-right"), ledge(290, 68, 77), ledge(197, 100, 70, "arc"),
     ledge(105, 74, 84),
@@ -255,9 +267,9 @@ export const STAGES = [
     ledge(349, 94, 80, "spikes-right"), ledge(280, 66, 82), ledge(184, 102, 73, "spikes-left"),
     ledge(91, 74, 80),
     { agent: "pi", side: "left" },
-    ledge(349, 100, 76, "arc"), ledge(408, 72, 77),
+    ledge(349, 100, 76, "arc"), ledge(408, 72, 77, undefined, "spikes-right"),
     { agent: "claude", side: "right" },
-    ledge(187, 102, 78, "spikes-left"), ledge(84, 68, 84), ledge(162, 82, 79),
+    ledge(187, 102, 78, "spikes-left"), ledge(84, 68, 84), ledge(162, 82, 79, undefined, "spikes-right"),
     ledge(261, 98, 73, "arc"), ledge(350, 68, 82), ledge(400, 100, 86),
   ]),
 ]
@@ -276,7 +288,8 @@ function loadStage(game: Game, stageIndex: number, checkpoint: boolean) {
   const completed = checkpoint ? game.duties.filter((duty) => duty.complete).map((duty) => duty.id) : []
   game.hasKey = checkpoint && game.hasKey
   game.stageIndex = stageIndex
-  game.hazards = stage.hazards.map((hazard) => ({ ...hazard }))
+  const hazards = game.mode === "hardcore" ? [...stage.hazards, ...stage.hardcoreHazards] : stage.hazards
+  game.hazards = hazards.map((hazard) => ({ ...hazard }))
   game.duties = stage.duties.map((duty) => {
     const complete = completed.includes(duty.id)
     const hazard = game.hazards.find((candidate) => candidate.x === duty.hazard?.x && candidate.y === duty.hazard.y)
@@ -311,10 +324,11 @@ function loadStage(game: Game, stageIndex: number, checkpoint: boolean) {
   game.trail = []
 }
 
-export function createGame(): Game {
+export function createGame(mode: GameMode = "standard"): Game {
   const game: Game = {
+    mode,
     stageIndex: 0,
-    lives: 3,
+    lives: mode === "hardcore" ? 1 : 3,
     status: "playing",
     player: { x: 0, y: 0, w: PLAYER_WIDTH, h: PLAYER_HEIGHT, vx: 0, vy: 0, facing: 1 },
     cameraY: 0,
@@ -545,15 +559,42 @@ export function stepGame(game: Game, input: Input) {
     if (usePressed) {
       game.crew.find((member) => member.id === agent)!.mode = "following"
       game.recruited.push(agent)
-      game.lives++
+      if (game.mode === "standard") game.lives++
       game.hasKey = false
       game.exit.ready = true
       game.prompt = null
-      say(game, `${AGENT_NAMES[agent]} rescued · +1 life`)
+      say(game, `${AGENT_NAMES[agent]} rescued` + (game.mode === "standard" ? " · +1 life" : ""))
     }
   } else if (game.exit.ready && overlaps(game.player, game.exit)) {
     loadStage(game, game.stageIndex + 1, false)
   }
+}
+
+// The fifth bit reproduces the input release that happens when the game pauses.
+export function recordInput(input: Input, released: boolean) {
+  const bits = Number(!!input.left) + Number(!!input.right) * 2 +
+    Number(!!input.jump) * 4 + Number(!!input.use) * 8 + Number(released) * 16
+  return bits.toString(32)
+}
+
+export function isRewardRun(elapsedMs: number, frames: number) {
+  return Number.isInteger(elapsedMs) && frames > 0 &&
+    elapsedMs >= Math.floor(frames * STEP_MS) && elapsedMs < HARDCORE_REWARD_LIMIT_MS
+}
+
+export function verifyHardcoreReplay(replay: string, elapsedMs: number) {
+  if (replay.length > HARDCORE_MAX_FRAMES || !isRewardRun(elapsedMs, replay.length) || !/^[0-9a-v]+$/.test(replay)) return false
+  const game = createGame("hardcore")
+  for (const encoded of replay) {
+    if (game.status !== "playing") return false
+    const bits = parseInt(encoded, 32)
+    if (bits & 16) {
+      game.jumpHeld = false
+      game.useHeld = false
+    }
+    stepGame(game, { left: !!(bits & 1), right: !!(bits & 2), jump: !!(bits & 4), use: !!(bits & 8) })
+  }
+  return game.status === "won"
 }
 
 const STATION_HINTS: Record<AgentId, string> = {
