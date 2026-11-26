@@ -79,8 +79,14 @@ export default function ToolGroupRow({
             otherwise would, so the two must read as the same kind of toggle.
             A failing call inside does not color it: one error among a dozen
             calls would paint the whole run as failed, and the row that failed
-            says so itself once the group is expanded. */}
-        <span className={cn("shrink-0", pending && "shimmer-text")}>
+            says so itself once the group is expanded.
+
+            Keyed on `pending` so the span is replaced, not restyled. A settled
+            group goes live again when a call joins it, and the shimmer moves the
+            glyphs onto their own layer and paints them transparent; WebKit can
+            skip erasing the text left beneath, so "Bash 3 commands" showed
+            through "Bash 4 commands" (CBN-152). Removing the node forces it. */}
+        <span key={pending ? "live" : "settled"} className={cn("shrink-0", pending && "shimmer-text")}>
           {group.target
             ? groupVerb(group.name, pending)
             : groupLabel(group.name, group.targets, pending)}
