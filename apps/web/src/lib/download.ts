@@ -1,7 +1,7 @@
 import { REPO } from "@/lib/links";
 
 const STABLE_MANIFEST = "https://matthieu-pm.github.io/carbonhq/stable.json";
-const BETA_DOWNLOAD = `${REPO}/releases/download/v0.31.2/Carbon_0.31.2_universal.dmg`;
+const BETA_DOWNLOAD = `${REPO}/releases/download/v0.31.3/Carbon_0.31.3_universal.dmg`;
 
 /// Offer the published beta until a stable desktop installer is available.
 export async function macosDownload(): Promise<string> {
