@@ -42,6 +42,18 @@ let started = false;
 function start() {
   if (started) return;
   started = true;
+  // A reloaded frontend knows of no page on screen, but the one the last load
+  // placed is still up — and nothing here would ever hide it. Before any
+  // claim, so a pane presenting next is laid out after this.
+  void invoke("browser_layout", {
+    sessionId: "",
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    visible: false,
+    hole: null,
+  }).catch(() => undefined);
   void listen<{ sessionId: string; tabs: BrowserTab[] }>("browser_tabs", (e) => {
     const { sessionId, tabs } = e.payload;
     // A tab arriving is what the new tab on screen was waiting for, whoever
@@ -761,6 +773,25 @@ export function browserHistory(sessionId: string): Promise<BrowserVisit[]> {
   return invoke<BrowserVisit[]>("browser_history", { sessionId }).catch(() => []);
 }
 
+type Hole = { x: number; y: number; width: number; height: number; radius: number };
+let hole: Hole | null = null;
+let holeFrame = 0;
+
+/// Where the floating composer sits over the page, in CSS pixels, or `null`
+/// once it is gone. The native view draws over every DOM element, so the page
+/// is cut away there instead. One layout a frame, since a resize drag moves
+/// it on every pointer event.
+export function setBrowserHole(next: Hole | null) {
+  const same =
+    next === hole ||
+    (!!next && !!hole && next.x === hole.x && next.y === hole.y && next.width === hole.width &&
+      next.height === hole.height && next.radius === hole.radius);
+  if (same) return;
+  hole = next;
+  cancelAnimationFrame(holeFrame);
+  holeFrame = requestAnimationFrame(present);
+}
+
 function hiding(): boolean {
   if (occluded || suggesting) return true;
   const winner = presenter();
@@ -852,6 +883,13 @@ function present() {
       width: r.width * z,
       height: r.height * z,
       visible: true,
+      hole: hole && {
+        x: hole.x * z,
+        y: hole.y * z,
+        width: hole.width * z,
+        height: hole.height * z,
+        radius: hole.radius * z,
+      },
     })
       .catch(() => undefined)
       .then(() => {

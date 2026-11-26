@@ -252,6 +252,8 @@ That ordering is the whole feature. The index entry lands **before** spawn on pu
 
 [canvas-composer.html](apps/desktop/demo/canvas-composer.html) mounts the canvas editor with the Design workspace's floating composer in its stage, faked sends, a running turn and a failing send, with an inspector toggle and four widths, for judging where the card and the tool bar sit as the canvas narrows. The session pane is narrower than the 984px breakpoint, so check the side-by-side layout by widening the editor wrapper with `eval`.
 
+[floating-composer.html](apps/desktop/demo/floating-composer.html) mounts the floating composer (CBN-158) over a stand-in Files column with the real `ChatInput` in its floating mode: fold, minimise to the round button, the session menu with its R/P/A keys, a new task's card with no session behind it, a narrow column, and **Run resize check**, which drags the top-left corner with synthetic pointer events and reports the size before and after.
+
 **Every demo's `<html>` carries `data-demo`**, or it cannot scroll: the app pins `html`, `body` and `#root` to the window with overflow hidden, since it owns every scroll container, and [App.css](apps/desktop/src/App.css) gives page scroll back only to that attribute.
 
 **A new demo mounts `<DemoThemeBar />`** ([ThemeBar.tsx](apps/desktop/src/demo/ThemeBar.tsx)): Settings' own theme swatches ([ThemeSwatches](apps/desktop/src/components/ThemeSwatches.tsx), arrow keys included) and Light/Dark on the app's theme store, since a surface is judged across every palette and both modes. No hand-rolled mode toggle, and no theme attributes hardcoded on the page's `<html>`. The recording demo has it; the three older demos predate it and are left as they were, on purpose.

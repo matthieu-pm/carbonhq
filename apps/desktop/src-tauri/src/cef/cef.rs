@@ -25,7 +25,7 @@ use objc2::runtime::{AnyClass, AnyObject, Bool, NSObjectProtocol, Sel};
 use objc2::{msg_send, sel};
 use objc2_app_kit::{NSApplication, NSEvent, NSView};
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
@@ -125,6 +125,19 @@ struct Layout {
     width: f64,
     height: f64,
     visible: bool,
+    hole: Option<Hole>,
+}
+
+/// What floats over the page — the session's composer card — in the same
+/// window points as the layout. The page is cut away there and lets the
+/// pointer through, since a native view draws over every DOM element.
+#[derive(Clone, Copy, Deserialize)]
+pub struct Hole {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
 }
 
 /// One tab as the frontend sees it.
@@ -817,6 +830,7 @@ fn apply_layout() {
                     NSSize::new(layout.width, layout.height),
                 );
                 view.setFrame(frame);
+                cut_hole(view, &layout, parent_height);
             }
             round_foot(view);
             if let Some(host) = browser.host() {
@@ -858,6 +872,154 @@ fn round_foot(view: &NSView) {
         let _: () = msg_send![layer, setCornerRadius: 8.0f64];
         let _: () = msg_send![layer, setMaskedCorners: BOTTOM];
         let _: () = msg_send![layer, setMasksToBounds: Bool::YES];
+    }
+}
+
+/// The shown view and the hole in it, in its superview's coordinates, for
+/// `hole_hit_test`. One at a time: only the shown tab is ever cut.
+static HOLE: Mutex<Option<(usize, NSRect)>> = Mutex::new(None);
+
+/// Cuts the composer's card out of the page, and lets clicks there reach the
+/// webview under it. The mask is the whole bounds with the card's rounded
+/// rect taken out (even-odd), so the page's own corner rounding still applies.
+fn cut_hole(view: &NSView, layout: &Layout, parent_height: f64) {
+    let view_ptr = view as *const NSView as usize;
+    let cut = layout.hole.and_then(|h| {
+        // Clipped to the page, so a card beside it cuts nothing.
+        let left = h.x.max(layout.x);
+        let right = (h.x + h.width).min(layout.x + layout.width);
+        let top = h.y.max(layout.y);
+        let bottom = (h.y + h.height).min(layout.y + layout.height);
+        (right > left && bottom > top).then_some(h)
+    });
+    view.setWantsLayer(true);
+    let Some(h) = cut else {
+        *HOLE.lock().unwrap() = None;
+        unsafe {
+            let layer: *mut AnyObject = msg_send![view, layer];
+            if !layer.is_null() {
+                let none: *mut AnyObject = std::ptr::null_mut();
+                let _: () = msg_send![layer, setMask: none];
+            }
+        }
+        return;
+    };
+    adopt_hole_class(view);
+    // AppKit's origin is the bottom left; the layout's is the top left.
+    let in_parent = NSRect::new(
+        NSPoint::new(h.x, parent_height - h.y - h.height),
+        NSSize::new(h.width, h.height),
+    );
+    *HOLE.lock().unwrap() = Some((view_ptr, in_parent));
+    let bounds = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(layout.width, layout.height));
+    let in_view = NSRect::new(
+        NSPoint::new(h.x - layout.x, layout.y + layout.height - h.y - h.height),
+        NSSize::new(h.width, h.height),
+    );
+    unsafe {
+        let layer: *mut AnyObject = msg_send![view, layer];
+        let Some(shape) = AnyClass::get(c"CAShapeLayer") else { return };
+        if layer.is_null() {
+            return;
+        }
+        let path = CGPathCreateMutable();
+        CGPathAddRect(path, std::ptr::null(), bounds);
+        let r = h.radius.min(h.width / 2.0).min(h.height / 2.0);
+        CGPathAddRoundedRect(path, std::ptr::null(), in_view, r, r);
+        let mask: *mut AnyObject = msg_send![shape, layer];
+        let _: () = msg_send![mask, setFrame: bounds];
+        let _: () = msg_send![mask, setPath: CgPath(path)];
+        let rule = objc2_foundation::NSString::from_str("even-odd");
+        let _: () = msg_send![mask, setFillRule: &*rule];
+        let _: () = msg_send![layer, setMask: mask];
+        CGPathRelease(path);
+    }
+}
+
+#[repr(transparent)]
+struct CgPath(*mut std::ffi::c_void);
+
+unsafe impl objc2::Encode for CgPath {
+    const ENCODING: objc2::Encoding = objc2::Encoding::Pointer(&objc2::Encoding::Struct("CGPath", &[]));
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPathCreateMutable() -> *mut std::ffi::c_void;
+    fn CGPathAddRect(path: *mut std::ffi::c_void, m: *const std::ffi::c_void, rect: NSRect);
+    fn CGPathAddRoundedRect(path: *mut std::ffi::c_void, m: *const std::ffi::c_void, rect: NSRect, w: f64, h: f64);
+    fn CGPathRelease(path: *mut std::ffi::c_void);
+}
+
+/// Subclasses made for `hole_hit_test`, keyed by the class they extend.
+static HOLE_CLASSES: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
+
+/// Gives the view a subclass of its own class that answers `hitTest:` with
+/// nothing inside the hole — what KVO does to an observed object. Done to
+/// the instance rather than by swizzling the class, which could be one every
+/// other view in the window shares.
+fn adopt_hole_class(view: &NSView) {
+    use objc2::ffi::{
+        class_addMethod, objc_allocateClassPair, objc_registerClassPair, object_getClass, object_setClass,
+    };
+    unsafe {
+        let obj = view as *const NSView as *mut AnyObject;
+        let cls = object_getClass(obj) as usize;
+        let mut known = HOLE_CLASSES.lock().unwrap();
+        // Already ours, perhaps under a subclass someone else put on top since.
+        if hole_base(&known, &*obj).is_some() {
+            return;
+        }
+        let sub = match known.iter().find(|&&(base, _)| base == cls) {
+            Some(&(_, sub)) => sub,
+            None => {
+                let base = cls as *const AnyClass;
+                let name = format!("CarbonHole_{}\0", (*base).name().to_string_lossy());
+                let made = objc_allocateClassPair(base, name.as_ptr().cast(), 0);
+                if made.is_null() {
+                    return;
+                }
+                let imp: objc2::runtime::Imp = std::mem::transmute(hole_hit_test as *const ());
+                let types = format!("@@:{}\0", <NSPoint as objc2::Encode>::ENCODING);
+                class_addMethod(made, sel!(hitTest:), imp, types.as_ptr().cast());
+                objc_registerClassPair(made);
+                known.push((cls, made as usize));
+                made as usize
+            }
+        };
+        object_setClass(obj, sub as *const AnyClass);
+    }
+}
+
+/// `nil` inside the hole, so the window looks under this view and finds the
+/// webview with the card in it; anything else is the page's own answer.
+extern "C-unwind" fn hole_hit_test(this: &AnyObject, _sel: Sel, point: NSPoint) -> *mut AnyObject {
+    let inside = HOLE.lock().unwrap().is_some_and(|(view, r)| {
+        view == this as *const AnyObject as usize
+            && point.x >= r.origin.x
+            && point.x < r.origin.x + r.size.width
+            && point.y >= r.origin.y
+            && point.y < r.origin.y + r.size.height
+    });
+    if inside {
+        return std::ptr::null_mut();
+    }
+    let Some(base) = hole_base(&HOLE_CLASSES.lock().unwrap(), this) else { return std::ptr::null_mut() };
+    unsafe { msg_send![super(this, base), hitTest: point] }
+}
+
+/// The class our subclass extends, found by walking up from the instance's
+/// class. Not just its superclass: KVO isa-swizzles an observed view onto a
+/// subclass of whatever it was, and a super call from there would land back
+/// in `hole_hit_test` and recurse until the stack ran out.
+fn hole_base(known: &[(usize, usize)], obj: &AnyObject) -> Option<&'static AnyClass> {
+    let mut cls: &'static AnyClass = obj.class();
+    loop {
+        let at = cls as *const AnyClass as usize;
+        if let Some(&(base, _)) = known.iter().find(|&&(_, sub)| sub == at) {
+            return Some(unsafe { &*(base as *const AnyClass) });
+        }
+        cls = cls.superclass()?;
     }
 }
 
@@ -1824,8 +1986,16 @@ async fn await_shutter(shot: u64) {
 /// Which session is on screen and where, in CSS pixels from the window's
 /// top-left. `visible: false` hides every tab.
 #[tauri::command]
-pub fn browser_layout(session_id: String, x: f64, y: f64, width: f64, height: f64, visible: bool) -> Result<(), String> {
-    *LAYOUT.lock().unwrap() = Some((session_id, Layout { x, y, width, height, visible }));
+pub fn browser_layout(
+    session_id: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    visible: bool,
+    hole: Option<Hole>,
+) -> Result<(), String> {
+    *LAYOUT.lock().unwrap() = Some((session_id, Layout { x, y, width, height, visible, hole }));
     on_main(apply_layout)
 }
 

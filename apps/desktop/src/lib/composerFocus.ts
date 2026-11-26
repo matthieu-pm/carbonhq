@@ -10,6 +10,17 @@ import { IS_MAC } from "@/lib/platform";
 /// value, since there is only ever one composer on screen.
 let composer: HTMLElement | null = null;
 
+/// What the floating composer listens for to come back from its round button.
+/// Here rather than beside the component, since a component file exporting
+/// anything else costs it Fast Refresh and the whole page reloads.
+export const REVEAL_FLOATING_COMPOSER = "carbon:reveal-floating-composer";
+
+/// Brings a minimised floating composer back, for something that just put
+/// text in it — Ask's Send from the full browser.
+export function revealFloatingComposer() {
+  window.dispatchEvent(new Event(REVEAL_FLOATING_COMPOSER));
+}
+
 /// Called by the composer's own `ref`. `null` on unmount, which is ordinary —
 /// the composer unmounts whenever the reader leaves the Chat tab.
 export function registerComposer(el: HTMLElement | null) {

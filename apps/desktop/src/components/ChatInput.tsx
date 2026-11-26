@@ -210,6 +210,9 @@ type ChatInputProps = {
   /// Hidden while another composer has the screen — the canvas's, today. A
   /// window-wide drop and ⌘-attach then belong to that one, not to this tray.
   away?: boolean;
+  /// Drawn inside the floating card on a tab that is not Chat: the card is the
+  /// surface, so this drops its own frame, margins and the handoff row.
+  floating?: boolean;
 };
 
 const MAX_ROWS = 10;
@@ -283,6 +286,7 @@ export default function ChatInput({
   archived = false,
   onUnarchive,
   onRemoveWorktree,
+  floating = false,
 }: ChatInputProps) {
   const [message, setMessage] = useDraft(sessionId);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -862,12 +866,12 @@ export default function ChatInput({
   // composer and the transcript shifts down with it.
   if (archived) {
     return (
-      <div className="px-4 pb-[3.125rem]">
+      <div className={floating ? "p-2" : "px-4 pb-[3.125rem]"}>
         {/* `px-3 py-3` is the live card's own padding, so the button's right edge
             lands where the submit button's does. The label carries the textarea's
             extra `px-1` itself — inside the card those two sit on different
             edges, and matching only one of them is what reads as a shift. */}
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-hairline bg-card px-3 py-3">
+        <div className={cn("mx-auto flex max-w-3xl items-center justify-between gap-3 px-3 py-3", !floating && "rounded-2xl border border-hairline bg-card")}>
           <span className="px-1 text-prompt text-muted-foreground">
             Unsettle this task to send a follow-up.
           </span>
@@ -893,9 +897,9 @@ export default function ChatInput({
   }
 
   return (
-    <div className="px-4 pb-4">
+    <div className={floating ? undefined : "px-4 pb-4"}>
       <form
-        className="mx-auto max-w-3xl"
+        className={floating ? undefined : "mx-auto max-w-3xl"}
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -905,7 +909,7 @@ export default function ChatInput({
             edge like the toolbar and the text below it. Height-sized so the
             mark scales with the layout rather than with a viewBox nobody
             reading this file should have to hold in their head. */}
-        {isNewTask && (
+        {isNewTask && !floating && (
           <div
             aria-hidden
             style={WORDMARK_MASK}
@@ -915,7 +919,7 @@ export default function ChatInput({
           />
         )}
 
-        {notice ?? pending}
+        {floating ? (notice ?? pending) && <div className="px-2 pt-2">{notice ?? pending}</div> : (notice ?? pending)}
 
         {/* Above the toolbar in both states, so the failure reads before the
             controls rather than after them. `whitespace-pre-wrap` because these
@@ -927,7 +931,7 @@ export default function ChatInput({
             every message and needed a `text-indent` on the first line to make
             room. A flex row with the button after the text costs neither. */}
         {error && (
-          <div className="mb-2 flex items-start gap-2 px-1 text-ui text-destructive">
+          <div className={cn("mb-2 flex items-start gap-2 px-1 text-ui text-destructive", floating && "mx-2 mt-2")}>
             <span className="min-w-0 flex-1 break-words whitespace-pre-wrap">{error}</span>
             {onDismissError && (
               <button
@@ -946,7 +950,7 @@ export default function ChatInput({
             reserve and behind the card, which is the opaque thing that hides it.
             Anything between the two would show the buttons through the gap and
             leave them floating rather than tucked. */}
-        {!isNewTask && handoff}
+        {!isNewTask && !floating && handoff}
 
         {/* The picker anchors to this wrapper rather than to the card, and it has
             to: an element carrying `backdrop-filter` is a backdrop root for
@@ -981,7 +985,7 @@ export default function ChatInput({
                 activeIndex={active}
                 onPick={pickFile}
                 onHover={setActiveIndex}
-                below={isNewTask}
+                below={isNewTask && !floating}
               />
             ) : issue ? (
               <IssueMentionMenu
@@ -990,7 +994,7 @@ export default function ChatInput({
                 onPick={pickIssue}
                 tagged={new Set(taggedIssues.map((tag) => tag.identifier))}
                 onHover={setActiveIndex}
-                below={isNewTask}
+                below={isNewTask && !floating}
                 loading={issuesLoading}
                 emptyNote={issuesNote}
                 tracker={tracker}
@@ -1003,7 +1007,7 @@ export default function ChatInput({
                 activeIndex={active}
                 onPick={pickSession}
                 onHover={setActiveIndex}
-                below={isNewTask}
+                below={isNewTask && !floating}
               />
             ) : mcp ? (
               <McpMentionMenu
@@ -1011,7 +1015,7 @@ export default function ChatInput({
                 activeIndex={active}
                 onPick={pickMcp}
                 onHover={setActiveIndex}
-                below={isNewTask}
+                below={isNewTask && !floating}
               />
             ) : (
               <SlashCommandMenu
@@ -1019,7 +1023,7 @@ export default function ChatInput({
                 activeIndex={active}
                 onPick={pickCommand}
                 onHover={setActiveIndex}
-                below={isNewTask}
+                below={isNewTask && !floating}
                 emptyNote={noCommands ? NO_COMMANDS_NOTE : undefined}
               />
             ))}
@@ -1039,9 +1043,11 @@ export default function ChatInput({
               // fill, edge and shadow. Nothing scrolls under it there, so it sits
               // in the page as they do, and a float veil beside five card veils
               // read as a sixth card in the wrong colour.
-              isNewTask
-                ? "border border-hairline bg-card shadow-(--shadow-card)"
-                : "border border-edge-surface bg-composer shadow-(--shadow-surface) backdrop-blur-xl",
+              floating
+                ? undefined
+                : isNewTask
+                  ? "border border-hairline bg-card shadow-(--shadow-card)"
+                  : "border border-edge-surface bg-composer shadow-(--shadow-surface) backdrop-blur-xl",
             )}
           >
             {/* Covers the card rather than replacing anything, so the text and
@@ -1243,7 +1249,7 @@ export default function ChatInput({
                   }}
                   // Room for three lines on a new task, and the height is the
                   // editor's own so a click anywhere in that space lands in it.
-                  className={cn("px-1 py-1 text-prompt", isNewTask && "min-h-[3.5lh]")}
+                  className={cn("px-1 py-1 text-prompt", isNewTask && !floating && "min-h-[3.5lh]")}
                 />
               </div>
 
@@ -1262,7 +1268,7 @@ export default function ChatInput({
           </div>
         </div>
 
-        {isNewTask ? (
+        {floating && isNewTask ? null : isNewTask ? (
           // Hidden while a picker is open, and the list sitting over this row is
           // the smaller half of why: Enter completes the highlighted row there
           // rather than sending, and the picker draws its own ↵ hint saying so.
@@ -1293,7 +1299,7 @@ export default function ChatInput({
             {agentUpdate}
           </div>
         ) : (
-          <div className="pt-1.5">{toolbar}</div>
+          <div className={floating ? "px-1.5 pb-1.5" : "pt-1.5"}>{toolbar}</div>
         )}
       </form>
     </div>

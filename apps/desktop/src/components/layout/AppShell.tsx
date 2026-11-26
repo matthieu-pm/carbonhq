@@ -55,6 +55,9 @@ type AppShellProps = {
   summaryLayoutRef?: Ref<HTMLDivElement>;
   /// A full-height strip over the canvas's right margin instead of a card over the transcript.
   summaryDocked?: boolean;
+  /// Floats over the column's lower right: the composer on a tab that is not
+  /// Chat, where `footer` is empty.
+  float?: ReactNode;
   children: ReactNode;
 };
 
@@ -83,6 +86,7 @@ export default function AppShell({
   summaryKey,
   summaryLayoutRef,
   summaryDocked = false,
+  float,
   children,
 }: AppShellProps) {
   const [sidebarPlace, setSidebarPlace] = useState(sidebarMode === "peek" ? "peek" : "docked");
@@ -176,6 +180,7 @@ export default function AppShell({
                     {summary && !summaryDocked && <aside key={summaryKey} className="conversation-summary" data-state={summaryOpen ? "open" : "closed"}
                       aria-label="Conversation summary" aria-hidden={!summaryOpen} inert={!summaryOpen}>{summary}</aside>}
                   </div>
+                  {float}
                 </div>
                 <div className="conversation-footer shrink-0">{footer}</div>
               </div>
