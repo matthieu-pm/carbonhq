@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { verifyHardcoreReplay } from "@/app/game/engine";
+import { HARDCORE_REWARD_LIMIT_LABEL, verifyHardcoreReplay } from "@/app/game/engine";
 
 const MAX_FORM_SIZE = 8192;
 const UNAVAILABLE = "We couldn’t register your email right now. Please try again.";
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     return reply({ error: "Enter a valid email address." }, 400);
   }
   if (typeof elapsedMs !== "number" || typeof replay !== "string" || !verifyHardcoreReplay(replay, elapsedMs)) {
-    return reply({ error: "This run did not qualify. Finish Hardcore in under two minutes to claim the reward." }, 422);
+    return reply({ error: `This run did not qualify. Finish Hardcore in under ${HARDCORE_REWARD_LIMIT_LABEL} to claim the reward.` }, 422);
   }
 
   const key = process.env.RESEND_API_KEY?.trim();

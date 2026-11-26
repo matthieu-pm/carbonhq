@@ -1,8 +1,13 @@
 export const WIDTH = 480
 export const VIEW_HEIGHT = 450
 export const STEP_MS = 1000 / 60
-export const HARDCORE_REWARD_LIMIT_MS = 120_000
+export const HARDCORE_REWARD_LIMIT_MS = 105_000
 export const HARDCORE_MAX_FRAMES = HARDCORE_REWARD_LIMIT_MS / STEP_MS
+export const HARDCORE_REWARD_LIMIT_LABEL = formatTime(HARDCORE_REWARD_LIMIT_MS / 1000)
+
+export function formatTime(seconds: number) {
+  return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0")
+}
 
 const GRAVITY = 0.39
 const JUMP_SPEED = 9.1

@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight, ArrowUp, Flag, Heart, IdCard, Pause, Play, RadioTower, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { createGame, CREW_SIZE, getContextHint, getSnapshot, HARDCORE_MAX_FRAMES, isRewardRun, recordInput, STAGES, STEP_MS, stepGame, type GameMode, type Input } from "./engine";
+import { createGame, CREW_SIZE, formatTime, getContextHint, getSnapshot, HARDCORE_MAX_FRAMES, isRewardRun, recordInput, STAGES, STEP_MS, stepGame, type GameMode, type Input } from "./engine";
 import { drawWorld } from "./render";
 import { RunClock } from "./run-clock";
 import type { Cue } from "./audio";
@@ -12,10 +12,6 @@ export type RunResult = {
   mode: GameMode; stageIndex: number; recruited: number; status: "won" | "lost"; seconds: number;
   reward?: { elapsedMs: number; replay: string };
 };
-
-export function formatTime(seconds: number) {
-  return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
-}
 
 const keys: Record<string, keyof Input | undefined> = {
   arrowleft: "left", a: "left", arrowright: "right", d: "right",
