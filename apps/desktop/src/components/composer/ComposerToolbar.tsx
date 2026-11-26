@@ -165,7 +165,8 @@ export default function ComposerToolbar({
   );
 
   return (
-    <div className="flex min-w-0 items-center gap-0.5 px-1">
+    // The floating composer reads this to keep its card wide enough for the row.
+    <div data-composer-toolbar className="flex min-w-0 items-center gap-0.5 px-1">
       {/* No radius override: `icon-sm` already carries the app's rounded-square,
           and a circle here would be the one round control in a row of them. */}
       {onMentionPage ? <DropdownMenu>

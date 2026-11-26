@@ -217,6 +217,8 @@ export default function PickerMenu<T>({
     // list grows into empty space rather than pushing the composer around as it
     // filters.
     <div
+      // The floating composer reads this to cut the browser's page away under it.
+      data-picker-menu
       className={cn(
         "absolute left-0 z-50 w-full",
         below ? "top-full mt-1.5" : "bottom-full mb-1.5",

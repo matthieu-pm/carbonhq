@@ -117,6 +117,7 @@ import {
   type SplitGroup,
 } from "@/lib/groups";
 import ComposerToolbar from "@/components/composer/ComposerToolbar";
+import FloatingComposer from "@/components/chat/FloatingComposer";
 import DictateControl from "@/components/composer/DictateControl";
 import AppShell from "@/components/layout/AppShell";
 import Rail, { RAIL_W } from "@/components/layout/Rail";
@@ -209,7 +210,7 @@ import { issueTag, rememberIssueTitle, setIssueOpener } from "@/lib/issue";
 import { loadOlder } from "@/lib/olderPages";
 import { authFailedTurn } from "@/lib/auth";
 import { basename } from "@/lib/format";
-import { focusComposer, focusComposerEnd, focusComposerOnMount } from "@/lib/composerFocus";
+import { focusComposer, focusComposerEnd, focusComposerOnMount, revealFloatingComposer } from "@/lib/composerFocus";
 import { changeRange, lastToolResult } from "@/lib/changes";
 import { usePlan } from "@/lib/plan";
 import { currentTodos, startsNewList, type Todo } from "@/lib/todos";
@@ -2026,17 +2027,20 @@ function App() {
   }, [setViewTab]);
 
   // What Ask sends lands as one pill in that session's composer, and the
-  // composer is brought on screen to show it — off the full view and onto
-  // Chat, since the composer is hidden there.
+  // composer is brought on screen to show it: the floating card over the full
+  // view, Chat from the side panel.
+  const fullBrowserHasCard = viewTab === "browser";
   useEffect(() => {
     setAnnotateHandler((sessionId, annotations) => {
       const active = sessionId === browserSessionId;
       void addAnnotations(active ? attachmentKey(composerKey, composerCwd) : sessionId, annotations);
       if (!active) return;
-      openBrowserChat();
+      if (!fullBrowserHasCard) return openBrowserChat();
+      revealFloatingComposer();
+      focusComposerOnMount();
     });
     return () => setAnnotateHandler(null);
-  }, [browserSessionId, composerKey, composerCwd, openBrowserChat]);
+  }, [browserSessionId, composerKey, composerCwd, openBrowserChat, fullBrowserHasCard]);
 
   // Every way of arriving at a session, so none of them can forget to leave the
   // issues page. The two sidebar buttons closed it and the chords beside them
@@ -3141,6 +3145,164 @@ function App() {
     />
   );
 
+  // One composer, drawn under the transcript on Chat and in the floating card
+  // everywhere else. Draft and tray are module stores, so moving between the
+  // two mounts loses nothing.
+  const composer = (floating: boolean) => (
+    <ChatInput
+      floating={floating}
+      placeholder={!selectedSessionId && pendingIssue ? "Describe an issue. @files. /skills." : undefined}
+      onSend={(message, attachments, annotations) => void sendFromComposer(message, attachments, annotations)}
+      commands={slashCommands}
+      commandsLoading={slashCommandsLoading}
+      mcpServers={mcpServers}
+      cwd={composerCwd}
+      onStop={handleInterrupt}
+      onCancelQueued={handleCancelQueued}
+      onCancelRecording={cancelRecording}
+      dictating={recorder.state !== "idle"}
+      dictation={activeServer === LOCAL && dictateControl}
+      away={!!canvasComposerKey}
+      queuedCount={queuedMessages.length}
+      busy={busy}
+      sessionId={composerKey}
+      isNewTask={!shownSession}
+      target={composerTarget}
+      issuesConnected={issuesConnected}
+      issueTrackers={integrations.connected}
+      sessions={composerSessions}
+      modelTakesImages={modelTakesImages}
+      error={error}
+      onDismissError={() => setError(null)}
+      archived={selectedSession?.archived ?? false}
+      onUnarchive={() =>
+        selectedSessionId &&
+        void handleSetSessionFlags(selectedSessionId, { archived: false })
+      }
+      onRemoveWorktree={
+        selectedSessionId && selectedSession?.worktreeName
+          ? () =>
+              void askAboutWorktree(
+                selectedSessionId,
+                selectedSession.worktreeName as string,
+                selectedSession.title,
+                "dialog",
+              )
+          : undefined
+      }
+      handoff={
+        <HandoffRow
+          actions={handoffActions(workStatus, sessionHasPr, !!selectedSessionId, handoffConfig)}
+          // Straight out as a prompt, exactly as if it had been typed. A
+          // turn already running queues it, like any other send.
+          onSend={(prompt) => void handleSendMsg(prompt)}
+          disabled={!selectedSessionId || !!sendHeld}
+        />
+      }
+      // Only on a new task. An agent is fixed at creation, so a live
+      // session cannot be pointed at one that is missing — and a session
+      // that already exists has a CLI that already ran.
+      notice={
+        offlineServer ? (
+          <ServerOfflineNotice server={offlineServer} />
+        ) : !selectedSessionId && missingAgent ? (
+          <AgentMissingNotice agent={missingAgent} />
+        ) : loggedOutAgent && authTurn && selectedSession ? (
+          <LoginExpiredNotice
+            agent={loggedOutAgent}
+            server={activeServer}
+            cwd={selectedSession.cwd}
+            onHandled={() => setLoginHandled(authTurn)}
+          />
+        ) : null
+      }
+      pending={
+        <>
+        {selectedSessionId && <RecoveryNotice key={`${activeServer}:${selectedSessionId}`} sessionId={selectedSessionId} server={activeServer} busy={busy} />}
+        {selectedItem?.continueAt && (
+          <AutoContinueNotice
+            at={selectedItem.continueAt}
+            off={selectedItem.continueOff}
+            onToggle={(on) =>
+              void invoke("set_auto_continue", { sessionId: selectedItem.sessionId, on }).catch(
+                setError,
+              )
+            }
+          />
+        )}
+        </>
+      }
+      held={sendHeld}
+      draftHint={
+        openDraftId ? (
+          <span className={cn("transition-colors duration-300", draftNudge && "text-foreground")}>
+            Changes auto-saved
+          </span>
+        ) : (
+          draftChord && `${formatChords([draftChord])[0].join("")} to save as draft`
+        )
+      }
+      agentUpdate={
+        !selectedSessionId && (
+          <AgentUpdateLine
+            harness={harness}
+            // pi and fx overwrite files a live child reads; the other three
+            // install beside it, so only these two wait on a running turn.
+            waiting={
+              (harness === "pi" || harness === "fx") &&
+              sessionIndexItems.some(
+                (s) =>
+                  s.harness === harness && statusBySession[s.sessionId] === "in_progress",
+              )
+            }
+          />
+        )
+      }
+      toolbar={
+        <ComposerToolbar
+          server={activeServer}
+          harness={harness}
+          onHarnessChange={setHarness}
+          models={models}
+          modelId={modelId}
+          effort={effort}
+          fast={fast}
+          onFastChange={setFast}
+          fastNote={fastNote}
+          onModelChange={handleModelChange}
+          onRefreshModels={refreshModels}
+          onReloadModels={reloadModels}
+          onSeedProvider={seedFxModels}
+          loadingModels={loadingModels}
+          permissionMode={permissionMode}
+          onPermissionModeChange={setPermissionMode}
+          projects={spaceProjects}
+          projectPath={projectPath}
+          onSelectProject={handleSelectProject}
+          onAttachProject={(server, list) => handleAttachProject(server, list, space)}
+          branches={branches}
+          branch={branch}
+          onSelectBranch={handleSelectBranch}
+          onOpenBranches={refreshBranches}
+          pendingBranch={pendingBranch}
+          onConfirmBranchSwitch={(stash) =>
+            pendingBranch && runCheckout(pendingBranch, stash)
+          }
+          onCancelBranchSwitch={() => setPendingBranch(null)}
+          useWorktree={useWorktree}
+          onToggleWorktree={() => setUseWorktree((v) => !v)}
+          onMentionPage={pagesEnabled ? () => setPagePickerOpen(true) : undefined}
+          onAttach={() => void pickAttachments(attachmentKey(composerKey, composerCwd))}
+          contextUsage={contextUsage}
+          sessionId={selectedSessionId}
+          isNewSession={!selectedSessionId}
+          busy={busy}
+          modelLast={!shownSession}
+        />
+      }
+    />
+  );
+  const floatShown = !designOpen && !issuesOpen && !spacesOpen && !settingsOpen && viewTab !== "chat";
   return (
     <TooltipProvider>
     <DiffWorkerPool pair={codeThemePair}>
@@ -3504,165 +3666,30 @@ function App() {
         ) : null
       }
       footer={
-        // Only under the transcript it writes into. The other views are not
-        // conversations, and a composer under them would send into a session
-        // the reader can't see. Safe to unmount: the draft and the attachment
-        // tray are module-level stores precisely because the composer already
-        // unmounts crossing the empty state.
-        issuesOpen || viewTab !== "chat" ? null : (
-        <ChatInput
-          placeholder={!selectedSessionId && pendingIssue ? "Describe an issue. @files. /skills." : undefined}
-          onSend={(message, attachments, annotations) => void sendFromComposer(message, attachments, annotations)}
-          commands={slashCommands}
-          commandsLoading={slashCommandsLoading}
-          mcpServers={mcpServers}
-          cwd={composerCwd}
-          onStop={handleInterrupt}
-          onCancelQueued={handleCancelQueued}
-          onCancelRecording={cancelRecording}
-          dictating={recorder.state !== "idle"}
-          dictation={activeServer === LOCAL && dictateControl}
-          away={!!canvasComposerKey}
-          queuedCount={queuedMessages.length}
-          busy={busy}
-          sessionId={composerKey}
-          isNewTask={!shownSession}
-          target={composerTarget}
-          issuesConnected={issuesConnected}
-          issueTrackers={integrations.connected}
-          sessions={composerSessions}
-          modelTakesImages={modelTakesImages}
-          error={error}
-          onDismissError={() => setError(null)}
-          archived={selectedSession?.archived ?? false}
-          onUnarchive={() =>
-            selectedSessionId &&
-            void handleSetSessionFlags(selectedSessionId, { archived: false })
-          }
-          onRemoveWorktree={
-            selectedSessionId && selectedSession?.worktreeName
-              ? () =>
-                  void askAboutWorktree(
-                    selectedSessionId,
-                    selectedSession.worktreeName as string,
-                    selectedSession.title,
-                    "dialog",
-                  )
-              : undefined
-          }
-          handoff={
-            <HandoffRow
-              actions={handoffActions(workStatus, sessionHasPr, !!selectedSessionId, handoffConfig)}
-              // Straight out as a prompt, exactly as if it had been typed. A
-              // turn already running queues it, like any other send.
-              onSend={(prompt) => void handleSendMsg(prompt)}
-              disabled={!selectedSessionId || !!sendHeld}
-            />
-          }
-          // Only on a new task. An agent is fixed at creation, so a live
-          // session cannot be pointed at one that is missing — and a session
-          // that already exists has a CLI that already ran.
-          notice={
-            offlineServer ? (
-              <ServerOfflineNotice server={offlineServer} />
-            ) : !selectedSessionId && missingAgent ? (
-              <AgentMissingNotice agent={missingAgent} />
-            ) : loggedOutAgent && authTurn && selectedSession ? (
-              <LoginExpiredNotice
-                agent={loggedOutAgent}
-                server={activeServer}
-                cwd={selectedSession.cwd}
-                onHandled={() => setLoginHandled(authTurn)}
-              />
-            ) : null
-          }
-          pending={
-            <>
-            {selectedSessionId && <RecoveryNotice key={`${activeServer}:${selectedSessionId}`} sessionId={selectedSessionId} server={activeServer} busy={busy} />}
-            {selectedItem?.continueAt && (
-              <AutoContinueNotice
-                at={selectedItem.continueAt}
-                off={selectedItem.continueOff}
-                onToggle={(on) =>
-                  void invoke("set_auto_continue", { sessionId: selectedItem.sessionId, on }).catch(
-                    setError,
-                  )
-                }
-              />
-            )}
-            </>
-          }
-          held={sendHeld}
-          draftHint={
-            openDraftId ? (
-              <span className={cn("transition-colors duration-300", draftNudge && "text-foreground")}>
-                Changes auto-saved
-              </span>
-            ) : (
-              draftChord && `${formatChords([draftChord])[0].join("")} to save as draft`
-            )
-          }
-          agentUpdate={
-            !selectedSessionId && (
-              <AgentUpdateLine
-                harness={harness}
-                // pi and fx overwrite files a live child reads; the other three
-                // install beside it, so only these two wait on a running turn.
-                waiting={
-                  (harness === "pi" || harness === "fx") &&
-                  sessionIndexItems.some(
-                    (s) =>
-                      s.harness === harness && statusBySession[s.sessionId] === "in_progress",
-                  )
-                }
-              />
-            )
-          }
-          toolbar={
-            <ComposerToolbar
-              server={activeServer}
-              harness={harness}
-              onHarnessChange={setHarness}
-              models={models}
-              modelId={modelId}
-              effort={effort}
-              fast={fast}
-              onFastChange={setFast}
-              fastNote={fastNote}
-              onModelChange={handleModelChange}
-              onRefreshModels={refreshModels}
-              onReloadModels={reloadModels}
-              onSeedProvider={seedFxModels}
-              loadingModels={loadingModels}
-              permissionMode={permissionMode}
-              onPermissionModeChange={setPermissionMode}
-              projects={spaceProjects}
-              projectPath={projectPath}
-              onSelectProject={handleSelectProject}
-              onAttachProject={(server, list) => handleAttachProject(server, list, space)}
-              branches={branches}
-              branch={branch}
-              onSelectBranch={handleSelectBranch}
-              onOpenBranches={refreshBranches}
-              pendingBranch={pendingBranch}
-              onConfirmBranchSwitch={(stash) =>
-                pendingBranch && runCheckout(pendingBranch, stash)
-              }
-              onCancelBranchSwitch={() => setPendingBranch(null)}
-              useWorktree={useWorktree}
-              onToggleWorktree={() => setUseWorktree((v) => !v)}
-              onMentionPage={pagesEnabled ? () => setPagePickerOpen(true) : undefined}
-              onAttach={() => void pickAttachments(attachmentKey(composerKey, composerCwd))}
-              contextUsage={contextUsage}
-              sessionId={selectedSessionId}
-              isNewSession={!selectedSessionId}
-              busy={busy}
-              modelLast={!shownSession}
-            />
-          }
-        />
-        )
+        // Under the transcript on Chat alone. Every other tab floats it in a
+        // card naming the session it sends into, since a bare composer there
+        // would write to a conversation the reader can't see.
+        issuesOpen || viewTab !== "chat" ? null : composer(false)
       }
+      // A new task's full browser floats one too, with no session behind it yet.
+      float={floatShown && (selectedItem || !selectedSessionId) && (
+        <FloatingComposer
+          item={selectedItem ?? null}
+          busy={busy}
+          actions={{
+            onRename: (title) =>
+              selectedItem &&
+              void invoke("rename_session", { sessionId: selectedItem.sessionId, title }).catch(
+                (e) => console.error("rename failed", e),
+              ),
+            onSetFlags: (flags) => selectedItem && void handleSetSessionFlags(selectedItem.sessionId, flags),
+            onFork: (worktree) => selectedItem && void forkSession(selectedItem.sessionId, worktree),
+            onDelete: () => selectedItem && void deleteSession(selectedItem.sessionId),
+          }}
+          transcript={selectedItem ? () => <Chat {...paneState(selectedItem.sessionId)} {...paneChat} crowded rail={false} /> : undefined}
+          composer={composer(true)}
+        />
+      )}
     >
       {/* Hidden rather than unmounted, like everything else in this column:
           the list, its filters and its scroll survive a trip into a session and
