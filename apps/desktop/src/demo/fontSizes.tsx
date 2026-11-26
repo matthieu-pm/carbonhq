@@ -17,7 +17,7 @@ import big from "@/App.tsx?raw";
 import "streamdown/styles.css";
 import "../App.css";
 
-/// The two font size rows from Settings → Appearance above one sample of every
+/// The two font size rows from Settings → Personalization above one sample of every
 /// surface they move: chrome, chat, a raw `text-sm` button, tool output, an
 /// Edit diff and the virtualized Files view opened at line 1200. **Run size
 /// check** reads the computed sizes back at a non-default pair, checks the

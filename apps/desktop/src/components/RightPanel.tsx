@@ -183,7 +183,7 @@ type RightPanelProps = {
   /// So the row keeps its height, loses its controls, and says what the pane is.
   heading?: string;
   /// Which side of the chat column the pane stands on — the reader's pick in
-  /// Settings › Appearance. The border and the drag strip face the chat.
+  /// Settings › Personalization. The border and the drag strip face the chat.
   side?: PanelSide;
   children: React.ReactNode;
 };

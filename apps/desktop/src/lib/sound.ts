@@ -1,5 +1,6 @@
 import startUrl from "@/assets/dictate-start.wav";
 import stopUrl from "@/assets/dictate-stop.wav";
+import { soundsOn } from "@/lib/soundPref";
 
 const clips = new Map<string, HTMLAudioElement>();
 
@@ -11,6 +12,7 @@ const clips = new Map<string, HTMLAudioElement>();
 /// `catch` is required, not defensive — `play()` rejects under an autoplay
 /// policy, and nothing here is a reason to stop what the sound announces.
 function play(url: string, volume = 1) {
+  if (!soundsOn()) return;
   try {
     let clip = clips.get(url);
     if (!clip) {
