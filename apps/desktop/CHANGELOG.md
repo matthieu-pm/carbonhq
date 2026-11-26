@@ -22,6 +22,23 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.31.3 · 2026-11-26 · beta
+
+### New
+
+- **Canvas markup and comments.** Draw on a canvas freehand and send pinned comments to the chat.
+- **Canvas commands for agents.** Agents can create and edit canvases and drive the Design workspace with `carbon canvas`. They can build a frame on the open board as a preview before saving it.
+
+### Improved
+
+- **Faster canvases.** Large canvases pan, zoom and edit faster.
+- **Design composer.** The composer floats over the canvas in the Design workspace.
+- **Browser toolbar.** The Coding browser has a cleaner toolbar.
+
+### Fixed
+
+- **Canvas comments and recovery.** Comment snapshots capture the right area, and pending canvas edits survive a reconnect.
+
 ## 0.31.2 · 2026-11-21 · beta
 
 ### New

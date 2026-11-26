@@ -8,7 +8,7 @@ Before publishing another beta, verify first launch with an isolated `CARBON_HOM
 
 **The bundle carries the `carbon` CLI** at `Contents/MacOS/carbon-cli`, built by `release.yml` ahead of the bundler and signed and notarized with the app, which copies it to `~/.local/bin` on launch. So on a Mac an app release *is* a CLI release; `cli-v*` tags now reach Linux and app-less Macs alone. A bundle missing it fails the release at **Verify the bundled CLI**. Detail under _Install and versioning_ in [orchestration.md](orchestration.md).
 
-**The Design workspace ships in v0.31.1.** Project canvases live under `canvases/`. Spaces also supports slide decks and images. The bundled CLI and standalone beta CLI are both `0.13.13-beta.1`. Creating a deck uses protocol v22.
+**The Design workspace ships in v0.31.1.** Project canvases live under `canvases/`. Spaces also supports slide decks and images. Creating a deck uses protocol v22. v0.31.3 adds `carbon canvas` on protocol v23–v24; its bundled CLI and the standalone beta CLI are both `0.13.13-beta.2`.
 
 **The release tag and changelog select the channel.** A suffixed tag such as `v0.3.0-beta.1` selects beta. For a plain-version prerelease such as `v0.31.1`, add `· beta` to its changelog heading and mark the GitHub release as a prerelease. A beta writes only `beta.json`. A stable release promotes both manifests. The updater compares version numbers, so a changed stable build after a plain-version prerelease needs a higher version.
 
