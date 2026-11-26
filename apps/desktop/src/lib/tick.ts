@@ -9,6 +9,8 @@
 /// odd one came through after the reader happened to click something. Media
 /// elements are what `sound.ts` plays through, and the webview lets them play.
 
+import { soundsOn } from "@/lib/soundPref";
+
 export type Voice = (ctx: BaseAudioContext, out: AudioNode, at: number) => void;
 
 const RATE = 44100;
@@ -125,6 +127,7 @@ function pool(voice: Voice) {
 /// Plays one click. Never throws: no audio output is not a reason to stop a
 /// swipe.
 export function playVoice(voice: Voice, volume = 0.5) {
+  if (!soundsOn()) return;
   pool(voice)
     .then((els) => {
       const el = els[turn++ % els.length];

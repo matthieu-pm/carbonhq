@@ -42,6 +42,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { useIntegrations } from "@/hooks/useIntegrations";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { SOUNDS_KEY } from "@/lib/soundPref";
 import { chordFor, useShortcutOverrides } from "@/hooks/useShortcuts";
 import { useTheme } from "@/hooks/useTheme";
 import { type ManualCheck, updateFailure } from "@/hooks/useUpdater";
@@ -206,6 +207,9 @@ export default function SettingsPage({
                 onChange={onAutoHidePanelChange}
               />
               <PanelSideRow value={panelSide} onChange={onPanelSideChange} />
+            </Section>
+            <Section>
+              <SoundsRow />
             </Section>
           </>
         ),
@@ -721,7 +725,23 @@ function UpdatesRow({
   );
 }
 
-/// Whether the Browser view takes a pane of chrome with it. Appearance rather
+/// The one switch over every sound Carbon plays in its window. Banners and the
+/// island are left alone: macOS and the island each have their own.
+function SoundsRow() {
+  const id = useId();
+  const [on, setOn] = useLocalStorage(SOUNDS_KEY, true);
+  return (
+    <SettingRow
+      id={id}
+      label="Sounds"
+      description="Notifications, dictation tones and the sidebar swipe in this window."
+    >
+      <Switch id={id} checked={on} onCheckedChange={setOn} />
+    </SettingRow>
+  );
+}
+
+/// Whether the Browser view takes a pane of chrome with it. Personalization rather
 /// than Integrations: the setting is about what the window does with its own
 /// chrome, not about the browser.
 function AutoHideRow({
@@ -1303,7 +1323,8 @@ function Section({ title, children }: { title?: string; children: ReactNode }) {
 /// own 14px. No keyboard in heroicons, so Shortcuts takes the bolt. MCP and
 /// Skills take Nucleo's filled UI glyphs, which sit at the same weight.
 const ALL_TABS = [
-  { id: "appearance", label: "Appearance", Icon: PaintBrushIcon },
+  // The id stays "appearance" so recorded navigation history still resolves.
+  { id: "appearance", label: "Personalization", Icon: PaintBrushIcon },
   { id: "spaces", label: "Profiles", Icon: Square3Stack3DIcon },
   { id: "servers", label: "Servers", Icon: ServerStackIcon },
   { id: "accounts", label: "Accounts", Icon: KeyIcon },
@@ -1343,7 +1364,7 @@ const TAB_SUBTITLES: Partial<Record<SettingsTab, string>> = {
 /// **About holds privacy and feedback**, which is the one grouping worth
 /// arguing about. Both answer what the app does with you rather than what it
 /// does for you: what is collected, and how to reach the person who wrote it.
-/// Privacy alone was too thin to be a tab and reads oddly next to Appearance.
+/// Privacy alone was too thin to be a tab and reads oddly next to Personalization.
 ///
 /// Bodies are switched, not hidden, unlike the right panel's. There is no
 /// scroll position or expensive render to preserve here, and mounting them all
