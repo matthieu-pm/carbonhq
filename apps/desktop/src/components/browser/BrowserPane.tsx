@@ -48,7 +48,7 @@ import {
   shareServer,
   stopShare,
   trackBrowserOpen,
-  pickElement,
+  annotate,
   removeCustomDevice,
   saveCustomDevice,
   setPendingTab,
@@ -71,7 +71,7 @@ import {
   useCustomDevices,
   usePendingTab,
   useUrlDraft,
-  usePicking,
+  useAnnotating,
   useRecording,
   useViewport,
   VIEWPORT_PRESETS,
@@ -376,7 +376,7 @@ function Chrome({
 }) {
   const openError = useOpenError(sessionId);
   const inputRef = useRef<HTMLInputElement>(null);
-  const picking = usePicking(sessionId);
+  const annotating = useAnnotating(sessionId);
   // The reader cannot change tabs mid-recording: the agent's next verb goes to
   // whichever tab is active, and a switch here would send it somewhere else.
   // The agent's own tab verbs stay open, since a flow may cross tabs.
@@ -593,27 +593,27 @@ function Chrome({
               </TooltipContent>
             </Tooltip>
           </div>
-          {/* The element picker: what is clicked lands in this session's draft. */}
+          {/* Ask: what is annotated on the page lands in this session's composer on Send. */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                aria-label="Ask ChatGPT"
-                aria-pressed={picking}
+              <button
+                type="button"
+                aria-label="Ask"
+                aria-pressed={annotating}
                 disabled={!current}
                 className={cn(
                   GROUP,
-                  "h-8 shrink-0 gap-1.5 px-3 font-medium hover:bg-foreground/12 disabled:opacity-50 @max-md:w-8 @max-md:px-0",
-                  picking && "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary",
+                  "shrink-0 cursor-pointer appearance-none justify-center gap-1.5 border border-transparent px-3 text-sm font-medium outline-none select-none hover:bg-foreground/12 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 @max-md:w-8 @max-md:px-0",
+                  annotating && "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary",
                 )}
-                onClick={() => void pickElement(sessionId, !picking)}
+                onClick={() => void annotate(sessionId, !annotating)}
               >
-                <SquareDashedMousePointer className="size-4" />
-                <span className="@max-md:hidden">Ask ChatGPT</span>
-              </Button>
+                <SquareDashedMousePointer className="pointer-events-none size-4 shrink-0" />
+                <span className="@max-md:hidden">Ask</span>
+              </button>
             </TooltipTrigger>
             <TooltipContent side={TIP_SIDE}>
-              {picking ? "Click an element, or Esc" : "Pick an element for the chat"}
+              {annotating ? "Stop annotating" : "Click or drag on the page to annotate it"}
             </TooltipContent>
           </Tooltip>
         </div>

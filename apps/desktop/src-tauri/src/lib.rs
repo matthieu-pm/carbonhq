@@ -217,6 +217,9 @@ async fn send_msg(
     prompt: &str,
     canvas_prompt: Option<CanvasPrompt>,
     attachment_paths: Vec<String>,
+    // What Ask marked on a browser page. Optional so a client from before
+    // annotations still sends.
+    annotations: Option<Vec<events::AnnotationInput>>,
     // Deserialized straight into the enum rather than matched off a string: the
     // wire spelling is `Harness`'s own `snake_case`, so a third arm here was a
     // third list to keep in step and its failure was one word — "invalid
@@ -270,6 +273,7 @@ async fn send_msg(
             session_id,
             prompt,
             canvas_target.as_deref(),
+            annotations.as_deref().unwrap_or_default(),
             &attachment_paths,
             // Nothing named, ever: the app tags its issues in the prompt
             // text, the composer's `#` picker being the only route, so there is
@@ -1058,7 +1062,7 @@ pub fn run() {
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_devtools,
             #[cfg(all(feature = "cef", target_os = "macos"))]
-            cef::browser_pick,
+            cef::browser_annotate,
             #[cfg(all(feature = "cef", target_os = "macos"))]
             cef::browser_snapshot,
             #[cfg(all(feature = "cef", target_os = "macos"))]

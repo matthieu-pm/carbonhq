@@ -1,14 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async () => 51234);
+const listeners = new Map<string, (event: { payload: unknown }) => void>();
+vi.mock("react", async (original) => ({
+  ...await original<typeof import("react")>(),
+  useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
+}));
 vi.mock("@/lib/transport", () => ({
   LOCAL: "local",
   invoke: (...args: unknown[]) => invoke(...(args as [])),
-  listen: () => Promise.resolve(() => undefined),
+  listen: (event: string, callback: (event: { payload: unknown }) => void) => {
+    listeners.set(event, callback);
+    return Promise.resolve(() => listeners.delete(event));
+  },
   serverOfSession: (id: string) => (id === "remote" ? "vps" : "local"),
 }));
 
-const { reachableUrl, browserTarget, normalizeUrl } = await import("@/lib/browser");
+const { annotate, reachableUrl, browserTarget, normalizeUrl, setAnnotateHandler, useAnnotating, useBrowserTabs } = await import("@/lib/browser");
+
+describe("Ask", () => {
+  it("stages late crops without switching off a reopened annotation session", async () => {
+    const stage = vi.fn();
+    const sessionId = "ask";
+    const receive = (annotations: unknown) =>
+      listeners.get("browser_annotate")!({ payload: { sessionId, annotations } });
+    vi.stubGlobal("document", { body: {} });
+    vi.stubGlobal("MutationObserver", class { observe() {} });
+    try {
+      useBrowserTabs(null);
+      setAnnotateHandler(stage);
+      await annotate(sessionId, true);
+      receive(null);
+      expect(useAnnotating(sessionId)).toBe(false);
+      await annotate(sessionId, true);
+      const annotations = [{ note: "Keep this" }];
+      receive(annotations);
+      expect(stage).toHaveBeenCalledWith(sessionId, annotations);
+      expect(useAnnotating(sessionId)).toBe(true);
+    } finally {
+      setAnnotateHandler(null);
+      await annotate(sessionId, false);
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("browserTarget", () => {
   it("reads loopback, .localhost, .local and private LAN hosts as localhost", () => {

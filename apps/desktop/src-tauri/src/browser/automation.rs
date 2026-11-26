@@ -249,6 +249,7 @@ fn digest(data: &str) -> u64 {
 pub fn delete_recordings(session: &str) {
     if !session.is_empty() && session.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         let _ = std::fs::remove_dir_all(recordings_dir(session));
+        let _ = std::fs::remove_dir_all(annotations_dir(session));
     }
 }
 
@@ -1265,6 +1266,12 @@ fn screenshot_size(session: &str) -> (u32, u32) {
 /// Where a session's recordings go, deleted with it (`delete_recordings`).
 fn recordings_dir(session: &str) -> PathBuf {
     browser_dir().join("recordings").join(session)
+}
+
+/// Where Ask's crops wait for their send, deleted with the session. Read by
+/// the session's server, which copies each into its attachments.
+pub(super) fn annotations_dir(session: &str) -> PathBuf {
+    browser_dir().join("annotations").join(session)
 }
 
 /// Puts the tab back the way a recording found it: the override off, the

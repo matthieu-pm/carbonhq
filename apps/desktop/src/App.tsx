@@ -51,7 +51,6 @@ import {
   activateTab,
   clearOpenError,
   closeTab,
-  describePick,
   isRecording,
   navigate,
   openInBrowser,
@@ -60,7 +59,7 @@ import {
   trackBrowserOpen,
   closeBlankTab,
   useBlankTabs,
-  setPickHandler,
+  setAnnotateHandler,
   useBrowserTabs,
 } from "@/lib/browser";
 import { setLinkOpener } from "@/lib/openLink";
@@ -156,6 +155,7 @@ import { cycledModels } from "@/lib/starredModels";
 import ViewTabs, { closeActiveTab, type ViewTab } from "@/components/layout/ViewTabs";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { attachmentKey, clearAttachments, pickAttachments, restoreAttachments } from "@/hooks/useAttachments";
+import { addAnnotations, restoreAnnotations, type PendingAnnotation } from "@/hooks/useAnnotations";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { refreshActiveDoc, saveActiveDoc, useDocs } from "@/hooks/useDocs";
 import { closeFile, useOpenFiles } from "@/hooks/useOpenFiles";
@@ -394,7 +394,7 @@ function App() {
   /// send, since the composer clears its text straight after handing it over
   /// and that clear would otherwise be saved as the draft's prompt. It goes
   /// once a session exists, and comes back open if none was made.
-  const sendFromComposer = async (message: string, attachments: Attachment[]) => {
+  const sendFromComposer = async (message: string, attachments: Attachment[], annotations: PendingAnnotation[] = []) => {
     // A new task in a project other than the filtered one would land outside
     // the list it was started from, so the filter follows it. All Projects
     // already shows it and stays.
@@ -412,13 +412,14 @@ function App() {
     const id = openDraftRef.current;
     if (!id || selectedSessionId) {
       const trayKey = attachmentKey(selectedSessionId, composerCwd);
-      const sending = handleSendMsg(message, attachments);
+      const sending = handleSendMsg(message, attachments, null, undefined, annotations);
       const nav = navGen.current;
       // The composer cleared both on handing them over, and a failed upload
       // is no reason to type the message or pick the files again.
       if (!(await sending) && nav === navGen.current) {
         if (!readDraft(selectedSessionId)) writeDraft(selectedSessionId, message);
         restoreAttachments(trayKey, attachments);
+        restoreAnnotations(trayKey, annotations);
       }
       return;
     }
@@ -429,7 +430,7 @@ function App() {
     // empty-draft sweep would delete a draft whose send may yet fail.
     leftDraft.current = null;
     setOpenDraftId(null);
-    const sending = handleSendMsg(message, attachments, base);
+    const sending = handleSendMsg(message, attachments, base, undefined, annotations);
     // Taken after the send's own bump, so only a move the reader makes while
     // it is out counts as leaving.
     const nav = navGen.current;
@@ -440,6 +441,7 @@ function App() {
       // The composer cleared both on handing them over.
       writeDraft(draftKey(id), prompt);
       restoreAttachments(draftKey(id), attachments);
+      restoreAnnotations(draftKey(id), annotations);
       setOpenDraftId(id);
     }
   };
@@ -2023,19 +2025,18 @@ function App() {
     focusComposerOnMount();
   }, [setViewTab]);
 
-  // An element picked in the page lands in that session's draft, and the
+  // What Ask sends lands as one pill in that session's composer, and the
   // composer is brought on screen to show it — off the full view and onto
   // Chat, since the composer is hidden there.
   useEffect(() => {
-    setPickHandler((sessionId, element) => {
-      if (!element) return;
+    setAnnotateHandler((sessionId, annotations) => {
       const active = sessionId === browserSessionId;
-      appendToDraft(active ? composerKey : sessionId, describePick(element));
+      void addAnnotations(active ? attachmentKey(composerKey, composerCwd) : sessionId, annotations);
       if (!active) return;
       openBrowserChat();
     });
-    return () => setPickHandler(null);
-  }, [browserSessionId, composerKey, openBrowserChat]);
+    return () => setAnnotateHandler(null);
+  }, [browserSessionId, composerKey, composerCwd, openBrowserChat]);
 
   // Every way of arriving at a session, so none of them can forget to leave the
   // issues page. The two sidebar buttons closed it and the chords beside them
@@ -3511,7 +3512,7 @@ function App() {
         issuesOpen || viewTab !== "chat" ? null : (
         <ChatInput
           placeholder={!selectedSessionId && pendingIssue ? "Describe an issue. @files. /skills." : undefined}
-          onSend={(message, attachments) => void sendFromComposer(message, attachments)}
+          onSend={(message, attachments, annotations) => void sendFromComposer(message, attachments, annotations)}
           commands={slashCommands}
           commandsLoading={slashCommandsLoading}
           mcpServers={mcpServers}

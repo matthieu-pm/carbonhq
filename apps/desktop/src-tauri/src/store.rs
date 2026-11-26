@@ -3338,6 +3338,7 @@ mod tests {
         let mut events = vec![
             event(AgentEventPayload::UserMessage {
                 text: "look at this".into(),
+                annotations: vec![],
                 images: vec![image("/home/.carbon/attachments/parent/a.png")],
                 issues: vec![],
                 mcp_servers: vec![],
@@ -3351,6 +3352,7 @@ mod tests {
             // actually written in, and it has to survive every copy after.
             event(AgentEventPayload::UserMessage {
                 text: "and this".into(),
+                annotations: vec![],
                 images: vec![],
                 issues: vec![],
                 mcp_servers: vec![],

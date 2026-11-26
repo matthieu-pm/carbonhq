@@ -2,13 +2,14 @@ import { Image } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import SessionAvatar from "@/components/SessionAvatar";
+import AnnotationPill from "@/components/chat/AnnotationPill";
 import ClampedBody from "@/components/chat/ClampedBody";
 import FileLink from "@/components/chat/FileLink";
 import ImageRow from "@/components/chat/ImageRow";
 import { inlineMark } from "@/components/chat/InlineMark";
 import MessageActions from "@/components/chat/MessageActions";
 import SentMessageEditAction, { SentMessageInlineEditor, useSentMessageEditing } from "@/components/chat/SentMessageEditor";
-import { useChatSession } from "@/hooks/useChatSession";
+import { useChatSession, useSessionPath } from "@/hooks/useChatSession";
 import { absolutePath } from "@/lib/filePath";
 import { basename } from "@/lib/format";
 import {
@@ -27,9 +28,10 @@ import { commandBrand } from "@/lib/pluginBrand";
 import { stripSenderPrefix } from "@/lib/relay";
 import { chipLabel } from "@/lib/richText";
 import { shortenPath } from "@/lib/tools";
+import { fileSrc } from "@/lib/transport";
 import { useSendProgress } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
-import type { ImageRef, IssueRef, MessageSender } from "@/types/events";
+import type { Annotation, ImageRef, IssueRef, MessageSender } from "@/types/events";
 
 /// The user's own text, echoed from the event log rather than local state — the
 /// backend synthesizes and persists it, so this renders the same live or replayed.
@@ -70,6 +72,7 @@ export default function UserMessage({
   images = [],
   issues = [],
   mcpServers = [],
+  annotations = [],
   from = null,
   cwd: writtenIn = null,
   ts,
@@ -87,6 +90,9 @@ export default function UserMessage({
   /// The `$` mentions that named a server the agent loaded when this was sent.
   /// Only these are drawn as mentions, so a `$HOME` in the sentence stays prose.
   mcpServers?: string[];
+  /// What Ask marked on a page, drawn as one pill. Their crops sit in
+  /// `images` and are drawn there instead of in the row.
+  annotations?: Annotation[];
   /// The session that relayed this, or `null` for a prompt the user typed.
   from?: MessageSender | null;
   /// The working directory this prompt was written in, where it is not the
@@ -127,7 +133,15 @@ export default function UserMessage({
   // An image with neither an archived copy nor bytes of its own — the file was
   // cleared out from under a transcript that still names it. `ImageRow` drops
   // those, so this row is what is left to say about them.
-  const missing = images.filter((image) => !image.path && !image.url);
+  const crops = new Set(annotations.flatMap((a) => (a.image === null ? [] : [a.image])));
+  const attached = images.filter((_, i) => !crops.has(i));
+  const onServer = useSessionPath();
+  const srcOf = (i: number | null) => {
+    const image = i === null ? undefined : images[i];
+    if (!image) return null;
+    return image.path ? fileSrc(onServer(image.path)) : (image.url ?? null);
+  };
+  const missing = attached.filter((image) => !image.path && !image.url);
   // Dimmed the way a queued prompt is: the same message a moment early.
   const uploading = useSendProgress(eventId ?? "");
   const editing = useSentMessageEditing(eventId);
@@ -164,7 +178,18 @@ export default function UserMessage({
           read before the sentence written about it, on the way in and on the way
           back out. `end` so the row grows leftwards from the same edge the
           bubble sits on. */}
-      <ImageRow images={images} variant="sent" />
+      <ImageRow images={attached} variant="sent" />
+
+      <AnnotationPill
+        align="end"
+        items={annotations.map((a, i) => ({
+          key: String(i),
+          note: a.note,
+          target: a.target,
+          url: a.url,
+          src: srcOf(a.image),
+        }))}
+      />
 
       {body && (
         // `none` in dark, where the bubble already reads as raised by being

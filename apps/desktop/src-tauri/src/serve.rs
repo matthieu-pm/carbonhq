@@ -1426,12 +1426,13 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink, canvas_watch: Option<Canva
         // Sessions.
         send_msg(
             session_id: String, prompt: String, canvas_prompt: Option<crate::CanvasPrompt>, attachment_paths: Vec<String>,
+            annotations: Option<Vec<crate::events::AnnotationInput>>,
             harness: Harness, model: ModelId, effort: Option<Effort>,
             permission_mode: ApprovalPolicy, fast: bool, cwd: String,
             branch: Option<String>, use_worktree: bool, worktree_name: Option<String>,
             base_ref: Option<String>, is_new_session: bool,
         ) => crate::send_msg(
-            &session_id, &prompt, canvas_prompt, attachment_paths, harness, model, effort,
+            &session_id, &prompt, canvas_prompt, attachment_paths, annotations, harness, model, effort,
             permission_mode, fast, &cwd, branch.as_deref(), use_worktree,
             worktree_name.as_deref(), base_ref.as_deref(), is_new_session, sink,
         ).await;

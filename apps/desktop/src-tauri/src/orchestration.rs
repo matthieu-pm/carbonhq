@@ -1410,6 +1410,7 @@ async fn create_session(
             &create.prompt,
             None,
             &[],
+            &[],
             &create.issues,
             harness,
             model,
@@ -1600,6 +1601,7 @@ async fn start_session(draft: &StoredDraft, parent: Option<&str>, app: &Sink) ->
             &session_id,
             &draft.prompt,
             None,
+            &[],
             &[],
             &[],
             draft.harness,
@@ -1899,6 +1901,7 @@ async fn send_message(
             &target.session_id,
             &prompt,
             None,
+            &[],
             &[],
             // None named: a relayed message carries whatever it tags in its own
             // text, and must not re-aim the session it arrives at.

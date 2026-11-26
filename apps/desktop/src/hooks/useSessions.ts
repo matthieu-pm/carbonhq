@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { activeMessageEvents } from "@/lib/messageEdit";
 import { flushSync } from "react-dom";
 import { restoreAttachments } from "@/hooks/useAttachments";
+import { restoreAnnotations, toInputs, type PendingAnnotation } from "@/hooks/useAnnotations";
 import { appendStreamingText, peekStreamingBlock, retireStreamingBlock, startStreamingBlock, type StreamingBlock } from "@/hooks/useStreamingBlock";
 import { useComposerPrefs, type EffortByModel } from "@/hooks/useComposerPrefs";
 import { forgetDocs } from "@/hooks/useDocs";
@@ -44,7 +45,7 @@ import { activeSpace, allowedInSpace, moveSpace, orderProjects, PROJECT_ORDER_KE
 import { FIRST_MOUNT } from "@/lib/turnWindow";
 import { forget, stopWaiting, upload, waitFor } from "@/lib/uploads";
 import type { Draft } from "./useDrafts";
-import { AgentEvent, ApprovalPolicy, Attachment, BackgroundTask, BranchList, Effort, Harness, ImageRef, IssueRef, IssuesChangedEvent, Model, ModelId, Project, QueueChangedEvent, QueuedMessage, SendOutcome, SessionIndexItem, SessionPage, SessionSnapshot, SessionStatus, SessionStatusEvent, SessionTitleEvent } from "../types/events";
+import { AgentEvent, Annotation, ApprovalPolicy, Attachment, BackgroundTask, BranchList, Effort, Harness, ImageRef, IssueRef, IssuesChangedEvent, Model, ModelId, Project, QueueChangedEvent, QueuedMessage, SendOutcome, SessionIndexItem, SessionPage, SessionSnapshot, SessionStatus, SessionStatusEvent, SessionTitleEvent } from "../types/events";
 
 const DEFAULT_EFFORT: Effort = "high";
 
@@ -90,6 +91,18 @@ const repairFxModel = (list: Model[], picked: ModelId): ModelId =>
 /// Images for a prompt the backend has not archived yet, through `url` and never
 /// `path`: the copy the asset protocol's scope allows is written at flush, so
 /// the picked path would resolve to nothing.
+/// The crops appended to a message's images, each annotation pointing at its
+/// own — the shape the backend logs, drawn from the previews until it lands.
+export function withCrops(images: ImageRef[], annotations: PendingAnnotation[]) {
+  const all = [...images];
+  const marked: Annotation[] = annotations.map(({ id: _id, crop, imagePath: _path, ...a }) => {
+    if (!crop?.preview) return { ...a, image: null };
+    all.push({ path: null, url: crop.preview, mimeType: crop.mimeType });
+    return { ...a, image: all.length - 1 };
+  });
+  return { images: all, annotations: marked };
+}
+
 export function imagesOf(attachments: Attachment[]): ImageRef[] {
   return attachments.flatMap((attachment) =>
     attachment.isImage && attachment.preview
@@ -113,6 +126,9 @@ export function imagesOf(attachments: Attachment[]): ImageRef[] {
 export type QueuedPrompt = {
   message: QueuedMessage;
   attachments: Attachment[];
+  /// What Ask sent with it, for a cancel to put back. Absent on a row queued
+  /// by another client.
+  annotations?: PendingAnnotation[];
 };
 
 /// A stretch where the agent is busy and the transcript has nothing to show —
@@ -740,6 +756,7 @@ const provisionalPrompt = (
   harness: Harness,
   text: string,
   attachments: Attachment[],
+  annotations: PendingAnnotation[],
   // A new session holds no events and starts at 0.
   seq = 0,
 ): AgentEvent => ({
@@ -753,7 +770,7 @@ const provisionalPrompt = (
   payload: {
     type: "user_message",
     text,
-    images: imagesOf(attachments),
+    ...withCrops(imagesOf(attachments), annotations),
     issues: [],
     mcpServers: [],
     baseline: null,
@@ -762,6 +779,7 @@ const provisionalPrompt = (
     cwd: null,
   },
 });
+
 
 // Taken back where the send answered with something else to draw — a prompt the
 // backend queued, which has its own pending row, or a send that failed outright.
@@ -843,6 +861,8 @@ const handleSendMsg = async (
   // --base` saved. Nothing in the composer sets one.
   baseRef: string | null = null,
   target?: { id: string; isNew: boolean; pick: typeof composerPick; canvas?: CanvasFile },
+  // What Ask marked, sent as the message's pill.
+  annotations: PendingAnnotation[] = [],
 ): Promise<boolean> => {
   const { harness, modelId, effort, fast, permissionMode, projectPath, branch, useWorktree } = target?.pick ?? composerPick;
   const attachmentPaths = attachments.map((a) => a.path);
@@ -910,7 +930,7 @@ const handleSendMsg = async (
 
   if (isNewSession) {
     const shell: SessionSnapshot = {
-      events: [provisionalPrompt(provisional, sessionId, harness, message, attachments)],
+      events: [provisionalPrompt(provisional, sessionId, harness, message, attachments, annotations)],
       olderBefore: null,
       sessionId,
       harness,
@@ -958,6 +978,7 @@ const handleSendMsg = async (
                   harness,
                   message,
                   attachments,
+                  annotations,
                   nextMainSeq(s.events),
                 ),
               ],
@@ -972,17 +993,22 @@ const handleSendMsg = async (
     // so the send names the copy uploaded when it was pinned — its bubble
     // dimmed here until any still on its way lands.
     const server = serverOfPath(cwd);
-    const remote = attachments.length > 0 && server !== LOCAL;
+    // A crop goes over like an attachment does: it is a file on this Mac.
+    const crops = annotations.flatMap((a) => (a.crop ? [a.crop] : []));
+    const files = [...attachments, ...crops];
+    const remote = files.length > 0 && server !== LOCAL;
     const ahead = uploadsAhead.get(sessionId);
     let sentPaths = attachmentPaths;
+    let cropPath = (a: PendingAnnotation): string | null => a.imagePath;
     if (remote || ahead || hasPendingIssueReview(sessionId)) {
-      if (remote) waitFor(provisional, server, attachmentPaths);
+      const filePaths = files.map((a) => a.path);
+      if (remote) waitFor(provisional, server, filePaths);
       const gate = (async () => {
         await ahead;
-        const paths = remote ? await Promise.all(attachments.map((a) => upload(server, a.path, a.size))) : attachmentPaths;
+        const landed = remote ? await Promise.all(files.map((a) => upload(server, a.path, a.size))) : filePaths;
         await prepareIssueConversation(sessionId);
         await flushIssueReview(sessionId);
-        return paths;
+        return landed;
       })();
       const settled = gate.then(
         () => {},
@@ -990,8 +1016,13 @@ const handleSendMsg = async (
       );
       uploadsAhead.set(sessionId, settled);
       try {
-        sentPaths = await gate;
-        if (remote) forget(server, attachmentPaths);
+        const landed = await gate;
+        sentPaths = landed.slice(0, attachments.length);
+        if (remote) {
+          const there = new Map(crops.map((c, i) => [c.path, landed[attachments.length + i]]));
+          cropPath = (a) => (a.crop ? (there.get(a.crop.path) ?? null) : null);
+          forget(server, filePaths);
+        }
       } finally {
         stopWaiting(provisional);
         if (uploadsAhead.get(sessionId) === settled) uploadsAhead.delete(sessionId);
@@ -1017,6 +1048,7 @@ const handleSendMsg = async (
         target: { project: displayPath(target.canvas.project), folder: target.canvas.folder, canvas: target.canvas.name },
       },
       attachmentPaths: sentPaths,
+      annotations: annotations.length ? toInputs(annotations, cropPath) : null,
       harness,
       model: isAcp(harness) ? "" : modelId,
       effort: isAcp(harness) ? null : effort,
@@ -1091,7 +1123,7 @@ const handleSendMsg = async (
         // By id: the server's `queue_changed` usually lands before this reply.
         [sessionId]: [
           ...(prev[sessionId] ?? []).filter((q) => q.message.id !== queued.id),
-          { message: queued, attachments },
+          { message: queued, attachments, annotations },
         ],
       }));
       applySentIssues();
@@ -1224,7 +1256,10 @@ const handleCancelQueued = async (): Promise<QueuedMessage | null> => {
     // nothing else holds them. Synchronous, so an Enter pressed straight after
     // Esc cannot send that sentence without them.
     const held = before.find((q) => q.message.id === cancelled.id);
-    if (held) restoreAttachments(sessionId, held.attachments);
+    if (held) {
+      restoreAttachments(sessionId, held.attachments);
+      restoreAnnotations(sessionId, held.annotations ?? []);
+    }
 
     setQueuedBySession((prev) => ({
       ...prev,
