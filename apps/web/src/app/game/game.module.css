@@ -34,7 +34,7 @@
 .sound { white-space: nowrap; font: 550 12px/1.4 var(--mono); gap: 7px; padding: 0 12px; }
 .expand { display: grid; place-items: center; min-width: 40px; }
 .sound svg { width: 15px; height: 15px; }
-.primary, .hardcore, .textButton, .iconButton, .padKey, .crewButton, .share button { cursor: pointer; }
+.primary, .hardcore, .prizeButton, .textButton, .iconButton, .padKey, .crewButton, .share button { cursor: pointer; }
 .page :is(button, a, input):focus-visible { outline: 2px solid #ffe1aa; outline-offset: 3px; }
 .scene, .playfield, .playScreen, .keyArt, .scene:after, .world { position: absolute; inset: 0; width: 100%; height: 100%; }
 .scene { isolation: isolate; display: flex; align-items: center; }
@@ -63,19 +63,22 @@
 .primary svg:last-child:not(:first-child) { margin-left: 8px; }
 .titleActions, .resultActions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .titleActions { margin-top: 25px; }
-.hardcore { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 47px; padding: 0 16px; color: #ffe4d1; background: #261e24e8; border: 1px solid #d4927b; border-radius: 3px; font-size: 15px; font-weight: 700; }
+.hardcore, .prizeButton { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 47px; padding: 0 16px; border: 1px solid; border-radius: 3px; font-size: 15px; font-weight: 700; }
+.hardcore { color: #ffe4d1; background: #261e24e8; border-color: #d4927b; }
+.prizeButton { color: #ffe4ac; background: #29261cea; border-color: #cfad6b; }
 .primary:active { transform: translateY(2px); }
 .rail { position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: var(--gutter); }
 .specs { gap: 22px; font: 500 11px/1.3 var(--mono); color: #e9e5d6; }
 .specs span { gap: 7px; white-space: nowrap; }
 .specs svg { width: 15px; height: 15px; }
-.scene[data-view="rules"]:after, .scene[data-view="end"]:after { background: linear-gradient(90deg,#101b26f5,#17222cef 48%,#18212acc), linear-gradient(0deg,#161f28a8,transparent); }
+.scene:is([data-view="rules"], [data-view="prize"], [data-view="end"]):after { background: linear-gradient(90deg,#101b26f5,#17222cef 48%,#18212acc), linear-gradient(0deg,#161f28a8,transparent); }
 .sheetScroll {
   --sheet-top: calc(75px + env(safe-area-inset-top));
   position: absolute; inset: var(--sheet-top) 0 0; display: flex; flex-direction: column;
   padding: 24px max(7vw,var(--gutter)) max(36px,env(safe-area-inset-bottom)); overflow: auto; overscroll-behavior: contain;
 }
 .manual { margin-block: auto; display: grid; grid-template-columns: minmax(0,510px) minmax(230px,350px); gap: clamp(48px,8vw,140px); align-items: center; flex: none; }
+.prizeBriefing { max-width: 510px; margin-block: auto; flex: none; }
 .briefing, .results, .roster { min-width: 0; }
 .textButton { font: 500 12px/1.5 var(--mono); color: var(--muted); gap: 7px; min-height: 40px; }
 .briefing h2, .results h2, .pauseCard h2 { font-weight: 680; line-height: 1.08; font-size: clamp(34px,4vw,60px); letter-spacing: -.055em; }
@@ -175,6 +178,7 @@
   .textButton:hover, .share :is(button,a):hover { color: #ffcf9d; }
   .primary:hover { background: #ffd09d; }
   .hardcore:hover { background: #513039; }
+  .prizeButton:hover { background: #493d26; }
   .sound:hover, .expand:hover, .iconButton:hover, .padKey:hover { background: #374450; }
 }
 @media (any-pointer: coarse), (max-width: 740px) {
@@ -195,7 +199,7 @@
   .wordmark { width: clamp(240px,67vw,360px); margin-block: 12px; }
   .premise { font-size: 16px; }
   .titleActions { margin-top: 19px; }
-  .titleActions .primary, .titleActions .hardcore { padding-inline: 12px; }
+  .titleActions :is(.primary, .hardcore, .prizeButton) { padding-inline: 12px; }
   .specs { gap: 13px; font-size: 10px; }
   .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 0 15px; }
   .cards li { gap: 9px; }
@@ -213,7 +217,7 @@
 }
 @media (max-width: 360px) {
   .titleActions { gap: 8px; }
-  .titleActions .primary, .titleActions .hardcore { gap: 7px; padding-inline: 10px; }
+  .titleActions :is(.primary, .hardcore, .prizeButton) { gap: 7px; padding-inline: 10px; }
   .titleActions .primary svg:last-child { margin-left: 3px; }
 }
 @media (max-height: 510px) and (orientation: landscape) {
@@ -222,7 +226,7 @@
   .wordmark { width: min(32vw,54vh); margin-block: 6px; }
   .premise { font-size: 14px; }
   .titleActions { margin-top: 10px; }
-  .titleActions .primary, .titleActions .hardcore { min-height: 39px; }
+  .titleActions :is(.primary, .hardcore, .prizeButton) { min-height: 39px; }
   .rail { bottom: 10px; right: 15px; left: auto; }
   .sheetScroll { --sheet-top: 54px; }
   .hud { padding-block: 4px 12px; }

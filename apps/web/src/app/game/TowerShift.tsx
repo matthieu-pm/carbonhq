@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Copy, Maximize, Minimize, Flag, Gamepad2, Heart, Play, RadioTower, RotateCcw, Skull, UsersRound, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Copy, Maximize, Minimize, Flag, Gamepad2, Heart, Mail, Play, RadioTower, RotateCcw, Skull, Trophy, UsersRound, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClosingCards } from "@/components/home/ClosingCards";
 import { SITE } from "@/lib/links";
@@ -61,6 +61,22 @@ function Instructions({ mode, back, start }: { mode: GameMode; back: () => void;
   </div>;
 }
 
+function PrizeRules({ back, play }: { back: () => void; play: () => void }) {
+  const title = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { title.current?.focus({ preventScroll: true }); }, []);
+  return <section className={`${s.briefing} ${s.prizeBriefing}`} aria-labelledby="prize-title">
+    <button type="button" className={s.textButton} onClick={back}><ArrowLeft size={15} /> Title screen</button>
+    <h2 id="prize-title" tabIndex={-1} ref={title}>$100 in OpenAI credits</h2>
+    <p>Finish Tower Shift Hardcore in under 2 minutes of active play to qualify.</p>
+    <dl className={s.ruleList}>
+      <div><dt><Flag /> Complete all five floors</dt><dd>Rescue all four agents and restore the rooftop signal. The timer counts active play up to the moment you restore the signal.</dd></div>
+      <div><dt><Heart /> One life</dt><dd>Every floor has extra traps. You keep one life when you rescue a companion, and the first hit or fall ends your run.</dd></div>
+      <div><dt><Mail /> Claim your credits</dt><dd>Enter your email on the results screen after a qualifying run. The Carbon team will contact you about your credits.</dd></div>
+    </dl>
+    <button type="button" className={s.primary} onClick={play}><Play fill="currentColor" size={16} /> Play Hardcore</button>
+  </section>;
+}
+
 function Results({ result, replay, back }: { result: RunResult; replay: () => void; back: () => void }) {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "select">("idle");
   const title = useRef<HTMLHeadingElement>(null);
@@ -99,7 +115,7 @@ function Results({ result, replay, back }: { result: RunResult; replay: () => vo
 }
 
 export function TowerShift() {
-  const [screen, setScreen] = useState<"title" | "rules" | "play" | "victory" | "end">("title");
+  const [screen, setScreen] = useState<"title" | "rules" | "prize" | "play" | "victory" | "end">("title");
   const [mode, setMode] = useState<GameMode>("standard");
   const [result, setResult] = useState<RunResult | null>(null);
   const [sound, setSound] = useState(false);
@@ -122,6 +138,7 @@ export function TowerShift() {
   const audible = useRef(false);
   const titleButton = useRef<HTMLButtonElement>(null);
   const hardcoreButton = useRef<HTMLButtonElement>(null);
+  const prizeButton = useRef<HTMLButtonElement>(null);
   const cue = useCallback((kind: Cue) => {
     if (audible.current) return playCue(audio.current, kind);
   }, []);
@@ -145,7 +162,7 @@ export function TowerShift() {
   function start() { preloadVictoryScene(); cue("floor"); setScreen("play"); }
   function backToTitle() {
     setScreen("title");
-    const button = mode === "hardcore" ? hardcoreButton : titleButton;
+    const button = screen === "prize" ? prizeButton : mode === "hardcore" ? hardcoreButton : titleButton;
     requestAnimationFrame(() => button.current?.focus({ preventScroll: true }));
   }
   const settings = <div className={s.settings}>
@@ -172,13 +189,14 @@ export function TowerShift() {
             <div className={s.titleActions}>
               <button type="button" className={s.primary} ref={titleButton} onClick={() => openRules("standard")}><Play size={16} fill="currentColor" /> Play game <ArrowRight size={16} /></button>
               <button type="button" className={s.hardcore} ref={hardcoreButton} onClick={() => openRules("hardcore")}><Skull size={17} /> Hardcore</button>
+              <button type="button" className={s.prizeButton} ref={prizeButton} onClick={() => setScreen("prize")} aria-label="$100 prize and rules"><Trophy size={17} /> $100 prize</button>
             </div>
           </div>
           <div className={s.rail}><div className={s.specs}><span><Flag />{STAGES.length} floors</span><span><Heart />3 starting lives</span><span><Gamepad2 />Keyboard + touch</span></div></div>
         </> : screen !== "victory" && <div className={s.sheetScroll} key={screen}>
           {screen === "rules" ? <div className={s.manual}>
             <Instructions mode={mode} back={backToTitle} start={start} /><CrewRoster />
-          </div> : result && <div className={s.endSheet}>
+          </div> : screen === "prize" ? <PrizeRules back={backToTitle} play={() => openRules("hardcore")} /> : result && <div className={s.endSheet}>
             <Results result={result} replay={start} back={backToTitle} />
             <footer data-scheme="dark" className="relative min-w-0 bg-[#141414]">
               <ClosingCards />
