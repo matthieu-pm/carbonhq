@@ -1618,6 +1618,7 @@ const applyIndexItem = (updated: SessionIndexItem) => {
       s.sessionId === sessionId
         ? {
             ...s,
+            canvases: updated.canvases,
             archived: updated.archived,
             pinned: updated.pinned,
             hidden: updated.hidden,

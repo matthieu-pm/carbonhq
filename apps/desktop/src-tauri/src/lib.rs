@@ -49,6 +49,7 @@ pub mod headless;
 pub mod recording;
 mod local_servers;
 mod canvas_library;
+mod session_canvases;
 mod canvas_commands;
 pub mod docs;
 pub mod pages;
@@ -268,7 +269,7 @@ async fn send_msg(
 
     let canvas_target = canvas_prompt.as_ref().map(|canvas| serde_json::json!(&canvas.target).to_string());
     let prompt = canvas_prompt.as_ref().map_or(prompt, |canvas| canvas.text.as_str());
-    let outcome = manager()
+    let mut outcome = manager()
         .send_msg(
             session_id,
             prompt,
@@ -305,6 +306,13 @@ async fn send_msg(
             &sink,
         )
         .await?;
+    if let Some(canvas) = canvas_prompt {
+        let target = canvas.target;
+        let file = session_canvases::CanvasLink { project: target.project, folder: target.folder, name: target.canvas };
+        if let Some(item) = session_canvases::record(session_id, file, &sink).await {
+            if let Some(snapshot) = outcome.snapshot.as_mut() { snapshot.index_item = item; }
+        }
+    }
     // The new entry rides back to the caller alone, so every other client — the
     // app beside an Island or a phone that started it — hears of it as `carbon new`'s
     // sessions are heard of. The caller's own copy replaces itself.

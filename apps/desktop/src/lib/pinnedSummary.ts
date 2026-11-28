@@ -23,6 +23,7 @@ export function summaryDocks(width: number): boolean {
 export const SUMMARY_ITEMS = [
   { id: "workspace", label: "Workspace and editor", defaultVisible: true },
   { id: "branch", label: "Branch", defaultVisible: true },
+  { id: "canvases", label: "Design canvases", defaultVisible: true },
   { id: "changes", label: "Changes", defaultVisible: true },
   { id: "prs", label: "Pull requests", defaultVisible: true },
   { id: "tasks", label: "Tasks", defaultVisible: true },
@@ -45,7 +46,7 @@ export function setSummaryItem(items: SummaryItems, id: SummaryItemId, visible: 
 }
 
 /// The card's sections as drawn, which is coarser than `SUMMARY_ITEMS`: branch and changes share one.
-export const SUMMARY_SECTIONS = ["workspace", "git", "prs", "crew", "tasks", "subagents", "sources", "context"] as const;
+export const SUMMARY_SECTIONS = ["workspace", "git", "prs", "canvases", "crew", "tasks", "subagents", "sources", "context"] as const;
 export type SummarySectionId = (typeof SUMMARY_SECTIONS)[number];
 
 /// The saved order brought up to date. Unknown ids drop out, and a section the

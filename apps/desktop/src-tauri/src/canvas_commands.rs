@@ -412,7 +412,11 @@ async fn preview(
 }
 
 /// Retire a draft when its backing file moves, even if a new canvas later reuses that name.
-pub(crate) async fn change_library(project: String, action: Action) -> Result<String, crate::Fail> {
+pub(crate) async fn change_library(
+    project: String,
+    action: Action,
+    sink: &Sink,
+) -> Result<String, crate::Fail> {
     let key = match &action {
         Action::Move {
             folder,
@@ -428,7 +432,26 @@ pub(crate) async fn change_library(project: String, action: Action) -> Result<St
         return library::change(project, action).await;
     };
     let mut history = HISTORY.lock().await;
+    let destination = match &action {
+        Action::Move { destination, .. } => Some(destination.clone()),
+        _ => None,
+    };
     let result = library::change(project, action).await?;
+    if let Some(folder) = destination {
+        let old = crate::session_canvases::CanvasLink {
+            project: key.0.clone(),
+            folder: key.1.clone(),
+            name: key.2.clone(),
+        };
+        match crate::store::move_linked_canvas(&old, folder).await {
+            Ok(items) => {
+                for item in items {
+                    let _ = sink.emit(crate::orchestration::SESSION_CHANGED, &item);
+                }
+            }
+            Err(err) => eprintln!("[move session canvas link] {err}"),
+        }
+    }
     history.retain(|edit| edit.key != key);
     let slot = DRAFTS.lock().await.remove(&key);
     drop(history);
@@ -442,6 +465,45 @@ pub(crate) async fn change_library(project: String, action: Action) -> Result<St
 
 /// Dispatch library and document work on the machine that owns the attached checkout.
 pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
+    let owner = req.session_id.clone();
+    let project = req.project.clone();
+    let folder = req.folder.clone();
+    let target = match &req.command {
+        Cmd::Projects
+        | Cmd::Attach
+        | Cmd::List { .. }
+        | Cmd::Search { .. }
+        | Cmd::Folder { .. }
+        | Cmd::Archive
+        | Cmd::Move { .. }
+        | Cmd::Chat(_) => None,
+        _ => req.canvas.clone(),
+    };
+    let create = matches!(req.command, Cmd::Create);
+    let value = dispatch(req, sink).await?;
+    if let Some(owner) = owner {
+        let name = if create {
+            value["name"].as_str()
+        } else {
+            target.as_deref()
+        };
+        if let Some(name) = name {
+            crate::session_canvases::record(
+                &owner,
+                crate::session_canvases::CanvasLink {
+                    project,
+                    folder,
+                    name: name.to_owned(),
+                },
+                sink,
+            )
+            .await;
+        }
+    }
+    Ok(value)
+}
+
+async fn dispatch(req: CanvasRequest, sink: &Sink) -> Result<Value> {
     use Cmd::*;
     if let Preview { session, action } = &req.command {
         let owner = session
@@ -530,7 +592,7 @@ pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
         },
         _ => return document(req, sink).await,
     };
-    let name = change_library(req.project.clone(), action).await?;
+    let name = change_library(req.project.clone(), action, sink).await?;
     changed(sink, &req)?;
     Ok(json!({"name": name}))
 }

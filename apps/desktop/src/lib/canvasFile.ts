@@ -1,4 +1,6 @@
-export type CanvasFile = { project: string; folder: string; name: string };
+import type { CanvasLink } from "@/types/events";
+
+export type CanvasFile = CanvasLink;
 
 export const canvasKey = (file: CanvasFile) => JSON.stringify([file.project, file.folder, file.name]);
 

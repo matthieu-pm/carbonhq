@@ -286,9 +286,22 @@ pub(crate) async fn attached(path: String) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// A conversation can edit a board in its managed checkout as well as in the attached root.
+pub(crate) async fn document_root(path: String) -> Result<PathBuf> {
+    if let Some((root, name)) = path.rsplit_once("/.claude/worktrees/") {
+        if !name.contains('/') && check_name(name).is_ok() {
+            if let Ok(project) = attached(root.to_owned()).await {
+                let claude = directory(&project, ".claude", false)?;
+                return directory(&directory(&claude, "worktrees", false)?, name, false);
+            }
+        }
+    }
+    attached(path).await
+}
+
 /// Read directly from the checkout so a pull or branch switch changes the library.
 pub(crate) async fn list(project_path: String) -> Result<Library, crate::Fail> {
-    let project = attached(project_path).await?;
+    let project = document_root(project_path).await?;
     Ok(tokio::task::spawn_blocking(move || inventory(&project))
         .await
         .context("Canvas scan stopped")??)
@@ -296,7 +309,7 @@ pub(crate) async fn list(project_path: String) -> Result<Library, crate::Fail> {
 
 /// Serialize library moves so concurrent windows cannot take the same file twice.
 pub(crate) async fn change(project_path: String, action: Action) -> Result<String, crate::Fail> {
-    let project = attached(project_path).await?;
+    let project = document_root(project_path).await?;
     Ok(tokio::task::spawn_blocking(move || {
         let _guard = WRITES.blocking_lock();
         apply(&project, action)
@@ -325,7 +338,7 @@ pub(crate) async fn read(
     name: String,
     archived: bool,
 ) -> Result<String, crate::Fail> {
-    let project = attached(project_path).await?;
+    let project = document_root(project_path).await?;
     Ok(
         tokio::fs::read_to_string(document_path(&project, &folder, &name, archived)?)
             .await
@@ -366,7 +379,7 @@ pub(crate) async fn save_gzip(
     content: String,
     archived: bool,
 ) -> Result<(), crate::Fail> {
-    let project = attached(project_path).await?;
+    let project = document_root(project_path).await?;
     Ok(tokio::task::spawn_blocking(move || -> Result<()> {
         let _guard = WRITES.blocking_lock();
         const MAX_BYTES: u64 = 256 << 20;
@@ -457,7 +470,7 @@ pub(crate) async fn save(
     content: String,
     archived: bool,
 ) -> Result<(), crate::Fail> {
-    let project = attached(project_path).await?;
+    let project = document_root(project_path).await?;
     Ok(tokio::task::spawn_blocking(move || {
         let _guard = WRITES.blocking_lock();
         save_document(&project, &folder, &name, &previous, &content, archived)

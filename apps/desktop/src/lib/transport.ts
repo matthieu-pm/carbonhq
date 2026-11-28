@@ -75,6 +75,7 @@ function qualifyRecord(value: unknown, server: ServerId): unknown {
   for (const key of ["cwd", "projectPath", "path"]) {
     if (typeof out[key] === "string") out[key] = qualify(out[key] as string, server);
   }
+  if (Array.isArray(out.canvases)) out.canvases = out.canvases.map(file => ({ ...file, project: qualify(file.project, server) }));
   if (out.snapshot) out.snapshot = qualifyRecord(out.snapshot, server);
   if (typeof out.sessionId === "string") noteSession(out.sessionId, server);
   return out;

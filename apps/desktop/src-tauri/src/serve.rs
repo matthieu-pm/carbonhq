@@ -1456,6 +1456,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink, canvas_watch: Option<Canva
         delete_session(session_id: String) => crate::delete_session(&session_id).await;
         fork_session(session_id: String, fork_id: String, worktree: bool) =>
             crate::fork_session(&session_id, &fork_id, worktree).await;
+        link_session_canvas(session_id: String, path: String) => crate::session_canvases::link_open_file(session_id, path, &sink).await;
         session_index_item(session_id: String) => crate::session_index_item(&session_id).await;
         // `carbon --machine` from an agent on the Mac that added this machine.
         orchestrate(
@@ -1470,7 +1471,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink, canvas_watch: Option<Canva
         set_auto_continue(session_id: String, on: bool) => crate::auto_continue::set_auto_continue(session_id, on, sink).await;
         list_session_index_items(archived: bool) => store::list_session_index_items(archived).await;
         get_session_by_id(session_id: String, turns: Option<u32>) => store::get_session_by_id(&session_id, turns).await;
-        get_session_page(session_id: String, before: u64, turns: u32) => store::get_session_page(&session_id, before, turns).await;
+        get_session_page(session_id: String, before: u64, turns: u32) => store::get_session_page(&session_id, before, turns, sink).await;
         get_session_since(session_id: String, after: Vec<String>) => store::get_session_since(&session_id, after).await;
         get_session_recovery(session_id: String, after: Vec<String>) => store::get_session_recovery(&session_id, after).await;
 
@@ -1557,7 +1558,7 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink, canvas_watch: Option<Canva
         read_canvas_document(project_path: String, folder: String, name: String, archived: Option<bool>, include_preview: Option<bool>, gzip: Option<bool>) => crate::canvas_commands::editor_document(project_path, folder, name, archived.unwrap_or(false), include_preview.unwrap_or(false), gzip.unwrap_or(false)).await;
         save_canvas_document_gzip(project_path: String, folder: String, name: String, previous: String, content: String, archived: Option<bool>) => crate::canvas_library::save_gzip(project_path, folder, name, previous, content, archived.unwrap_or(false)).await;
         save_canvas_document(project_path: String, folder: String, name: String, previous: String, content: String, archived: Option<bool>) => crate::canvas_library::save(project_path, folder, name, previous, content, archived.unwrap_or(false)).await;
-        change_canvas_library(project_path: String, action: crate::canvas_library::Action) => crate::canvas_commands::change_library(project_path, action).await;
+        change_canvas_library(project_path: String, action: crate::canvas_library::Action) => crate::canvas_commands::change_library(project_path, action, &sink).await;
         list_dir(cwd: String, dir: String) => files::list_dir(cwd, dir).await;
         read_file(path: String) => read_file(&path).await;
         // Servers listening on *this* machine, which is the one a forwarded

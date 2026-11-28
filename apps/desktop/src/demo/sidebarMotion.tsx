@@ -121,7 +121,7 @@ function Demo() {
       </div>
       <div ref={host} className="h-[600px] min-h-0 border-y border-border">
         <AppShell sidebarMode={mode} sidebar={<DemoSidebar mode={mode} />} footer={null}
-          rail={<Rail place="home" spaces={false} onHome={() => {}} onSpaces={() => {}} onIssues={() => {}}
+          rail={<Rail place="home" spaces={false} onHome={() => {}} onDesign={() => {}} onSpaces={() => {}} onIssues={() => {}}
             onHomeHover={(over) => mode !== "docked" && setMode(over ? "peek" : "hidden")} peeks={mode !== "docked"} footer={null} />}
           header={<WindowToolbar fullscreen><SidebarToggle onToggle={toggle} /><span className="text-ui">Sidebar motion</span></WindowToolbar>}
         >

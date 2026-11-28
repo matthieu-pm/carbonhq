@@ -10,6 +10,9 @@ import { readDocument, type CommentPin, type Document } from "./document";
 type Snapshot = { doc: Document | null; preview: Document | null; error: string; saving: boolean; conflict: boolean };
 const open = new Map<string, CanvasSession>();
 
+const watchedCanvases = new Map<symbol, string>();
+const updateCanvasWatch = () => watchDocs("canvas", [...new Set(watchedCanvases.values())]);
+
 export class CanvasSession {
   private snapshot: Snapshot = { doc: null, preview: null, error: "", saving: false, conflict: false };
   private listeners = new Set<() => void>();
@@ -76,6 +79,7 @@ export class CanvasSession {
     return { projectPath, folder, name, archived: this.archived };
   }
   watchFile() {
+    const owner = Symbol();
     const path = canvasPath(this.file);
     let active = true;
     const refresh = () => {
@@ -83,7 +87,8 @@ export class CanvasSession {
     };
     const arm = async () => {
       if (!active) return;
-      await watchDocs("canvas", [path]);
+      watchedCanvases.set(owner, path);
+      await updateCanvasWatch();
       refresh();
     };
     const changed = listen<string>("doc_changed", ({ payload }) => {
@@ -96,7 +101,8 @@ export class CanvasSession {
     void Promise.all([changed, reconnect]).then(arm);
     return () => {
       active = false;
-      void watchDocs("canvas", []);
+      watchedCanvases.delete(owner);
+      void updateCanvasWatch();
       void changed.then(off => off());
       void reconnect.then(off => off());
     };

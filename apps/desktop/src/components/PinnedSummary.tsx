@@ -2,6 +2,8 @@ import { Fragment, useRef, useState, type ReactNode } from "react";
 import { Popover } from "radix-ui";
 import { ChevronDown, ChevronUp, FileDiff, FileText, GitBranch, GripVertical, Globe, Image, Link, Monitor, MoreHorizontal, Plus, Search, SlidersHorizontal } from "lucide-react";
 
+import { canvasKey, canvasPath, type CanvasFile } from "@/lib/canvasFile";
+import { DoodleOutline18 } from "@/components/icons/nucleo";
 import BotAvatar from "@/components/BotAvatar";
 import ContextDetails from "@/components/ContextDetails";
 import ImageLightbox, { Thumb, type LightboxImage } from "@/components/chat/ImageLightbox";
@@ -79,6 +81,8 @@ type Props = {
   changes: ChangeSet | null;
   changesLoading: boolean;
   changesError: string | null;
+  canvases?: CanvasFile[];
+  onOpenCanvas?: (file: CanvasFile) => void;
   prs: PullRequest[];
   prsLoading: boolean;
   prsError: PrUnavailable | null;
@@ -162,7 +166,7 @@ function SummarySection({ label, title, action, index, reorder, children }: {
 /// Details follow the conversation's real data; empty sections take no space.
 export default function PinnedSummary({
   sessionId, project, cwd, environment, branch, worktree, harness, changes, changesLoading, changesError,
-  prs, prsLoading, prsError, subagents, crew, crewVisible = true, onCrewVisibleChange, todos = null, busy, liveTaskIds, sources, context, open, docked = false,
+  canvases = [], onOpenCanvas, prs, prsLoading, prsError, subagents, crew, crewVisible = true, onCrewVisibleChange, todos = null, busy, liveTaskIds, sources, context, open, docked = false,
   onOpen, onManageSources, onHide,
 }: Props) {
   const [allSources, setAllSources] = useState(false);
@@ -187,7 +191,7 @@ export default function PinnedSummary({
   const tasks = visible("tasks") && todos?.length ? todos : null;
   const showCrew = !!crew && crewVisible;
   const present: Record<SummarySectionId, boolean> = {
-    workspace: showWorkspace, git: !!showGit, prs: showPrs, crew: showCrew, tasks: !!tasks,
+    canvases: visible("canvases") && canvases.length > 0, workspace: showWorkspace, git: !!showGit, prs: showPrs, crew: showCrew, tasks: !!tasks,
     subagents: visible("subagents") && subagents.length > 0, sources: showSources, context: showContext,
   };
   const shownSections = summaryOrder(savedOrder).filter((id) => present[id]);
@@ -232,6 +236,12 @@ export default function PinnedSummary({
       {prs.length > 1 && <button type="button" className={cn(row, "text-muted-foreground")} onClick={() => setAllPrs((value) => !value)} aria-expanded={allPrs}>
         {allPrs ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}{allPrs ? "Show less" : `Show ${prs.length - 1} more`}
       </button>}
+    </SummarySection>,
+    canvases: (at) => <SummarySection label="Design canvases" title="Design canvases" {...at}>
+      {canvases.map(file => <button key={canvasKey(file)} type="button" className={row} onClick={() => onOpenCanvas?.(file)}>
+        <DoodleOutline18 className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate" title={canvasPath(file)}>{[file.folder, file.name].filter(Boolean).join("/")}</span>
+      </button>)}
     </SummarySection>,
     crew: (at) => <SummarySection label="Crew" title="Crew" {...at}>{crew}</SummarySection>,
     tasks: (at) => tasks && <SummarySection label="Tasks" title="Tasks" {...at} action={<span className="text-xs tabular-nums text-muted-foreground">

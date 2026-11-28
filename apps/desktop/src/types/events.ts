@@ -595,6 +595,8 @@ defaultBase: string | null,
  */
 dirty: number, };
 
+export type CanvasLink = { project: string, folder: string, name: string, };
+
 /**
  * Everything that changed between two snapshots.
  */
@@ -2067,7 +2069,7 @@ agentMode?: string | null, agentConfig?: { [key in string]: string }, pendingAge
  * unreachable. `serde(default)` so entries written before the field read
  * as untagged rather than failing the whole index.
  */
-issues: Array<IssueRef>, 
+issues: Array<IssueRef>, canvases?: Array<CanvasLink>, 
 /**
  * The session whose agent created this one, for a session created over the
  * orchestration socket rather than by a person in the composer. `Some` is
@@ -2242,7 +2244,7 @@ agentMode?: string | null, agentConfig?: { [key in string]: string }, pendingAge
  * unreachable. `serde(default)` so entries written before the field read
  * as untagged rather than failing the whole index.
  */
-issues: Array<IssueRef>, 
+issues: Array<IssueRef>, canvases?: Array<CanvasLink>, 
 /**
  * The session whose agent created this one, for a session created over the
  * orchestration socket rather than by a person in the composer. `Some` is

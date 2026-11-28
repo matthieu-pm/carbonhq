@@ -1484,7 +1484,7 @@ mod tests {
             assert!(matches!(decoded.request, Request::LookupReceipt(ReceiptLookup { request }) if matches!(*request, Request::CreateSession(_) | Request::SendMessage(_))));
             assert!(wire.contains("lookup_receipt"));
         }
-        let canvas = canvas::CanvasRequest { project: ".".into(), folder: String::new(), canvas: None, revision: None, command: canvas::CanvasCommand::Read };
+        let canvas = canvas::CanvasRequest { session_id: None, project: ".".into(), folder: String::new(), canvas: None, revision: None, command: canvas::CanvasCommand::Read };
         assert_eq!(Request::Canvas(canvas.clone()).version(), 23);
         let preview = Request::Canvas(canvas::CanvasRequest {
             command: canvas::CanvasCommand::Preview { session: Some("agent".into()), action: canvas::PreviewAction::Save },

@@ -1,5 +1,5 @@
 import { editLayer } from "./layerEdit";
-import { useCanvasWindowPart, useEditorStatus, visibility } from "@/lib/canvasWindow";
+import { EmbeddedCanvas, useCanvasWindowPart, useEditorStatus, visibility } from "@/lib/canvasWindow";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import {
   Check,
@@ -69,10 +69,11 @@ export function CanvasEditor({
   projects: Project[];
   collapsed: boolean;
   controlsOpen?: boolean;
-  sidebarStyle: CSSProperties;
-  resizeHandle: ReactNode;
-  libraryError: string;
+  sidebarStyle?: CSSProperties;
+  resizeHandle?: ReactNode;
+  libraryError?: string;
 }) {
+  const embedded = useContext(EmbeddedCanvas);
   const { doc, preview, error, saving, conflict, session } = useCanvasDocument(file);
   const composer = useContext(CanvasComposerSlot);
   useEditorStatus(canvasKey(file), !!doc, doc ? "" : error);
@@ -140,8 +141,8 @@ export function CanvasEditor({
     camera.set({ zoom: z, x: (b.width - w * z) / 2 - left * z, y: (b.height - h * z) / 2 - top * z });
   }
   useEffect(() => {
-    root.current?.focus({ preventScroll: true });
-  }, [!!doc]);
+    if (!embedded) root.current?.focus({ preventScroll: true });
+  }, [!!doc, embedded]);
   useCanvasWindowPart("editor", async ({ command }) => {
     if (command.group !== "view") throw Error("Choose a view command.");
     const a = command.args;
@@ -392,6 +393,13 @@ export function CanvasEditor({
       {doc && page ? (
         <>
           <div className="ce-stage">
+            {embedded && <div className="absolute left-2 top-2 z-2 flex max-w-[calc(100%-1rem)] items-center gap-2 rounded-md bg-background/90 px-2 py-1 text-xs">
+              <span className="truncate">{file.name}</span>
+              {doc.pages.length > 1 && <select aria-label="Canvas page" value={page.id} onChange={e => activate(e.target.value)}>
+                {doc.pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>}
+              <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={fit}>Fit</button>
+            </div>}
             {!controlsOpen && notices && <div className="ce-stage-notices">{notices}</div>}
             <CanvasBoard
               scene={scene}
@@ -426,7 +434,7 @@ export function CanvasEditor({
               </div>
             </div>
           </div>
-          <aside className="ce-inspector" hidden={!controlsOpen} aria-label="Canvas inspector">
+          {!embedded && <aside className="ce-inspector" hidden={!controlsOpen} aria-label="Canvas inspector">
             <header className="ce-inspector-head">
               <span aria-live="polite">{saving ? "Saving…" : ""}</span>
               <DropdownMenu>
@@ -466,7 +474,7 @@ export function CanvasEditor({
                 change={session.change}
               />
             </div>
-          </aside>
+          </aside>}
         </>
       ) : (
         <div className="ce-load" role={error ? "alert" : "status"}>

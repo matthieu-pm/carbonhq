@@ -1598,8 +1598,7 @@ body.session-drag * {
   [role="tablist"] {
     --view-tabs-inset: -0.25rem;
   }
-  .workspace-position {
+  .toolbar-divider {
     position: static;
-    translate: none;
   }
 }

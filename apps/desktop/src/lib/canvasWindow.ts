@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import { listenLocalRequest } from "./transport";
 
@@ -48,18 +48,21 @@ export type WindowRequest = {
       };
 };
 
+export const EmbeddedCanvas = createContext(false);
+
 type WindowPart = "library" | "editor" | "markup" | "theme" | "chat";
 type Handler = (request: WindowRequest) => unknown;
 const handlers = new Map<WindowPart, Handler>();
 
 export function useCanvasWindowPart(part: WindowPart, handler: Handler, enabled = true) {
+  const embedded = useContext(EmbeddedCanvas);
   useLayoutEffect(() => {
-    if (!enabled) return;
+    if (!enabled || embedded) return;
     handlers.set(part, handler);
     return () => {
       handlers.delete(part);
     };
-  }, [part, handler, enabled]);
+  }, [part, handler, enabled, embedded]);
 }
 
 export function canvasWindowPart(part: WindowPart, req: WindowRequest) {
@@ -92,13 +95,15 @@ let editor: EditorStatus | null = null;
 const updates = new Set<() => void>();
 
 export function useEditorStatus(key: string, ready: boolean, error: string) {
+  const embedded = useContext(EmbeddedCanvas);
   useLayoutEffect(() => {
+    if (embedded) return;
     editor = { key, ready, error };
     for (const notify of updates) notify();
     return () => {
       editor = null;
     };
-  }, [key, ready, error]);
+  }, [key, ready, error, embedded]);
 }
 
 /** An open command can mount a lazy editor and then start its first document read. */

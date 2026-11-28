@@ -719,6 +719,7 @@ dependencies = [
  "serde_json",
  "serde_yaml_ng",
  "sha2 0.11.1",
+ "shell-words",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
