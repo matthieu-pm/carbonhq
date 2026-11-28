@@ -55,6 +55,7 @@ export const PANEL_TABS = [
   "pr",
   "issue",
   "docs",
+  "design",
   "plan",
 ] as const;
 
@@ -78,6 +79,7 @@ export const PANEL_LABELS: Record<PanelTab, string> = {
   // Plural where Issue is singular: a session takes up one piece of tracked
   // work and opens as many files as it takes to read it.
   docs: "Docs",
+  design: "Design",
   // Not "Pull Request": the short form is what anyone working on one calls it,
   // and the long one is the widest label in a row of three.
   pr: "PR",
@@ -105,6 +107,7 @@ export const PANEL_LABELS: Record<PanelTab, string> = {
 export function tabOrder({
   pr,
   docs,
+  design,
   issue,
   more,
   plan,
@@ -113,6 +116,7 @@ export function tabOrder({
   /// At least one markdown file is open in the pane — see
   /// [useDocs](../hooks/useDocs.ts). Absent otherwise, for the PR tab's reason.
   docs: boolean;
+  design?: boolean;
   issue: boolean;
   /// This session has something for the catch-all tab: a task list, a subagent
   /// or a background task. Absent otherwise, for the PR tab's reason — a tab
@@ -126,6 +130,7 @@ export function tabOrder({
   // session's recent pages and its local servers — a place to start.
   const tabs: PanelTab[] = pr ? ["pr", "changes", "browser"] : ["changes", "browser"];
   // After Changes, which is what keeps Issue immediately before More.
+  if (design) tabs.push("design");
   if (docs) tabs.push("docs");
   // Immediately before More wherever it is drawn, so the row's order is the
   // same one ⌘⇧[ steps whether or not a session has an issue on it.

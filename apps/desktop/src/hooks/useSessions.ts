@@ -863,6 +863,7 @@ const handleSendMsg = async (
   target?: { id: string; isNew: boolean; pick: typeof composerPick; canvas?: CanvasFile },
   // What Ask marked, sent as the message's pill.
   annotations: PendingAnnotation[] = [],
+  canvas = target?.canvas,
 ): Promise<boolean> => {
   const { harness, modelId, effort, fast, permissionMode, projectPath, branch, useWorktree } = target?.pick ?? composerPick;
   const attachmentPaths = attachments.map((a) => a.path);
@@ -1042,10 +1043,10 @@ const handleSendMsg = async (
     const outcome = await invoke<SendOutcome>("send_msg", {
       sessionId,
       // Older servers read only prompt and still need the canvas path.
-      prompt: target?.canvas ? message + "\n\nCanvas: " + displayPath(canvasPath(target.canvas)) : message,
-      canvasPrompt: target?.canvas && {
+      prompt: canvas ? message + "\n\nCanvas: " + displayPath(canvasPath(canvas)) : message,
+      canvasPrompt: canvas && {
         text: message,
-        target: { project: displayPath(target.canvas.project), folder: target.canvas.folder, canvas: target.canvas.name },
+        target: { project: displayPath(canvas.project), folder: canvas.folder, canvas: canvas.name },
       },
       attachmentPaths: sentPaths,
       annotations: annotations.length ? toInputs(annotations, cropPath) : null,
@@ -1618,6 +1619,7 @@ const applyIndexItem = (updated: SessionIndexItem) => {
       s.sessionId === sessionId
         ? {
             ...s,
+            canvases: updated.canvases,
             archived: updated.archived,
             pinned: updated.pinned,
             hidden: updated.hidden,
@@ -2059,6 +2061,11 @@ const readServer = (server: ServerId) => {
       // A read outlived by a toggle is the side just left.
       if (archived !== showArchivedRef.current) return;
       setSessionIndexItems((prev) => mergeFrom(prev, server, items, (i) => i.cwd));
+      const byId = new Map(items.map(item => [item.sessionId, item]));
+      setSessions(prev => prev.map(session => {
+        const item = byId.get(session.sessionId);
+        return item ? { ...session, canvases: item.canvases } : session;
+      }));
       if (server === LOCAL) setIndexSide(archived);
     })
     .catch((e) => {

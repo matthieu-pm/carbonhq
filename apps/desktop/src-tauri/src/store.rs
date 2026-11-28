@@ -176,6 +176,9 @@ pub struct SessionIndexItem {
     /// as untagged rather than failing the whole index.
     #[serde(default)]
     pub issues: Vec<IssueRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub canvases: Option<Vec<crate::session_canvases::CanvasLink>>,
     /// The session whose agent created this one, for a session created over the
     /// orchestration socket rather than by a person in the composer. `Some` is
     /// also what the depth guard reads: a session that was itself spawned may
@@ -734,6 +737,7 @@ impl SessionIndexItem {
             status: SessionStatus::default(),
             interruption: None,
             issues: Vec::new(),
+            canvases: None,
             fork_from: None,
             parent_session_id: parent_session_id.map(str::to_string),
             created: now.clone(),
@@ -817,6 +821,7 @@ impl SessionIndexItem {
             // against the same work. Tagging one afterwards leaves the other
             // alone — the copy is a session, not a view of its source.
             issues: self.issues.clone(),
+            canvases: self.canvases.clone(),
             // Two facts in one field, and the second is why every fork sets
             // it whatever its harness. It is an *instruction* only where the
             // fork has a CLI half — Claude Code's conversation is forked lazily
@@ -1413,6 +1418,78 @@ pub fn adopts_branch(item: &SessionIndexItem, head: &str, default_branch: Option
         && default_branch != Some(head)
 }
 
+/// Keeps the most recently used canvas first without rewriting the index on each edit.
+pub(crate) async fn link_canvas(
+    id: &str,
+    file: crate::session_canvases::CanvasLink,
+) -> Result<Option<SessionIndexItem>> {
+    Ok(edit_item(id, |item| {
+        let links = item.canvases.get_or_insert_with(Vec::new);
+        if links.first() == Some(&file) {
+            return (None, false);
+        }
+        links.retain(|old| old != &file);
+        links.insert(0, file);
+        (Some(item.clone()), true)
+    })
+    .await?
+    .flatten())
+}
+
+/// Keep the same document linked across library moves, archiving and restoration.
+pub(crate) async fn relocate_linked_canvas(
+    old: &crate::session_canvases::CanvasLink,
+    new: &crate::session_canvases::CanvasLink,
+) -> Result<Vec<SessionIndexItem>> {
+    let _guard = INDEX_LOCK.lock().await;
+    let mut sessions = read_index().await?;
+    let mut updated = Vec::new();
+    for item in &mut sessions {
+        let Some(links) = &mut item.canvases else {
+            continue;
+        };
+        let Some(link) = links.iter_mut().find(|file| *file == old) else {
+            continue;
+        };
+        link.clone_from(new);
+        let mut seen = std::collections::HashSet::new();
+        links.retain(|f| seen.insert(f.clone()));
+        updated.push(item.clone());
+    }
+    if !updated.is_empty() {
+        write_session_index(sessions).await?;
+    }
+    Ok(updated)
+}
+
+/// Replayed pages may predate canvas tracking. Their links belong after newer, live activity.
+pub(crate) async fn recover_canvas_links(
+    item: &SessionIndexItem,
+    events: &[AgentEvent],
+) -> Result<Option<SessionIndexItem>> {
+    let files = crate::session_canvases::historical(&item.cwd, events).await;
+    if files.iter().all(|f| {
+        item.canvases
+            .as_ref()
+            .is_some_and(|links| links.iter().any(|link| link.same_path(f)))
+    }) {
+        return Ok(None);
+    }
+    Ok(edit_item(&item.session_id, |item| {
+        let links = item.canvases.get_or_insert_with(Vec::new);
+        let before = links.len();
+        for file in files {
+            if !links.iter().any(|link| link.same_path(&file)) {
+                links.push(file);
+            }
+        }
+        let changed = before != links.len();
+        (changed.then(|| item.clone()), changed)
+    })
+    .await?
+    .flatten())
+}
+
 /// Records the branch a session's work moved to. See [`adopts_branch`], which
 /// the caller has already asked.
 pub async fn set_session_branch(
@@ -1929,6 +2006,7 @@ pub async fn get_session_by_id(
         },
     };
 
+    let index_item = recover_canvas_links(&index_item, &page.events).await?.unwrap_or(index_item);
     Ok(Some(SessionSnapshot {
         index_item,
         events: page.events,
@@ -1944,8 +2022,15 @@ pub async fn get_session_page(
     session_id: &str,
     before: u64,
     turns: u32,
+    sink: crate::sink::Sink,
 ) -> Result<SessionPage, Fail> {
-    Ok(read_session_page(session_id, Some(before), turns).await?)
+    let page = read_session_page(session_id, Some(before), turns).await?;
+    if let Some(item) = get_session_index_item(session_id).await? {
+        if let Some(updated) = recover_canvas_links(&item, &page.events).await? {
+            sink.emit(crate::orchestration::SESSION_CHANGED, &updated)?;
+        }
+    }
+    Ok(page)
 }
 
 /// Events from one stretch of a session's log, and the byte offset the

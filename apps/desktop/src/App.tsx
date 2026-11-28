@@ -141,9 +141,10 @@ import {
 } from "@/lib/canvasChat";
 import { CanvasChatPanel } from "@/components/canvases/CanvasChat";
 import { CanvasComposer } from "@/components/canvases/CanvasComposer";
+import { EmbeddedCanvas } from "@/lib/canvasWindow";
+import { canvasPath, type CanvasFile } from "@/lib/canvasFile";
 import { canvasKey, canvasRoot, useCanvasLibrary } from "@/hooks/useCanvasLibrary";
 import AttachProjectDialog from "@/components/composer/AttachProjectDialog";
-import WorkspaceSwitch, { type Workspace } from "@/components/layout/WorkspaceSwitch";
 import WindowToolbar from "@/components/layout/WindowToolbar";
 import { placeKey, step as stepHistory, visit as visitPlace, type NavHistory, type PagePlace, type Place } from "@/lib/navHistory";
 import { addListTab, closeIssueTab, editIssueTabs, newListTabId, openIssueTab, updateListTab, useIssueTabs } from "@/lib/issueTabs";
@@ -159,7 +160,7 @@ import { attachmentKey, clearAttachments, pickAttachments, restoreAttachments } 
 import { addAnnotations, restoreAnnotations, type PendingAnnotation } from "@/hooks/useAnnotations";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { refreshActiveDoc, saveActiveDoc, useDocs } from "@/hooks/useDocs";
-import { closeFile, useOpenFiles } from "@/hooks/useOpenFiles";
+import { closeFile, linkCanvas, useOpenFiles } from "@/hooks/useOpenFiles";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useGlass } from "@/hooks/useGlass";
 import { warmHighlighter } from "@/hooks/useHighlighter";
@@ -243,12 +244,12 @@ function SettingsReady({ onReady }: { onReady: (ready: boolean) => void }) {
   return null;
 }
 
+const SessionCanvasEditor = lazy(() => import("@/components/canvases/CanvasEditor").then(m => ({ default: m.CanvasEditor })));
 /// One empty set, so clearing the rail's open rows twice is one state change.
 const NO_ROWS: ReadonlySet<string> = new Set();
 
 function App() {
-  const [workspace, setWorkspace] = useState<Workspace>("Coding");
-  const designOpen = workspace === "Design";
+  const [designOpen, setDesignOpen] = useState(false);
   const {
     selectedSessionId,
     selectedSession,
@@ -676,7 +677,7 @@ function App() {
   const [issueSearchRequest, setIssueSearchRequest] = useState<{ tabId: string; serial: number } | null>(null);
   const issueListContext = activeIssueTab.kind === "list" ? activeIssueTab : issueTabs.tabs.find((t) => t.kind === "list");
   const newIssue = () => {
-    setWorkspace("Coding");
+    setDesignOpen(false);
     const query = issueListContext?.kind === "list" ? issueListContext.query : null;
     goToSession(handleNewSession);
     beginIssueConversation(newTaskId, { tracker: query?.tracker ?? (activeIssueTab.kind === "list" ? activeIssueTab.tracker : activeIssueTab.ref.tracker), destination: query?.teamId ?? "", projectId: query?.projectId ?? null });
@@ -1519,7 +1520,26 @@ function App() {
     sessionTodos !== null ||
     sessionAttachments.length > 0;
 
+  const canvasLinks = selectedSession?.canvases ?? sessionIndexItems.find(item => item.sessionId === selectedSessionId)?.canvases;
+  const canvases = canvasLinks?.filter(file => !file.archived);
+  const hasDesignTab = !!canvases?.length;
+  const [canvasPicks, setCanvasPicks] = useState<Record<string, string>>({});
+  const selectedCanvas = canvases?.find(file => canvasKey(file) === canvasPicks[selectedSessionId ?? ""]) ?? canvases?.[0];
+  const markCanvasUsed = (file: CanvasFile) => {
+    if (selectedSessionId && canvases?.[0] && canvasKey(file) !== canvasKey(canvases[0])) {
+      linkCanvas(selectedSessionId, canvasPath(file));
+    }
+  };
+  const openSessionCanvas = (file: CanvasFile) => {
+    if (!selectedSessionId) return;
+    markCanvasUsed(file);
+    setCanvasPicks(picks => ({ ...picks, [selectedSessionId]: canvasKey(file) }));
+    if (viewTab === "design") setViewTab("chat");
+    changeDock(d => dockTab(d, "design"));
+  };
+
   const tabs = tabOrder({
+    design: hasDesignTab,
     pr: hasPrTab,
     docs: hasDocsTab,
     issue: hasIssueTab,
@@ -1530,11 +1550,11 @@ function App() {
   useEffect(() => {
     if (!selectedSession || selectedSession.sessionId !== selectedSessionId) return;
     const removed = [...dock.side, ...dock.full].filter((tab) =>
-      (tab === "docs" && !hasDocsTab) || (tab === "issue" && !hasIssueTab));
+      (tab === "design" && !hasDesignTab) || (tab === "docs" && !hasDocsTab) || (tab === "issue" && !hasIssueTab));
     if (!removed.length) return;
     changeDock((d) => removed.reduce(closeDockTab, d));
     if (removed.some((tab) => tab === viewTab)) setViewTab("chat");
-  }, [selectedSessionId, selectedSession, dock, hasDocsTab, hasIssueTab, viewTab, changeDock]);
+  }, [selectedSessionId, selectedSession, dock, hasDesignTab, hasDocsTab, hasIssueTab, viewTab, changeDock]);
 
   // The attachment grid reads the session's whole log, but a transcript drawn
   // as a crew strip never pages past its tail — so the More tab pages in the
@@ -2050,7 +2070,7 @@ function App() {
   // back with it — so this is a navigation, not a dismissal. Settings cover the
   // whole window, so they close too.
   const goToSession = (go: () => void) => {
-    setWorkspace("Coding");
+    setDesignOpen(false);
     setPeek(false);
     setSpacesOpen(false);
     setIssuesOpen(false);
@@ -2059,8 +2079,27 @@ function App() {
     go();
   };
 
+  const openRailHome = () => {
+    if (!designOpen) return goToSession(handleNewSession);
+    setDesignOpen(false);
+    setSpacesOpen(false);
+    setIssuesOpen(false);
+    setPeek(false);
+    setSpacesPeek(false);
+    closeSettings();
+  };
+
+  const openDesign = () => {
+    if (canvasHome && !settingsOpen) return openCanvasHome();
+    setDesignOpen(true);
+    setDesignPlace("home");
+    setPeek(false);
+    setSpacesPeek(false);
+    closeSettings();
+  };
+
   const referencePage = (page: LocatedPage<Page>) => {
-    setWorkspace("Coding");
+    setDesignOpen(false);
     appendToDraft(composerKey, pagePromptContext(page, activeServer));
     setSpacesOpen(false);
     setIssuesOpen(false);
@@ -2162,7 +2201,7 @@ function App() {
     } else closeSettings();
     const page = target.page === "settings" ? target.returnTo : target;
     if (page.page === "canvas" || page.page === "design-spaces" || page.page === "design-issues") {
-      setWorkspace("Design");
+      setDesignOpen(true);
       setDesignPlace(page.page === "canvas" ? "home" : page.page === "design-spaces" ? "spaces" : "issues");
       if (page.page === "canvas") {
         setCanvasHomeVisit((n) => n + 1);
@@ -2172,7 +2211,7 @@ function App() {
       }
       return;
     }
-    setWorkspace("Coding");
+    setDesignOpen(false);
     setSpacesOpen(page.page === "spaces");
     setIssuesOpen(page.page === "issues");
     if (page.page !== "tasks" || page.sessionId === selectedSessionId) return;
@@ -2326,7 +2365,7 @@ function App() {
   /// only where no filter or space switch landed during the read — everything
   /// below is the click-time render's, and would undo that switch.
   const openFromNotice = async (sessionId: string) => {
-    setWorkspace("Coding");
+    setDesignOpen(false);
     const previous = selectedSessionId;
     const gen = filterGen.current;
     const selecting = handleSelectSessionIndexItem(sessionId);
@@ -2881,7 +2920,7 @@ function App() {
     selectedSession ?? sessionIndexItems.find((i) => i.sessionId === selectedSessionId) ?? null;
   const terminalSession = !designOpen && !issuesOpen && !spacesOpen && !settingsOpen ? shownSession?.sessionId : null;
   const toolButton = (tab: PanelTab) => (
-    <HeaderIconButton key={tab} label={PANEL_LABELS[tab]} expanded={visibleTool(tab)} onClick={() => showPanel(tab)}>
+    <HeaderIconButton key={tab} label={PANEL_LABELS[tab]} expanded={visibleTool(tab)} onClick={() => tab === "design" && canvases?.[0] ? openSessionCanvas(canvases[0]) : showPanel(tab)}>
       <SessionToolIcon tab={tab} className="size-4" />
     </HeaderIconButton>
   );
@@ -3034,7 +3073,7 @@ function App() {
       if (path && !project) throw Error("Attach the project before opening its canvas.");
       if (project && !spaceProjects.includes(project)) changeSpace(project.space ?? null);
       closeSettings();
-      setWorkspace("Design");
+      setDesignOpen(true);
       setDesignPlace("home");
       setPeek(false);
       setSpacesPeek(false);
@@ -3053,6 +3092,14 @@ function App() {
         : `${basename(shownSession.projectPath)} / ${shownSession.title}`
     : "New Task";
   const toolBodies = shownSession && {
+    design: selectedCanvas && <EmbeddedCanvas.Provider value={true}>
+      <CanvasCommentTarget.Provider value={{ title: shownSession.title, send: async (text, capture) => {
+        const image = await invoke<Attachment>("canvas_snapshot", { png: await capture() }, serverOfPath(selectedCanvas.project));
+        if (!await handleSendMsg(text, [image], null, undefined, [], selectedCanvas)) throw Error("Could not send the canvas comment.");
+      } }}>
+        <SessionCanvasEditor key={canvasKey(selectedCanvas)} file={selectedCanvas} projects={projects} onUse={() => markCanvasUsed(selectedCanvas)} collapsed controlsOpen={false} />
+      </CanvasCommentTarget.Provider>
+    </EmbeddedCanvas.Provider>,
     more: <MorePanel todos={sessionTodos} live={busy} media={sessionAttachments} sessionId={shownSession.sessionId}
       subagents={{ runs: subagents, selectedId: selectedSubagentId, resultByCallId,
         live: busy || backgroundTasks.length > 0, onSelect: setSelectedSubagentId, onStopTask: handleStopTask }} />,
@@ -3074,6 +3121,8 @@ function App() {
       changes={shownChanges.changes}
       changesLoading={shownChanges.loading}
       changesError={shownChanges.error}
+      canvases={canvases}
+      onOpenCanvas={file => { summary.closePopover(); openSessionCanvas(file); }}
       prs={pullRequests.prs}
       prsLoading={pullRequests.loading}
       prsError={pullRequests.error}
@@ -3125,9 +3174,10 @@ function App() {
   const spacesPeeks = pagesEnabled && !settingsOpen && collapsed;
   const rail = (
     <Rail
-      place={settingsOpen ? "settings" : spacesOpen ? "spaces" : issuesOpen ? "issues" : "home"}
+      place={settingsOpen ? "settings" : spacesOpen ? "spaces" : issuesOpen ? "issues" : canvasHome ? "design" : "home"}
       spaces={pagesEnabled}
-      onHome={designOpen ? openCanvasHome : () => goToSession(handleNewSession)}
+      onHome={openRailHome}
+      onDesign={openDesign}
       homeShortcut={designOpen ? null : "session.new"}
       onSpaces={openSpaces}
       onIssues={openIssues}
@@ -3460,13 +3510,11 @@ function App() {
               sidebar, or a breadcrumb taking the tabs' place, it sits in the
               row before them. */}
           {/* Spaces draws its own sidebar, so its edge is `spacesDrawn`. */}
-          <div
-            className={cn("workspace-position flex shrink-0 items-center gap-2", separatorX > 0 && "absolute z-10 -translate-x-full")}
-            style={separatorRight ? { left: separatorRight } : undefined}
-          >
-            <WorkspaceSwitch value={workspace} onChange={(next) => { setPeek(false); setSpacesPeek(false); setWorkspace(next); }} />
-            <span aria-hidden className="h-4 w-px bg-hairline" />
-          </div>
+          <span
+            aria-hidden
+            className={cn("toolbar-divider h-4 w-px shrink-0 bg-hairline", separatorX > 0 && "absolute")}
+            style={separatorX ? { left: separatorX } : undefined}
+          />
 
           {/* A hidden session has no sidebar row, so this is the way back to
               the crew it sits in. */}
@@ -3879,7 +3927,7 @@ function App() {
     <NoticeStack
       onSelect={(id) => goToSession(() => void openNotice(id))}
       onOpenDrafts={() => {
-        setWorkspace("Coding");
+        setDesignOpen(false);
         setShowArchived(false);
         setDraftsShown(true);
       }}

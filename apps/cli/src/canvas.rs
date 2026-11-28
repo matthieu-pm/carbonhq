@@ -36,6 +36,7 @@ pub fn run(mut args: CanvasArgs) -> Result<(), String> {
         }
     }
     let request = CanvasRequest {
+        session_id: super::parent_session_id(),
         project,
         folder: args.folder,
         canvas: args.canvas,

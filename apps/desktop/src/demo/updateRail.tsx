@@ -50,6 +50,7 @@ function Demo() {
             place="home"
             spaces
             onHome={() => {}}
+            onDesign={() => {}}
             onSpaces={() => {}}
             onIssues={() => {}}
             onHomeHover={() => {}}

@@ -119,7 +119,7 @@ describe("summaryOrder", () => {
 
   it("drops unknown and repeated ids and slots missing sections after their default neighbour", () => {
     expect(summaryOrder(["context", "gone", "prs", "context", "workspace"])).toEqual(
-      ["context", "prs", "crew", "tasks", "subagents", "sources", "workspace", "git"],
+      ["context", "prs", "canvases", "crew", "tasks", "subagents", "sources", "workspace", "git"],
     );
   });
 });
@@ -130,13 +130,13 @@ describe("moveSummarySection", () => {
   it("moves among the shown sections and leaves hidden ones in their slots", () => {
     const shown = ["workspace", "git", "tasks", "context"] as const;
     expect(moveSummarySection(order, shown, "context", 0)).toEqual(
-      ["context", "workspace", "prs", "crew", "git", "subagents", "sources", "tasks"],
+      ["context", "workspace", "prs", "canvases", "crew", "git", "subagents", "sources", "tasks"],
     );
   });
 
   it("moves down", () => {
     expect(moveSummarySection(order, order, "workspace", 2)).toEqual(
-      ["git", "prs", "workspace", "crew", "tasks", "subagents", "sources", "context"],
+      ["git", "prs", "workspace", "canvases", "crew", "tasks", "subagents", "sources", "context"],
     );
   });
 });

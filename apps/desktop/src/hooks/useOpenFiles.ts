@@ -138,6 +138,10 @@ function patch(sid: string, path: string, next: (file: OpenFile) => OpenFile) {
   write(sid, { open: open.map((file, i) => (i === at ? next(file) : file)) });
 }
 
+export function linkCanvas(sid: string, path: string) {
+  if (path.endsWith(".canvas.json")) void invoke("link_session_canvas", { sessionId: sid, path }).catch(console.error);
+}
+
 /// Opens a file in the Files view, reading it if it is not already open.
 ///
 /// An already-open path is activated and revealed rather than re-read: its text
@@ -148,6 +152,7 @@ export function openInFiles(sid: string | null, path: string, line?: number): vo
   // route here with none selected is the issues page, which draws no view.
   if (!sid) return;
 
+  linkCanvas(sid, path);
   opened += 1;
   const { open } = state(sid);
 
@@ -167,6 +172,7 @@ export function openInFiles(sid: string | null, path: string, line?: number): vo
 /// it does not switch to one. Leaves `opened` alone, which is what moves the
 /// view.
 export function reopenFile(sid: string, path: string) {
+  linkCanvas(sid, path);
   const { open, active } = state(sid);
   if (open.some((file) => file.path === path)) return;
   write(sid, {
@@ -179,6 +185,7 @@ export function reopenFile(sid: string, path: string) {
 /// Brings an already-open file forward.
 export function activateFile(sid: string | null, path: string) {
   if (!sid) return;
+  linkCanvas(sid, path);
   if (state(sid).active === path) return;
   write(sid, { active: path });
 }

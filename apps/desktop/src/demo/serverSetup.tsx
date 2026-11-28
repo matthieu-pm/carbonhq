@@ -948,7 +948,7 @@ function Demo() {
             tab={tab}
             onTabChange={setTab}
             fullscreen
-            rail={<Rail place="settings" spaces={false} onHome={() => {}} onSpaces={() => {}} onIssues={() => {}}
+            rail={<Rail place="settings" spaces={false} onHome={() => {}} onDesign={() => {}} onSpaces={() => {}} onIssues={() => {}}
               onHomeHover={() => {}} peeks={false} footer={<SettingsButton current onOpen={() => {}} />} />}
             navigation={<NavButtons canBack={false} canForward={false} onBack={() => {}} onForward={() => {}} />}
             projects={[]}

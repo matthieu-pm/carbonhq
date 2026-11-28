@@ -155,6 +155,7 @@ pub enum ThreadItem {
     #[serde(rename_all = "camelCase")]
     CommandExecution {
         id: String,
+        cwd: Option<String>,
         #[serde(default)]
         command: String,
         #[serde(default)]

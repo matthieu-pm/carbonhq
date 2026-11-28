@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { CircleDot } from "lucide-react";
 
-import { FilesGlyph18, House3Glyph18 } from "@/components/icons/nucleo";
+import { DoodleOutline18, FilesGlyph18, House3Glyph18 } from "@/components/icons/nucleo";
 
 import ShortcutKeys from "@/components/ShortcutKeys";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 /// off first, since the rail is drawn whatever else is open.
 export const RAIL_W = 52;
 
-export type RailPlace = "home" | "spaces" | "issues" | "settings";
+export type RailPlace = "home" | "design" | "spaces" | "issues" | "settings";
 
 /// The always-on column at the window's left edge: where you are, and the
 /// app-wide controls that belong to no list. Sits on the frame, under the
@@ -22,6 +22,7 @@ export default function Rail({
   place,
   spaces,
   onHome,
+  onDesign,
   homeShortcut = "session.new",
   onSpaces,
   onIssues,
@@ -36,6 +37,7 @@ export default function Rail({
   /// door to a page that refuses to open.
   spaces: boolean;
   onHome: () => void;
+  onDesign: () => void;
   homeShortcut?: ShortcutId | null;
   onSpaces: () => void;
   onIssues: () => void;
@@ -65,6 +67,9 @@ export default function Rail({
         tooltip={!peeks}
       >
         <House3Glyph18 />
+      </RailButton>
+      <RailButton label="Design" shortcut={null} current={place === "design"} onClick={onDesign}>
+        <DoodleOutline18 />
       </RailButton>
       {spaces && (
         <RailButton label="Spaces" shortcut="spaces.open" current={place === "spaces"} onClick={onSpaces} onHover={onSpacesHover} tooltip={!spacesPeeks}>

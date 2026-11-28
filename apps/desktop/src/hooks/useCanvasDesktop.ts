@@ -1,7 +1,7 @@
 import { flushSync } from "react-dom";
 import { openCanvasDocument } from "@/components/canvases/useCanvasDocument";
-import { canvasKey, type useCanvasLibrary } from "./useCanvasLibrary";
-import { canvasWindowPart, useCanvasWindow, visibility, waitForCanvasEditor } from "@/lib/canvasWindow";
+import { canvasKey, type CanvasFile, type useCanvasLibrary } from "./useCanvasLibrary";
+import { canvasWindowPart, useCanvasWindow, visibility, waitForCanvasEditor, type WindowRequest } from "@/lib/canvasWindow";
 import type { CanvasChatDock } from "@/lib/canvasChat";
 import { invoke } from "@/lib/transport";
 import type { SessionIndexItem } from "@/types/events";
@@ -20,7 +20,7 @@ type Desktop = {
 };
 
 export function useCanvasDesktop(ui: Desktop) {
-  useCanvasWindow(async (req) => {
+  async function runWindowCommand(req: WindowRequest, markUsed: (file: CanvasFile) => void) {
     const { command, project, folder, canvas } = req;
     const { library, dock } = ui;
     const active = library.active;
@@ -78,8 +78,11 @@ export function useCanvasDesktop(ui: Desktop) {
             if (action.op === "open" && canvas) library.open({ project, folder, name: canvas });
             else library.select(null);
           });
-          if (action.op === "open" && canvas)
-            await waitForCanvasEditor(canvasKey({ project, folder, name: canvas }));
+          if (action.op === "open" && canvas) {
+            const file = { project, folder, name: canvas };
+            await waitForCanvasEditor(canvasKey(file));
+            markUsed(file);
+          }
           return;
         }
         case "close": {
@@ -87,6 +90,7 @@ export function useCanvasDesktop(ui: Desktop) {
           if (!file || file.project !== project || !library.tabs.some((t) => canvasKey(t) === canvasKey(file)))
             throw Error("Canvas tab is not open.");
           library.close(canvasKey(file));
+          markUsed(file);
           return;
         }
         case "search":
@@ -103,6 +107,7 @@ export function useCanvasDesktop(ui: Desktop) {
     ) {
       throw Error("Open the target canvas in the desktop window first.");
     }
+    if (command.group !== "chat") markUsed(active);
     if (command.group === "view" && command.args.op === "width") {
       if (command.args.panel === "chat" && dock?.open) return canvasWindowPart("chat", req);
       throw Error("Choose an open sidebar or chat panel.");
@@ -170,5 +175,11 @@ export function useCanvasDesktop(ui: Desktop) {
         await invoke("interrupt_session", { sessionId: dock.active }, "local");
         return;
     }
+  }
+
+  useCanvasWindow(async req => {
+    let used: CanvasFile | undefined;
+    const result = await runWindowCommand(req, file => { used = file; });
+    return used && req.session_id ? { usedCanvas: used, canvasResult: result ?? { ok: true } } : result;
   });
 }

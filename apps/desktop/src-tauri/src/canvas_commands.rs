@@ -89,7 +89,7 @@ fn evaluate(raw: &str, command: &Cmd, input: &str) -> Result<Outcome> {
 }
 
 async fn asset(project: String, path: &str) -> Result<PathBuf> {
-    let root = library::attached(project).await?;
+    let root = library::document_root(project).await?;
     let resolved = tokio::fs::canonicalize(root.join(path)).await?;
     ensure!(
         resolved.starts_with(&root) && resolved.is_file(),
@@ -412,7 +412,11 @@ async fn preview(
 }
 
 /// Retire a draft when its backing file moves, even if a new canvas later reuses that name.
-pub(crate) async fn change_library(project: String, action: Action) -> Result<String, crate::Fail> {
+pub(crate) async fn change_library(
+    project: String,
+    action: Action,
+    sink: &Sink,
+) -> Result<String, crate::Fail> {
     let key = match &action {
         Action::Move {
             folder,
@@ -428,7 +432,28 @@ pub(crate) async fn change_library(project: String, action: Action) -> Result<St
         return library::change(project, action).await;
     };
     let mut history = HISTORY.lock().await;
+    let old = crate::session_canvases::CanvasLink {
+        project: key.0.clone(),
+        folder: key.1.clone(),
+        name: key.2.clone(),
+        archived: matches!(action, Action::Restore { .. }),
+    };
+    let mut new = old.clone();
+    match &action {
+        Action::Move { destination, .. } => new.folder.clone_from(destination),
+        Action::Archive { .. } => new.archived = true,
+        Action::Restore { .. } => new.archived = false,
+        _ => unreachable!(),
+    }
     let result = library::change(project, action).await?;
+    match crate::store::relocate_linked_canvas(&old, &new).await {
+        Ok(items) => {
+            for item in items {
+                let _ = sink.emit(crate::orchestration::SESSION_CHANGED, &item);
+            }
+        }
+        Err(err) => eprintln!("[move session canvas link] {err}"),
+    }
     history.retain(|edit| edit.key != key);
     let slot = DRAFTS.lock().await.remove(&key);
     drop(history);
@@ -442,6 +467,48 @@ pub(crate) async fn change_library(project: String, action: Action) -> Result<St
 
 /// Dispatch library and document work on the machine that owns the attached checkout.
 pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
+    let owner = req.session_id.clone();
+    let project = req.project.clone();
+    let folder = req.folder.clone();
+    let target = match &req.command {
+        Cmd::Projects
+        | Cmd::Attach
+        | Cmd::List { .. }
+        | Cmd::Search { .. }
+        | Cmd::Folder { .. }
+        | Cmd::Archive
+        | Cmd::Move { .. }
+        | Cmd::Chat(_)
+        | Cmd::View(_)
+        | Cmd::Comment(CommentAction::Send { .. }) => None,
+        _ => req.canvas.clone(),
+    };
+    let create = matches!(req.command, Cmd::Create);
+    let value = dispatch(req, sink).await?;
+    if let Some(owner) = owner {
+        let name = if create {
+            value["name"].as_str()
+        } else {
+            target.as_deref()
+        };
+        if let Some(name) = name {
+            crate::session_canvases::record(
+                &owner,
+                crate::session_canvases::CanvasLink {
+                    project,
+                    folder,
+                    name: name.to_owned(),
+                    archived: false,
+                },
+                sink,
+            )
+            .await;
+        }
+    }
+    Ok(value)
+}
+
+async fn dispatch(req: CanvasRequest, sink: &Sink) -> Result<Value> {
     use Cmd::*;
     if let Preview { session, action } = &req.command {
         let owner = session
@@ -485,12 +552,17 @@ pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
         }
         View(_) | Chat(_) | Comment(CommentAction::Send { .. }) => {
             #[cfg(any(feature = "desktop", feature = "serve"))]
-            return crate::serve::host_call("canvas_view", serde_json::to_value(req)?)
-                .await
-                .context("Open the Carbon desktop window on the target machine for this action")?
-                .map_err(|err| {
-                    anyhow!("{}", err.as_str().unwrap_or("Canvas window request failed"))
-                });
+            {
+                let reply = crate::serve::host_call("canvas_view", serde_json::to_value(&req)?)
+                    .await
+                    .context("Open the Carbon desktop window on the target machine for this action")?
+                    .map_err(|err| anyhow!("{}", err.as_str().unwrap_or("Canvas window request failed")))?;
+                if let (Some(id), Some(file), Some(result)) = (&req.session_id, reply.get("usedCanvas"), reply.get("canvasResult")) {
+                    crate::session_canvases::record(id, serde_json::from_value(file.clone())?, sink).await;
+                    return Ok(result.clone());
+                }
+                return Ok(reply);
+            }
             #[cfg(not(any(feature = "desktop", feature = "serve")))]
             anyhow::bail!("Open the Carbon desktop window for this action");
         }
@@ -530,7 +602,7 @@ pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
         },
         _ => return document(req, sink).await,
     };
-    let name = change_library(req.project.clone(), action).await?;
+    let name = change_library(req.project.clone(), action, sink).await?;
     changed(sink, &req)?;
     Ok(json!({"name": name}))
 }

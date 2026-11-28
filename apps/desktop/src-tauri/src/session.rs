@@ -212,6 +212,7 @@ pub struct StatusTracker {
     /// Main-thread tool calls started and not yet finished. Not a status input —
     /// it decides whether an arriving prompt is written now or held.
     open_tool_calls: usize,
+    canvases: crate::session_canvases::FileUses,
     /// The newest turn died for want of a login.
     auth_failed: bool,
     /// When the usage limit that refused this turn resets. Read off the turn's
@@ -3973,8 +3974,8 @@ async fn ingest_event(ctx: &Ingest<'_>, mut agent_event: AgentEvent, app: &Sink,
     //
     // Order is status→queued, matching every other holder of both, so no
     // deadlock: nothing holds `queued` while awaiting `status`.
-    let (next_status, reserved, limit_reset) = if !tracked {
-        (None, false, None)
+    let (next_status, reserved, limit_reset, canvas_paths) = if !tracked {
+        (None, false, None, Vec::new())
     } else {
         let mut tracker = ctx.status.lock().await;
         let before = tracker.status();
@@ -3992,8 +3993,11 @@ async fn ingest_event(ctx: &Ingest<'_>, mut agent_event: AgentEvent, app: &Sink,
             tracker.on_send();
         }
         let after = tracker.status();
-        ((after != before).then_some(after), reserve, limit_reset)
+        ((after != before).then_some(after), reserve, limit_reset, tracker.canvases.observe(&agent_event))
     };
+    if !canvas_paths.is_empty() {
+        crate::session_canvases::record_paths(ctx.session_id, ctx.session_cwd, canvas_paths, app).await;
+    }
     if let Some(next) = next_status {
         publish_status(ctx.session_id, next, app).await;
     }

@@ -236,8 +236,8 @@ impl Mapper {
                 }))]
             }
 
-            ThreadItem::CommandExecution { id, command, .. } => {
-                // `cwd` deliberately not carried. It is on the wire for every
+            ThreadItem::CommandExecution { id, command, cwd, .. } => {
+                // Most calls omit `cwd`. It is on the wire for every
                 // call and it is the session's own directory on nearly all of
                 // them, so putting it in `input` gave every shell row an
                 // expanded body holding one obvious line of JSON — noise on the
@@ -259,6 +259,7 @@ impl Mapper {
                     tool_type: ToolType::Shell,
                     input: match &skill {
                         Some(name) => json!({"skill": name, "command": command}),
+                        None if command.contains(".canvas.json") && cwd.is_some() => json!({"command": command, "cwd": cwd}),
                         None => json!({"command": command}),
                     },
                     raw_input: None,
