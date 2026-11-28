@@ -1,6 +1,6 @@
 import type { CanvasLink } from "@/types/events";
 
-export type CanvasFile = CanvasLink;
+export type CanvasFile = Omit<CanvasLink, "archived">;
 
 export const canvasKey = (file: CanvasFile) => JSON.stringify([file.project, file.folder, file.name]);
 

@@ -595,7 +595,7 @@ defaultBase: string | null,
  */
 dirty: number, };
 
-export type CanvasLink = { project: string, folder: string, name: string, };
+export type CanvasLink = { project: string, folder: string, name: string, archived: boolean, };
 
 /**
  * Everything that changed between two snapshots.

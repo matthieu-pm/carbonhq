@@ -308,7 +308,7 @@ async fn send_msg(
         .await?;
     if let Some(canvas) = canvas_prompt {
         let target = canvas.target;
-        let file = session_canvases::CanvasLink { project: target.project, folder: target.folder, name: target.canvas };
+        let file = session_canvases::CanvasLink { project: target.project, folder: target.folder, name: target.canvas, archived: false };
         if let Some(item) = session_canvases::record(session_id, file, &sink).await {
             if let Some(snapshot) = outcome.snapshot.as_mut() { snapshot.index_item = item; }
         }

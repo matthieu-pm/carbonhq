@@ -64,6 +64,7 @@ export function CanvasEditor({
   sidebarStyle,
   resizeHandle,
   libraryError,
+  onUse,
 }: {
   file: CanvasFile;
   projects: Project[];
@@ -72,6 +73,7 @@ export function CanvasEditor({
   sidebarStyle?: CSSProperties;
   resizeHandle?: ReactNode;
   libraryError?: string;
+  onUse?: () => void;
 }) {
   const embedded = useContext(EmbeddedCanvas);
   const { doc, preview, error, saving, conflict, session } = useCanvasDocument(file);
@@ -282,6 +284,8 @@ export function CanvasEditor({
       tabIndex={-1}
       ref={root}
       data-canvas-key={canvasKey(file)}
+      onPointerDownCapture={onUse}
+      onKeyDownCapture={onUse}
       onKeyDown={keys}
       onInputCapture={(e) => {
         const input = e.target as Element;

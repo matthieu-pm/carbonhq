@@ -89,7 +89,7 @@ fn evaluate(raw: &str, command: &Cmd, input: &str) -> Result<Outcome> {
 }
 
 async fn asset(project: String, path: &str) -> Result<PathBuf> {
-    let root = library::attached(project).await?;
+    let root = library::document_root(project).await?;
     let resolved = tokio::fs::canonicalize(root.join(path)).await?;
     ensure!(
         resolved.starts_with(&root) && resolved.is_file(),
@@ -432,25 +432,27 @@ pub(crate) async fn change_library(
         return library::change(project, action).await;
     };
     let mut history = HISTORY.lock().await;
-    let destination = match &action {
-        Action::Move { destination, .. } => Some(destination.clone()),
-        _ => None,
+    let old = crate::session_canvases::CanvasLink {
+        project: key.0.clone(),
+        folder: key.1.clone(),
+        name: key.2.clone(),
+        archived: matches!(action, Action::Restore { .. }),
     };
+    let mut new = old.clone();
+    match &action {
+        Action::Move { destination, .. } => new.folder.clone_from(destination),
+        Action::Archive { .. } => new.archived = true,
+        Action::Restore { .. } => new.archived = false,
+        _ => unreachable!(),
+    }
     let result = library::change(project, action).await?;
-    if let Some(folder) = destination {
-        let old = crate::session_canvases::CanvasLink {
-            project: key.0.clone(),
-            folder: key.1.clone(),
-            name: key.2.clone(),
-        };
-        match crate::store::move_linked_canvas(&old, folder).await {
-            Ok(items) => {
-                for item in items {
-                    let _ = sink.emit(crate::orchestration::SESSION_CHANGED, &item);
-                }
+    match crate::store::relocate_linked_canvas(&old, &new).await {
+        Ok(items) => {
+            for item in items {
+                let _ = sink.emit(crate::orchestration::SESSION_CHANGED, &item);
             }
-            Err(err) => eprintln!("[move session canvas link] {err}"),
         }
+        Err(err) => eprintln!("[move session canvas link] {err}"),
     }
     history.retain(|edit| edit.key != key);
     let slot = DRAFTS.lock().await.remove(&key);
@@ -476,7 +478,9 @@ pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
         | Cmd::Folder { .. }
         | Cmd::Archive
         | Cmd::Move { .. }
-        | Cmd::Chat(_) => None,
+        | Cmd::Chat(_)
+        | Cmd::View(_)
+        | Cmd::Comment(CommentAction::Send { .. }) => None,
         _ => req.canvas.clone(),
     };
     let create = matches!(req.command, Cmd::Create);
@@ -494,6 +498,7 @@ pub(crate) async fn request(req: CanvasRequest, sink: &Sink) -> Result<Value> {
                     project,
                     folder,
                     name: name.to_owned(),
+                    archived: false,
                 },
                 sink,
             )
@@ -547,12 +552,17 @@ async fn dispatch(req: CanvasRequest, sink: &Sink) -> Result<Value> {
         }
         View(_) | Chat(_) | Comment(CommentAction::Send { .. }) => {
             #[cfg(any(feature = "desktop", feature = "serve"))]
-            return crate::serve::host_call("canvas_view", serde_json::to_value(req)?)
-                .await
-                .context("Open the Carbon desktop window on the target machine for this action")?
-                .map_err(|err| {
-                    anyhow!("{}", err.as_str().unwrap_or("Canvas window request failed"))
-                });
+            {
+                let reply = crate::serve::host_call("canvas_view", serde_json::to_value(&req)?)
+                    .await
+                    .context("Open the Carbon desktop window on the target machine for this action")?
+                    .map_err(|err| anyhow!("{}", err.as_str().unwrap_or("Canvas window request failed")))?;
+                if let (Some(id), Some(file), Some(result)) = (&req.session_id, reply.get("usedCanvas"), reply.get("canvasResult")) {
+                    crate::session_canvases::record(id, serde_json::from_value(file.clone())?, sink).await;
+                    return Ok(result.clone());
+                }
+                return Ok(reply);
+            }
             #[cfg(not(any(feature = "desktop", feature = "serve")))]
             anyhow::bail!("Open the Carbon desktop window for this action");
         }

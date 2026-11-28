@@ -138,7 +138,7 @@ function patch(sid: string, path: string, next: (file: OpenFile) => OpenFile) {
   write(sid, { open: open.map((file, i) => (i === at ? next(file) : file)) });
 }
 
-function linkCanvas(sid: string, path: string) {
+export function linkCanvas(sid: string, path: string) {
   if (path.endsWith(".canvas.json")) void invoke("link_session_canvas", { sessionId: sid, path }).catch(console.error);
 }
 

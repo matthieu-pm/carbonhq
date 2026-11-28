@@ -11,6 +11,14 @@ pub struct CanvasLink {
     pub project: String,
     pub folder: String,
     pub name: String,
+    #[serde(default)]
+    pub archived: bool,
+}
+
+impl CanvasLink {
+    pub(crate) fn same_path(&self, other: &Self) -> bool {
+        self.project == other.project && self.folder == other.folder && self.name == other.name
+    }
 }
 
 pub(crate) async fn record(
@@ -33,6 +41,55 @@ pub(crate) async fn record(
 
 const EXT: &str = ".canvas.json";
 
+/// Older CLI requests left their explicit target only in the shell command.
+fn historical_canvas_target(args: &[String]) -> Option<String> {
+    let mut flags = args.iter();
+    let action = loop {
+        match flags.next().map(String::as_str) {
+            Some("--project" | "--folder" | "--canvas" | "--revision") => {
+                flags.next();
+            }
+            action => break action,
+        }
+    };
+    if !matches!(
+        action,
+        Some(
+            "read"
+                | "restore"
+                | "undo"
+                | "redo"
+                | "preview"
+                | "page"
+                | "layer"
+                | "effect"
+                | "token"
+                | "stroke"
+                | "comment"
+                | "view"
+        )
+    ) {
+        return None;
+    }
+    if action == Some("view") && flags.next().map(String::as_str) != Some("open") {
+        return None;
+    }
+    let option = |flag: &str| {
+        args.windows(2)
+            .find(|pair| pair[0] == flag)
+            .map(|pair| pair[1].as_str())
+    };
+    let name = option("--canvas")?;
+    Some(
+        Path::new(option("--project").unwrap_or(""))
+            .join("canvases")
+            .join(option("--folder").unwrap_or(""))
+            .join(format!("{name}{EXT}"))
+            .to_string_lossy()
+            .into_owned(),
+    )
+}
+
 /// Only file operands count. Printing a canvas name or searching a transcript does not open it.
 fn shell_files(command: &str) -> Vec<String> {
     if !command.contains(EXT) && !command.contains("canvas") {
@@ -41,66 +98,75 @@ fn shell_files(command: &str) -> Vec<String> {
     let Ok(words) = shell_words::split(command) else {
         return vec![];
     };
+    if let [program, flags, nested] = words.as_slice() {
+        if matches!(program.rsplit('/').next(), Some("sh" | "zsh" | "bash"))
+            && flags.starts_with('-')
+            && flags.ends_with('c')
+        {
+            return shell_files(nested);
+        }
+    }
+    // A successful AND-list ran every operand. Other shell control flow leaves execution ambiguous.
+    if command.contains(['|', ';', '\n', '#', '$', '`', '(', ')']) {
+        return vec![];
+    }
+    let mut cwd = std::path::PathBuf::new();
     let mut paths = Vec::new();
-    for args in words.split(|w| matches!(w.as_str(), "&&" | "||" | ";" | "|")) {
-        let Some((program, args)) = args.split_first() else {
-            continue;
+    for segment in command.split("&&") {
+        if segment.contains('&') {
+            return vec![];
+        }
+        let Ok(words) = shell_words::split(segment) else {
+            return vec![];
+        };
+        let Some((program, args)) = words.split_first() else {
+            return vec![];
         };
         let bin = program.rsplit('/').next().unwrap_or(program);
-        if matches!(bin, "sh" | "zsh" | "bash") && args.len() == 2 && args[0].ends_with('c') {
-            paths.extend(shell_files(&args[1]));
-        } else if bin == "carbon" && args.first().is_some_and(|v| v == "canvas") {
-            let mut flags = args[1..].iter();
-            let action = loop {
-                match flags.next().map(String::as_str) {
-                    Some("--project" | "--folder" | "--canvas" | "--revision") => {
-                        flags.next();
-                    }
-                    action => break action,
+        if bin == "cd" {
+            match args {
+                [dir] | [_, dir] if args.len() == 1 || args[0] == "--" => cwd.push(dir),
+                _ => return vec![],
+            }
+            continue;
+        }
+        let mut operands = Vec::new();
+        if bin == "carbon" && args.first().is_some_and(|v| v == "canvas") {
+            operands.extend(historical_canvas_target(&args[1..]));
+        } else {
+            let positional: Vec<_> = args.iter().filter(|arg| !arg.starts_with('-')).collect();
+            let files = match bin {
+                "cat" | "head" | "tail" | "less" | "more" | "tee" | "wc" => positional.as_slice(),
+                "grep" | "rg" | "sed" | "jq"
+                    if args.iter().all(|a| {
+                        !a.starts_with('-')
+                            || matches!(a.as_str(), "-n" | "-i" | "-r" | "-c" | "--")
+                    }) =>
+                {
+                    positional.get(1..).unwrap_or_default()
                 }
+                _ => &[],
             };
-            if !matches!(
-                action,
-                Some(
-                    "read"
-                        | "restore"
-                        | "undo"
-                        | "redo"
-                        | "preview"
-                        | "page"
-                        | "layer"
-                        | "effect"
-                        | "token"
-                        | "stroke"
-                        | "comment"
-                        | "view"
-                )
-            ) {
-                continue;
-            }
-            let option = |flag: &str| {
-                args.windows(2)
-                    .find(|pair| pair[0] == flag)
-                    .map(|pair| pair[1].as_str())
-            };
-            if let Some(name) = option("--canvas") {
-                let path = Path::new(option("--project").unwrap_or("."))
-                    .join("canvases")
-                    .join(option("--folder").unwrap_or(""))
-                    .join(format!("{name}{EXT}"));
-                paths.push(path.to_string_lossy().into_owned());
-            }
-        } else if matches!(
-            bin,
-            "cat" | "head" | "tail" | "less" | "more" | "jq" | "sed" | "tee" | "rg" | "grep" | "wc"
-        ) {
-            paths.extend(args.iter().filter(|p| p.ends_with(EXT)).cloned());
+            operands.extend(
+                files
+                    .iter()
+                    .filter(|p| p.ends_with(EXT))
+                    .map(|p| p.to_string()),
+            );
         }
         for pair in args.windows(2) {
-            if matches!(pair[0].as_str(), ">" | ">>" | "<") && pair[1].ends_with(EXT) {
-                paths.push(pair[1].clone());
+            if matches!(pair[0].as_str(), ">" | ">>" | "<")
+                && pair[1].ends_with(EXT)
+                && segment.contains(&format!(" {} ", pair[0]))
+            {
+                operands.push(pair[1].clone());
             }
         }
+        paths.extend(
+            operands
+                .into_iter()
+                .map(|file| cwd.join(file).to_string_lossy().into_owned()),
+        );
     }
     paths
 }
@@ -244,6 +310,7 @@ async fn resolve_paths(cwd: &str, paths: Vec<String>) -> Vec<CanvasLink> {
                     project: project.into(),
                     folder: folder.into_owned(),
                     name: name.into(),
+                    archived: false,
                 });
                 break;
             }
@@ -300,6 +367,14 @@ mod tests {
             shell_files("carbon canvas --project /repo --folder mobile --canvas cart read"),
             ["/repo/canvases/mobile/cart.canvas.json"]
         );
+        assert_eq!(
+            shell_files("cd canvases && cat cart.canvas.json"),
+            ["canvases/cart.canvas.json"]
+        );
+        assert!(shell_files("true || cat canvases/cart.canvas.json").is_empty());
+        assert!(shell_files("rg 'cart.canvas.json' README").is_empty());
+        assert!(shell_files("rg --files -g cart.canvas.json").is_empty());
+        assert!(shell_files("carbon canvas --canvas cart view state").is_empty());
         assert!(shell_files("echo canvases/cart.canvas.json").is_empty());
         assert!(shell_files("carbon canvas list --canvas cart").is_empty());
     }

@@ -33,6 +33,7 @@ export type ViewAction =
   | { op: "zoom"; factor: number }
   | { op: "panel"; panel: string; visibility: string };
 export type WindowRequest = {
+  session_id?: string;
   project: string;
   folder: string;
   canvas: string | null;

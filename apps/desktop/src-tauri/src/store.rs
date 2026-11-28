@@ -1436,10 +1436,10 @@ pub(crate) async fn link_canvas(
     .flatten())
 }
 
-/// Moving a shared canvas updates its location in every conversation that links it.
-pub(crate) async fn move_linked_canvas(
+/// Keep the same document linked across library moves, archiving and restoration.
+pub(crate) async fn relocate_linked_canvas(
     old: &crate::session_canvases::CanvasLink,
-    folder: String,
+    new: &crate::session_canvases::CanvasLink,
 ) -> Result<Vec<SessionIndexItem>> {
     let _guard = INDEX_LOCK.lock().await;
     let mut sessions = read_index().await?;
@@ -1451,7 +1451,7 @@ pub(crate) async fn move_linked_canvas(
         let Some(link) = links.iter_mut().find(|file| *file == old) else {
             continue;
         };
-        link.folder.clone_from(&folder);
+        link.clone_from(new);
         let mut seen = std::collections::HashSet::new();
         links.retain(|f| seen.insert(f.clone()));
         updated.push(item.clone());
@@ -1471,7 +1471,7 @@ pub(crate) async fn recover_canvas_links(
     if files.iter().all(|f| {
         item.canvases
             .as_ref()
-            .is_some_and(|links| links.contains(f))
+            .is_some_and(|links| links.iter().any(|link| link.same_path(f)))
     }) {
         return Ok(None);
     }
@@ -1479,7 +1479,7 @@ pub(crate) async fn recover_canvas_links(
         let links = item.canvases.get_or_insert_with(Vec::new);
         let before = links.len();
         for file in files {
-            if !links.contains(&file) {
+            if !links.iter().any(|link| link.same_path(&file)) {
                 links.push(file);
             }
         }

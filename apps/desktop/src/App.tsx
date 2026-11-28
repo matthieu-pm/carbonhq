@@ -142,7 +142,7 @@ import {
 import { CanvasChatPanel } from "@/components/canvases/CanvasChat";
 import { CanvasComposer } from "@/components/canvases/CanvasComposer";
 import { EmbeddedCanvas } from "@/lib/canvasWindow";
-import { type CanvasFile } from "@/lib/canvasFile";
+import { canvasPath, type CanvasFile } from "@/lib/canvasFile";
 import { canvasKey, canvasRoot, useCanvasLibrary } from "@/hooks/useCanvasLibrary";
 import AttachProjectDialog from "@/components/composer/AttachProjectDialog";
 import WindowToolbar from "@/components/layout/WindowToolbar";
@@ -160,7 +160,7 @@ import { attachmentKey, clearAttachments, pickAttachments, restoreAttachments } 
 import { addAnnotations, restoreAnnotations, type PendingAnnotation } from "@/hooks/useAnnotations";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { refreshActiveDoc, saveActiveDoc, useDocs } from "@/hooks/useDocs";
-import { closeFile, useOpenFiles } from "@/hooks/useOpenFiles";
+import { closeFile, linkCanvas, useOpenFiles } from "@/hooks/useOpenFiles";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useGlass } from "@/hooks/useGlass";
 import { warmHighlighter } from "@/hooks/useHighlighter";
@@ -1520,18 +1520,26 @@ function App() {
     sessionTodos !== null ||
     sessionAttachments.length > 0;
 
-  const canvases = selectedSession?.canvases ?? sessionIndexItems.find(item => item.sessionId === selectedSessionId)?.canvases;
+  const canvasLinks = selectedSession?.canvases ?? sessionIndexItems.find(item => item.sessionId === selectedSessionId)?.canvases;
+  const canvases = canvasLinks?.filter(file => !file.archived);
+  const hasDesignTab = !!canvases?.length;
   const [canvasPicks, setCanvasPicks] = useState<Record<string, string>>({});
   const selectedCanvas = canvases?.find(file => canvasKey(file) === canvasPicks[selectedSessionId ?? ""]) ?? canvases?.[0];
+  const markCanvasUsed = (file: CanvasFile) => {
+    if (selectedSessionId && canvases?.[0] && canvasKey(file) !== canvasKey(canvases[0])) {
+      linkCanvas(selectedSessionId, canvasPath(file));
+    }
+  };
   const openSessionCanvas = (file: CanvasFile) => {
     if (!selectedSessionId) return;
+    markCanvasUsed(file);
     setCanvasPicks(picks => ({ ...picks, [selectedSessionId]: canvasKey(file) }));
     if (viewTab === "design") setViewTab("chat");
     changeDock(d => dockTab(d, "design"));
   };
 
   const tabs = tabOrder({
-    design: !!canvases?.length,
+    design: hasDesignTab,
     pr: hasPrTab,
     docs: hasDocsTab,
     issue: hasIssueTab,
@@ -1542,11 +1550,11 @@ function App() {
   useEffect(() => {
     if (!selectedSession || selectedSession.sessionId !== selectedSessionId) return;
     const removed = [...dock.side, ...dock.full].filter((tab) =>
-      (tab === "docs" && !hasDocsTab) || (tab === "issue" && !hasIssueTab));
+      (tab === "design" && !hasDesignTab) || (tab === "docs" && !hasDocsTab) || (tab === "issue" && !hasIssueTab));
     if (!removed.length) return;
     changeDock((d) => removed.reduce(closeDockTab, d));
     if (removed.some((tab) => tab === viewTab)) setViewTab("chat");
-  }, [selectedSessionId, selectedSession, dock, hasDocsTab, hasIssueTab, viewTab, changeDock]);
+  }, [selectedSessionId, selectedSession, dock, hasDesignTab, hasDocsTab, hasIssueTab, viewTab, changeDock]);
 
   // The attachment grid reads the session's whole log, but a transcript drawn
   // as a crew strip never pages past its tail — so the More tab pages in the
@@ -3087,9 +3095,9 @@ function App() {
     design: selectedCanvas && <EmbeddedCanvas.Provider value={true}>
       <CanvasCommentTarget.Provider value={{ title: shownSession.title, send: async (text, capture) => {
         const image = await invoke<Attachment>("canvas_snapshot", { png: await capture() }, serverOfPath(selectedCanvas.project));
-        if (!await handleSendMsg(text, [image])) throw Error("Could not send the canvas comment.");
+        if (!await handleSendMsg(text, [image], null, undefined, [], selectedCanvas)) throw Error("Could not send the canvas comment.");
       } }}>
-        <SessionCanvasEditor key={canvasKey(selectedCanvas)} file={selectedCanvas} projects={projects} collapsed controlsOpen={false} />
+        <SessionCanvasEditor key={canvasKey(selectedCanvas)} file={selectedCanvas} projects={projects} onUse={() => markCanvasUsed(selectedCanvas)} collapsed controlsOpen={false} />
       </CanvasCommentTarget.Provider>
     </EmbeddedCanvas.Provider>,
     more: <MorePanel todos={sessionTodos} live={busy} media={sessionAttachments} sessionId={shownSession.sessionId}
