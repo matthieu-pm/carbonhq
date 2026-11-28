@@ -1462,9 +1462,9 @@ async fn dispatch(cmd: &str, args: Value, sink: Sink, canvas_watch: Option<Canva
         orchestrate(
             line: String, origin: Option<String>, caller: Option<crate::orchestration::Caller>,
             sender: Option<crate::events::MessageSender>, request_fingerprint: Option<String>, request_source: Option<String>,
-        ) => ok(crate::orchestration::answer_forward(
+        ) => ok(Box::pin(crate::orchestration::answer_forward(
             crate::orchestration::Forward { line, origin, caller, sender, request_fingerprint, request_source }, sink,
-        ).await);
+        )).await);
         worktree_disposition(session_id: String) => crate::worktree_disposition(&session_id).await;
         remove_session_worktree(session_id: String) => crate::remove_session_worktree(&session_id).await;
         detach_session(session_id: String) => store::detach_session(&session_id).await;

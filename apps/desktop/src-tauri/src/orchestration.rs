@@ -461,7 +461,8 @@ pub async fn answer_forward(forward: Forward, app: Sink) -> Response {
                     Request::CreateDraft(create) => create_draft(create, caller, &app).await,
                     Request::StartDraft(start) => start_draft(start, caller, &app).await,
                     Request::SendMessage(send) => send_message(send, forward.sender, receipt.as_ref(), &app).await,
-                    other => dispatch_inner(other, None, &app).await,
+                    // Keep the full local dispatcher out of every forwarded session-start frame.
+                    other => Box::pin(dispatch_inner(other, None, &app)).await,
                 }
             },
         ).await
