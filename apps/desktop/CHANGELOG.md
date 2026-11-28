@@ -22,6 +22,13 @@ reads:
   `![](changelog/servers.mp4)`. The file lives in `apps/web/public/changelog/`
   and is served by carbonhq.com.
 
+## 0.31.6 · 2026-11-28 · beta
+
+### New
+
+- **Edit a canvas beside chat.** Open a linked canvas from the conversation summary to draw or edit while keeping your draft in place. The canvas shortcut opens the one you used most recently.
+- **Open Design from the left rail.** Use the full Design workspace for layers and the inspector. Select Home to return to your previous conversation or draft.
+
 ## 0.31.5 · 2026-11-26 · beta
 
 ### New
