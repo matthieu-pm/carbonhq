@@ -1,15 +1,15 @@
 {
-  "version": "0.31.5",
-  "notes": "### New\n\n- **Floating composer on every tab.** Outside Chat, the session's composer floats as a card in the lower right, over Files, Changes and the browser too. Fold the conversation in and out from its title, resize it from the top and left edges, or minimize it to a round chat button. Its menu renames, pins, forks, settles or deletes the session, copies its ID, folder or branch, and opens it in another app.",
-  "pub_date": "2026-11-26T22:44:39.278331Z",
+  "version": "0.31.6",
+  "notes": "### New\n\n- **Edit a canvas beside chat.** Open a linked canvas from the conversation summary to draw or edit while keeping your draft in place. The canvas shortcut opens the one you used most recently.\n- **Open Design from the left rail.** Use the full Design workspace for layers and the inspector. Select Home to return to your previous conversation or draft.",
+  "pub_date": "2026-11-28T20:00:59.414949Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmtKRy9tY3R6Q0hZUUtrcmVxQmNqenN6OTRpalYxSXozRnlCeWlLMFJVdEE4dFBnL3FudXRjdm85UXorYVk5NGFrNmdSamNZaWkwcElOM2ZMRFZucXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzMzMDQ4CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjUKWEJhQWlxYzZuVGJiaW5GN0NNQjQwUjdoUHpMNjBiWFRyMlU0RHJnQ2l1MmVjN0pIbzRGemxRb0thQmxaUEhveXl6My9JZWxOcHV3aHU1QUFQbFBEQ2c9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.5/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmgrbDhJbzNGNjl0RDVSOWcvU2IxZVR1RGZWdjZxNG1YQXJBUXBmSm1EYXE3dWdFSW8rU1lDWVRtUWMyQ2pKWnNrTGtGd2FIMlZpWEdzTGYyRXM1Tnc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODk1OTk2CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjYKMnNWQ0ZlcExGbnY4bjJmSGsyeWtTcUZITjhSNnhlQWZqd0RhOVVsc085bDZxeW9aNWx5MGpmRFl4ODBQeFU4dE1uOS93R3d4b2NyR21DRE5mVkFKQnc9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.6/Carbon_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmtKRy9tY3R6Q0hZUUtrcmVxQmNqenN6OTRpalYxSXozRnlCeWlLMFJVdEE4dFBnL3FudXRjdm85UXorYVk5NGFrNmdSamNZaWkwcElOM2ZMRFZucXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzMzMDQ4CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjUKWEJhQWlxYzZuVGJiaW5GN0NNQjQwUjdoUHpMNjBiWFRyMlU0RHJnQ2l1MmVjN0pIbzRGemxRb0thQmxaUEhveXl6My9JZWxOcHV3aHU1QUFQbFBEQ2c9PQo=",
-      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.5/Carbon_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVFFxbHloSUFWWmgrbDhJbzNGNjl0RDVSOWcvU2IxZVR1RGZWdjZxNG1YQXJBUXBmSm1EYXE3dWdFSW8rU1lDWVRtUWMyQ2pKWnNrTGtGd2FIMlZpWEdzTGYyRXM1Tnc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODk1OTk2CWZpbGU6Q2FyYm9uLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMxLjYKMnNWQ0ZlcExGbnY4bjJmSGsyeWtTcUZITjhSNnhlQWZqd0RhOVVsc085bDZxeW9aNWx5MGpmRFl4ODBQeFU4dE1uOS93R3d4b2NyR21DRE5mVkFKQnc9PQo=",
+      "url": "https://github.com/matthieu-pm/carbonhq/releases/download/v0.31.6/Carbon_universal.app.tar.gz"
     }
   }
 }
